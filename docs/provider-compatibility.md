@@ -41,9 +41,9 @@ Sources: [Codex hooks](https://learn.chatgpt.com/docs/hooks), [Claude hooks](htt
 | Codex CLI / Windows | NOT TESTED: native hook trust review needed | NOT TESTED | NOT TESTED with Codex |
 | ChatGPT desktop local coding / Windows | NOT TESTED | NOT TESTED | NOT TESTED |
 | Claude desktop local Code / Windows | NOT TESTED | NOT TESTED | NOT TESTED |
-| CLI and available desktops / macOS, Linux | NOT TESTED: no host available in this run | NOT TESTED | NOT TESTED |
+| CLI and available desktops / macOS, Linux | DEFERRED to M5 / WD-019 | DEFERRED to M5 / WD-019 | DEFERRED to M5 / WD-019 |
 
-Do not use the generic Windows probe as evidence for Codex or desktop process containers. The next live checks need a trusted temporary hook definition in Codex and interactive sessions on each available surface. No trust-bypass flag or fabricated trust record was used. WD-002 remains open until those checks are completed or an explicit support limitation is accepted.
+Do not use the generic Windows probe as evidence for Codex or desktop process containers. The next live checks need a trusted temporary hook definition in Codex and interactive sessions on available Windows surfaces. No trust-bypass flag or fabricated trust record was used. WD-002 remains open until the remaining Windows checks are completed or an explicit support limitation is accepted. macOS/Linux host access and compatibility testing are tracked separately in M5 / WD-019 and no longer block WD-002.
 
 ## Reproduction and limits
 

@@ -20,6 +20,8 @@ The user-supplied `uber-efficient-software-factory-codex-claude-research.md` is 
 | Claude Code CLI | Windows/macOS/Linux | Windows SessionStart/init-only and detached child verified; other events/OS pending |
 | Claude desktop, local Code | Where the official desktop is available | Documentation only; live testing pending |
 
+Dedicated macOS/Linux host access and live compatibility verification are deferred to M5 / WD-019. M1 acceptance uses Windows evidence; retain the existing cross-platform CI matrix as early feedback.
+
 A cross-platform core does not imply that every vendor desktop exists on every OS. Mark unsupported/not tested explicitly. For each available combination, record the OS, provider/harness version, hook configuration, and sanitized results for start, prompt, successful/failed tool, compact, subagent, and stop/interrupt. Do not count a missing event as supported.
 
 Installation: `hooks install <provider>` edits only its own entries in the user hook configuration, with backup and a dry-run diff. Installation is idempotent; uninstall removes only its own unchanged entries. Existing hooks are preserved. The project registry filters collection. Do not bypass native trust/reload/approval procedures.

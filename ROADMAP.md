@@ -18,7 +18,7 @@ Agreed on 2026-09-05. A plan for small projects on top of stock harnesses. Each 
 
 ## M1 - Reliable collection without intervention
 
-**Outcome:** hooks from both harnesses start the core and persist selected project events on Windows/macOS/Linux.
+**Outcome:** hooks from both harnesses start the core and persist selected project events, validated on Windows. Keep the Python core and integration design portable; obtaining macOS/Linux hosts and validating compatibility are deferred to M5 / WD-019.
 
 1. Typed envelope, SQLite migrations, and synthetic fixtures. Registry/UUID, worktree resolution, and non-Git roots. Configuration lives outside the checkout.
 2. Atomic inbox, idempotent processing, single writer, OS lock, detached launch, pause/start/stop/status. Crash/replay, concurrent startup, partial files, and quota accounting.
@@ -27,7 +27,7 @@ Agreed on 2026-09-05. A plan for small projects on top of stock harnesses. Each 
 5. Retention of 30/180 days, 2 GiB/project, and bounded inbox/logs; pin, reserve, degraded state, and loss counters. Redact known secrets before persistent writes.
 6. `project add/list/remove/relocate`, `daemon start/run/stop/status`, `hooks install/uninstall`, `doctor`, and `sessions list/show --project`. Remove disables collection; only a separate purge deletes data.
 
-**Acceptance:** two concurrent harnesses/worktrees share one core without mixing sessions/agents. Crash replay does not duplicate envelopes. Harness exit does not terminate the detached core on tested operating systems; document a user-autostart fallback for environments that prohibit detachment. A subsequent hook does not cancel pause. On overflow/corruption/database unavailability, the harness continues and losses remain visible. Measure p95 hook latency and idle overhead. Run live smoke tests for available CLI/desktop surfaces separately from CI fixtures.
+**Acceptance:** two concurrent harnesses/worktrees share one core without mixing sessions/agents. Crash replay does not duplicate envelopes. Harness exit does not terminate the detached core on tested operating systems; document a user-autostart fallback for environments that prohibit detachment. A subsequent hook does not cancel pause. On overflow/corruption/database unavailability, the harness continues and losses remain visible. Measure p95 hook latency and idle overhead. Run live smoke tests for available Windows CLI/desktop surfaces separately from CI fixtures. Access to other operating systems is not an M1 acceptance dependency.
 
 ## M2 - Analytics and a manual optimization loop
 
@@ -64,9 +64,13 @@ Agreed on 2026-09-05. A plan for small projects on top of stock harnesses. Each 
 
 **Acceptance:** budget exhaustion, timeout, or model failure does not break the harness; no recursive analysis; measure false escalation and rescue rates alongside task outcomes. Approve exact policy defaults using M2/M3 results before implementing M4.
 
-## M5 - Optional extensions
+## M5 - Cross-platform validation and optional extensions
 
-Independent directions, not first-release dependencies:
+Deferred compatibility work, not a dependency of M0-M4:
+
+- **WD-019:** obtain access to macOS/Linux hosts and verify installation, hook execution, detached process survival, locking, paths, and cleanup for both CLIs and officially available desktop surfaces. Reuse the Python implementation and existing probes; fix platform differences only when demonstrated. Record verified versions and evidence, or explicit surface unavailability. Until then, mark these platforms as unverified rather than blocking earlier milestones.
+
+Independent optional extensions:
 
 - Codex App Server: investigate event/control contracts and ownership/attach for existing sessions. Add an adapter only after confirmation; retain hooks. If the integration requires launching a harness itself, document a separate mode.
 - A shared read-only project overview without merging databases; later, a local web UI if needed.
@@ -77,6 +81,6 @@ Independent directions, not first-release dependencies:
 
 - Implement through feature branches and task-scoped commits. Installing the Python package never changes harness configuration: connection is a separate explicit command.
 - Unit/contract/integration tests run offline; live vendor smoke tests are a separate manual procedure with sanitized results.
-- CI: Windows/macOS/Linux, minimum Python 3.12 plus 3.13 on Linux. Claim newer Python support only after testing. Record actually verified versions at each milestone.
+- CI: Windows/macOS/Linux, minimum Python 3.12 plus 3.13 on Linux. Claim newer Python support only after testing. Record actually verified versions at each milestone. Retain the existing CI matrix as early feedback; dedicated macOS/Linux host access and live compatibility acceptance belong to M5 / WD-019.
 - Storage upgrades: versioned migrations and recovery tests; installer upgrade/uninstall preserves existing configuration. Do not leave test-owned daemons running.
 - M3-M5 intentionally include research/decision gates: these are future milestones, not permission to silently choose control or LLM policy.
