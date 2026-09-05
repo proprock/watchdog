@@ -12,8 +12,15 @@
 | `uv run ruff format --check .` | PASS |
 | `uv build` | Wheel and sdist built |
 | `uv run agent-watchdog --help` | PASS; explicitly states that collection is not implemented |
+| `uv run --isolated --no-project --python 3.12 --managed-python --with ./dist/agent_watchdog-0.1.0-py3-none-any.whl agent-watchdog --help` | PASS; built wheel installed in an isolated environment and its console entry point executed |
 | `git diff --check` | PASS for the tracked diff |
 
 The new text files were also checked for local Markdown links, trailing whitespace, and UTF-8/LF: 17 files, PASS. This was a documentation check, not a product test suite.
 
 The CI matrix is configured; remote CI has not run. macOS/Linux and live vendor desktop/CLI hooks have not been tested. Fixtures or documentation alone do not establish runtime support. The next task is WD-002. Completed task records live in [DONE.md](../DONE.md).
+
+## M0 acceptance audit
+
+The local checks above were rerun after the English documentation update: 2 tests passed without warnings, locked dependency synchronization and Ruff passed, and wheel/sdist builds succeeded. The isolated wheel check verifies the distribution rather than relying solely on the editable development installation.
+
+Reviewed the CI matrix and read-only permissions, source links and explicit integration limitations, task dependencies and acceptance criteria, and the separation of open and completed work. All M0 deliverables are present. Cross-platform runtime and live provider evidence remain M1 work; no remote CI run or runtime collection is claimed.

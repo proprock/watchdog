@@ -4,6 +4,8 @@ Agreed on 2026-09-05. A plan for small projects on top of stock harnesses. Each 
 
 ## M0 - Foundation and verifiable design
 
+**Status:** complete. Local acceptance checks, including installation of the built wheel in an isolated environment, passed. See [verification](docs/verification.md). Remote CI and live provider checks are not claimed; live integration work starts at M1 / WD-002.
+
 **Outcome:** documentation and an installable Python foundation; no runtime yet.
 
 - README with an accurate status, shared AGENTS/CLAUDE rules, MIT license, gitignore, LF/UTF-8, pyproject/uv.lock, and src layout.
