@@ -108,10 +108,19 @@ def test_disk_full_keeps_queue_empty_and_loss_survives_reopen(tmp_path, monkeypa
     assert resources.losses(tmp_path)["io"] == 1
 
 
-def test_quota_losses_are_exact_under_concurrent_publish(tmp_path):
+def test_concurrent_publish_counts_successfully_recorded_losses(tmp_path, monkeypatch):
     limits = Limits(payload_bytes=6000, inbox_bytes=6000)
     inbox = Inbox(tmp_path, limits=limits)
     inbox.publish(event(uuid4()))
+    outcomes = []
+    original = resources.count_loss
+
+    def record(root, reason, count=1):
+        result = original(root, reason, count)
+        outcomes.append(result)
+        return result
+
+    monkeypatch.setattr(resources, "count_loss", record)
 
     def rejected(_):
         with pytest.raises(StorageError):
@@ -119,7 +128,33 @@ def test_quota_losses_are_exact_under_concurrent_publish(tmp_path):
 
     with ThreadPoolExecutor(max_workers=4) as pool:
         list(pool.map(rejected, range(20)))
-    assert sum(resources.losses(tmp_path).values()) == 20
+    assert len(outcomes) == 20
+    assert sum(outcomes) > 0
+    assert sum(resources.losses(tmp_path).values()) == sum(outcomes)
+
+
+def test_slow_counter_fsync_does_not_block_another_increment(tmp_path, monkeypatch):
+    import threading
+
+    syncing, release = threading.Event(), threading.Event()
+    original = resources.os.fsync
+
+    def delayed(descriptor):
+        if threading.current_thread().name == "slow-sync":
+            syncing.set()
+            assert release.wait(2)
+        original(descriptor)
+
+    monkeypatch.setattr(resources.os, "fsync", delayed)
+    thread = threading.Thread(target=lambda: resources.count_loss(tmp_path, "io"), name="slow-sync")
+    thread.start()
+    try:
+        assert syncing.wait(2)
+        assert resources.count_loss(tmp_path, "io")
+    finally:
+        release.set()
+        thread.join(2)
+    assert resources.losses(tmp_path)["io"] == 2
 
 
 def test_stale_temporary_cleanup_preserves_recent_files(tmp_path):

@@ -123,7 +123,8 @@ observations, not expiry or retries of retained deliveries. Pause and unregister
 projects are intentional exclusions.
 
 Counters use a fixed 40-byte file and a separate short lock. Updates reuse allocated
-bytes and fsync, allowing an initialized counter to survive a simulated ENOSPC
+bytes and fsync after releasing the update lock, allowing an initialized counter
+to survive a simulated ENOSPC
 publication failure without allocating a temporary file. Persistence is best
 effort when the directory cannot be created, the lock times out, permissions are
 lost, or the device refuses writes. This is not a power-loss-safe audit ledger.

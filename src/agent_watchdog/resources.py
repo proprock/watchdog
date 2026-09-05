@@ -5,7 +5,7 @@ import shutil
 import struct
 import time
 from collections.abc import Iterator
-from contextlib import contextmanager
+from contextlib import ExitStack, contextmanager
 from pathlib import Path
 
 from agent_watchdog.config import Limits
@@ -57,14 +57,18 @@ def count_loss(root: Path, reason: str, count: int = 1) -> bool:
 
     try:
         root.mkdir(parents=True, exist_ok=True)
-        with _locked(root / "losses.lock"):
-            values = losses(root)
-            values[reason] = min(2**64 - 1, values[reason] + count)
-            path = root / "losses.bin"
-            # Reuse allocated bytes so ENOSPC does not require a new temporary file.
-            with path.open("r+b" if path.exists() else "w+b", buffering=0) as stream:
+        with ExitStack() as stack:
+            with _locked(root / "losses.lock"):
+                values = losses(root)
+                values[reason] = min(2**64 - 1, values[reason] + count)
+                path = root / "losses.bin"
+                # Reuse allocated bytes so ENOSPC does not need a temporary file.
+                stream = stack.enter_context(
+                    path.open("r+b" if path.exists() else "w+b", buffering=0)
+                )
                 stream.write(_COUNTERS.pack(*(values[key] for key in REASONS)))
-                os.fsync(stream.fileno())
+            # The unbuffered update is visible; slow disk sync need not hold the lock.
+            os.fsync(stream.fileno())
         return True
     except (OSError, StorageError, ValueError):
         return False
