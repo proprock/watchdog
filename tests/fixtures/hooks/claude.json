@@ -1,0 +1,106 @@
+[
+  {
+    "session_id": "fixture-session",
+    "transcript_path": "/fixture/transcript.jsonl",
+    "cwd": "/fixture/project",
+    "hook_event_name": "SessionStart",
+    "source": "startup"
+  },
+  {
+    "session_id": "fixture-session",
+    "transcript_path": "/fixture/transcript.jsonl",
+    "cwd": "/fixture/project",
+    "hook_event_name": "UserPromptSubmit",
+    "prompt": "Synthetic hook compatibility example."
+  },
+  {
+    "session_id": "fixture-session",
+    "transcript_path": "/fixture/transcript.jsonl",
+    "cwd": "/fixture/project",
+    "hook_event_name": "PreToolUse",
+    "tool_name": "Bash",
+    "tool_use_id": "fixture-tool",
+    "tool_input": {
+      "command": "fixture-command"
+    }
+  },
+  {
+    "session_id": "fixture-session",
+    "transcript_path": "/fixture/transcript.jsonl",
+    "cwd": "/fixture/project",
+    "hook_event_name": "PostToolUse",
+    "tool_name": "Bash",
+    "tool_use_id": "fixture-tool",
+    "tool_input": {
+      "command": "fixture-command"
+    },
+    "tool_response": {
+      "stdout": "fixture output",
+      "stderr": "",
+      "exit_code": 0
+    }
+  },
+  {
+    "session_id": "fixture-session",
+    "transcript_path": "/fixture/transcript.jsonl",
+    "cwd": "/fixture/project",
+    "hook_event_name": "PreCompact",
+    "trigger": "auto"
+  },
+  {
+    "session_id": "fixture-session",
+    "transcript_path": "/fixture/transcript.jsonl",
+    "cwd": "/fixture/project",
+    "hook_event_name": "PostCompact",
+    "trigger": "auto"
+  },
+  {
+    "session_id": "fixture-session",
+    "transcript_path": "/fixture/transcript.jsonl",
+    "cwd": "/fixture/project",
+    "hook_event_name": "SubagentStart",
+    "agent_id": "fixture-child",
+    "agent_type": "fixture-agent"
+  },
+  {
+    "session_id": "fixture-session",
+    "transcript_path": "/fixture/transcript.jsonl",
+    "cwd": "/fixture/project",
+    "hook_event_name": "SubagentStop",
+    "agent_id": "fixture-child",
+    "agent_type": "fixture-agent",
+    "agent_transcript_path": "/fixture/child.jsonl",
+    "stop_hook_active": false,
+    "last_assistant_message": "Synthetic completion."
+  },
+  {
+    "session_id": "fixture-session",
+    "transcript_path": "/fixture/transcript.jsonl",
+    "cwd": "/fixture/project",
+    "hook_event_name": "Stop",
+    "stop_hook_active": false,
+    "last_assistant_message": "Synthetic completion."
+  },
+  {
+    "session_id": "fixture-session",
+    "transcript_path": "/fixture/transcript.jsonl",
+    "cwd": "/fixture/project",
+    "hook_event_name": "PostToolUseFailure",
+    "tool_name": "Bash",
+    "tool_use_id": "fixture-tool",
+    "tool_input": {
+      "command": "fixture-command"
+    },
+    "error": "Exit code 1\nfixture failure",
+    "is_interrupt": false,
+    "duration_ms": 12
+  },
+  {
+    "session_id": "fixture-session",
+    "transcript_path": "/fixture/transcript.jsonl",
+    "cwd": "/fixture/project",
+    "hook_event_name": "Notification",
+    "message": "Synthetic waiting notification.",
+    "notification_type": "permission_prompt"
+  }
+]

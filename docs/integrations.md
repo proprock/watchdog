@@ -1,6 +1,6 @@
 # Integration sources and verification
 
-Documentation reviewed on 2026-09-05. Locally detected versions: Codex CLI 0.153.4 and Claude Code 2.1.259. Live hooks were neither installed nor tested. Desktop harness versions may differ from CLI versions.
+Documentation reviewed on 2026-09-05. Locally detected versions: Codex CLI 0.153.4 and Claude Code 2.1.259. A temporary Claude CLI SessionStart hook was tested with init-only on Windows; see [the compatibility report](provider-compatibility.md). Other live events remain unverified. Desktop harness versions may differ from CLI versions.
 
 | Source | Basis for the project |
 |---|---|
@@ -17,7 +17,7 @@ The user-supplied `uber-efficient-software-factory-codex-claude-research.md` is 
 |---|---|---|
 | Codex CLI | Windows/macOS/Linux | Local CLI version; live testing pending |
 | ChatGPT desktop, local Codex coding | Where the official desktop is available | Documentation only; live testing pending |
-| Claude Code CLI | Windows/macOS/Linux | Local CLI version; live testing pending |
+| Claude Code CLI | Windows/macOS/Linux | Windows SessionStart/init-only and detached child verified; other events/OS pending |
 | Claude desktop, local Code | Where the official desktop is available | Documentation only; live testing pending |
 
 A cross-platform core does not imply that every vendor desktop exists on every OS. Mark unsupported/not tested explicitly. For each available combination, record the OS, provider/harness version, hook configuration, and sanitized results for start, prompt, successful/failed tool, compact, subagent, and stop/interrupt. Do not count a missing event as supported.
