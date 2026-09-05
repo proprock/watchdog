@@ -1,5 +1,7 @@
 # Completed tasks
 
+- [x] **WD-023 - Detach probe cleanup race.** During WD-003 verification, the offline probe failed with Windows error 32 because its child inherited the temporary working directory. Launch the child from the parent directory and use explicit typed process flags. Verification: reproduced failure, then focused pytest passed and ty passed. No live provider probe was run for this fix.
+
 Historical records only. Read this file when prior verification is relevant; active work belongs in [TODO.md](TODO.md). Preserve task IDs when moving entries here.
 
 - [x] **WD-018 - Bounded Windows detach and Claude startup probe (2026-09-05; split from WD-002).** Added an offline process-lifetime test and opt-in Claude init-only probe using temporary settings. Red: missing probe script; green: detached child responded after parent exit. Live Claude Code 2.1.259 SessionStart and child survival passed outside the execution sandbox without a model conversation. The restricted run was inconclusive. Evidence and remaining provider gaps are in [the compatibility report](docs/provider-compatibility.md); WD-002 remains open.

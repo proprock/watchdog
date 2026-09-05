@@ -37,17 +37,18 @@ def parent(directory: Path, capture_hook: bool) -> None:
             "field_types": {key: type(value).__name__ for key, value in payload.items()},
         }
         (directory / "hook.json").write_text(json.dumps(evidence), encoding="utf-8")
-    options = (
-        {"creationflags": subprocess.DETACHED_PROCESS | subprocess.CREATE_NEW_PROCESS_GROUP}
-        if os.name == "nt"
-        else {"start_new_session": True}
+    creationflags = (
+        subprocess.DETACHED_PROCESS | subprocess.CREATE_NEW_PROCESS_GROUP if os.name == "nt" else 0
     )
     subprocess.Popen(
         [sys.executable, str(Path(__file__).resolve()), "--mode", "child", "--dir", str(directory)],
         stdin=subprocess.DEVNULL,
         stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL,
-        **options,
+        # Windows keeps the process working directory locked until process exit.
+        cwd=directory.parent,
+        creationflags=creationflags,
+        start_new_session=os.name != "nt",
     )
     wait_for(directory / "ready")
 
