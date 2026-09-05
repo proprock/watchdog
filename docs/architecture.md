@@ -1,6 +1,6 @@
 # Architecture and contracts
 
-Status: accepted design decisions, not an implementation. Date: 2026-09-05.
+Status: accepted design decisions. WD-003 configuration, registry, and envelope contracts are implemented as a [library](contracts.md); daemon, collection, and analysis remain planned. Date: 2026-09-05.
 
 ## Boundaries
 

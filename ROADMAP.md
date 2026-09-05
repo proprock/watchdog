@@ -11,7 +11,7 @@ Execution order: M1-M4 for Codex coding only -> M-Anthropic / WD-022 -> App Serv
 **Outcome:** documentation and an installable Python foundation; no runtime yet.
 
 - README with an accurate status, shared AGENTS/CLAUDE rules, MIT license, gitignore, LF/UTF-8, pyproject/uv.lock, and src layout.
-- Conventional Commits, feature branches, behavioral TDD; Ruff/pytest and CI on three operating systems. Add ty when contracts are introduced.
+- Conventional Commits, feature branches, behavioral TDD; Ruff/pytest and CI on three operating systems. ty is included with the WD-003 contracts.
 - Define project identity, process lifecycle, delivery semantics, quotas, privacy, and visibility limitations.
 - Document sources and a compatibility matrix without substituting documentation links for live evidence.
 - Keep all repository text in English. Store only open work in TODO.md and move verified completed entries to DONE.md with their IDs and evidence.

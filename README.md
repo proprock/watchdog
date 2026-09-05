@@ -2,7 +2,7 @@
 
 A local external observer for Codex coding sessions, built on top of the stock harness. Claude Code support is a later independent milestone. One process per user, lightweight hook adapters, and one SQLite database per repository.
 
-**Status:** design and Python foundation. Event collection, the background core, and hook installation are not implemented yet. See [ROADMAP.md](ROADMAP.md) for milestones, [TODO.md](TODO.md) for open work, and [DONE.md](DONE.md) for completed work.
+**Status:** Python foundation plus validated configuration, project registry, and event contracts ([library API](docs/contracts.md)). Event collection, the background core, project CLI, and hook installation are not implemented yet. See [ROADMAP.md](ROADMAP.md) for milestones, [TODO.md](TODO.md) for open work, and [DONE.md](DONE.md) for completed work.
 
 ## Agreed behavior
 
@@ -24,6 +24,7 @@ uv run agent-watchdog --help
 uv run pytest
 uv run ruff check .
 uv run ruff format --check .
+uv run ty check
 uv build
 ```
 
