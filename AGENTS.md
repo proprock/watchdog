@@ -16,6 +16,7 @@ Python 3.12+, uv, Ruff, pytest. Scope: README.md; decisions: docs/architecture.m
 
 - Write all repository text in English: documentation, instructions, comments, docstrings, CLI messages, configuration explanations, and task records.
 - Prefer small functions, explicit errors, and types at boundaries. Avoid abstractions without a real use; comments explain why.
+- Write tests with pytest, using pytest fixtures, parametrization, and plain assertions where appropriate. Keep live provider probes explicit and separate from the offline pytest suite.
 - Checks: `uv run pytest`, `uv run ruff check .`, `uv run ruff format --check .`; packaging: `uv build`. Commit uv.lock.
 - Add ty with the adapter contracts as a separate task. Unit/contract tests require neither network access nor live accounts.
 - Use UTF-8 without BOM and LF; isolate platform-specific code. Do not carry over GSIM30 legacy C++/CRLF rules.
