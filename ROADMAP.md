@@ -2,6 +2,8 @@
 
 Agreed on 2026-09-05. A plan for small projects on top of stock harnesses. Each milestone delivers an independently useful result; later milestones are not enabled automatically. Open tasks: [TODO.md](TODO.md). Completed work: [DONE.md](DONE.md). Contracts: [architecture](docs/architecture.md).
 
+Execution order: M1-M4 for Codex coding only -> M-Anthropic / WD-022 -> App Server / WD-015 -> final cross-platform validation / M5. Anthropic support does not block the Codex observation, analysis, or intervention milestones. Ordinary chats are outside product scope.
+
 ## M0 - Foundation and verifiable design
 
 **Status:** complete. Local acceptance checks, including installation of the built wheel in an isolated environment, passed. See [verification](docs/verification.md). Remote CI and live provider checks are not claimed; live integration work starts at M1 / WD-002.
@@ -18,20 +20,20 @@ Agreed on 2026-09-05. A plan for small projects on top of stock harnesses. Each 
 
 ## M1 - Reliable collection without intervention
 
-**Outcome:** hooks from both harnesses start the core and persist selected project events, validated on Windows. Keep the Python core and integration design portable; obtaining macOS/Linux hosts and validating compatibility are deferred to M5 / WD-019.
+**Outcome:** hooks from Codex CLI and local desktop coding sessions start the core and persist selected project events, validated on Windows. Keep the Python core and integration design portable; obtaining macOS/Linux hosts and validating compatibility are deferred to M5 / WD-019.
 
-1. Typed envelope, SQLite migrations, and synthetic fixtures. Registry/UUID, worktree resolution, and non-Git roots. Configuration lives outside the checkout.
+1. Provider-neutral typed envelope with a provider field, SQLite migrations, and synthetic fixtures. Keep a small adapter boundary; do not build a general plugin framework before a second implementation is needed. Registry/UUID, worktree resolution, and non-Git roots. Configuration lives outside the checkout.
 2. Atomic inbox, idempotent processing, single writer, OS lock, detached launch, pause/start/stop/status. Crash/replay, concurrent startup, partial files, and quota accounting.
-3. Lightweight Codex/Claude command adapters; normalization aware of versions and capabilities. Provider-specific no-op responses, fail-open behavior, bounded input/latency, and no model feedback.
+3. A lightweight Codex command adapter; normalization aware of versions and capabilities. Provider-specific no-op responses, fail-open behavior, bounded input/latency, and no model feedback.
 4. Installer with dry-run/backup/uninstall that preserves existing hooks. Native trust procedures remain mandatory. Ordinary tests never install hooks.
 5. Retention of 30/180 days, 2 GiB/project, and bounded inbox/logs; pin, reserve, degraded state, and loss counters. Redact known secrets before persistent writes.
 6. `project add/list/remove/relocate`, `daemon start/run/stop/status`, `hooks install/uninstall`, `doctor`, and `sessions list/show --project`. Remove disables collection; only a separate purge deletes data.
 
-**Acceptance:** two concurrent harnesses/worktrees share one core without mixing sessions/agents. Crash replay does not duplicate envelopes. Harness exit does not terminate the detached core on tested operating systems; document a user-autostart fallback for environments that prohibit detachment. A subsequent hook does not cancel pause. On overflow/corruption/database unavailability, the harness continues and losses remain visible. Measure p95 hook latency and idle overhead. Run live smoke tests for available Windows CLI/desktop surfaces separately from CI fixtures. Access to other operating systems is not an M1 acceptance dependency.
+**Acceptance:** multiple concurrent Codex sessions/worktrees share one core without mixing sessions/agents. Crash replay does not duplicate envelopes. Harness exit does not terminate the detached core on tested operating systems; document a user-autostart fallback for environments that prohibit detachment. A subsequent hook does not cancel pause. On overflow/corruption/database unavailability, the harness continues and losses remain visible. Measure p95 hook latency and idle overhead. Run live smoke tests for the available Windows Codex CLI/desktop coding surfaces separately from CI fixtures. Access to other operating systems is not an M1 acceptance dependency.
 
 ## M2 - Analytics and a manual optimization loop
 
-**Outcome:** the first complete analytical release; behavioral and token/context metrics have equal priority.
+**Outcome:** the first complete analytical release for Codex coding sessions; behavioral and token/context metrics have equal priority.
 
 1. Transcript readers for verified formats, persisted offsets, partial lines/rotation, native ID reconciliation, and correct cumulative usage counters. Reader failure does not stop hooks.
 2. Timeline and durations, tool repetitions/errors, pytest/JUnit results, output size, compactions, usage/cached tokens. Debounced Git diff fingerprints with uncertain attribution explicitly marked.
@@ -44,7 +46,7 @@ Agreed on 2026-09-05. A plan for small projects on top of stock harnesses. Each 
 
 ## M3 - Limited opt-in guidance
 
-**Outcome:** add advisory feedback at a supported hook boundary only after collecting the M2 baseline.
+**Outcome:** add advisory feedback at a supported Codex hook boundary only after collecting the M2 baseline.
 
 - Separate delivery policy: evidence, capability, expiry, cooldown, and at most one nudge per blocker until new evidence appears. Observe remains the default mode.
 - Select rules using labeled traces. Release gate: at least 90% precision on a declared dataset, with counts and uncertainty, plus a review of false signals. A small sample does not justify a hard gate.
@@ -55,7 +57,7 @@ Agreed on 2026-09-05. A plan for small projects on top of stock harnesses. Each 
 
 ## M4 - Semantic judge and controlled escalation
 
-**Outcome:** optional bounded semantic analysis and read-only second opinions, followed by a human gate only on a demonstrably supported control path.
+**Outcome:** optional bounded semantic analysis and read-only second opinions for Codex coding sessions, followed by a human gate only on a demonstrably supported control path.
 
 - Make a separate LLM execution decision before implementation: M0-M3 do not enable external model calls. Require project opt-in, budget, timeout, exclusion of the product's own analytical sessions, and provenance.
 - Use a compact facts/failed-attempts/evidence bundle and structured `progress|uncertain|stuck|blocked` output. Do not treat a summary as objective verification.
@@ -64,18 +66,32 @@ Agreed on 2026-09-05. A plan for small projects on top of stock harnesses. Each 
 
 **Acceptance:** budget exhaustion, timeout, or model failure does not break the harness; no recursive analysis; measure false escalation and rescue rates alongside task outcomes. Approve exact policy defaults using M2/M3 results before implementing M4.
 
-## M5 - Cross-platform validation and optional extensions
+## M-Anthropic - Independent Claude coding support
 
-Deferred compatibility work, not a dependency of M0-M4:
+**Schedule:** after M4 / WD-014 and before App Server / WD-015. Tracked as WD-022; it does not block M1-M4. Keep existing Claude spike evidence as a starting point and refresh it when this milestone begins.
 
-- **WD-019:** obtain access to macOS/Linux hosts and verify installation, hook execution, detached process survival, locking, paths, and cleanup for both CLIs and officially available desktop surfaces. Reuse the Python implementation and existing probes; fix platform differences only when demonstrated. Record verified versions and evidence, or explicit surface unavailability. Until then, mark these platforms as unverified rather than blocking earlier milestones.
+**Outcome:** Claude Code CLI and local desktop Code use the established core, storage, reports, and applicable intervention policies. Ordinary chats and Cowork remain excluded.
 
-Independent optional extensions:
+1. Refresh supported hook schemas, native trust/reload behavior, and per-event capabilities on Windows. Preserve unknown or unavailable events explicitly.
+2. Add the Claude adapter, safe installer/uninstaller, and versioned transcript enrichment. Reuse the shared contracts; add provider-specific behavior only where evidence requires it.
+3. Apply the WD-005 process-lifecycle protocol to Claude CLI and desktop, including child survival after actual harness exit; do not infer it from the earlier init-only probe.
+4. Validate simultaneous Codex/Claude sessions and worktrees, isolation, retention, usage accounting, and no-op responses. Cover the remaining Claude desktop event gaps from WD-002.
+5. Validate advisory/control delivery separately against the M3/M4 policies. Unsupported control capabilities remain disabled; do not promise parity with Codex.
 
-- Codex App Server: investigate event/control contracts and ownership/attach for existing sessions. Add an adapter only after confirmation; retain hooks. If the integration requires launching a harness itself, document a separate mode.
-- A shared read-only project overview without merging databases; later, a local web UI if needed.
+**Acceptance:** offline adapter tests and Windows live evidence, preserved existing hooks, bounded overhead, independent core lifetime, and an explicit event/control capability matrix. Claude-specific failures do not break Codex. macOS/Linux host validation stays in final M5 / WD-019.
+
+## Optional extensions after M-Anthropic
+
+- **WD-015:** Codex App Server spike, scheduled after WD-022. Investigate event/control contracts and ownership/attach for existing sessions. Add an adapter only after confirmation; retain hooks. If integration requires launching a harness itself, document a separate mode. M4 remains bounded by verified hook capabilities and does not depend on this extension.
+- **WD-016:** a shared read-only project overview without merging databases; later, a local web UI if needed. Evaluate only after a useful M2 release.
 - A catalog/eval runner and automated skill improvement only if M2 manual export no longer meets workflow needs.
 - MCP adviser only for a real agent-query use case, not as a process startup placeholder.
+
+## M5 - Final cross-platform validation
+
+Deferred compatibility work in the final milestone, not a dependency of M0-M4 or M-Anthropic:
+
+- **WD-019:** obtain access to macOS/Linux hosts and verify installation, hook execution, detached process survival, locking, paths, and cleanup for both CLIs and officially available desktop surfaces. Reuse the Python implementation and existing probes; fix platform differences only when demonstrated. Record verified versions and evidence, or explicit surface unavailability. Until then, mark these platforms as unverified rather than blocking earlier milestones.
 
 ## Release and verification
 

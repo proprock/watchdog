@@ -13,6 +13,8 @@ The user-supplied `uber-efficient-software-factory-codex-claude-research.md` is 
 
 ## Support matrix
 
+Delivery scope: M1-M4 cover Codex CLI and local desktop coding only. Claude implementation and remaining validation belong to M-Anthropic / WD-022, after WD-014 and before WD-015. The historical Claude observations below are preserved evidence, not a first-release commitment. Ordinary chats are outside product scope.
+
 | Surface | Target | Current verification |
 |---|---|---|
 | Codex CLI | Windows/macOS/Linux | Windows tool success/failure, compact, subagent, Stop, Interrupt, and SessionEnd observed |
@@ -20,7 +22,7 @@ The user-supplied `uber-efficient-software-factory-codex-claude-research.md` is 
 | Claude Code CLI | Windows/macOS/Linux | Windows startup, success/failure, compact, subagent, Stop, and init-only detached child verified |
 | Claude desktop, local Code | Where the official desktop is available | Windows local Code startup, prompt, Agent tool, subagent lifecycle, compact, and Stop observed |
 
-Dedicated macOS/Linux host access and live compatibility verification are deferred to M5 / WD-019. M1 acceptance uses Windows evidence; retain the existing cross-platform CI matrix as early feedback.
+Dedicated macOS/Linux host access and live compatibility verification are deferred to M5 / WD-019. M1 acceptance uses Windows Codex evidence; retain the existing cross-platform CI matrix as early feedback.
 
 A cross-platform core does not imply that every vendor desktop exists on every OS. Mark unsupported/not tested explicitly. For each available combination, record the OS, provider/harness version, hook configuration, and sanitized results for start, prompt, successful/failed tool, compact, subagent, and stop/interrupt. Do not count a missing event as supported.
 
