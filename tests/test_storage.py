@@ -73,7 +73,8 @@ def test_bad_record_does_not_block_valid_event(tmp_path, event, bad):
         result = inbox.drain(store)
         assert (result.inserted, result.quarantined) == (1, 1)
     assert not good.exists()
-    assert next((tmp_path / "quarantine").glob("*.bad")).read_bytes() == bad
+    diagnostic = json.loads(next((tmp_path / "quarantine").glob("*.bad")).read_bytes())
+    assert diagnostic == {"reason": "rejected", "bytes": len(bad)}
 
 
 def test_quarantine_is_bounded_and_oversized_input_is_not_retained(tmp_path, event):
@@ -94,7 +95,7 @@ def test_quarantine_is_bounded_and_oversized_input_is_not_retained(tmp_path, eve
 def test_oversized_publish_is_rejected_before_writing(tmp_path, event):
     with pytest.raises(StorageError):
         Inbox(tmp_path, payload_bytes=10).publish(event)
-    assert list(tmp_path.iterdir()) == []
+    assert not (tmp_path / "inbox").exists()
 
 
 def test_project_mismatch_and_conflicting_uuid_are_quarantined(tmp_path, event):
@@ -158,7 +159,7 @@ def test_only_one_writer_and_wrong_project_cannot_reopen(tmp_path, event):
         assert store.events() == []
 
 
-@pytest.mark.parametrize("version", [2, 99])
+@pytest.mark.parametrize("version", [3, 99])
 def test_newer_database_is_not_changed(tmp_path, event, version):
     path = tmp_path / "events.sqlite3"
     with sqlite3.connect(path) as db:
@@ -296,7 +297,7 @@ def test_interrupted_initial_migration_rolls_back_and_can_restart(tmp_path, even
     finally:
         connection.close()
     with Store(tmp_path, event.project_id) as store:
-        assert store.connection.execute("PRAGMA user_version").fetchone()[0] == 1
+        assert store.connection.execute("PRAGMA user_version").fetchone()[0] == 2
         assert store.put(event)
 
 

@@ -7,12 +7,15 @@ import sqlite3
 from collections.abc import Iterator, Mapping
 from contextlib import ExitStack, contextmanager
 from dataclasses import dataclass
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Self
 from uuid import UUID, uuid4
 
 from pydantic import ValidationError
 
+from agent_watchdog import privacy, resources
+from agent_watchdog.config import Limits
 from agent_watchdog.events import Envelope
 from agent_watchdog.files import atomic_write as atomic_write
 
@@ -27,6 +30,10 @@ class WriterBusy(StorageError):
 
 class RejectedEvent(StorageError):
     """Input cannot be accepted; quarantine it without stopping the queue."""
+
+
+class QuotaExceeded(StorageError):
+    """No room for another write; retained input may be retried after cleanup."""
 
 
 @contextmanager
@@ -57,7 +64,7 @@ def writer_lock(path: Path) -> Iterator[None]:
 
 
 def canonical(event: Envelope) -> str:
-    validated = Envelope.model_validate_json(event.model_dump_json())
+    validated = privacy.sanitize(event)
     return json.dumps(validated.model_dump(mode="json"), sort_keys=True, separators=(",", ":"))
 
 
@@ -69,12 +76,20 @@ def persisted_envelope(document: str | bytes) -> Envelope:
 
 
 class Store:
-    def __init__(self, root: Path, project_id: UUID, *, artifact_bytes: int = 8 * 1024**2):
+    def __init__(
+        self,
+        root: Path,
+        project_id: UUID,
+        *,
+        artifact_bytes: int = 8 * 1024**2,
+        limits: Limits | None = None,
+    ):
         if artifact_bytes <= 0:
             raise StorageError("Artifact limit must be positive")
         self.root = root.resolve()
         self.project_id = project_id
         self.artifact_bytes = artifact_bytes
+        self.limits = limits or Limits()
         self._connection: sqlite3.Connection | None = None
         self._stack = ExitStack()
 
@@ -96,7 +111,8 @@ class Store:
             )
             stack.callback(connection.close)
             self._connection = connection
-            self._initialize()
+            with resources.admission(self.root):
+                self._initialize()
         except BaseException:
             self._connection = None
             stack.close()
@@ -123,12 +139,14 @@ class Store:
     def _initialize(self) -> None:
         db = self.connection
         version = db.execute("PRAGMA user_version").fetchone()[0]
-        if version not in (0, 1):
+        if version not in (0, 1, 2):
             raise StorageError("Unsupported database schema; database left unchanged")
         if version == 0:
             tables = db.execute("SELECT name FROM sqlite_master WHERE name NOT LIKE 'sqlite_%'")
             if tables.fetchone() is not None:
                 raise StorageError("Refusing to adopt an unversioned nonempty database")
+            if resources.available(self.root, self.limits) < 256 * 1024:
+                raise QuotaExceeded("Insufficient space to initialize storage")
         else:
             owner = db.execute("SELECT project_id FROM metadata").fetchall()
             if owner != [(str(self.project_id),)]:
@@ -136,9 +154,16 @@ class Store:
             db.execute("SELECT event_id, envelope FROM events LIMIT 0")
             db.execute("SELECT event_id, name, digest, size FROM artifacts LIMIT 0")
         # Check compatibility before changing persistent journal settings or running migration.
+        if version == 0:
+            db.execute("PRAGMA auto_vacuum=INCREMENTAL")
         db.execute("PRAGMA journal_mode=WAL")
         db.execute("PRAGMA synchronous=FULL")
         db.execute("PRAGMA foreign_keys=ON")
+        db.execute("PRAGMA secure_delete=ON")
+        db.execute("PRAGMA busy_timeout=50")
+        db.execute("PRAGMA journal_size_limit=0")
+        if not (self.root / "losses.bin").exists():
+            resources.count_loss(self.root, "io", 0)
         if version == 0:
             with self._transaction():
                 db.execute("CREATE TABLE metadata (project_id TEXT NOT NULL)")
@@ -154,9 +179,47 @@ class Store:
                     "PRIMARY KEY(event_id, name))"
                 )
                 db.execute("PRAGMA user_version=1")
+        if version < 2:
+            with self._transaction():
+                db.execute("CREATE TABLE pins (session_id TEXT PRIMARY KEY)")
+                db.execute(
+                    "CREATE TABLE receipts (event_id TEXT PRIMARY KEY REFERENCES events(event_id), "
+                    "digest TEXT NOT NULL)"
+                )
+                for event_id, document in db.execute("SELECT event_id, envelope FROM events"):
+                    refs = dict(
+                        db.execute(
+                            "SELECT name, digest FROM artifacts WHERE event_id=?", (event_id,)
+                        )
+                    )
+                    db.execute(
+                        "INSERT INTO receipts VALUES (?, ?)",
+                        (event_id, self._fingerprint(document, refs)),
+                    )
+                db.execute("PRAGMA user_version=2")
+        # Existing v1 stores need a one-time rebuild to support physical reclamation.
+        if db.execute("PRAGMA auto_vacuum").fetchone()[0] != 2:
+            size = (self.root / "events.sqlite3").stat().st_size
+            if resources.available(self.root, self.limits) < 2 * size:
+                raise QuotaExceeded("Insufficient migration space")
+            db.execute("PRAGMA auto_vacuum=INCREMENTAL")
+            db.execute("VACUUM")
+
+    @staticmethod
+    def _fingerprint(document: str, references: Mapping[str, str]) -> str:
+        return hashlib.sha256(
+            json.dumps([document, sorted(references.items())]).encode()
+        ).hexdigest()
 
     def put(self, event: Envelope, *, artifacts: Mapping[str, bytes] | None = None) -> bool:
+        with resources.admission(self.root):
+            return self._put(event, artifacts=artifacts)
+
+    def _put(self, event: Envelope, *, artifacts: Mapping[str, bytes] | None = None) -> bool:
+        event = privacy.sanitize(event)
         document = canonical(event)
+        if len(document.encode()) > self.limits.payload_bytes:
+            raise RejectedEvent("Envelope exceeds payload limit")
         if event.project_id != self.project_id:
             raise RejectedEvent("Event belongs to a different project")
         artifacts = artifacts or {}
@@ -167,18 +230,37 @@ class Store:
             raise StorageError("Artifacts require nonempty names and bytes")
         if sum(len(data) for data in artifacts.values()) > self.artifact_bytes:
             raise StorageError("Artifact limit exceeded")
+        try:
+            sanitized = {
+                privacy.text(name): privacy.artifact(data) for name, data in artifacts.items()
+            }
+            if len(sanitized) != len(artifacts):
+                raise StorageError("Artifact names collide after redaction")
+            artifacts = sanitized
+            if sum(map(len, artifacts.values())) > self.artifact_bytes:
+                raise StorageError("Redacted artifact limit exceeded")
+        except UnicodeDecodeError as error:
+            raise StorageError("Only UTF-8 text artifacts are supported") from error
         references = {name: hashlib.sha256(data).hexdigest() for name, data in artifacts.items()}
         event_id = str(event.event_id)
+        fingerprint = self._fingerprint(document, references)
+        existing = self.connection.execute(
+            "SELECT digest FROM receipts WHERE event_id=?", (event_id,)
+        ).fetchone()
+        if existing:
+            if existing[0] != fingerprint:
+                raise RejectedEvent("Event UUID conflicts with existing content")
+            return False
+        # Budget both database pages and their WAL copies, plus transaction overhead.
+        needed = 65536 + 4 * len(document.encode()) + 2 * sum(map(len, artifacts.values()))
+        if resources.available(self.root, self.limits) < needed:
+            self._maintain(datetime.now(UTC), needed)
+        if resources.available(self.root, self.limits) < needed:
+            raise QuotaExceeded("Project quota or disk reserve reached")
         with self._transaction() as db:
-            existing = db.execute("SELECT envelope FROM events WHERE event_id=?", (event_id,))
-            row = existing.fetchone()
-            if row is not None:
-                stored = dict(
-                    db.execute("SELECT name, digest FROM artifacts WHERE event_id=?", (event_id,))
-                )
-                if row[0] != document or stored != references:
-                    raise RejectedEvent("Event UUID conflicts with existing content")
-                return False
+            directory = self.root / "artifacts"
+            if directory.is_symlink() or directory.is_junction():
+                raise StorageError("Linked artifact directory")
             for name, data in artifacts.items():
                 path = self.root / "artifacts" / f"{references[name]}.bin"
                 if not path.exists():
@@ -197,7 +279,109 @@ class Store:
                 "INSERT INTO artifacts VALUES (?, ?, ?, ?)",
                 [(event_id, name, references[name], len(data)) for name, data in artifacts.items()],
             )
+            db.execute("INSERT INTO receipts VALUES (?, ?)", (event_id, fingerprint))
         return True
+
+    def pin(self, session_id: str, *, pinned: bool = True) -> None:
+        if not session_id.strip():
+            raise StorageError("Session identity is required")
+        with resources.admission(self.root), self._transaction() as db:
+            if pinned:
+                if not db.execute(
+                    "SELECT 1 FROM events WHERE session_id=?", (session_id,)
+                ).fetchone():
+                    raise StorageError("Unknown session")
+                db.execute("INSERT OR IGNORE INTO pins VALUES (?)", (session_id,))
+            else:
+                db.execute("DELETE FROM pins WHERE session_id=?", (session_id,))
+
+    def maintain(self, *, now: datetime | None = None) -> None:
+        with resources.admission(self.root):
+            self._maintain(now or datetime.now(UTC), 65536)
+
+    def _strip_content(self, event_id: str, document: str) -> None:
+        event = persisted_envelope(document)
+        # Provider-specific payload may contain arbitrary content; expire all of it.
+        event = event.model_copy(
+            update={"payload": {}, "availability": event.availability | {"content": "unavailable"}}
+        )
+        self.connection.execute(
+            "UPDATE events SET envelope=? WHERE event_id=?", (canonical(event), event_id)
+        )
+        self.connection.execute("DELETE FROM artifacts WHERE event_id=?", (event_id,))
+
+    def _delete(self, event_id: str) -> None:
+        for table in ("artifacts", "receipts", "events"):
+            self.connection.execute(f"DELETE FROM {table} WHERE event_id=?", (event_id,))
+
+    def _reclaim(self) -> None:
+        db = self.connection
+        referenced = {row[0] for row in db.execute("SELECT DISTINCT digest FROM artifacts")}
+        directory = self.root / "artifacts"
+        if directory.is_symlink() or directory.is_junction():
+            raise StorageError("Linked artifact directory")
+        for path in directory.glob("*.bin"):
+            if (
+                len(path.stem) == 64
+                and all(c in "0123456789abcdef" for c in path.stem)
+                and path.stem not in referenced
+            ):
+                path.unlink()
+        # Consume all rows: SQLite may yield one row per freed page.
+        db.execute("PRAGMA incremental_vacuum").fetchall()
+        db.execute("PRAGMA wal_checkpoint(TRUNCATE)").fetchall()
+
+    def _maintain(self, now: datetime, needed: int) -> None:
+        db = self.connection
+        cutoff_content = now - timedelta(days=self.limits.content_days)
+        cutoff_metrics = now - timedelta(days=self.limits.metrics_days)
+        eligible = (
+            "SELECT event_id, envelope FROM events WHERE session_id IS NULL OR "
+            "session_id NOT IN (SELECT session_id FROM pins) ORDER BY received_at"
+        )
+        with self._transaction():
+            for event_id, document in db.execute(eligible).fetchall():
+                event = persisted_envelope(document)
+                if event.received_at < cutoff_metrics:
+                    self._delete(event_id)
+                elif event.received_at < cutoff_content:
+                    self._strip_content(event_id, document)
+        # Admission lock excludes active publishers; age also protects recent crash recovery.
+        for directory in (
+            self.root,
+            self.root / "inbox",
+            self.root / "artifacts",
+            self.root / "quarantine",
+        ):
+            if directory.is_symlink() or directory.is_junction():
+                raise StorageError("Linked data directory")
+            for path in directory.glob("*.tmp"):
+                if path.stat().st_mtime < now.timestamp() - 3600:
+                    path.unlink()
+        self._reclaim()
+        if resources.available(self.root, self.limits) >= needed:
+            return
+        # Quota pressure: remove oldest unpinned content before whole sessions.
+        for event_id, document in db.execute(eligible).fetchall():
+            with self._transaction():
+                self._strip_content(event_id, document)
+            self._reclaim()
+            if resources.available(self.root, self.limits) >= needed:
+                return
+        sessions = db.execute(
+            "SELECT session_id, MIN(received_at) FROM events WHERE session_id IS NULL OR "
+            "session_id NOT IN (SELECT session_id FROM pins) "
+            "GROUP BY session_id ORDER BY MIN(received_at)"
+        ).fetchall()
+        for session_id, _ in sessions:
+            with self._transaction():
+                for (event_id,) in db.execute(
+                    "SELECT event_id FROM events WHERE session_id IS ?", (session_id,)
+                ).fetchall():
+                    self._delete(event_id)
+            self._reclaim()
+            if resources.available(self.root, self.limits) >= needed:
+                return
 
     def events(self, *, limit: int = 100, offset: int = 0) -> list[Envelope]:
         if not 1 <= limit <= 1000 or offset < 0:
@@ -242,27 +426,52 @@ class Inbox:
         payload_bytes: int = 1024**2,
         quarantine_files: int = 128,
         quarantine_bytes: int = 8 * 1024**2,
+        limits: Limits | None = None,
     ):
         if min(payload_bytes, quarantine_files, quarantine_bytes) <= 0:
             raise StorageError("Inbox limits must be positive")
         self.root = root.resolve()
         self.directory = self.root / "inbox"
-        self.payload_bytes = payload_bytes
+        self.limits = limits or Limits(payload_bytes=payload_bytes)
+        self.payload_bytes = self.limits.payload_bytes
         self.quarantine_files = quarantine_files
         self.quarantine_bytes = quarantine_bytes
 
     def publish(self, event: Envelope) -> Path:
         content = canonical(event).encode("utf-8")
         if len(content) > self.payload_bytes:
+            resources.count_loss(self.root, "payload")
             raise StorageError("Envelope exceeds inbox payload limit")
-        path = self.directory / f"{uuid4().hex}.json"
-        atomic_write(path, content)
-        return path
+        try:
+            with resources.admission(self.root):
+                if self.directory.is_symlink() or self.directory.is_junction():
+                    raise StorageError("Linked inbox directory")
+                if (
+                    resources.usage(self.directory) + len(content) > self.limits.inbox_bytes
+                    or resources.available(self.root, self.limits) < len(content) + 4096
+                ):
+                    raise QuotaExceeded("Inbox quota or project reserve reached")
+                path = self.directory / f"{uuid4().hex}.json"
+                atomic_write(path, content)
+                return path
+        except QuotaExceeded:
+            resources.count_loss(self.root, "quota")
+            raise
+        except WriterBusy:
+            resources.count_loss(self.root, "busy")
+            raise
+        except OSError:
+            resources.count_loss(self.root, "io")
+            raise
 
     def _quarantine(self, path: Path, result: DrainResult) -> None:
         directory = self.root / "quarantine"
+        if directory.is_symlink() or directory.is_junction():
+            raise StorageError("Linked quarantine directory")
         directory.mkdir(parents=True, exist_ok=True)
-        size = path.stat().st_size
+        source_size = path.stat().st_size
+        diagnostic = json.dumps({"reason": "rejected", "bytes": source_size}).encode()
+        size = len(diagnostic)
         if size > self.quarantine_bytes:
             path.unlink()
             result.discarded += 1
@@ -276,7 +485,13 @@ class Inbox:
             total -= oldest.stat().st_size
             oldest.unlink()
             result.discarded += 1
-        path.replace(directory / f"{uuid4().hex}.bad")
+        # Malformed data cannot be redacted reliably. Retain only its byte count.
+        if len(diagnostic) > self.quarantine_bytes:
+            path.unlink()
+            result.discarded += 1
+            return
+        atomic_write(directory / f"{uuid4().hex}.bad", diagnostic)
+        path.unlink()
         result.quarantined += 1
 
     def drain(self, store: Store, *, limit: int = 100) -> DrainResult:
@@ -299,7 +514,9 @@ class Inbox:
                     raise RejectedEvent("Envelope exceeds inbox payload limit")
                 inserted = store.put(persisted_envelope(data))
             except (ValidationError, RejectedEvent):
-                self._quarantine(path, result)
+                with resources.admission(self.root):
+                    self._quarantine(path, result)
+                resources.count_loss(self.root, "invalid")
                 continue
             if inserted:
                 result.inserted += 1

@@ -1,6 +1,6 @@
 # Architecture and contracts
 
-Status: accepted design decisions. WD-003 [contracts](contracts.md), WD-004 [inbox/storage](storage.md), WD-005 [daemon](daemon.md), and WD-006 [metadata hooks](hooks.md) are implemented. Content capture/redaction, retention, and analysis remain planned. The implementation reports record exact verified boundaries. Date: 2026-09-06.
+Status: accepted design decisions. WD-003 [contracts](contracts.md), WD-004/007 [storage, retention, and redaction](storage.md), WD-005 [daemon](daemon.md), and WD-006 [hooks](hooks.md) are implemented. Project CLI and analysis remain planned. The implementation reports record exact verified boundaries. Date: 2026-09-06.
 
 ## Boundaries
 
@@ -17,7 +17,7 @@ CLI -- project selection -- read-only queries / queued mutations
 
 ## Processes and delivery
 
-- `agent-watchdog hook codex` (with `claude` added in WD-022) reads JSON stdin, checks the registered project, limits size, and atomically places an envelope in the project inbox. WD-006 captures only metadata and omits content; known-secret redaction and content capture remain WD-007. Do not run Git diff, analysis, or LLM calls inside a hook. Use the provider's no-op response: empty stdout for Claude; an empty JSON object was exercised for Codex, including Stop/SubagentStop. Never return feedback or control fields in observation mode. Expected errors exit with code 0. Persistent diagnostics and loss accounting remain WD-007.
+- `agent-watchdog hook codex` (with `claude` added in WD-022) reads JSON stdin, checks the registered project, limits size, redacts known credential forms, and atomically places an envelope in the project inbox. Content capture defaults to true with global/project opt-out. Do not run Git diff, analysis, or LLM calls inside a hook. Use the provider's no-op response: empty stdout for Claude; an empty JSON object was exercised for Codex, including Stop/SubagentStop. Never return feedback or control fields in observation mode. Expected errors exit with code 0. WD-007 provides bounded persistent loss diagnostics.
 - Create the envelope ID before writing and preserve it during replay. Reprocessing an envelope is idempotent. Deduplicate repeated provider events only when a stable native ID is available, not merely by text hash.
 - The hook ensures a detached `agent-watchdog daemon run` starts if the core is unavailable. POSIX: a new session; Windows: a detached process without a window. Do not inherit the harness stdin/stdout/stderr handles.
 - One OS-backed lock per user, held for the core's lifetime. Competing starts fail to acquire the lock and exit. PID/heartbeat are diagnostics, not the sole exclusivity mechanism. Never kill an unrelated process after PID reuse.
@@ -45,7 +45,7 @@ Defaults are configurable in user TOML, with overrides by project UUID:
 | Maximum persisted event payload | 1 MiB |
 | Process logs | 5 files of 10 MiB each |
 
-Delete expired content first, then old unpinned content, then old unpinned sessions. Pin protects against deletion, not quota accounting: if space cannot be reclaimed, stop accepting content/events and report degraded status with loss counters. Never silently delete pinned data. Reserve space for checkpoint/diagnostics; bound concurrent inbox writes with a short project lock. Account for auxiliary files; SQLite cleanup must reclaim disk space using planned incremental vacuum/checkpoint support. Never delete existing vendor transcripts.
+Delete expired content first, then old unpinned content, then old unpinned sessions. Pin protects against deletion, not quota accounting: if space cannot be reclaimed, stop accepting content/events and report degraded status with loss counters. Never silently delete pinned data. Reserve space for checkpoint/diagnostics; bound concurrent inbox writes with a short project lock. Account for auxiliary files; SQLite cleanup uses incremental vacuum/checkpoint support. Never delete existing vendor transcripts. See the implemented policy and operational limits in [storage](storage.md).
 
 ## Normalized events
 

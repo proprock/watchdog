@@ -77,8 +77,9 @@ not a transactional configuration manager.
 
 `agent-watchdog hook codex` reads JSON stdin, resolves an explicitly registered
 project/worktree, and atomically admits an envelope through the daemon API. Git
-identity lookup has a 250 ms subprocess timeout; raw input is capped at 1 MiB and
-the project's payload limit. The admission lock waits at most 100 ms. Native
+identity lookup has a 250 ms subprocess timeout; raw input is capped at the largest
+registered payload limit before parsing, then at the selected project's limit
+(1 MiB by default). Each admission/diagnostic lock waits at most 100 ms. Native
 handlers are synchronous with a two-second timeout. These bounds are not a p95
 whole-hook latency measurement; that acceptance remains WD-008.
 
@@ -90,12 +91,15 @@ registry/config errors, and storage/launch failures are ignored by the hook.
 Missing Python or a broken installation cannot be handled inside Python; repair
 the installation if the product reports command-launch errors.
 
-Only metadata is persisted in this milestone: session/turn/agent identifiers,
-checkout identity, event kind, tool-call ID/name, and tool-response type. Strings
-used as identifiers are bounded. Commands, prompts, outputs, compaction text,
-transcript paths, and arbitrary input fields are omitted. Native IDs and tool
-names still constitute local session metadata; this is not an anonymization claim.
-Redaction/content capture, quotas, and persistent loss counters remain WD-007.
+Metadata includes session/turn/agent identifiers, checkout identity, event kind,
+tool-call ID/name, and tool-response type. Identifiers are bounded. WD-007 also
+captures the native `prompt`, `tool_input`, `tool_response`, and
+`last_assistant_message` fields under `payload.codex.content`, when present.
+Capture defaults to true for registered projects; `capture_content = false` in
+defaults or project overrides omits those fields. Transcript paths and arbitrary
+native fields are not copied. Known credential forms are removed before any
+persistent write; this is not an anonymization or complete secret-detection claim.
+Quotas and persistent diagnostic counters are described in [storage](storage.md).
 
 CLI versus desktop and backend version remain unknown unless evidence supplies
 them; the adapter does not guess from cwd or the installed CLI version. Tool-call

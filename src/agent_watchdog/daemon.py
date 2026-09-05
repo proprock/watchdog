@@ -11,10 +11,19 @@ from contextlib import ExitStack, contextmanager
 from pathlib import Path
 from uuid import uuid4
 
+from agent_watchdog import resources
 from agent_watchdog.config import ConfigError, UserPaths, load_config, save_config
 from agent_watchdog.events import Envelope
 from agent_watchdog.registry import Registry
-from agent_watchdog.storage import Inbox, StorageError, Store, WriterBusy, atomic_write, writer_lock
+from agent_watchdog.storage import (
+    Inbox,
+    QuotaExceeded,
+    StorageError,
+    Store,
+    WriterBusy,
+    atomic_write,
+    writer_lock,
+)
 
 
 @contextmanager
@@ -86,7 +95,20 @@ def status(paths: UserPaths) -> dict:
         state = "running" if healthy and not report.get("errors") else "degraded"
     if control.get("paused", False):
         state = "paused"
-    return report | {"state": state, "alive": running, "request_id": control.get("request_id")}
+    try:
+        loss_report = {"adapter": resources.losses(paths.data)}
+        for project in load_config(paths.config).projects[:32]:
+            loss_report[str(project.id)] = resources.losses(paths.project_data(project.id))
+    except (OSError, ValueError):
+        loss_report = {"unavailable": True}
+        if running and state != "paused":
+            state = "degraded"
+    return report | {
+        "state": state,
+        "alive": running,
+        "request_id": control.get("request_id"),
+        "losses": loss_report,
+    }
 
 
 def set_desired(paths: UserPaths, *, paused: bool) -> str:
@@ -169,7 +191,12 @@ def enqueue(paths: UserPaths, event: Envelope) -> bool:
         if project is None:
             return False
         limits = project.overrides.apply(config.defaults)
-        Inbox(paths.project_data(project.id), payload_bytes=limits.payload_bytes).publish(event)
+        try:
+            Inbox(paths.project_data(project.id), limits=limits).publish(event)
+        except QuotaExceeded:
+            if not alive(paths):
+                launch(paths)
+            raise
         if not alive(paths):
             launch(paths)
         return True
@@ -189,6 +216,7 @@ def run(paths: UserPaths) -> int:
 def _poll(paths: UserPaths, owner: ExitStack) -> None:
     instance_id = str(uuid4())
     delay = 0.25
+    maintenance: dict[str, float] = {}
     while True:
         control = desired(paths)
         if control.get("paused", False):
@@ -206,8 +234,13 @@ def _poll(paths: UserPaths, owner: ExitStack) -> None:
                 try:
                     root = paths.project_data(project.id)
                     limits = project.overrides.apply(config.defaults)
-                    with Store(root, project.id) as store:
-                        result = Inbox(root, payload_bytes=limits.payload_bytes).drain(store)
+                    with Store(root, project.id, limits=limits) as store:
+                        if time.monotonic() >= maintenance.get(str(project.id), 0):
+                            store.maintain()
+                            maintenance[str(project.id)] = time.monotonic() + 60
+                        result = Inbox(root, limits=limits).drain(store)
+                        if resources.available(root, limits) < 65536 and len(errors) < 32:
+                            errors.append(str(project.id))
                     activity |= bool(
                         result.inserted + result.duplicates + result.quarantined + result.discarded
                     )

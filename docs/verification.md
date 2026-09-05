@@ -1,5 +1,29 @@
 # Foundation verification
 
+## WD-007 storage policy
+
+2026-09-06 (local date), Windows, CPython 3.12.13. TDD first exposed missing
+redaction, capture controls, retention/pin APIs, and quota admission. A later
+concurrent rejection test exposed lost counter updates under lock contention;
+bounded acquisition retry fixed it. Credential regressions cover quoted JSON,
+Basic authentication, AWS secret assignments, and truncated private-key blocks.
+
+Final offline verification: 140 pytest tests passed; Ruff lint/format and ty passed;
+wheel and sdist built. Tests include 30/180-day expiry, pins, replay fingerprints
+after content deletion, parallel inbox quota/counters, WAL and auxiliary-file
+accounting, physical SQLite reclamation, stale temporary/orphan cleanup, v1
+migration, and simulated ENOSPC publication with persistent loss recording.
+Existing migration/commit/ack subprocess-crash checks also passed. No real disk
+was filled, and no filesystem power-loss durability is claimed.
+
+A fresh isolated environment installed the wheel offline. Its hook admitted a
+synthetic Stop event, started a detached daemon, and stored assistant text while
+removing a synthetic password. The probe used a path with spaces and closed its
+SQLite reader; the owned daemon stopped successfully and temporary state was
+removed. No provider hooks were installed and no LLM calls were made. Native
+provider latency/remaining desktop evidence stays WD-008; macOS/Linux host checks
+stay WD-019. Remote CI was not run.
+
 ## WD-006 Codex hooks
 
 2026-09-06 (local date), Windows, CPython 3.12.13. TDD began with missing hook/installer modules. Offline verification: 123 pytest tests passed; Ruff lint/format and ty passed. Tests cover synthetic schemas reflecting WD-002 observations, bounded input, fail-open no-op output, pause/allowlist behavior, PowerShell metacharacters, exact original-file restoration, unrelated user edits, edited owned groups, missing ownership records, and interrupted-install recovery. Tests edit only inert temporary configuration files and do not invoke providers.

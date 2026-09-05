@@ -2,7 +2,7 @@
 
 A local external observer for Codex coding sessions, built on top of the stock harness. Claude Code support is a later independent milestone. One process per user, lightweight hook adapters, and one SQLite database per repository.
 
-**Status:** A local [background core](docs/daemon.md), [metadata-only Codex hooks with an explicit installer](docs/hooks.md), validated configuration and registry ([API](docs/contracts.md)), and SQLite project storage ([storage](docs/storage.md)). Project CLI, content capture/redaction, retention, and analysis remain planned. See [ROADMAP.md](ROADMAP.md), [TODO.md](TODO.md), and [DONE.md](DONE.md).
+**Status:** A local [background core](docs/daemon.md), [Codex hooks with an explicit installer](docs/hooks.md), validated configuration and registry ([API](docs/contracts.md)), and [SQLite storage with retention, quotas, and redaction](docs/storage.md). Project CLI and analysis remain planned. See [ROADMAP.md](ROADMAP.md), [TODO.md](TODO.md), and [DONE.md](DONE.md).
 
 ## Agreed behavior
 
@@ -12,6 +12,7 @@ A local external observer for Codex coding sessions, built on top of the stock h
 - Observation comes first: repetitions, errors, validation, duration, tool calls, compaction, available token counts, and output sizes. CLI and Markdown/JSON reports; a cross-project overview comes later.
 - Session labels and export of candidate benchmark tasks. Users perform LLM analysis manually outside the product; there are no automatic LLM calls or eval runner.
 - Content is retained for 30 days and metrics/labels for 180 days; retention and quotas are configurable. Pinned sessions are not deleted automatically but count toward quotas.
+- Registered projects capture prompt/tool/assistant text by default after removing known credential forms. Set `capture_content = false` globally or in project overrides to collect metadata only. Redaction is a bounded pattern filter, not a guarantee that arbitrary secrets are detected.
 - Intervention and optional Codex App Server integration belong to later milestones.
 
 ## Development

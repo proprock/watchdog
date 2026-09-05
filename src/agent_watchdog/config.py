@@ -27,6 +27,8 @@ def same_path(left: Path, right: Path) -> bool:
 
 
 class Limits(StrictModel):
+    capture_content: bool = True
+    reserve_bytes: Positive = 1024**2
     content_days: Positive = 30
     metrics_days: Positive = 180
     project_bytes: Positive = 2 * 1024**3
@@ -43,6 +45,8 @@ class Limits(StrictModel):
 
 
 class Overrides(StrictModel):
+    capture_content: bool | None = None
+    reserve_bytes: Positive | None = None
     content_days: Positive | None = None
     metrics_days: Positive | None = None
     project_bytes: Positive | None = None

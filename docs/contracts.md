@@ -2,7 +2,7 @@
 
 Implemented as a small Python library, now backed by WD-004 [storage](storage.md).
 The [daemon](daemon.md) now coordinates collection and registry mutations; the
-metadata [hook adapter and installer](hooks.md) are available; project CLI remains WD-008. Importing these modules does
+[hook adapter and installer](hooks.md) are available; project CLI remains WD-008. Importing these modules does
 not register projects, create directories, install hooks, or start processes.
 
 ## Configuration
@@ -26,12 +26,18 @@ projects = []
 [defaults]
 content_days = 30
 metrics_days = 180
+capture_content = true
+reserve_bytes = 1048576
 ```
 
 Projects contain `id`, absolute `root`, optional `git_common_dir`, and partial
-`overrides`. Overrides apply only to that project. Limits must be positive integers,
+`overrides`. Overrides apply only to that project. Numeric limits must be positive integers,
 and `payload_bytes <= inbox_bytes <= project_bytes`; numeric strings and booleans
 are rejected. TOML serialization omits optional values rather than inventing nulls.
+`capture_content` is a strict boolean, default true. `reserve_bytes` defaults to
+1 MiB and is withheld from both the project budget and available disk space.
+An impractically small project budget degrades collection instead of using the
+reserve for new events. See [storage policy](storage.md) for the remaining defaults.
 
 `save_config(path, config)` validates, writes a sibling temporary file, and replaces
 the destination. An invalid existing configuration is protected from overwrite.
@@ -85,8 +91,8 @@ Payloads are empty or namespaced by the provider, for example
 be retained with kind `unknown`; that is not a support claim. Unknown envelope
 schema versions are rejected and quarantined by WD-004 ingestion. Availability
 uses `observed`, `inferred`, `unknown`, or `unavailable`, never an invented zero.
-Serialization does not redact content; redaction and input-size limits belong to
-the ingestion boundary in WD-006/WD-007.
+Envelope model serialization alone does not redact content. The WD-007 hook,
+Inbox.publish, and Store.put persistence boundaries apply redaction and size limits.
 
 Implementation references: [Pydantic strict validation](https://docs.pydantic.dev/latest/concepts/strict_mode/),
 [platformdirs paths](https://platformdirs.readthedocs.io/en/latest/api.html), and

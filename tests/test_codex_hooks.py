@@ -8,7 +8,7 @@ from uuid import uuid4
 import pytest
 
 from agent_watchdog.cli import main
-from agent_watchdog.config import Config, Project, UserPaths, save_config
+from agent_watchdog.config import Config, Limits, Project, UserPaths, save_config
 from agent_watchdog.hooks import observe
 
 
@@ -16,7 +16,7 @@ from agent_watchdog.hooks import observe
 def setup(tmp_path, monkeypatch):
     paths = UserPaths(tmp_path / "config.toml", tmp_path / "data", tmp_path / "runtime")
     project = Project(id=uuid4(), root=tmp_path)
-    save_config(paths.config, Config(projects=(project,)))
+    save_config(paths.config, Config(defaults=Limits(capture_content=False), projects=(project,)))
     events = []
     monkeypatch.setattr(
         "agent_watchdog.hooks.daemon.enqueue", lambda paths, event: events.append(event)

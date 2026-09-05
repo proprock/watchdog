@@ -1,101 +1,149 @@
-# WD-004 inbox and project storage
+# Project storage and resource policy
 
-The `storage` module is a local library, not a running collector. Use a registered
-project's data directory from `user_paths().project_data(project.id)`, outside the
-source checkout. It uses the standard library and adds no runtime dependencies.
+WD-004 provides the inbox and SQLite writer; WD-007 adds retention, redaction,
+cooperative quotas, pins, and persistent loss diagnostics. No new dependency or
+service is required. Data lives in the registered project's UUID directory,
+outside its source checkout. Vendor transcripts are never cleanup targets.
 
 ```python
-from agent_watchdog.config import user_paths
 from agent_watchdog.storage import Inbox, Store
 
-# event is an already normalized Envelope for a registered project.
-root = user_paths().project_data(event.project_id)
-inbox = Inbox(root)
+# root = user_paths().project_data(event.project_id)
+# limits = project.overrides.apply(config.defaults)
+inbox = Inbox(root, limits=limits)
 inbox.publish(event)
-with Store(root, event.project_id) as store:
+with Store(root, event.project_id, limits=limits) as store:
     result = inbox.drain(store)
+    store.pin(event.session_id)  # Requires an already observed, nonempty session.
+    store.maintain()
 ```
 
-## Delivery and replay
+## Defaults and admission
 
-- `publish` validates and serializes the whole envelope, flushes a sibling `.tmp`
-  file with fsync, then renames it to a unique delivery `.json` file. Repeated
-  deliveries never overwrite one another. The default serialized envelope limit
-  is 1 MiB; larger records are rejected before creating files.
-- `drain` requires an open writer for the same directory. It processes up to 100
-  files per call by default and ignores unfinished `.tmp` files. Filesystem order
-  is not an event-time ordering guarantee.
-- Persisted records must explicitly contain `schema_version`, `event_id`, and
-  `received_at`. Construction defaults must never create new identities on replay.
-- Each accepted event is inserted in a SQLite transaction. The inbox file is
-  removed only after COMMIT. A crash before COMMIT leaves the event for retry; a
-  crash after COMMIT but before acknowledgement leaves a duplicate delivery.
-- The event UUID is the primary key. Identical canonical envelopes and artifact
-  references return a duplicate result. Reuse of a UUID with different content
-  is rejected, never silently overwritten. There is no text-based deduplication
-  of distinct event UUIDs or inferred native-event deduplication.
-- SQLite and filesystem failures propagate to the caller; the unacknowledged
-  input remains retryable. Earlier items in that batch may already be committed.
-  Fail-open adapter behavior belongs to WD-006, not this storage primitive.
+| Setting | Default | Meaning |
+| --- | --- | --- |
+| `capture_content` | true | Capture selected native text fields; false keeps metadata only |
+| `content_days` | 30 | Expire provider payload and artifact references |
+| `metrics_days` | 180 | Expire events and replay fingerprints |
+| `project_bytes` | 2 GiB | Account for regular files under the project data directory |
+| `inbox_bytes` | 64 MiB | Bound pending deliveries and inbox temporary files |
+| `payload_bytes` | 1 MiB | Bound raw hook input and serialized envelopes |
+| `reserve_bytes` | 1 MiB | Withhold room for cleanup and diagnostics |
+| `log_files`, `log_bytes` | 5, 10 MiB | Reserved configuration; no append-only logger exists |
 
-## Database and writer ownership
+All settings support global defaults and project overrides. Admission checks both
+remaining project budget and actual free disk space, withholding the reserve from
+each. This margin is not a preallocated reservation against other applications.
+Filesystem allocation overhead and unrelated writers are outside this cooperative
+quota. Impractically small budgets refuse initialization or new events.
 
-`Store` holds a nonblocking OS lock on `writer.lock` until its context closes.
-The lock file stays in place; process exit releases the handle. A second Store
-writer raises `WriterBusy`. This protects cooperating local writers; it is not
-a security boundary against another application writing the database directly.
-The [WD-005 daemon](daemon.md) holds a separate per-user lifetime lock.
+Publishers and storage writes/maintenance share `admission.lock`, with a 100 ms
+acquisition timeout. Pending temporary files count; SQLite admission additionally
+budgets database/WAL growth and transaction overhead. Database, WAL, SHM,
+artifacts, quarantine, diagnostics, lock files, and auxiliary files consume space.
+Shared content-addressed artifacts count once. Pins do not waive the quota.
 
-`events.sqlite3` uses WAL, synchronous FULL, and foreign-key enforcement. Schema
-version 0 is migrated to version 1 only for an empty database, in one transaction.
-The metadata table binds it to a project UUID. Unsupported versions, unrelated
-unversioned databases, and a mismatched project UUID are refused before changing
-journal settings or applying migrations. The current release needs only the
-initial migration; it has no migration framework.
+## Redaction and content
 
-`Store.events(limit=100, offset=0)` returns a bounded page in insertion order
-(maximum page size 1000). `connection` exposes the active SQLite connection for
-local diagnostics and tests; callers must not bypass the transaction protocol.
-Independent read-only SQLite connections can read while the writer is open.
-The CLI read-only reporting interface remains WD-008.
+Hooks capture native `prompt`, `tool_input`, `tool_response`, and
+`last_assistant_message` fields when present. Capture defaults to true for
+registered projects; set `capture_content = false` globally or per project to
+omit text. Arbitrary native fields and transcript paths are not copied.
+`Inbox.publish` and `Store.put` also sanitize inputs before writing temporary or
+persistent files. Artifact names cannot collide after redaction. Only UTF-8 text
+artifacts are supported, capped at 8 MiB per call before and after redaction.
 
-## Quarantine and artifacts
+The deterministic filter removes credential-valued dictionary fields, common
+OpenAI/GitHub/AWS access-key forms, Bearer/Basic credentials, password/token/API-key
+assignments, credential URLs, and complete or truncated PEM private-key blocks.
+It can over-redact and does not detect arbitrary prose secrets, all token formats,
+encoded data, or split credentials. It is not anonymization and does not
+retroactively sanitize data from an earlier release.
 
-Malformed/oversized envelopes, missing replay identity, unknown envelope schemas,
-project mismatches, and conflicting UUIDs do not block later input. Retain rejected
-raw files under `quarantine/*.bad`, bounded by 128 files and 8 MiB by default.
-Evict the oldest retained files before adding a new one. A file larger than the
-entire quarantine budget is discarded. Symlink inputs are unlinked without
-reading their targets. Limits are constructor arguments until user-facing quota
-configuration is completed in WD-007.
+Rejected malformed/oversized envelopes, unsupported schemas, missing replay IDs,
+wrong projects, and conflicting UUIDs never enter quarantine as raw text. A `.bad`
+record contains only a generic reason and byte count. Quarantine is bounded by
+128 files and 8 MiB; oldest diagnostics are evicted first. Input symlinks are
+unlinked without reading their targets. Linked inbox/artifact/quarantine
+directories are refused.
 
-`DrainResult` reports inserted events, duplicates, quarantine admissions, and
-discards (including evictions). Admissions are not the final retained file count.
-These are per-call results; persistent loss accounting remains WD-007.
+## Delivery, migration, and recovery
 
-`Store.put(event, artifacts={"stdout": content_bytes})` optionally stores artifacts.
-Names are database labels, never filesystem paths. Total artifact bytes per call
-are limited to 8 MiB by default. Filenames use SHA-256; identical content is shared
-within a project. Complete artifact files are written before committing the event
-and its references together. `read_artifact` checks size and content hash and never
-accepts an arbitrary caller-supplied path. Inbox files carry envelopes only; later
-ingestion can extract large fields and pass artifacts to Store directly.
+Publishing validates the envelope, fsyncs a sibling `.tmp`, and renames it to a
+unique delivery `.json`. The event UUID stays unchanged. `drain` processes at most
+100 files by default, in filesystem order, with an open Store for the same root.
+Persisted envelopes must explicitly contain schema version, event UUID, and
+received time. SQLite commits events and artifact references together before
+acknowledging inbox files. I/O/SQLite failures leave input retryable, including a
+commit/ack crash. A fingerprint of the original sanitized event and artifact
+references preserves deduplication after content expiry. Changed content under
+the same UUID is rejected. Fingerprints expire with the event metrics.
 
-## Deliberate limits and verification
+`writer.lock` gives one Store ownership per project. SQLite uses WAL, synchronous
+FULL, foreign keys, and secure deletion of freed cells. Schema v2 adds session pins
+and replay fingerprints. New databases enable incremental vacuum before creating
+tables; v1 databases need a one-time VACUUM rebuild with a space check. If the
+rebuild cannot finish, reopening retries it. Unknown versions, unrelated
+unversioned databases, and wrong project ownership are refused before journal or
+migration changes. Upgrade preserves existing content.
 
-This does not provide retention, total project/inbox quotas, redaction, automatic
-artifact extraction, or cleanup of crash-leftover `.tmp` and unreferenced artifact
-files. Those remain WD-006/WD-007. Inputs must already be suitable for local
-persistence; no real provider hooks are connected by this task.
+`Store.events(limit=100, offset=0)` returns at most 1000 events in insertion order.
+`read_artifact(event_id, name)` checks size and SHA-256 and never accepts an
+arbitrary path. Read-only SQLite connections may coexist with the writer.
+The project/session CLI remains WD-008.
 
-The process-crash tests terminate only their own subprocesses before event COMMIT,
-after COMMIT but before inbox acknowledgement, and before migration COMMIT. They
-verify rollback, replay without duplicates, and released writer ownership. Other
-tests cover bad input, bounded quarantine, schema protection, project isolation,
-artifact failures/integrity, and concurrent read-only access. They do not simulate
-power loss or guarantee directory-entry durability across every filesystem.
-Windows is tested locally; macOS/Linux host validation remains WD-019.
+## Retention and pins
 
-References: [SQLite WAL](https://www.sqlite.org/wal.html),
-[SQLite schema version](https://www.sqlite.org/pragma.html#pragma_user_version),
-[Windows byte-range locks](https://docs.python.org/3/library/msvcrt.html#msvcrt.locking).
+The daemon maintains each project on first access and at most once per minute
+thereafter; storage admission also requests cleanup under quota pressure.
+Retention uses received time. Unpinned provider payload and artifact references
+expire after 30 days; events expire after 180 days. Payload is removed as a unit
+so unknown provider fields cannot retain text indefinitely. Core event identity,
+kind, times, and availability remain.
+
+Under pressure, cleanup removes oldest unpinned content, then oldest unpinned
+sessions. Null-session events form one unpinned group. Pins protect the entire
+session, including later events sharing its ID, from expiry and eviction.
+`store.pin(session_id, pinned=False)` removes protection. User-facing pin, label,
+and export commands remain WD-011.
+
+Cleanup removes unreferenced hash-named artifacts and `.tmp` files older than one
+hour in Watchdog-owned locations. Referenced shared artifacts and recent temporary
+files survive. Incremental vacuum and WAL checkpoint reclaim disk space. A reader
+can delay truncation; admission can remain degraded until it releases its
+snapshot. Cleanup is not forensic erasure of backups, snapshots, or old WAL
+readers. Vendor transcript directories are never scanned.
+
+## Loss diagnostics and degraded state
+
+`daemon status` includes persistent counters even when stopped: project quota,
+oversized payload, invalid event, I/O, and busy-admission rejections, plus
+adapter-level failures that cannot be assigned to a project. They count rejected
+observations, not expiry or retries of retained deliveries. Pause and unregistered
+projects are intentional exclusions.
+
+Counters use a fixed 40-byte file and a separate short lock. Updates reuse allocated
+bytes and fsync, allowing an initialized counter to survive a simulated ENOSPC
+publication failure without allocating a temporary file. Persistence is best
+effort when the directory cannot be created, the lock times out, permissions are
+lost, or the device refuses writes. This is not a power-loss-safe audit ledger.
+Corrupt counters are reported unavailable instead of reset. Status returns at
+most 32 project counter groups; direct `resources.losses(root)` reads any project.
+
+Project write failures or exhausted capacity produce degraded daemon status. A
+full inbox still triggers a missing daemon's restart so cleanup can resume. Hooks
+keep returning the no-op response. Historical loss counts alone do not keep a
+recovered daemon degraded.
+
+## Verification
+
+Offline pytest covers concurrent quotas and loss counting, pin saturation,
+content/metric expiry, replay after expiry, shared artifacts, stale temporary and
+orphan cleanup, physical SQLite shrink, WAL/auxiliary accounting, v1 upgrade,
+known-secret removal, and simulated disk-full publication. Existing process-crash
+tests cover migration, commit, and acknowledgement. See [verification](verification.md)
+for actual runs. Other-OS host validation remains WD-019.
+
+References: [SQLite auto-vacuum](https://www.sqlite.org/pragma.html#pragma_auto_vacuum),
+[incremental vacuum](https://www.sqlite.org/pragma.html#pragma_incremental_vacuum),
+[WAL checkpoints](https://www.sqlite.org/pragma.html#pragma_wal_checkpoint).
