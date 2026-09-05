@@ -1,7 +1,8 @@
 # WD-003 configuration, registry, and events
 
-Implemented as a small Python library. There is no daemon, adapter installer, or
-project CLI yet; those remain WD-004 through WD-008. Importing these modules does
+Implemented as a small Python library, now backed by WD-004 [storage](storage.md).
+There is no daemon, adapter installer, or project CLI yet; those remain WD-005
+through WD-008. Importing these modules does
 not register projects, create directories, install hooks, or start processes.
 
 ## Configuration
@@ -82,7 +83,7 @@ assigned at construction; JSON round trips retain both for replay.
 Payloads are empty or namespaced by the provider, for example
 `{"codex": {"hook_event_name": "FutureEvent"}}`. Unknown provider event names can
 be retained with kind `unknown`; that is not a support claim. Unknown envelope
-schema versions are rejected, leaving quarantine handling to WD-004. Availability
+schema versions are rejected and quarantined by WD-004 ingestion. Availability
 uses `observed`, `inferred`, `unknown`, or `unavailable`, never an invented zero.
 Serialization does not redact content; redaction and input-size limits belong to
 the ingestion boundary in WD-006/WD-007.
