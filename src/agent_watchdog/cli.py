@@ -1,19 +1,23 @@
 import argparse
 import json
+import sqlite3
 import sys
 import time
 from pathlib import Path
+from uuid import UUID
 
 from agent_watchdog import daemon
-from agent_watchdog.config import UserPaths, user_paths
+from agent_watchdog.config import UserPaths, load_config, user_paths
 from agent_watchdog.hook_install import change
 from agent_watchdog.hooks import observe
+from agent_watchdog.registry import RegistryError
+from agent_watchdog.storage import StorageError
 
 
 def main() -> int:
     parser = argparse.ArgumentParser(
         prog="agent-watchdog",
-        description="Local watchdog core and metadata-only Codex observation hooks.",
+        description="Local watchdog core, Codex observation hooks, and session inspection.",
     )
     parser.add_argument("--home", type=Path, help="Isolated config, data and runtime directory")
     parser.add_argument("--config", type=Path)
@@ -30,6 +34,30 @@ def main() -> int:
     hooks.add_argument("provider", choices=("codex",))
     hooks.add_argument("--file", type=Path, required=True)
     hooks.add_argument("--apply", action="store_true", help="Apply changes; default is dry-run")
+    projects = commands.add_parser("project", help="Manage explicitly registered projects")
+    actions = projects.add_subparsers(dest="action", required=True)
+    actions.add_parser("list")
+    actions.add_parser("add").add_argument("path", type=Path)
+    actions.add_parser("remove").add_argument("project_id", type=UUID)
+    relocate = actions.add_parser("relocate")
+    relocate.add_argument("project_id", type=UUID)
+    relocate.add_argument("path", type=Path)
+    commands.add_parser("doctor", help="Inspect configuration, storage, and daemon health")
+    sessions = commands.add_parser(
+        "sessions", help="Read collected sessions without starting collection"
+    )
+    views = sessions.add_subparsers(dest="action", required=True)
+    for action in ("list", "show"):
+        view = views.add_parser(action)
+        view.add_argument("--project", type=UUID, help="Project UUID; default resolves cwd")
+        view.add_argument("--limit", type=int, default=100)
+        view.add_argument("--offset", type=int, default=0)
+        if action == "show":
+            view.add_argument("session_id", nargs="?")
+            view.add_argument(
+                "--unassigned", action="store_true", help="Show events without session identity"
+            )
+            view.add_argument("--provider", default="codex")
     args = parser.parse_args()
     if args.command is None:
         parser.print_help()
@@ -44,6 +72,56 @@ def main() -> int:
         (args.runtime or paths.runtime).resolve(),
     )
     try:
+        if args.command == "project":
+            if args.action == "list":
+                result = {
+                    "projects": [
+                        project.model_dump(mode="json")
+                        for project in load_config(paths.config).projects
+                    ]
+                }
+            else:
+                from agent_watchdog.registry import Registry
+
+                def mutate(registry: Registry) -> None:
+                    nonlocal result
+                    if args.action == "add":
+                        result = registry.add(args.path).model_dump(mode="json")
+                    elif args.action == "relocate":
+                        result = registry.relocate(args.project_id, args.path).model_dump(
+                            mode="json"
+                        )
+                    else:
+                        registry.remove(args.project_id)
+                        result = {"removed": str(args.project_id), "data_deleted": False}
+
+                result = {}
+                daemon.mutate_registry(paths, mutate)
+            print(json.dumps(result))
+            return 0
+        if args.command in ("doctor", "sessions"):
+            from agent_watchdog import inspection
+
+            if args.command == "doctor":
+                report = inspection.doctor(paths)
+                print(json.dumps(report))
+                return 0 if report["ok"] else 1
+            project = inspection.project_at(paths, args.project)
+            if args.action == "list":
+                result = inspection.sessions(paths, project, limit=args.limit, offset=args.offset)
+            else:
+                if (args.session_id is None) == (not args.unassigned):
+                    raise StorageError("Select a session ID or --unassigned")
+                result = inspection.show(
+                    paths,
+                    project,
+                    args.session_id,
+                    provider=args.provider,
+                    limit=args.limit,
+                    offset=args.offset,
+                )
+            print(json.dumps(result))
+            return 0
         if args.command == "hook":
             try:
                 observe(paths, sys.stdin.buffer)
@@ -83,7 +161,10 @@ def main() -> int:
                 print(json.dumps(report | {"error": "Daemon control timed out"}))
                 return 1
             time.sleep(0.05)
-    except (OSError, ValueError) as error:
+    except (StorageError, RegistryError) as error:
+        print(json.dumps({"error": type(error).__name__, "message": str(error)}))
+        return 1
+    except (OSError, ValueError, sqlite3.Error) as error:
         print(json.dumps({"error": type(error).__name__}))
         return 1
     except KeyboardInterrupt:

@@ -2,7 +2,7 @@
 
 A local external observer for Codex coding sessions, built on top of the stock harness. Claude Code support is a later independent milestone. One process per user, lightweight hook adapters, and one SQLite database per repository.
 
-**Status:** A local [background core](docs/daemon.md), [Codex hooks with an explicit installer](docs/hooks.md), validated configuration and registry ([API](docs/contracts.md)), and [SQLite storage with retention, quotas, and redaction](docs/storage.md). Project CLI and analysis remain planned. See [ROADMAP.md](ROADMAP.md), [TODO.md](TODO.md), and [DONE.md](DONE.md).
+**Status:** A local [background core](docs/daemon.md), [Codex hooks with an explicit installer](docs/hooks.md), validated configuration and registry ([API](docs/contracts.md)), and [SQLite storage with retention, quotas, and redaction](docs/storage.md). Project registration, doctor, and session inspection are available through the [CLI](docs/cli.md). Analysis remains planned; the measured Python hook latency exceeds target, so WD-024 adds a Rust adapter before WD-009. See [ROADMAP.md](ROADMAP.md), [TODO.md](TODO.md), and [DONE.md](DONE.md).
 
 ## Agreed behavior
 

@@ -90,7 +90,7 @@ migration changes. Upgrade preserves existing content.
 `Store.events(limit=100, offset=0)` returns at most 1000 events in insertion order.
 `read_artifact(event_id, name)` checks size and SHA-256 and never accepts an
 arbitrary path. Read-only SQLite connections may coexist with the writer.
-The project/session CLI remains WD-008.
+The [project/session CLI](cli.md) is available.
 
 ## Retention and pins
 

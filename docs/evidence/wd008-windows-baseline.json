@@ -1,0 +1,45 @@
+{
+  "schema_version": 1,
+  "python": "3.12.13",
+  "os": "Windows-11-10.0.22621-SP0",
+  "scope": "synthetic hook process wall time including Python and Git; daemon already running",
+  "first_ms": 638.7873999774456,
+  "sequential": {
+    "samples": 40,
+    "p50_ms": 638.8060000026599,
+    "p95_ms": 1089.5130000426434,
+    "max_ms": 2279.8965999973007
+  },
+  "concurrent_four": {
+    "samples": 40,
+    "p50_ms": 937.4144999892451,
+    "p95_ms": 1505.6675999658182,
+    "max_ms": 1753.7507000379264
+  },
+  "idle": {
+    "seconds": 20.60899999999674,
+    "cpu_seconds": 0.21875,
+    "working_set_bytes": 34414592
+  },
+  "events": 81,
+  "sessions": 2,
+  "checkouts": 2,
+  "restart_preserved": true,
+  "losses": {
+    "adapter": {
+      "quota": 0,
+      "payload": 0,
+      "invalid": 0,
+      "io": 0,
+      "busy": 0
+    },
+    "b5878c09-f44d-4bc4-89be-ea63d0b98365": {
+      "quota": 0,
+      "payload": 0,
+      "invalid": 0,
+      "io": 0,
+      "busy": 0
+    }
+  },
+  "native_provider_validation": false
+}

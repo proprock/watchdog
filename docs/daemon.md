@@ -61,7 +61,7 @@ backing off to two seconds when idle. Project writers close between batches.
 One unavailable project is reported and retried without blocking other projects.
 Configuration is reread each iteration. Status snapshots replace one file instead
 of producing an unbounded process log. Large project counts and idle overhead
-measurement remain WD-008. WD-007 [storage policy](storage.md) enforces quotas and
+validation remains WD-024 after the WD-008 Python baseline exceeded the latency target. WD-007 [storage policy](storage.md) enforces quotas and
 retention and exposes persistent rejection counters in `daemon status`.
 
 ## Python entry points

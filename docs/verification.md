@@ -1,5 +1,55 @@
 # Foundation verification
 
+## WD-008 CLI and performance baseline
+
+2026-09-06, Windows, CPython 3.12.13. New pytest cases first failed because the
+project/doctor/sessions commands were absent. The full suite subsequently passed
+148 tests, including the separate WD-025 counter fix. Ruff lint/format and ty
+passed. Read commands use SQLite read-only snapshots without opening a Store or
+running migrations; tests cover missing/corrupt/future/wrong-project databases,
+pagination, session separation, and data preservation during registry changes.
+Wheel and sdist built; a fresh offline wheel installation passed project add,
+sessions list/show, doctor, and hook-to-daemon-to-SQLite capture/redaction checks.
+The first smoke reached the SQLite file before table creation; adding a table
+readiness check corrected the probe. Its daemon stopped and temporary state was
+removed after both attempts.
+
+The [synthetic baseline](evidence/wd008-windows-baseline.json) used two session
+identities in one Git repository and a separate worktree: 40 sequential and 40
+four-way concurrent calls plus one initial call. All 81 records survived daemon
+restart, with zero recorded losses. Sequential p95 was 1089.5 ms; concurrent p95
+was 1505.7 ms. This exceeds the 250 ms target. Idle CPU was 0.219 seconds over
+20.609 seconds, with 34,414,592 bytes working set. Python/import profiling measured
+roughly 80-87 ms for an empty interpreter and 478-542 ms including configuration
+imports; config import cumulative time was about 349 ms in an import-time sample.
+The user selected a small Rust adapter in WD-024 before WD-009, preserving the
+Python core and inbox contract. These figures are a baseline, not target success.
+
+The native CLI reported version 0.153.4; its interactive banner reported 0.153.3.
+Two scratch hook files were prepared with the production two-second timeout.
+The primary startup's native review trusted 11 definitions with user approval;
+both CLI `/hooks` screens then showed 11 active handlers. The worktree did not
+request a separate review; this does not establish that both files were loaded.
+Two concurrent coding probes each ran one ten-second PowerShell command, with
+intentional exit codes 0 and 1, and completed their requested reply.
+
+Initial hook observations failed Git ownership validation: the scratch repositories
+were created by the sandbox account and native hooks ran in a different account
+context. Only the scratch roots/Git metadata ownership was corrected; no global
+safe.directory exception was added. After that change, repeated native calls
+reported `hook timed out after 2s`. No collected database was available at final
+inspection, and adapter diagnostics recorded ten invalid observations. Those
+counters do not enumerate every native timeout because a killed Python process
+cannot reliably record its own failure. Concurrent native collection and desktop
+event coverage therefore did not pass.
+
+The user explicitly moved the remaining concurrent CLI/desktop and desktop event
+matrix, plus target latency acceptance, to WD-024. WD-008 is closed for its CLI,
+baseline, and documented failed live attempt; the failed acceptance is not erased.
+Both probe TUIs exited, their tasks were archived, both hook files were uninstalled,
+and the isolated daemon state was paused with `alive=false`. Native trust records
+were not fabricated or copied. Other-OS hosts remain WD-019; remote CI was not run.
+
 ## WD-007 storage policy
 
 2026-09-06 (local date), Windows, CPython 3.12.13. TDD first exposed missing

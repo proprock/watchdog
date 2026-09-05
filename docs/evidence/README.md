@@ -1,5 +1,9 @@
 # WD-002 live evidence
 
+`wd008-windows-baseline.json` is a separate **synthetic** hook-process and idle
+benchmark, not native provider evidence. See [CLI measurement](../cli.md) for its
+workload, commands, and the unmet latency target assigned to WD-024.
+
 `wd002-windows.json` contains sanitized summaries captured on 2026-09-05 by
 `scripts/capture_hook.py`. These are live structural observations, not replayable
 provider input fixtures. Synthetic examples remain under `tests/fixtures/hooks`.

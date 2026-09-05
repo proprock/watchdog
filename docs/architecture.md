@@ -1,6 +1,6 @@
 # Architecture and contracts
 
-Status: accepted design decisions. WD-003 [contracts](contracts.md), WD-004/007 [storage, retention, and redaction](storage.md), WD-005 [daemon](daemon.md), and WD-006 [hooks](hooks.md) are implemented. Project CLI and analysis remain planned. The implementation reports record exact verified boundaries. Date: 2026-09-06.
+Status: accepted design decisions. WD-003 [contracts](contracts.md), WD-004/007 [storage, retention, and redaction](storage.md), WD-005 [daemon](daemon.md), and WD-006 [hooks](hooks.md) are implemented. WD-008 provides the [observation CLI](cli.md). Analysis remains planned; WD-024 will replace the slow Python adapter with Rust, retaining the Python core and inbox contract. The implementation reports record exact verified boundaries. Date: 2026-09-06.
 
 ## Boundaries
 

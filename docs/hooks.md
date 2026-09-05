@@ -81,7 +81,7 @@ identity lookup has a 250 ms subprocess timeout; raw input is capped at the larg
 registered payload limit before parsing, then at the selected project's limit
 (1 MiB by default). Each admission/diagnostic lock waits at most 100 ms. Native
 handlers are synchronous with a two-second timeout. These bounds are not a p95
-whole-hook latency measurement; that acceptance remains WD-008.
+whole-hook latency measurement; WD-008 measured an above-target baseline; the Rust adapter and native acceptance remain WD-024.
 
 Normal completion and handled failures emit exactly `{}` and exit zero. The adapter
 does not return continuation, denial, context, or other control fields. Missing
