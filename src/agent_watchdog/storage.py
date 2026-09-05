@@ -4,7 +4,6 @@ import hashlib
 import json
 import os
 import sqlite3
-import tempfile
 from collections.abc import Iterator, Mapping
 from contextlib import ExitStack, contextmanager
 from dataclasses import dataclass
@@ -15,6 +14,7 @@ from uuid import UUID, uuid4
 from pydantic import ValidationError
 
 from agent_watchdog.events import Envelope
+from agent_watchdog.files import atomic_write as atomic_write
 
 
 class StorageError(ValueError):
@@ -53,21 +53,6 @@ def writer_lock(path: Path) -> Iterator[None]:
             except OSError as error:
                 raise WriterBusy("Project writer is unavailable") from error
         yield
-
-
-def atomic_write(path: Path, content: bytes) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    temporary: Path | None = None
-    try:
-        with tempfile.NamedTemporaryFile(dir=path.parent, suffix=".tmp", delete=False) as stream:
-            temporary = Path(stream.name)
-            stream.write(content)
-            stream.flush()
-            os.fsync(stream.fileno())
-        temporary.replace(path)
-    finally:
-        if temporary is not None:
-            temporary.unlink(missing_ok=True)
 
 
 def canonical(event: Envelope) -> str:

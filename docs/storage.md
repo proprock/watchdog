@@ -44,7 +44,7 @@ with Store(root, event.project_id) as store:
 The lock file stays in place; process exit releases the handle. A second Store
 writer raises `WriterBusy`. This protects cooperating local writers; it is not
 a security boundary against another application writing the database directly.
-The per-user daemon lock remains WD-005.
+The [WD-005 daemon](daemon.md) holds a separate per-user lifetime lock.
 
 `events.sqlite3` uses WAL, synchronous FULL, and foreign-key enforcement. Schema
 version 0 is migrated to version 1 only for an empty database, in one transaction.

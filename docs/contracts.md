@@ -1,8 +1,8 @@
 # WD-003 configuration, registry, and events
 
 Implemented as a small Python library, now backed by WD-004 [storage](storage.md).
-There is no daemon, adapter installer, or project CLI yet; those remain WD-005
-through WD-008. Importing these modules does
+The [daemon](daemon.md) now coordinates collection and registry mutations; the
+adapter installer and project CLI remain WD-006 through WD-008. Importing these modules does
 not register projects, create directories, install hooks, or start processes.
 
 ## Configuration
@@ -35,9 +35,9 @@ are rejected. TOML serialization omits optional values rather than inventing nul
 
 `save_config(path, config)` validates, writes a sibling temporary file, and replaces
 the destination. An invalid existing configuration is protected from overwrite.
-This library does not coordinate concurrent writers: callers must serialize
-registry updates. The daemon/CLI workflow must enforce this before exposing
-mutating commands. No config migration or general settings framework is provided.
+This low-level function does not coordinate concurrent writers. Use
+`daemon.mutate_registry(paths, callback)` for serialized load/edit/save operations.
+No config migration or general settings framework is provided.
 
 ## Registry
 

@@ -1,8 +1,6 @@
 """Versioned user configuration; no directories are created during reads."""
 
 import json
-import os
-import tempfile
 import tomllib
 from dataclasses import dataclass
 from pathlib import Path
@@ -13,6 +11,7 @@ import tomli_w
 from platformdirs import PlatformDirs
 from pydantic import Field, ValidationError, field_validator, model_validator
 
+from agent_watchdog.files import atomic_write
 from agent_watchdog.models import Positive, StrictModel, Versioned
 
 
@@ -125,22 +124,10 @@ def load_config(path: Path) -> Config:
 
 def save_config(path: Path, config: Config) -> None:
     """Atomically replace a valid config. Callers must serialize registry mutations."""
-    temporary: Path | None = None
     try:
         load_config(path)  # Never overwrite a corrupt or unsupported existing schema.
         validated = Config.model_validate_json(config.model_dump_json())
         content = tomli_w.dumps(validated.model_dump(mode="json", exclude_none=True))
-        path.parent.mkdir(parents=True, exist_ok=True)
-        with tempfile.NamedTemporaryFile(
-            mode="w", encoding="utf-8", newline="\n", dir=path.parent, delete=False
-        ) as stream:
-            temporary = Path(stream.name)
-            stream.write(content)
-            stream.flush()
-            os.fsync(stream.fileno())
-        temporary.replace(path)
+        atomic_write(path, content.encode("utf-8"))
     except (OSError, ValidationError) as error:
         raise ConfigError("Could not save configuration") from error
-    finally:
-        if temporary is not None:
-            temporary.unlink(missing_ok=True)

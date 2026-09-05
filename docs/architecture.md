@@ -1,6 +1,6 @@
 # Architecture and contracts
 
-Status: accepted design decisions. WD-003 [contracts](contracts.md) and WD-004 [inbox/storage](storage.md) are implemented as libraries; daemon, live collection, retention, and analysis remain planned. Date: 2026-09-05.
+Status: accepted design decisions. WD-003 [contracts](contracts.md), WD-004 [inbox/storage](storage.md), and the WD-005 [daemon](daemon.md) are implemented. Live hook collection, retention, and analysis remain planned. The daemon report records the exact verified lifecycle boundaries. Date: 2026-09-05.
 
 ## Boundaries
 
@@ -33,7 +33,7 @@ Resolve user config/data/runtime directories with platformdirs. User TOML contai
 
 One directory per UUID: SQLite (WAL), inbox, artifacts, and quarantine. The registry contains no aggregate analytics. Store large raw outputs as separate redacted artifacts; the database holds references, fingerprints, and bounded excerpts. Do not read arbitrary paths supplied by hooks: transcripts must be within known provider directories and associated with the observed session. Do not recursively scan all user files.
 
-The core is the only database writer. The CLI uses read-only connections; labels, pin, and purge pass through the control inbox with a request ID and acknowledgment. Read-only reports work while the core is stopped. Require a schema version and sequential migrations; reject unsupported newer schemas with a clear error and no overwrite.
+The core is the only database writer. The CLI uses read-only connections; future labels, pin, and purge pass through a control inbox with request IDs and acknowledgments. WD-005 implements only a single-slot desired-state file for lifecycle controls; it does not add a general command queue. Read-only reports will work while the core is stopped. Require a schema version and sequential migrations; reject unsupported newer schemas with a clear error and no overwrite.
 
 Defaults are configurable in user TOML, with overrides by project UUID:
 

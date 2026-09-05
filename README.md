@@ -2,7 +2,7 @@
 
 A local external observer for Codex coding sessions, built on top of the stock harness. Claude Code support is a later independent milestone. One process per user, lightweight hook adapters, and one SQLite database per repository.
 
-**Status:** Python library with validated configuration, registry and event contracts ([API](docs/contracts.md)), plus an atomic inbox and SQLite project store ([storage](docs/storage.md)). Live event collection, the background core, project CLI, and hook installation are not implemented yet. See [ROADMAP.md](ROADMAP.md) for milestones, [TODO.md](TODO.md) for open work, and [DONE.md](DONE.md) for completed work.
+**Status:** A local [background core](docs/daemon.md) with start/stop/pause/status commands, validated configuration and registry ([API](docs/contracts.md)), and an atomic inbox with SQLite project storage ([storage](docs/storage.md)). Live hook collection, project CLI, retention, and analysis are not implemented yet. See [ROADMAP.md](ROADMAP.md) for milestones, [TODO.md](TODO.md) for open work, and [DONE.md](DONE.md) for completed work.
 
 ## Agreed behavior
 

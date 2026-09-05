@@ -2,7 +2,7 @@
 
 Date: 2026-09-05. Windows, CPython 3.12.13. The locally resolved Codex version command reported 0.153.4; the interactive probe banner reported 0.153.3. Claude CLI reported 2.1.259. Desktop backend versions are not inferred from installed CLI versions.
 
-**Status:** WD-002 is complete as a compatibility investigation with user-accepted limitations. Codex process-container survival is assigned to WD-005; remaining Codex desktop event checks stay in WD-008. Claude implementation and remaining event/lifecycle validation belong to M-Anthropic / WD-022, after WD-014 and before WD-015. Untested cells below remain untested.
+**Status:** WD-002 is complete as a compatibility investigation with user-accepted limitations. Subsequent Codex lifecycle evidence is in the [WD-005 daemon report](daemon.md); remaining Codex desktop event checks stay in WD-008. Claude implementation and remaining event/lifecycle validation belong to M-Anthropic / WD-022, after WD-014 and before WD-015. Untested event cells below remain untested.
 
 This report distinguishes live observations from documented capabilities and untested combinations. The observer runtime and installer are not implemented yet.
 
@@ -52,7 +52,7 @@ Claude desktop uses project-local `.claude/settings.local.json` in a dedicated s
 | Claude init-only SessionStart, Windows | Verified child response after Claude exit |
 | Codex CLI and both desktop process containers | Not tested; no survival claim |
 
-Logout persistence, singleton locks, crash recovery, and the actual daemon belong to WD-005. Codex CLI/desktop process-container survival still needs evidence before M1 acceptance; Claude CLI/desktop survival is required under WD-022; the generic experiment is not a substitute. macOS/Linux host access and compatibility verification are deferred to M5 / WD-019 by the user's decision.
+The subsequent [WD-005 report](daemon.md) verifies singleton ownership, crash recovery, actual CLI exit, and desktop task unload. The user accepted task unload as the desktop lifecycle boundary for WD-005; full application shutdown and logout persistence are not claimed. Claude CLI/desktop survival is required under WD-022; the generic experiment is not a substitute. macOS/Linux host access and compatibility verification are deferred to M5 / WD-019 by the user's decision.
 
 ## Reproduction and verification
 
