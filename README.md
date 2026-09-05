@@ -2,7 +2,7 @@
 
 A local external observer for Codex coding sessions, built on top of the stock harness. Claude Code support is a later independent milestone. One process per user, lightweight hook adapters, and one SQLite database per repository.
 
-**Status:** A local [background core](docs/daemon.md) with start/stop/pause/status commands, validated configuration and registry ([API](docs/contracts.md)), and an atomic inbox with SQLite project storage ([storage](docs/storage.md)). Live hook collection, project CLI, retention, and analysis are not implemented yet. See [ROADMAP.md](ROADMAP.md) for milestones, [TODO.md](TODO.md) for open work, and [DONE.md](DONE.md) for completed work.
+**Status:** A local [background core](docs/daemon.md), [metadata-only Codex hooks with an explicit installer](docs/hooks.md), validated configuration and registry ([API](docs/contracts.md)), and SQLite project storage ([storage](docs/storage.md)). Project CLI, content capture/redaction, retention, and analysis remain planned. See [ROADMAP.md](ROADMAP.md), [TODO.md](TODO.md), and [DONE.md](DONE.md).
 
 ## Agreed behavior
 
@@ -29,6 +29,12 @@ uv build
 ```
 
 The package is `agent_watchdog` and the command is `agent-watchdog`, avoiding a collision with the `watchdog` filesystem monitoring library. Package publication is not currently planned.
+
+To enable observation, follow [registration and hook installation](docs/hooks.md).
+Installation defaults to dry-run and never changes native trust. Review hooks in
+the Codex profile used by the target surface: trust saved under `--profile lean`
+did not apply to desktop in the Windows probe; desktop required native review in
+the base configuration. Do not copy trust records between profiles.
 
 All repository text must be written in English. Rules: [AGENTS.md](AGENTS.md). Contracts: [docs/architecture.md](docs/architecture.md). Sources: [docs/integrations.md](docs/integrations.md).
 

@@ -10,7 +10,7 @@ def test_help_describes_bootstrap_without_starting_collection():
         timeout=10,
     )
     assert result.returncode == 0
-    assert "collection is not implemented" in result.stdout
+    assert "{daemon,hook,hooks}" in result.stdout
 
 
 def test_unknown_command_is_rejected():

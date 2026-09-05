@@ -1,4 +1,6 @@
+import io
 import json
+import os
 import sqlite3
 import subprocess
 import sys
@@ -8,7 +10,19 @@ from uuid import uuid4
 import pytest
 
 from agent_watchdog.events import Envelope
-from agent_watchdog.storage import Inbox, StorageError, Store, WriterBusy
+from agent_watchdog.storage import Inbox, StorageError, Store, WriterBusy, writer_lock
+
+
+@pytest.mark.skipif(os.name != "nt", reason="Windows byte-range lock initialization")
+def test_initial_lock_byte_contention_is_reported_as_busy(tmp_path, monkeypatch):
+    class ContendedFile(io.BytesIO):
+        def flush(self):
+            raise PermissionError("Another owner locked the newly initialized byte")
+
+    monkeypatch.setattr(Path, "open", lambda *args, **kwargs: ContendedFile())
+    with pytest.raises(WriterBusy):
+        with writer_lock(tmp_path / "writer.lock"):
+            pytest.fail("Contended lock was acquired")
 
 
 @pytest.fixture

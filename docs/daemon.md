@@ -1,8 +1,8 @@
 # Local daemon
 
-WD-005 provides a polling core and lifecycle commands. The Codex hook adapter and
-installer remain WD-006; project CLI commands remain WD-008. No hook configuration
-is changed by these commands.
+WD-005 provides a polling core and lifecycle commands. The WD-006 Codex hook adapter
+and installer are described in [hooks.md](hooks.md); project CLI commands remain
+WD-008. Daemon commands do not change hook configuration.
 
 ```console
 agent-watchdog daemon start
@@ -73,7 +73,7 @@ that lock again. Existing low-level `save_config` remains a caller-coordinated A
 same lock, publishes the event with the configured payload cap, and ensures a
 daemon launch without waiting for readiness. It returns false for paused or
 unregistered input. `start(paths, explicit=False)` ensures crash recovery without
-clearing pause. Errors propagate to the future fail-open hook adapter; these are
+clearing pause. Errors propagate to the fail-open hook adapter; these are
 internal library entry points, not a provider hook protocol. They do not redact
 content yet. Low-level `Inbox.publish` deliberately bypasses admission controls
 and is reserved for storage tests and controlled replay.
@@ -97,7 +97,7 @@ These checks establish survival of the tested CLI exit and desktop session unloa
 The user explicitly accepted desktop session unload as sufficient for WD-005.
 They do not establish survival of closing the entire desktop application, logout,
 or every possible Windows job policy. Launch from native hooks and their trust
-boundary remain WD-006. macOS/Linux host verification remains WD-019; it was not
+boundary are covered separately by [WD-006](hooks.md). macOS/Linux host verification remains WD-019; it was not
 performed here. In environments that prohibit detachment, explicitly starting
 the core from an independent user terminal is the manual fallback; automatic
 service installation is outside this milestone.

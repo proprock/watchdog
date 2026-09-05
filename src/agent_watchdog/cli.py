@@ -1,16 +1,19 @@
 import argparse
 import json
+import sys
 import time
 from pathlib import Path
 
 from agent_watchdog import daemon
 from agent_watchdog.config import UserPaths, user_paths
+from agent_watchdog.hook_install import change
+from agent_watchdog.hooks import observe
 
 
 def main() -> int:
     parser = argparse.ArgumentParser(
         prog="agent-watchdog",
-        description="Local watchdog core; live hook collection is not implemented yet.",
+        description="Local watchdog core and metadata-only Codex observation hooks.",
     )
     parser.add_argument("--home", type=Path, help="Isolated config, data and runtime directory")
     parser.add_argument("--config", type=Path)
@@ -19,6 +22,14 @@ def main() -> int:
     commands = parser.add_subparsers(dest="command")
     core = commands.add_parser("daemon", help="Control the local background process")
     core.add_argument("action", choices=("start", "stop", "pause", "status", "run"))
+    hook = commands.add_parser("hook", help="Observe one native hook from stdin")
+    hook.add_argument("provider", choices=("codex",))
+    hook.add_argument("--installation", help=argparse.SUPPRESS)
+    hooks = commands.add_parser("hooks", help="Preview or apply a Codex hooks.json edit")
+    hooks.add_argument("action", choices=("install", "uninstall"))
+    hooks.add_argument("provider", choices=("codex",))
+    hooks.add_argument("--file", type=Path, required=True)
+    hooks.add_argument("--apply", action="store_true", help="Apply changes; default is dry-run")
     args = parser.parse_args()
     if args.command is None:
         parser.print_help()
@@ -33,6 +44,21 @@ def main() -> int:
         (args.runtime or paths.runtime).resolve(),
     )
     try:
+        if args.command == "hook":
+            try:
+                observe(paths, sys.stdin.buffer)
+            except KeyboardInterrupt:
+                pass
+            finally:
+                print("{}")
+            return 0
+        if args.command == "hooks":
+            print(
+                json.dumps(
+                    change(args.file, paths, install=args.action == "install", apply=args.apply)
+                )
+            )
+            return 0
         if args.action == "run":
             return daemon.run(paths)
         if args.action == "start":

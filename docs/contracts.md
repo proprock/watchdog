@@ -2,7 +2,7 @@
 
 Implemented as a small Python library, now backed by WD-004 [storage](storage.md).
 The [daemon](daemon.md) now coordinates collection and registry mutations; the
-adapter installer and project CLI remain WD-006 through WD-008. Importing these modules does
+metadata [hook adapter and installer](hooks.md) are available; project CLI remains WD-008. Importing these modules does
 not register projects, create directories, install hooks, or start processes.
 
 ## Configuration

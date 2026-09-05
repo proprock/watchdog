@@ -4,7 +4,7 @@ Date: 2026-09-05. Windows, CPython 3.12.13. The locally resolved Codex version c
 
 **Status:** WD-002 is complete as a compatibility investigation with user-accepted limitations. Subsequent Codex lifecycle evidence is in the [WD-005 daemon report](daemon.md); remaining Codex desktop event checks stay in WD-008. Claude implementation and remaining event/lifecycle validation belong to M-Anthropic / WD-022, after WD-014 and before WD-015. Untested event cells below remain untested.
 
-This report distinguishes live observations from documented capabilities and untested combinations. The observer runtime and installer are not implemented yet.
+This historical report distinguishes live observations from documented capabilities and untested combinations. The subsequent [WD-006 adapter and installer](hooks.md) now provide metadata-only observation; current live results are in [verification](verification.md).
 
 ## Evidence
 

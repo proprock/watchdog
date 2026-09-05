@@ -32,16 +32,17 @@ class RejectedEvent(StorageError):
 @contextmanager
 def writer_lock(path: Path) -> Iterator[None]:
     """Keep the lock file in place; closing its handle releases ownership."""
-    with path.open("a+b") as stream:
+    # Do not retry a failed initialization write implicitly when closing a buffer.
+    with path.open("a+b", buffering=0) as stream:
         if os.name == "nt":
             import msvcrt
 
-            stream.seek(0, os.SEEK_END)
-            if stream.tell() == 0:
-                stream.write(b"\0")
-                stream.flush()
-            stream.seek(0)
             try:
+                stream.seek(0, os.SEEK_END)
+                if stream.tell() == 0:
+                    stream.write(b"\0")
+                    stream.flush()
+                stream.seek(0)
                 msvcrt.locking(stream.fileno(), msvcrt.LK_NBLCK, 1)
             except OSError as error:
                 raise WriterBusy("Project writer is unavailable") from error

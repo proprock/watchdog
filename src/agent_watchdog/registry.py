@@ -26,7 +26,7 @@ class Resolution:
     root: Path
 
 
-def discover(path: Path) -> Checkout:
+def discover(path: Path, *, timeout: float = 10) -> Checkout:
     try:
         root = path.resolve(strict=True)
         if not root.is_dir():
@@ -47,7 +47,7 @@ def discover(path: Path) -> Checkout:
             capture_output=True,
             text=True,
             encoding="utf-8",
-            timeout=10,
+            timeout=timeout,
             check=True,
         )
         paths = result.stdout.splitlines()
@@ -75,8 +75,8 @@ class Registry:
                 return project
         return None
 
-    def resolve(self, path: Path) -> Resolution | None:
-        checkout = discover(path)
+    def resolve(self, path: Path, *, timeout: float = 10) -> Resolution | None:
+        checkout = discover(path, timeout=timeout)
         project = self._find(checkout)
         if project is None:
             return None

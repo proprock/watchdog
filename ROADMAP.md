@@ -25,7 +25,7 @@ Execution order: M1-M4 for Codex coding only -> M-Anthropic / WD-022 -> App Serv
 1. Provider-neutral typed envelope with a provider field, SQLite migrations, and synthetic fixtures. Keep a small adapter boundary; do not build a general plugin framework before a second implementation is needed. Registry/UUID, worktree resolution, and non-Git roots. Configuration lives outside the checkout.
 2. Atomic inbox, idempotent processing, single writer, OS lock, detached launch, pause/start/stop/status. Crash/replay, concurrent startup, partial files, and quota accounting.
 3. A lightweight Codex command adapter; normalization aware of versions and capabilities. Provider-specific no-op responses, fail-open behavior, bounded input/latency, and no model feedback.
-4. Installer with dry-run/backup/uninstall that preserves existing hooks. Native trust procedures remain mandatory. Ordinary tests never install hooks.
+4. Installer with dry-run/backup/uninstall that preserves existing hooks. Native trust procedures remain mandatory and must use the profile active on the target surface. WD-006 implements metadata-only capture and explicit JSON file edits; content capture/redaction remains WD-007. Ordinary tests never install into active provider configuration.
 5. Retention of 30/180 days, 2 GiB/project, and bounded inbox/logs; pin, reserve, degraded state, and loss counters. Redact known secrets before persistent writes.
 6. `project add/list/remove/relocate`, `daemon start/run/stop/pause/status`, `hooks install/uninstall`, `doctor`, and `sessions list/show --project`. Remove disables collection; only a separate purge deletes data. WD-005 implements lifecycle controls as a single-slot desired-state file; general mutation requests wait for their actual consumers.
 

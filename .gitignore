@@ -19,5 +19,6 @@ build/
 *.db-shm
 runtime/
 exports/
+hooks.json.watchdog*
 .DS_Store
 Thumbs.db
