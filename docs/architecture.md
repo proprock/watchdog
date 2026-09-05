@@ -17,7 +17,7 @@ CLI -- project selection -- read-only queries / queued mutations
 
 ## Processes and delivery
 
-- `agent-watchdog hook codex|claude` reads JSON stdin, checks the registered project, limits size, redacts known secrets, and atomically places an envelope in the project inbox using a temporary file and rename on the same disk. Do not run Git diff, analysis, or LLM calls inside a hook. Stdout is empty; expected errors exit with code 0. Diagnostics are local and size-limited.
+- `agent-watchdog hook codex|claude` reads JSON stdin, checks the registered project, limits size, redacts known secrets, and atomically places an envelope in the project inbox using a temporary file and rename on the same disk. Do not run Git diff, analysis, or LLM calls inside a hook. Use the provider's no-op response: empty stdout for Claude; an empty JSON object was exercised for Codex, including Stop/SubagentStop. Never return feedback or control fields in observation mode. Expected errors exit with code 0. Diagnostics are local and size-limited.
 - Create the envelope ID before writing and preserve it during replay. Reprocessing an envelope is idempotent. Deduplicate repeated provider events only when a stable native ID is available, not merely by text hash.
 - The hook ensures a detached `agent-watchdog daemon run` starts if the core is unavailable. POSIX: a new session; Windows: a detached process without a window. Do not inherit the harness stdin/stdout/stderr handles.
 - One OS-backed lock per user, held for the core's lifetime. Competing starts fail to acquire the lock and exit. PID/heartbeat are diagnostics, not the sole exclusivity mechanism. Never kill an unrelated process after PID reuse.

@@ -1,0 +1,1101 @@
+{
+  "date": "2026-09-05",
+  "os": "Windows",
+  "classification": "Sanitized live hook summaries, not raw payload fixtures",
+  "surfaces": {
+    "codex": {
+      "counts": {
+        "Interrupt": 1,
+        "PostCompact": 1,
+        "PostToolUse": 6,
+        "PreCompact": 1,
+        "PreToolUse": 6,
+        "SessionEnd": 1,
+        "SessionStart": 1,
+        "Stop": 2,
+        "SubagentStart": 1,
+        "SubagentStop": 1,
+        "UserPromptSubmit": 1
+      },
+      "records": [
+        {
+          "event": "UserPromptSubmit",
+          "field_types": {
+            "session_id": "str",
+            "turn_id": "str",
+            "transcript_path": "str",
+            "cwd": "str",
+            "hook_event_name": "str",
+            "model": "str",
+            "permission_mode": "str",
+            "prompt": "str"
+          },
+          "identities": {
+            "session_id": "session_id-1",
+            "turn_id": "turn_id-1"
+          }
+        },
+        {
+          "event": "PreToolUse",
+          "field_types": {
+            "session_id": "str",
+            "turn_id": "str",
+            "transcript_path": "str",
+            "cwd": "str",
+            "hook_event_name": "str",
+            "model": "str",
+            "permission_mode": "str",
+            "tool_name": "str",
+            "tool_input": "dict",
+            "tool_use_id": "str"
+          },
+          "identities": {
+            "session_id": "session_id-1",
+            "turn_id": "turn_id-1",
+            "tool_use_id": "tool_use_id-1"
+          },
+          "tool_name": "Bash"
+        },
+        {
+          "event": "PostToolUse",
+          "field_types": {
+            "session_id": "str",
+            "turn_id": "str",
+            "transcript_path": "str",
+            "cwd": "str",
+            "hook_event_name": "str",
+            "model": "str",
+            "permission_mode": "str",
+            "tool_name": "str",
+            "tool_input": "dict",
+            "tool_response": "str",
+            "tool_use_id": "str"
+          },
+          "identities": {
+            "session_id": "session_id-1",
+            "turn_id": "turn_id-1",
+            "tool_use_id": "tool_use_id-1"
+          },
+          "tool_name": "Bash"
+        },
+        {
+          "event": "PreToolUse",
+          "field_types": {
+            "session_id": "str",
+            "turn_id": "str",
+            "transcript_path": "str",
+            "cwd": "str",
+            "hook_event_name": "str",
+            "model": "str",
+            "permission_mode": "str",
+            "tool_name": "str",
+            "tool_input": "dict",
+            "tool_use_id": "str"
+          },
+          "identities": {
+            "session_id": "session_id-1",
+            "turn_id": "turn_id-1",
+            "tool_use_id": "tool_use_id-2"
+          },
+          "tool_name": "Bash"
+        },
+        {
+          "event": "PostToolUse",
+          "field_types": {
+            "session_id": "str",
+            "turn_id": "str",
+            "transcript_path": "str",
+            "cwd": "str",
+            "hook_event_name": "str",
+            "model": "str",
+            "permission_mode": "str",
+            "tool_name": "str",
+            "tool_input": "dict",
+            "tool_response": "str",
+            "tool_use_id": "str"
+          },
+          "identities": {
+            "session_id": "session_id-1",
+            "turn_id": "turn_id-1",
+            "tool_use_id": "tool_use_id-2"
+          },
+          "tool_name": "Bash"
+        },
+        {
+          "event": "PreToolUse",
+          "field_types": {
+            "session_id": "str",
+            "turn_id": "str",
+            "transcript_path": "str",
+            "cwd": "str",
+            "hook_event_name": "str",
+            "model": "str",
+            "permission_mode": "str",
+            "tool_name": "str",
+            "tool_input": "dict",
+            "tool_use_id": "str"
+          },
+          "identities": {
+            "session_id": "session_id-1",
+            "turn_id": "turn_id-1",
+            "tool_use_id": "tool_use_id-3"
+          }
+        },
+        {
+          "event": "PostToolUse",
+          "field_types": {
+            "session_id": "str",
+            "turn_id": "str",
+            "transcript_path": "str",
+            "cwd": "str",
+            "hook_event_name": "str",
+            "model": "str",
+            "permission_mode": "str",
+            "tool_name": "str",
+            "tool_input": "dict",
+            "tool_response": "str",
+            "tool_use_id": "str"
+          },
+          "identities": {
+            "session_id": "session_id-1",
+            "turn_id": "turn_id-1",
+            "tool_use_id": "tool_use_id-3"
+          }
+        },
+        {
+          "event": "SubagentStart",
+          "field_types": {
+            "session_id": "str",
+            "turn_id": "str",
+            "transcript_path": "str",
+            "cwd": "str",
+            "hook_event_name": "str",
+            "model": "str",
+            "permission_mode": "str",
+            "agent_id": "str",
+            "agent_type": "str"
+          },
+          "identities": {
+            "session_id": "session_id-1",
+            "turn_id": "turn_id-2",
+            "agent_id": "agent_id-1"
+          }
+        },
+        {
+          "event": "PreToolUse",
+          "field_types": {
+            "session_id": "str",
+            "turn_id": "str",
+            "transcript_path": "str",
+            "cwd": "str",
+            "hook_event_name": "str",
+            "model": "str",
+            "permission_mode": "str",
+            "tool_name": "str",
+            "tool_input": "dict",
+            "tool_use_id": "str"
+          },
+          "identities": {
+            "session_id": "session_id-1",
+            "turn_id": "turn_id-1",
+            "tool_use_id": "tool_use_id-4"
+          }
+        },
+        {
+          "event": "SubagentStop",
+          "field_types": {
+            "session_id": "str",
+            "turn_id": "str",
+            "transcript_path": "str",
+            "agent_transcript_path": "str",
+            "cwd": "str",
+            "hook_event_name": "str",
+            "model": "str",
+            "permission_mode": "str",
+            "stop_hook_active": "bool",
+            "agent_id": "str",
+            "agent_type": "str",
+            "last_assistant_message": "str"
+          },
+          "identities": {
+            "session_id": "session_id-1",
+            "turn_id": "turn_id-2",
+            "agent_id": "agent_id-1"
+          }
+        },
+        {
+          "event": "PostToolUse",
+          "field_types": {
+            "session_id": "str",
+            "turn_id": "str",
+            "transcript_path": "str",
+            "cwd": "str",
+            "hook_event_name": "str",
+            "model": "str",
+            "permission_mode": "str",
+            "tool_name": "str",
+            "tool_input": "dict",
+            "tool_response": "str",
+            "tool_use_id": "str"
+          },
+          "identities": {
+            "session_id": "session_id-1",
+            "turn_id": "turn_id-1",
+            "tool_use_id": "tool_use_id-4"
+          }
+        },
+        {
+          "event": "PreToolUse",
+          "field_types": {
+            "session_id": "str",
+            "turn_id": "str",
+            "transcript_path": "str",
+            "cwd": "str",
+            "hook_event_name": "str",
+            "model": "str",
+            "permission_mode": "str",
+            "tool_name": "str",
+            "tool_input": "dict",
+            "tool_use_id": "str"
+          },
+          "identities": {
+            "session_id": "session_id-1",
+            "turn_id": "turn_id-1",
+            "tool_use_id": "tool_use_id-5"
+          }
+        },
+        {
+          "event": "PostToolUse",
+          "field_types": {
+            "session_id": "str",
+            "turn_id": "str",
+            "transcript_path": "str",
+            "cwd": "str",
+            "hook_event_name": "str",
+            "model": "str",
+            "permission_mode": "str",
+            "tool_name": "str",
+            "tool_input": "dict",
+            "tool_response": "str",
+            "tool_use_id": "str"
+          },
+          "identities": {
+            "session_id": "session_id-1",
+            "turn_id": "turn_id-1",
+            "tool_use_id": "tool_use_id-5"
+          }
+        },
+        {
+          "event": "Stop",
+          "field_types": {
+            "session_id": "str",
+            "turn_id": "str",
+            "transcript_path": "str",
+            "cwd": "str",
+            "hook_event_name": "str",
+            "model": "str",
+            "permission_mode": "str",
+            "stop_hook_active": "bool",
+            "last_assistant_message": "str"
+          },
+          "identities": {
+            "session_id": "session_id-1",
+            "turn_id": "turn_id-1"
+          }
+        },
+        {
+          "event": "PreCompact",
+          "field_types": {
+            "session_id": "str",
+            "turn_id": "str",
+            "transcript_path": "str",
+            "cwd": "str",
+            "hook_event_name": "str",
+            "model": "str",
+            "trigger": "str"
+          },
+          "identities": {
+            "session_id": "session_id-1",
+            "turn_id": "turn_id-3"
+          }
+        },
+        {
+          "event": "PostCompact",
+          "field_types": {
+            "session_id": "str",
+            "turn_id": "str",
+            "transcript_path": "str",
+            "cwd": "str",
+            "hook_event_name": "str",
+            "model": "str",
+            "trigger": "str"
+          },
+          "identities": {
+            "session_id": "session_id-1",
+            "turn_id": "turn_id-3"
+          }
+        },
+        {
+          "event": "Interrupt",
+          "field_types": {
+            "session_id": "str",
+            "turn_id": "str",
+            "transcript_path": "str",
+            "cwd": "str",
+            "hook_event_name": "str",
+            "model": "str",
+            "permission_mode": "str"
+          },
+          "identities": {
+            "session_id": "session_id-1",
+            "turn_id": "turn_id-4"
+          }
+        },
+        {
+          "event": "SessionEnd",
+          "field_types": {
+            "session_id": "str",
+            "transcript_path": "str",
+            "cwd": "str",
+            "hook_event_name": "str",
+            "reason": "str"
+          },
+          "identities": {
+            "session_id": "session_id-1"
+          }
+        },
+        {
+          "event": "SessionStart",
+          "field_types": {
+            "session_id": "str",
+            "transcript_path": "str",
+            "cwd": "str",
+            "hook_event_name": "str",
+            "model": "str",
+            "permission_mode": "str",
+            "source": "str"
+          },
+          "identities": {
+            "session_id": "session_id-1"
+          }
+        },
+        {
+          "event": "PreToolUse",
+          "field_types": {
+            "session_id": "str",
+            "turn_id": "str",
+            "transcript_path": "str",
+            "cwd": "str",
+            "hook_event_name": "str",
+            "model": "str",
+            "permission_mode": "str",
+            "tool_name": "str",
+            "tool_input": "dict",
+            "tool_use_id": "str"
+          },
+          "identities": {
+            "session_id": "session_id-1",
+            "turn_id": "turn_id-5",
+            "tool_use_id": "tool_use_id-6"
+          },
+          "tool_name": "Bash"
+        },
+        {
+          "event": "PostToolUse",
+          "field_types": {
+            "session_id": "str",
+            "turn_id": "str",
+            "transcript_path": "str",
+            "cwd": "str",
+            "hook_event_name": "str",
+            "model": "str",
+            "permission_mode": "str",
+            "tool_name": "str",
+            "tool_input": "dict",
+            "tool_response": "str",
+            "tool_use_id": "str"
+          },
+          "identities": {
+            "session_id": "session_id-1",
+            "turn_id": "turn_id-5",
+            "tool_use_id": "tool_use_id-6"
+          },
+          "tool_name": "Bash"
+        },
+        {
+          "event": "Stop",
+          "field_types": {
+            "session_id": "str",
+            "turn_id": "str",
+            "transcript_path": "str",
+            "cwd": "str",
+            "hook_event_name": "str",
+            "model": "str",
+            "permission_mode": "str",
+            "stop_hook_active": "bool",
+            "last_assistant_message": "str"
+          },
+          "identities": {
+            "session_id": "session_id-1",
+            "turn_id": "turn_id-5"
+          }
+        }
+      ]
+    },
+    "claude": {
+      "counts": {
+        "PostCompact": 1,
+        "PostToolUse": 2,
+        "PostToolUseFailure": 1,
+        "PreCompact": 1,
+        "PreToolUse": 3,
+        "SessionStart": 6,
+        "Stop": 2,
+        "SubagentStart": 1,
+        "SubagentStop": 2,
+        "UserPromptSubmit": 2
+      },
+      "records": [
+        {
+          "event": "SessionStart",
+          "field_types": {
+            "session_id": "str",
+            "transcript_path": "str",
+            "cwd": "str",
+            "hook_event_name": "str",
+            "source": "str"
+          },
+          "identities": {
+            "session_id": "session_id-1"
+          }
+        },
+        {
+          "event": "UserPromptSubmit",
+          "field_types": {
+            "session_id": "str",
+            "transcript_path": "str",
+            "cwd": "str",
+            "prompt_id": "str",
+            "permission_mode": "str",
+            "hook_event_name": "str",
+            "prompt": "str"
+          },
+          "identities": {
+            "session_id": "session_id-1",
+            "prompt_id": "prompt_id-1"
+          }
+        },
+        {
+          "event": "PreToolUse",
+          "field_types": {
+            "session_id": "str",
+            "transcript_path": "str",
+            "cwd": "str",
+            "prompt_id": "str",
+            "permission_mode": "str",
+            "hook_event_name": "str",
+            "tool_name": "str",
+            "tool_input": "dict",
+            "tool_use_id": "str"
+          },
+          "identities": {
+            "session_id": "session_id-1",
+            "tool_use_id": "tool_use_id-1",
+            "prompt_id": "prompt_id-1"
+          },
+          "tool_name": "Bash"
+        },
+        {
+          "event": "PostToolUse",
+          "field_types": {
+            "session_id": "str",
+            "transcript_path": "str",
+            "cwd": "str",
+            "prompt_id": "str",
+            "permission_mode": "str",
+            "hook_event_name": "str",
+            "tool_name": "str",
+            "tool_input": "dict",
+            "tool_response": "dict",
+            "tool_use_id": "str",
+            "duration_ms": "int"
+          },
+          "identities": {
+            "session_id": "session_id-1",
+            "tool_use_id": "tool_use_id-1",
+            "prompt_id": "prompt_id-1"
+          },
+          "tool_response_fields": {
+            "stdout": "str",
+            "stderr": "str",
+            "interrupted": "bool"
+          },
+          "tool_name": "Bash"
+        },
+        {
+          "event": "PreToolUse",
+          "field_types": {
+            "session_id": "str",
+            "transcript_path": "str",
+            "cwd": "str",
+            "prompt_id": "str",
+            "permission_mode": "str",
+            "hook_event_name": "str",
+            "tool_name": "str",
+            "tool_input": "dict",
+            "tool_use_id": "str"
+          },
+          "identities": {
+            "session_id": "session_id-1",
+            "tool_use_id": "tool_use_id-2",
+            "prompt_id": "prompt_id-1"
+          },
+          "tool_name": "Bash"
+        },
+        {
+          "event": "PostToolUseFailure",
+          "field_types": {
+            "session_id": "str",
+            "transcript_path": "str",
+            "cwd": "str",
+            "prompt_id": "str",
+            "permission_mode": "str",
+            "hook_event_name": "str",
+            "tool_name": "str",
+            "tool_input": "dict",
+            "tool_use_id": "str",
+            "error": "str",
+            "is_interrupt": "bool",
+            "duration_ms": "int"
+          },
+          "identities": {
+            "session_id": "session_id-1",
+            "tool_use_id": "tool_use_id-2",
+            "prompt_id": "prompt_id-1"
+          },
+          "tool_name": "Bash"
+        },
+        {
+          "event": "Stop",
+          "field_types": {
+            "session_id": "str",
+            "transcript_path": "str",
+            "cwd": "str",
+            "prompt_id": "str",
+            "permission_mode": "str",
+            "hook_event_name": "str",
+            "stop_hook_active": "bool",
+            "last_assistant_message": "str"
+          },
+          "identities": {
+            "session_id": "session_id-1",
+            "prompt_id": "prompt_id-1"
+          }
+        },
+        {
+          "event": "SessionStart",
+          "field_types": {
+            "session_id": "str",
+            "transcript_path": "str",
+            "cwd": "str",
+            "hook_event_name": "str",
+            "source": "str"
+          },
+          "identities": {
+            "session_id": "session_id-2"
+          }
+        },
+        {
+          "event": "UserPromptSubmit",
+          "field_types": {
+            "session_id": "str",
+            "transcript_path": "str",
+            "cwd": "str",
+            "prompt_id": "str",
+            "permission_mode": "str",
+            "hook_event_name": "str",
+            "prompt": "str"
+          },
+          "identities": {
+            "session_id": "session_id-2",
+            "prompt_id": "prompt_id-2"
+          }
+        },
+        {
+          "event": "PreToolUse",
+          "field_types": {
+            "session_id": "str",
+            "transcript_path": "str",
+            "cwd": "str",
+            "prompt_id": "str",
+            "permission_mode": "str",
+            "hook_event_name": "str",
+            "tool_name": "str",
+            "tool_input": "dict",
+            "tool_use_id": "str"
+          },
+          "identities": {
+            "session_id": "session_id-2",
+            "tool_use_id": "tool_use_id-3",
+            "prompt_id": "prompt_id-2"
+          },
+          "tool_name": "Agent"
+        },
+        {
+          "event": "SubagentStart",
+          "field_types": {
+            "session_id": "str",
+            "transcript_path": "str",
+            "cwd": "str",
+            "prompt_id": "str",
+            "agent_id": "str",
+            "agent_type": "str",
+            "hook_event_name": "str"
+          },
+          "identities": {
+            "session_id": "session_id-2",
+            "agent_id": "agent_id-1",
+            "prompt_id": "prompt_id-2"
+          }
+        },
+        {
+          "event": "SubagentStop",
+          "field_types": {
+            "session_id": "str",
+            "transcript_path": "str",
+            "cwd": "str",
+            "prompt_id": "str",
+            "permission_mode": "str",
+            "agent_id": "str",
+            "agent_type": "str",
+            "hook_event_name": "str",
+            "stop_hook_active": "bool",
+            "agent_transcript_path": "str",
+            "last_assistant_message": "str"
+          },
+          "identities": {
+            "session_id": "session_id-2",
+            "agent_id": "agent_id-1",
+            "prompt_id": "prompt_id-2"
+          }
+        },
+        {
+          "event": "PostToolUse",
+          "field_types": {
+            "session_id": "str",
+            "transcript_path": "str",
+            "cwd": "str",
+            "prompt_id": "str",
+            "permission_mode": "str",
+            "hook_event_name": "str",
+            "tool_name": "str",
+            "tool_input": "dict",
+            "tool_response": "dict",
+            "tool_use_id": "str",
+            "duration_ms": "int"
+          },
+          "identities": {
+            "session_id": "session_id-2",
+            "tool_use_id": "tool_use_id-3",
+            "prompt_id": "prompt_id-2"
+          },
+          "tool_response_fields": {
+            "content": "list"
+          },
+          "tool_name": "Agent"
+        },
+        {
+          "event": "Stop",
+          "field_types": {
+            "session_id": "str",
+            "transcript_path": "str",
+            "cwd": "str",
+            "prompt_id": "str",
+            "permission_mode": "str",
+            "hook_event_name": "str",
+            "stop_hook_active": "bool",
+            "last_assistant_message": "str"
+          },
+          "identities": {
+            "session_id": "session_id-2",
+            "prompt_id": "prompt_id-2"
+          }
+        },
+        {
+          "event": "SessionStart",
+          "field_types": {
+            "session_id": "str",
+            "transcript_path": "str",
+            "cwd": "str",
+            "hook_event_name": "str",
+            "source": "str"
+          },
+          "identities": {
+            "session_id": "session_id-2"
+          }
+        },
+        {
+          "event": "SessionStart",
+          "field_types": {
+            "session_id": "str",
+            "transcript_path": "str",
+            "cwd": "str",
+            "hook_event_name": "str",
+            "source": "str"
+          },
+          "identities": {
+            "session_id": "session_id-2"
+          }
+        },
+        {
+          "event": "SessionStart",
+          "field_types": {
+            "session_id": "str",
+            "transcript_path": "str",
+            "cwd": "str",
+            "hook_event_name": "str",
+            "source": "str"
+          },
+          "identities": {
+            "session_id": "session_id-2"
+          }
+        },
+        {
+          "event": "PreCompact",
+          "field_types": {
+            "session_id": "str",
+            "transcript_path": "str",
+            "cwd": "str",
+            "prompt_id": "str",
+            "hook_event_name": "str",
+            "trigger": "str"
+          },
+          "identities": {
+            "session_id": "session_id-2",
+            "prompt_id": "prompt_id-3"
+          }
+        },
+        {
+          "event": "SubagentStop",
+          "field_types": {
+            "session_id": "str",
+            "transcript_path": "str",
+            "cwd": "str",
+            "prompt_id": "str",
+            "permission_mode": "str",
+            "agent_id": "str",
+            "agent_type": "str",
+            "hook_event_name": "str",
+            "stop_hook_active": "bool",
+            "agent_transcript_path": "str",
+            "last_assistant_message": "str"
+          },
+          "identities": {
+            "session_id": "session_id-2",
+            "agent_id": "agent_id-2",
+            "prompt_id": "prompt_id-3"
+          }
+        },
+        {
+          "event": "SessionStart",
+          "field_types": {
+            "session_id": "str",
+            "transcript_path": "str",
+            "cwd": "str",
+            "prompt_id": "str",
+            "hook_event_name": "str",
+            "source": "str",
+            "model": "str"
+          },
+          "identities": {
+            "session_id": "session_id-2",
+            "prompt_id": "prompt_id-3"
+          }
+        },
+        {
+          "event": "PostCompact",
+          "field_types": {
+            "session_id": "str",
+            "transcript_path": "str",
+            "cwd": "str",
+            "prompt_id": "str",
+            "hook_event_name": "str",
+            "trigger": "str",
+            "compact_summary": "str"
+          },
+          "identities": {
+            "session_id": "session_id-2",
+            "prompt_id": "prompt_id-3"
+          }
+        }
+      ]
+    },
+    "claude-desktop": {
+      "counts": {
+        "PostCompact": 1,
+        "PostToolUse": 1,
+        "PreCompact": 1,
+        "PreToolUse": 1,
+        "SessionStart": 3,
+        "Stop": 1,
+        "SubagentStart": 1,
+        "SubagentStop": 4,
+        "UserPromptSubmit": 1
+      },
+      "records": [
+        {
+          "event": "SessionStart",
+          "field_types": {
+            "session_id": "str",
+            "transcript_path": "str",
+            "cwd": "str",
+            "hook_event_name": "str",
+            "source": "str"
+          },
+          "identities": {
+            "session_id": "session_id-1"
+          }
+        },
+        {
+          "event": "SessionStart",
+          "field_types": {
+            "session_id": "str",
+            "transcript_path": "str",
+            "cwd": "str",
+            "hook_event_name": "str",
+            "source": "str"
+          },
+          "identities": {
+            "session_id": "session_id-2"
+          }
+        },
+        {
+          "event": "UserPromptSubmit",
+          "field_types": {
+            "session_id": "str",
+            "transcript_path": "str",
+            "cwd": "str",
+            "prompt_id": "str",
+            "permission_mode": "str",
+            "hook_event_name": "str",
+            "prompt": "str"
+          },
+          "identities": {
+            "session_id": "session_id-2",
+            "prompt_id": "prompt_id-1"
+          }
+        },
+        {
+          "event": "PreToolUse",
+          "field_types": {
+            "session_id": "str",
+            "transcript_path": "str",
+            "cwd": "str",
+            "prompt_id": "str",
+            "permission_mode": "str",
+            "hook_event_name": "str",
+            "tool_name": "str",
+            "tool_input": "dict",
+            "tool_use_id": "str"
+          },
+          "identities": {
+            "session_id": "session_id-2",
+            "tool_use_id": "tool_use_id-1",
+            "prompt_id": "prompt_id-1"
+          },
+          "tool_name": "Agent"
+        },
+        {
+          "event": "SubagentStart",
+          "field_types": {
+            "session_id": "str",
+            "transcript_path": "str",
+            "cwd": "str",
+            "prompt_id": "str",
+            "agent_id": "str",
+            "agent_type": "str",
+            "hook_event_name": "str"
+          },
+          "identities": {
+            "session_id": "session_id-2",
+            "agent_id": "agent_id-1",
+            "prompt_id": "prompt_id-1"
+          }
+        },
+        {
+          "event": "SubagentStop",
+          "field_types": {
+            "session_id": "str",
+            "transcript_path": "str",
+            "cwd": "str",
+            "prompt_id": "str",
+            "permission_mode": "str",
+            "agent_id": "str",
+            "agent_type": "str",
+            "hook_event_name": "str",
+            "stop_hook_active": "bool",
+            "agent_transcript_path": "str",
+            "last_assistant_message": "str"
+          },
+          "identities": {
+            "session_id": "session_id-2",
+            "agent_id": "agent_id-1",
+            "prompt_id": "prompt_id-1"
+          }
+        },
+        {
+          "event": "PostToolUse",
+          "field_types": {
+            "session_id": "str",
+            "transcript_path": "str",
+            "cwd": "str",
+            "prompt_id": "str",
+            "permission_mode": "str",
+            "hook_event_name": "str",
+            "tool_name": "str",
+            "tool_input": "dict",
+            "tool_response": "dict",
+            "tool_use_id": "str",
+            "duration_ms": "int"
+          },
+          "identities": {
+            "session_id": "session_id-2",
+            "tool_use_id": "tool_use_id-1",
+            "prompt_id": "prompt_id-1"
+          },
+          "tool_response_fields": {
+            "content": "list"
+          },
+          "tool_name": "Agent"
+        },
+        {
+          "event": "Stop",
+          "field_types": {
+            "session_id": "str",
+            "transcript_path": "str",
+            "cwd": "str",
+            "prompt_id": "str",
+            "permission_mode": "str",
+            "hook_event_name": "str",
+            "stop_hook_active": "bool",
+            "last_assistant_message": "str"
+          },
+          "identities": {
+            "session_id": "session_id-2",
+            "prompt_id": "prompt_id-1"
+          }
+        },
+        {
+          "event": "SubagentStop",
+          "field_types": {
+            "session_id": "str",
+            "transcript_path": "str",
+            "cwd": "str",
+            "prompt_id": "str",
+            "permission_mode": "str",
+            "agent_id": "str",
+            "agent_type": "str",
+            "hook_event_name": "str",
+            "stop_hook_active": "bool",
+            "agent_transcript_path": "str",
+            "last_assistant_message": "str"
+          },
+          "identities": {
+            "session_id": "session_id-2",
+            "agent_id": "agent_id-2",
+            "prompt_id": "prompt_id-1"
+          }
+        },
+        {
+          "event": "PreCompact",
+          "field_types": {
+            "session_id": "str",
+            "transcript_path": "str",
+            "cwd": "str",
+            "prompt_id": "str",
+            "hook_event_name": "str",
+            "trigger": "str"
+          },
+          "identities": {
+            "session_id": "session_id-2",
+            "prompt_id": "prompt_id-2"
+          }
+        },
+        {
+          "event": "SubagentStop",
+          "field_types": {
+            "session_id": "str",
+            "transcript_path": "str",
+            "cwd": "str",
+            "prompt_id": "str",
+            "permission_mode": "str",
+            "agent_id": "str",
+            "agent_type": "str",
+            "hook_event_name": "str",
+            "stop_hook_active": "bool",
+            "agent_transcript_path": "str",
+            "last_assistant_message": "str"
+          },
+          "identities": {
+            "session_id": "session_id-2",
+            "agent_id": "agent_id-3",
+            "prompt_id": "prompt_id-2"
+          }
+        },
+        {
+          "event": "SessionStart",
+          "field_types": {
+            "session_id": "str",
+            "transcript_path": "str",
+            "cwd": "str",
+            "prompt_id": "str",
+            "hook_event_name": "str",
+            "source": "str",
+            "model": "str"
+          },
+          "identities": {
+            "session_id": "session_id-2",
+            "prompt_id": "prompt_id-2"
+          }
+        },
+        {
+          "event": "PostCompact",
+          "field_types": {
+            "session_id": "str",
+            "transcript_path": "str",
+            "cwd": "str",
+            "prompt_id": "str",
+            "hook_event_name": "str",
+            "trigger": "str",
+            "compact_summary": "str"
+          },
+          "identities": {
+            "session_id": "session_id-2",
+            "prompt_id": "prompt_id-2"
+          }
+        },
+        {
+          "event": "SubagentStop",
+          "field_types": {
+            "session_id": "str",
+            "transcript_path": "str",
+            "cwd": "str",
+            "prompt_id": "str",
+            "permission_mode": "str",
+            "agent_id": "str",
+            "agent_type": "str",
+            "hook_event_name": "str",
+            "stop_hook_active": "bool",
+            "agent_transcript_path": "str",
+            "last_assistant_message": "str"
+          },
+          "identities": {
+            "session_id": "session_id-2",
+            "agent_id": "agent_id-4",
+            "prompt_id": "prompt_id-2"
+          }
+        }
+      ]
+    }
+  }
+}

@@ -1,52 +1,67 @@
 # WD-002: provider compatibility spike
 
-Date: 2026-09-05. Versions inspected locally: Codex CLI 0.153.4; Claude Code 2.1.259; Windows with CPython 3.12.13. This is an incremental spike report, not a declaration of full provider support.
+Date: 2026-09-05. Windows, CPython 3.12.13. The locally resolved Codex version command reported 0.153.4; the interactive probe banner reported 0.153.3. Claude CLI reported 2.1.259. Desktop backend versions are not inferred from installed CLI versions.
 
-## Verified behavior
+This report distinguishes live observations from documented capabilities and untested combinations. The observer runtime and installer are not implemented yet.
 
-`uv run python scripts/detach_probe.py` starts an intermediate Python parent, which starts a detached child with disconnected standard handles. The controller waits for the parent to exit, then releases the child and requires a response. The child signals completion and has a bounded lifetime. This checks survival after parent exit, not logout persistence, singleton locking, or a production daemon.
+## Evidence
 
-`uv run python scripts/detach_probe.py --claude-init` runs Claude with temporary explicit settings, no user/project/local settings sources, and no configured MCP servers. `--init-only` executes the SessionStart hook without starting a model conversation. Managed settings remain applicable. The hook launches the same child; the release is sent only after Claude exits. Temporary configuration is removed; user hook configuration is untouched.
+[Sanitized live records](evidence/wd002-windows.json) contain allowlisted field types and stable aliases replacing hashed native IDs. They contain no prompts, commands, paths, transcripts, or tool output text. Counts include diagnostic attempts and resumed sessions; they are not task or unique-action counts. A direct synthetic Codex no-op check is excluded. The existing examples under tests/fixtures/hooks remain synthetic, not recordings.
 
-Results:
+The opt-in `scripts/capture_hook.py` reads at most 1 MiB, writes a temporary file and renames it, and fails open on malformed input or storage errors. It uses empty stdout for Claude and `{}` with `--json-noop` for Codex. This is a diagnostic probe, not a production adapter: it has no registry, retention, loss accounting, or daemon startup.
 
-| Experiment | Result |
+## Windows event coverage
+
+| Event / operation | Codex CLI | Codex desktop task API | Claude CLI | Claude desktop Code |
+|---|---|---|---|---|
+| SessionStart | Not captured on initial launch before trust | Captured on resume | Captured, including init-only | Captured on folder selection |
+| UserPromptSubmit | Captured | Not observed in API-submitted turn | Captured | Captured |
+| PreToolUse / PostToolUse | Captured | Captured for one successful shell call | Captured | Captured for Agent |
+| Nonzero shell exit | PostToolUse captured after exit 1 | Not exercised | PostToolUseFailure captured | Not exercised |
+| PreCompact / PostCompact | Captured via /compact | Not exercised separately | Captured via /compact | Captured via /compact |
+| SubagentStart / SubagentStop | Captured for one child | Not exercised separately | Captured for one child | Captured for one child |
+| Stop | Captured with no-op JSON | Captured | Captured with empty stdout | Captured with empty stdout |
+| Interrupt | Captured after Escape during active turn | Not exercised separately | No same-named native event configured | Not exercised |
+| SessionEnd | Captured on /quit | Not exercised separately | Not configured in this spike | Not configured |
+
+Codex desktop evidence comes from resuming the same idle scratch session through the native desktop task API. This proves hooks on that execution path, not every GUI operation or backend. Attempting concurrent ownership while the TUI was open failed with an active-writer error; after /quit the API turn completed. This is probe orchestration, not an App Server dependency for Watchdog.
+
+Claude desktop uses project-local `.claude/settings.local.json` in a dedicated scratch folder. A bounded no-shell prompt launched one no-tool subagent and completed with DESKTOP_PROBE_DONE. Startup, prompt, Agent tool, subagent lifecycle, Stop, and manual PreCompact/PostCompact summaries were received. The app showed the Sonnet 5 model label; no desktop backend version was established. The folder picker required one manual user action because UI automation reported stale focus; this is a probe tooling issue, not a hook limitation.
+
+## Payload and installation findings
+
+- Codex tool samples included session_id, turn_id, tool_use_id, model, permission_mode, tool_input, and tool_response. The observed tool_response was a string, so adapters must not assume a universal JSON result or exit-code property.
+- Claude init-only SessionStart supplied session_id, transcript_path, cwd, hook_event_name, and source. Optional metadata was absent. Successful Bash results contained stdout, stderr, and interrupted; no exit_code was present in that sample. Failure events supplied error, is_interrupt, and duration_ms.
+- Both providers supplied agent_id on subagent lifecycle events. Preserve missing IDs; do not invent a turn ID or infer desktop/CLI from cwd. Evidence aliases are local to each provider dataset, not globally unique identities.
+- Stop records turn completion, not task success. A user interrupt during an active Codex turn was observed; cancellation of an already running shell process was not established.
+- Codex required native review of the exact 11-hook configuration. The user explicitly approved trust and the TUI applied it. No trust-bypass flag or fabricated trust record was used. A changed configuration required review again.
+- Initial Codex hooks failed due to Windows quoting and diagnostic timeouts. Adding `commandWindows` with PowerShell's `&` call operator fixed the quoted executable invocation. Most diagnostic timeouts were raised to 10 seconds; Interrupt/SessionEnd used 3 seconds. This does not validate the production latency target of 250 ms or the planned 2-second timeout.
+- An empty JSON object was exercised as Codex's no-op response, including Stop/SubagentStop. Claude accepted empty stdout. Never return block/continue/context fields in observation mode.
+
+## Process lifetime
+
+`uv run python scripts/detach_probe.py` verifies that a detached Python child with disconnected standard handles responds after its intermediate parent exits, then signals completion within a bounded lifetime.
+
+`uv run python scripts/detach_probe.py --claude-init` uses temporary explicit settings, disabled ordinary settings sources, and no configured MCP servers. SessionStart launches the same child; release occurs only after Claude exits. The restricted execution environment returned exit 0 without a marker, which was inconclusive. The same experiment outside that environment passed. The cause of the restricted-run difference was not established.
+
+| Harness exit experiment | Result |
 |---|---|
-| Offline Python parent, Windows | PASS: parent exited, stdout empty, child responded after release and signaled completion |
-| Claude init-only inside restricted execution sandbox | INCONCLUSIVE: exit 0, no child marker; this did not prove hook execution |
-| Same Claude experiment outside execution sandbox | PASS: SessionStart received, Claude exited, stdout empty, detached child responded and signaled completion |
+| Generic Python parent, Windows | Verified child response after parent exit |
+| Claude init-only SessionStart, Windows | Verified child response after Claude exit |
+| Codex CLI and both desktop process containers | Not tested; no survival claim |
 
-Only the execution environment changed in the successful retry. The exact cause of the restricted-run failure was not established; do not classify all sandboxed Claude hooks as unsupported.
+Logout persistence, singleton locks, crash recovery, and the actual daemon belong to WD-005. Cross-provider process-container survival still needs evidence before M1 acceptance; the generic experiment is not a substitute. macOS/Linux host access and compatibility verification are deferred to M5 / WD-019 by the user's decision.
 
-Sanitized live SessionStart shape: string fields `session_id`, `transcript_path`, `cwd`, `hook_event_name`, `source`. No model, turn ID, or permission_mode appeared in this sample. The probe stores only field names/types and the event name; session identifiers, paths, and transcript contents are not retained. No paid model request, agent task, or subagent was launched.
+## Reproduction and verification
 
-## Coverage and implementation implications
+Run offline checks with `uv run pytest`, `uv run ruff check .`, and `uv run ruff format --check .`. The capture tests were first run red with the script absent, then passed after implementation. Current offline result: 8 tests passed, Ruff lint and formatting passed. Live provider calls never run in pytest/CI.
 
-| Concern | Codex | Claude Code |
-|---|---|---|
-| Hook configuration | Native review of the exact hook hash is required; CLI `/hooks` manages trust | Explicit temporary settings exercised by init-only |
-| Tool failure | Documented PostToolUse also covers nonzero shell exit | Documented PostToolUseFailure has error/is_interrupt/duration fields; pre-execution rejection is a separate case |
-| Subagent identity | Parent session ID plus agent_id on lifecycle events | agent_id on lifecycle events; child transcript reference on stop |
-| Raw tool result | Tool-specific JSON; no universal exit-code property | Tool-specific result or separate failure fields |
-| Missing identifiers | Preserve unknown; do not infer desktop/CLI from cwd | Live startup sample demonstrates missing optional metadata |
-| Stop | Turn completion is not task success; continuation feedback must remain disabled | Same observation requirement |
+For live checks, configure the capture script only in a dedicated scratch project, approve native trust through the product, then explicitly exercise harmless success/failure, one no-tool child, manual compaction, completion, and interruption. For Claude CLI, put `--` before the `/compact` positional prompt when using variadic `--tools`; otherwise the prompt can be consumed as a tool argument. Two malformed diagnostic invocations failed before the corrected compaction call succeeded.
 
-Sources: [Codex hooks](https://learn.chatgpt.com/docs/hooks), [Claude hooks](https://code.claude.com/docs/en/hooks). Codex background hooks can be cancelled at session end. Keep initial durable collection synchronous and bounded; detached-core survival must be checked separately from async hook lifetime. Codex Stop/SubagentStop output handling also needs a live no-op check before promising empty stdout for every event.
+Successful Claude CLI model probes reported costs of $0.042125 (tool success/failure), $0.0289305 (subagent), and $0.12663375 (compaction). These are observed run costs, not pricing guarantees. Init-only did not start a model conversation. Provider-owned histories may retain the synthetic conversations; Watchdog does not delete vendor transcripts.
 
-## Remaining live matrix
+Cleanup: all three scratch hook settings files were renamed with a `.disabled` suffix. No global hook configuration was changed. The owned Codex TUI exited; the Codex and Claude desktop probe tasks were archived. Capture hooks do not leave child processes running. Native trust was not rewritten or bypassed during cleanup.
 
-| Surface / OS | Startup hook | Post-tool / failure / compact / subagent / stop / interrupt | Detached child after actual harness exit |
-|---|---|---|---|
-| Claude CLI / Windows | VERIFIED via init-only | NOT TESTED | VERIFIED for init-only SessionStart path |
-| Codex CLI / Windows | NOT TESTED: native hook trust review needed | NOT TESTED | NOT TESTED with Codex |
-| ChatGPT desktop local coding / Windows | NOT TESTED | NOT TESTED | NOT TESTED |
-| Claude desktop local Code / Windows | NOT TESTED | NOT TESTED | NOT TESTED |
-| CLI and available desktops / macOS, Linux | DEFERRED to M5 / WD-019 | DEFERRED to M5 / WD-019 | DEFERRED to M5 / WD-019 |
+## Sources
 
-Do not use the generic Windows probe as evidence for Codex or desktop process containers. The next live checks need a trusted temporary hook definition in Codex and interactive sessions on available Windows surfaces. No trust-bypass flag or fabricated trust record was used. WD-002 remains open until the remaining Windows checks are completed or an explicit support limitation is accepted. macOS/Linux host access and compatibility testing are tracked separately in M5 / WD-019 and no longer block WD-002.
-
-## Reproduction and limits
-
-Offline: `uv run pytest tests/test_detach_probe.py -q`. Live Claude startup: `uv run python scripts/detach_probe.py --claude-init`. The live probe is opt-in and never runs in pytest/CI. It assumes Claude's native hook shell is available and rejects shell-sensitive path characters. It is an experiment, not a deployable collector or installer.
-
-For remaining events, use a dedicated trusted scratch project and reviewed hook configuration. Run a harmless successful command and a failing command, then explicitly exercise compaction, subagent lifecycle, stop, and interrupt. Record per-event field presence and native IDs after sanitization. Preserve missing events as not tested or unsupported with a reason. Remove only the probe configuration and owned processes afterward. Do not automatically authorize tool or hook trust requests.
+[Codex hooks](https://learn.chatgpt.com/docs/hooks), [Claude hooks](https://code.claude.com/docs/en/hooks), and [Claude desktop](https://code.claude.com/docs/en/desktop). Documentation is a capability reference, not live proof. Codex background hooks can be cancelled at session end, so durable collection must remain synchronous and bounded; hook lifetime and detached-core lifetime are separate concerns.

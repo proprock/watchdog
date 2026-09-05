@@ -22,7 +22,7 @@ Agreed on 2026-09-05. A plan for small projects on top of stock harnesses. Each 
 
 1. Typed envelope, SQLite migrations, and synthetic fixtures. Registry/UUID, worktree resolution, and non-Git roots. Configuration lives outside the checkout.
 2. Atomic inbox, idempotent processing, single writer, OS lock, detached launch, pause/start/stop/status. Crash/replay, concurrent startup, partial files, and quota accounting.
-3. Lightweight Codex/Claude command adapters; normalization aware of versions and capabilities. Empty stdout, fail-open behavior, bounded input/latency, and no model feedback.
+3. Lightweight Codex/Claude command adapters; normalization aware of versions and capabilities. Provider-specific no-op responses, fail-open behavior, bounded input/latency, and no model feedback.
 4. Installer with dry-run/backup/uninstall that preserves existing hooks. Native trust procedures remain mandatory. Ordinary tests never install hooks.
 5. Retention of 30/180 days, 2 GiB/project, and bounded inbox/logs; pin, reserve, degraded state, and loss counters. Redact known secrets before persistent writes.
 6. `project add/list/remove/relocate`, `daemon start/run/stop/status`, `hooks install/uninstall`, `doctor`, and `sessions list/show --project`. Remove disables collection; only a separate purge deletes data.

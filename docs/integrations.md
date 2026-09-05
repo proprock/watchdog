@@ -1,6 +1,6 @@
 # Integration sources and verification
 
-Documentation reviewed on 2026-09-05. Locally detected versions: Codex CLI 0.153.4 and Claude Code 2.1.259. A temporary Claude CLI SessionStart hook was tested with init-only on Windows; see [the compatibility report](provider-compatibility.md). Other live events remain unverified. Desktop harness versions may differ from CLI versions.
+Documentation reviewed on 2026-09-05. Locally detected versions: Codex CLI 0.153.4 and Claude Code 2.1.259. Windows live probes exercised both CLIs, the Codex desktop task API, and Claude desktop Code; see [the per-event compatibility report](provider-compatibility.md) and [sanitized evidence](evidence/wd002-windows.json). Coverage differs by surface and event. Desktop harness versions may differ from CLI versions.
 
 | Source | Basis for the project |
 |---|---|
@@ -15,10 +15,10 @@ The user-supplied `uber-efficient-software-factory-codex-claude-research.md` is 
 
 | Surface | Target | Current verification |
 |---|---|---|
-| Codex CLI | Windows/macOS/Linux | Local CLI version; live testing pending |
-| ChatGPT desktop, local Codex coding | Where the official desktop is available | Documentation only; live testing pending |
-| Claude Code CLI | Windows/macOS/Linux | Windows SessionStart/init-only and detached child verified; other events/OS pending |
-| Claude desktop, local Code | Where the official desktop is available | Documentation only; live testing pending |
+| Codex CLI | Windows/macOS/Linux | Windows tool success/failure, compact, subagent, Stop, Interrupt, and SessionEnd observed |
+| ChatGPT desktop, local Codex coding | Where the official desktop is available | Windows native task API resume: SessionStart, tool success, and Stop observed |
+| Claude Code CLI | Windows/macOS/Linux | Windows startup, success/failure, compact, subagent, Stop, and init-only detached child verified |
+| Claude desktop, local Code | Where the official desktop is available | Windows local Code startup, prompt, Agent tool, subagent lifecycle, compact, and Stop observed |
 
 Dedicated macOS/Linux host access and live compatibility verification are deferred to M5 / WD-019. M1 acceptance uses Windows evidence; retain the existing cross-platform CI matrix as early feedback.
 
