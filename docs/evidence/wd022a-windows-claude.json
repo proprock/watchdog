@@ -1,17 +1,17 @@
 {
-  "schema_version": 1,
-  "note": "Sanitized aggregate of the WD-022a live Claude CLI pass. Counts, kinds, durations and outcome tallies only; no prompts, paths, commands, tool output, or native identities. Alias ids are the isolated project id only.",
+  "schema_version": 2,
+  "note": "Sanitized aggregate of the WD-022a live Claude passes. Counts, kinds, durations and outcome tallies only; no prompts, paths, commands, tool output, or native identities. The pass_A_concurrent_four / sequential_single_session / harness_observed_hook_delta_ms blocks are the FIRST (pre-fix) CLI pass and are kept as the historical record; post_fix_reverification is the current state after removing the git rev-parse subprocess from checkout resolution.",
   "date": "2026-09-06",
   "os": "Windows-11-10.0.22621-SP0",
   "python": "3.12.13",
-  "claude_code": "2.1.259",
+  "claude_code": "2.1.259 (first pass) then 2.1.263 (re-verification)",
   "adapter": "rust-exec-form",
   "hook_timeout_seconds": 2,
   "async_backgrounding": false,
   "isolated_project_id": "f8a91a5e-48ad-4097-a7e7-d66fa057b93b",
   "settings_target": "isolated settings.json (--setting-sources \"\")",
-  "user_settings_sha256_unchanged": "b84accab828e59ae757dbe729ceb15c20c8e8a6852d27fd2166041cc0d1ba9bc",
-  "pass_A_concurrent_four": {
+  "user_settings_sha256": "baseline b84accab...9bc moved to b03519ab...a2d3; Claude Code re-normalizes its own global settings file on every launch (default keys); no Watchdog code writes under ~/.claude",
+  "pre_fix_pass_A_concurrent_four": {
     "sessions": 4,
     "stored_events": 31,
     "per_session_events": [
@@ -76,15 +76,68 @@
     },
     "reliability": "low; see sequential_single_session"
   },
-  "adapter_launch_cost_ms": {
+  "pre_fix_adapter_launch_cost_ms": {
     "source": "scripts/benchmark_hooks.py against the same binary, isolated, 20 samples",
     "direct_exec_concurrent_four_p95": 153.2,
     "bash_c_concurrent_four_p95": 240.0,
     "pwsh": "unavailable on host"
   },
-  "gate_8_1_p95_le_250ms": "not demonstrated (stream delta unreliable; synthetic direct-exec launch p95 153 ms is within budget)",
-  "gate_8_2_tool_finish_correlation": "pass for Pass A (8/8)",
-  "gate_8_3_desktop_turn_start": "not run (WD-022a desktop pass pending)",
-  "gate_8_4_restart_and_losses": "restart preserved 31 event ids; losses NOT zero (1 adapter invalid loss in Pass A, more under the sequential probe)",
-  "gate_8_5_synchronous_only": "pass (timeout 2, exec form, no async backgrounding)"
+  "post_fix_reverification": {
+    "change": "filesystem checkout resolution (git_checkout / discover); git rev-parse spawned only for unrecognized layouts. Plus disk::fault: attributable, content-free, rotating faults.log.",
+    "adapter_launch_cost_ms": {
+      "source": "scripts/benchmark_hooks.py, same binary, isolated, 20 samples, direct exec form",
+      "first_call": 43.6,
+      "sequential_p95": 36.4,
+      "concurrent_four_p95": 96.4,
+      "concurrent_four_max": 104.6
+    },
+    "stage_1_interactive_durationMs": {
+      "source": "hookInfos.durationMs in an interactive transcript; scripts/hook_timing.py",
+      "scope": "Stop hook only (subtype stop_hook_summary); no per-hook durationMs for other events",
+      "samples_ms": [51, 60, 71],
+      "p95_ms": 71,
+      "store_events": 18,
+      "losses": "all zero",
+      "faults_log": "absent"
+    },
+    "stage_3_pass_A_concurrent_four": {
+      "model": "claude-haiku-4-5",
+      "sessions": 4,
+      "per_session_events": [8, 8, 8, 8],
+      "dropped_events": {},
+      "hook_invocations": 28,
+      "hook_outcomes": {"success": 28},
+      "unpaired_hook_started": 0,
+      "errored_runs": 0,
+      "tool_use_ids_in_streams": 8,
+      "tool_finish_envelopes_matched": 8,
+      "unmatched_tool_use_ids": 0,
+      "adapter_losses": {"quota": 0, "payload": 0, "invalid": 0, "io": 0, "busy": 0},
+      "project_losses": {"quota": 0, "payload": 0, "invalid": 0, "io": 0, "busy": 0},
+      "restart_preserved_event_ids": 36,
+      "restart_event_ids_identical": true,
+      "faults_log": "absent",
+      "session_end_observed": true,
+      "post_tool_use_failure_to_tool_finish": true
+    },
+    "stage_4_supervised_desktop": {
+      "claude_code": "2.1.263",
+      "settings_target": "project-local .claude/settings.local.json",
+      "session_events": 38,
+      "composer_submission_to_turn_start": true,
+      "triggers_fired": ["SessionStart", "UserPromptSubmit", "PreToolUse", "PostToolUse", "PostToolUseFailure", "SubagentStart", "SubagentStop", "PreCompact", "PostCompact", "SessionEnd"],
+      "esc_interrupt": "no dedicated event (Interrupt not in build); tool call still completed and emitted PostToolUse",
+      "session_end_trigger": "archiving the session (the Code tab has no close)",
+      "tool_use_ids_paired": "6/6",
+      "losses": "all zero",
+      "faults_log": "absent",
+      "user_settings_sha256": "unchanged at baseline b03519ab...a2d3 throughout"
+    },
+    "live_native_event_coverage": "11 of 12 (Notification unobserved live; Interrupt does not exist in the build)"
+  },
+  "gate_1_blocking_cost": "MET. Launch bench four-caller p95 96.4 ms, max 104.6 ms; interactive Stop durationMs 51-71 ms corroborates. Criterion 1 excludes Claude's own hook-dispatch overhead (not exposed on this build; not Watchdog's cost).",
+  "gate_2_tool_finish_correlation": "MET. Stage 3 CLI 8/8, Stage 4 desktop 6/6.",
+  "gate_3_desktop_turn_start": "MET. Stage 4 supervised desktop, real composer submission -> stored turn.start.",
+  "gate_4_restart_and_losses": "MET. Stage 3: 36/36 event ids across a daemon restart, all loss counters zero, no faults.log; disk::fault provides per-invocation attribution for any nonzero counter.",
+  "gate_5_synchronous_only": "MET. timeout 2, exec form, fully synchronous; outcomes {success: 28}."
 }

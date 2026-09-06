@@ -13,7 +13,7 @@ The user-supplied `uber-efficient-software-factory-codex-claude-research.md` is 
 
 ## Support matrix
 
-Delivery scope: M1-M4 cover Codex CLI and local desktop coding only. Claude observation (adapter + installer) is implemented in WD-022a; a live Windows Claude CLI pass ran but did not meet its gate (see [verification](verification.md#wd-022a-claude-observation-gate-not-met)). Claude enrichment, lifecycle beyond observation, and guidance/control are WD-022b, after WD-014. Ordinary chats are outside product scope.
+Delivery scope: M1-M4 cover Codex CLI and local desktop coding only. Claude observation (adapter + installer) is implemented in WD-022a and its live gate is met (see [verification](verification.md#wd-022a-claude-observation-gate-met)). Claude enrichment, lifecycle beyond observation, and guidance/control are WD-022b, after WD-014. Ordinary chats are outside product scope.
 
 | Surface | Target | Current verification |
 |---|---|---|

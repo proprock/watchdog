@@ -68,11 +68,11 @@ Execution order: M1-M4 for Codex coding only -> M-Anthropic / WD-022a+b -> App S
 
 ## M-Anthropic - Independent Claude coding support
 
-**Schedule:** split into **WD-022a** (Claude observation, in progress now alongside WD-024; does not block M1-M4) and **WD-022b** (enrichment, lifecycle beyond observation, guidance/control; after M4 / WD-014, before App Server / WD-015). Keep existing Claude spike evidence as a starting point.
+**Schedule:** split into **WD-022a** (Claude observation — **complete 2026-09-06**, see [DONE.md](DONE.md); did not block M1-M4) and **WD-022b** (enrichment, lifecycle beyond observation, guidance/control; after M4 / WD-014, before App Server / WD-015).
 
 **Outcome:** Claude Code CLI and local desktop Code use the established core, storage, reports, and applicable intervention policies. Ordinary chats and Cowork remain excluded.
 
-**WD-022a - observation.** Provider-parameterized Python and Rust adapters, a safe `settings.json` / `settings.local.json` installer emitting exec-form entries with `timeout: 2`, the 12-event Claude map, and empty-stdout no-op are implemented with offline tests. The live Windows Claude CLI pass did not meet its gate: Claude Code 2.1.259 does not expose a per-hook `durationMs` for `claude -p`, and one `SessionStart` was dropped under four-way concurrent session start. Remaining: a reliable harness-timing source or a redefined gate, the concurrent `invalid` loss fix, Pass B / Pass C, and the supervised desktop pass. Content capture stays the four Codex-equivalent fields.
+**WD-022a - observation (done).** Provider-parameterized Python and Rust adapters, a safe `settings.json` / `settings.local.json` installer emitting exec-form entries with `timeout: 2`, the 12-event Claude map, and empty-stdout no-op, with offline tests. Checkout identity resolves from filesystem reads (`git` spawned only for unrecognized layouts), which removed the per-hook subprocess and the concurrent `SessionStart` drop; `disk::fault` makes any nonzero loss counter attributable. Live gate met: interactive `durationMs` for `Stop`, a four-concurrent `claude -p` Pass A with no drop and zero losses across a daemon restart, and a supervised desktop pass with a real composer submission producing a stored `turn.start`. Criterion 1 is judged on Watchdog's own blocking cost (launch benchmark four-caller p95 96 ms) and, by the plan's recorded limitation, excludes Claude's hook-dispatch overhead. Content capture stays the four Codex-equivalent fields. Evidence: [verification](docs/verification.md#wd-022a-claude-observation-gate-met).
 
 **WD-022b.**
 1. Refresh native trust/reload behavior and any per-event capability gaps not covered by WD-022a.

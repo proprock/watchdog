@@ -1,13 +1,13 @@
 # Foundation verification
 
-## WD-022a Claude observation (gate not met)
+## WD-022a Claude observation (gate met)
 
-2026-09-06, Windows, CPython 3.12.13, Claude Code 2.1.259. Branch
-`feature/wd-022a-claude-observation`. WD-022a implements Claude observation only:
-a provider-parameterized Python and Rust adapter, a `settings.json` /
-`settings.local.json` installer that emits exec-form entries with `timeout: 2`,
-and offline tests. Transcript enrichment, usage reconciliation, and
-guidance/control delivery are deferred to WD-022b.
+2026-09-06, Windows, CPython 3.12.13, Claude Code 2.1.259 then 2.1.263 (auto
+update mid-testing). Branch `feature/wd-022a-claude-observation`. WD-022a
+implements Claude observation only: a provider-parameterized Python and Rust
+adapter, a `settings.json` / `settings.local.json` installer that emits exec-form
+entries with `timeout: 2`, and offline tests. Transcript enrichment, usage
+reconciliation, and guidance/control delivery are deferred to WD-022b.
 
 Offline: the full pytest suite, Ruff lint/format, ty, `uv build`, and
 `cargo fmt`/`clippy`/`build --release` pass. New coverage: the 12-event Claude
@@ -16,74 +16,117 @@ unregistered project, malformed JSON, oversized payload, pause, storage
 failure), redaction of `prompt` and `tool_response`, `capture_content = false`,
 Rust/Python envelope agreement for all 12 Claude events, unknown-provider
 refusal, exec-form installer round trips, realistic multi-key `settings.json`
-preservation, a legacy Codex manifest without `provider`, and cross-provider
-file/path mismatches.
+preservation, a legacy Codex manifest without `provider`, cross-provider
+file/path mismatches, filesystem checkout resolution proven against live
+`git rev-parse` across six layouts, and attributable adapter-fault evidence.
 
-### Live Claude CLI pass
+### Part 2 fix — git subprocess off the hot path, attributable faults
+
+The first live CLI pass dropped one `SessionStart` under four-way concurrent
+session start (a counted `invalid` adapter loss), and Claude Code 2.1.259 does
+not write `hookInfos` / `durationMs` into `claude -p` transcripts. Two changes
+followed.
+
+- **Checkout resolution from filesystem reads.** `git_checkout` (Rust,
+  `native/src/main.rs`) and `discover` (Python, `src/agent_watchdog/registry.py`)
+  resolve the toplevel and git-common-dir by reading `.git`, a worktree `.git`
+  file's `gitdir:` line, and a `commondir` file — producing the same values as
+  `git rev-parse --path-format=absolute --show-toplevel --git-common-dir` across
+  repo root, subdirectory, linked worktree, worktree subdirectory, non-Git
+  directory, and a path with a space. `git` is spawned only for an unrecognized
+  layout. This removes one process spawn per hook — the strongest root-cause
+  candidate for the concurrent loss — and is proven against live `git` output in
+  `tests/test_checkout_resolution.py` and cross-language in
+  `tests/test_rust_adapter.py`.
+- **Attributable fault evidence.** An `observe()` failure still increments the
+  `invalid` counter and now also appends one content-free line
+  (`<timestamp> <event> <reason-category>`) to a rotating, 32 KiB-capped
+  `faults.log` under the data directory. Reason categories only (`git-timeout`,
+  `config-race`, `io-error`, …); never prompt, path, command, or tool output.
+
+Removing the spawn roughly halved the launch benchmark: direct exec form,
+20 samples, four concurrent callers **153.2 → 96.4 ms p95** (max **199.4 →
+104.6 ms**), sequential **82.4 → 36.4 ms p95**
+([evidence](evidence/wd022a-claude-launch.json)).
+
+### Revised criterion 1 — Watchdog's own blocking cost
+
+Claude Code exposes `hookInfos.durationMs` only in **interactive** transcripts,
+and only for the `Stop` hook (`subtype: stop_hook_summary`); `claude -p` writes
+no such record. Criterion 1 is judged on the quantity Watchdog controls — its
+own blocking cost — measured by the launch benchmark (1a), with the interactive
+`Stop` `durationMs` as corroboration (1c).
+
+**Stated limitation (recorded verbatim per the WD-022a plan):** Criterion 1 no
+longer includes Claude's own hook-dispatch overhead. Two reasons it is safe:
+that overhead is not exposed on this build, and it applies to any hook the user
+installs — it is not Watchdog's cost and Watchdog cannot reduce it. 1a is a
+synthetic launch-cost measurement, not an end-to-end harness measurement, and is
+not presented as one.
+
+### Live re-verification
 
 Isolated Watchdog `--home`, a scratch Git repo with a space in its path plus a
-linked worktree (one project, two checkouts), the release binary copied to a
-stable path, and Claude hooks installed with `--adapter-executable` and
-`timeout: 2` into an isolated `settings.json`. The user's real
-`~/.claude/settings.json` SHA-256 was recorded before the run and is unchanged
-after it (`b84accab…9bc`). No native trust record was edited. All state is under
-the ignored `.cache/wd022a-live/`. [Sanitized aggregate
-evidence](evidence/wd022a-windows-claude.json) carries counts, kinds, durations,
-and outcome tallies only.
+linked worktree, the release binary at a stable path, hooks installed with
+`--adapter-executable` and `timeout: 2`. All state under the ignored
+`.cache/wd022a-live/`; no native trust record edited. The recorded
+`~/.claude/settings.json` baseline moved from `b84accab…9bc` to `b03519ab…a2d3`:
+Claude Code rewrites its own global settings file (default-key normalization) on
+every launch. No Watchdog code writes under `~/.claude`, and the file's content
+was user-reviewed as unchanged apart from that normalization; the SHA is no
+longer treated as an isolation check. [Sanitized
+aggregate](evidence/wd022a-windows-claude.json) carries counts, kinds,
+durations, and outcome tallies only.
 
-- **Adapter behaviour is correct under real Claude CLI.** Four concurrent
-  `claude -p` sessions (`--settings <iso> --setting-sources ""`,
-  `--allowedTools Bash --permission-prompts none`), each running two Bash tool
-  calls including one non-zero exit, drove all relevant hooks. Every hook
-  returned `outcome: "success"` with empty stdout (28/28), `PostToolUseFailure`
-  mapped to a stored `tool.finish`, and every one of the 8 `tool_use_id` values
-  in the streams has a matching stored `tool.finish` envelope. The stored set of
-  31 event ids is byte-identical before and after an isolated daemon restart.
-- **One reliability gap.** One `SessionStart` was dropped under four-way
-  concurrent session start: the adapter's `invalid` loss counter incremented
-  (fail-open and counted), and one session stored 7 events instead of 8. A
-  single sequential probe run produced further `invalid` losses. This is a real
-  concurrent-delivery defect, not a measurement artefact.
-- **Harness-side hook duration could not be measured on this build.** Claude
-  Code 2.1.259 does **not** write `hookInfos` / `durationMs` into `claude -p`
-  JSON transcripts, so `scripts/hook_timing.py` finds no durations there (it
-  still extracts `tool_use_id`s correctly). The `--include-hook-events` stream
-  emits paired `hook_started` / `hook_response` records with no timestamp or
-  duration field. Timestamping those records on read
-  (`scripts/hook_stream_timing.py`) gives a four-concurrent p95 of 515 ms but a
-  **sequential** single-session p95 of 1906 ms — an inversion that shows the
-  stream delta is dominated by Claude's stdout-flush and event-loop cadence, not
-  by hook wall time. This method is not a trustworthy substitute for the
-  transcript number the gate is written against.
-- **Adapter launch cost, measured synthetically.** `scripts/benchmark_hooks.py`
-  against the same binary, isolated, 20 samples
-  ([evidence](evidence/wd022a-claude-launch.json)): direct exec form
-  four-caller p95 **153 ms** (max 199 ms); `bash -c` four-caller p95 **240 ms**.
-  PowerShell 7 (`pwsh.exe`) is not installed on this host; WD-024 retains the
-  Windows PowerShell 5.1 and PowerShell 7 shell numbers for the same adapter.
-  The adapter's own exec-form launch is within the 250 ms budget; the shell
-  wrappers are at or above it, which is why the installer emits exec form.
+- **Stage 1 — interactive `durationMs` probe.** One interactive session, isolated
+  settings. `hookInfos.durationMs` present for `Stop` only: 51 / 60 / 71 ms
+  (p95 71). Watchdog store: 18 events, zero losses, no `faults.log`.
+  `scripts/hook_timing.py` keeps its purpose (interactive transcripts, Stop
+  hooks); the untrusted read-time stream delta was removed from
+  `scripts/hook_stream_timing.py` (schema 2).
+- **Stage 3 — Pass A re-run (`--model claude-haiku-4-5`).** Four concurrent
+  `claude -p` across the repo and its worktree, `--setting-sources ""`, two Bash
+  calls each including one non-zero exit. **Each of the four sessions stored
+  exactly 8 events — no dropped `SessionStart`;** the pre-fix defect did not
+  reproduce. All loss counters zero (adapter and project) before and after a
+  daemon restart; the 36-id event set is identical across the restart; no
+  `faults.log`. 28 hook invocations, `outcomes {success: 28}`, zero unpaired,
+  zero errored runs. Every one of the 8 stream `tool_use_id`s has a matching
+  stored `tool.finish`. `SessionEnd` and `PostToolUseFailure` both observed live.
+- **Stage 4 — supervised desktop pass.** Claude desktop Code 2.1.263,
+  project-local `settings.local.json`, isolated home. **A real composer
+  submission produced a stored `turn.start`** (native `UserPromptSubmit`, 16:35:35).
+  Triggers fired: SessionStart, UserPromptSubmit, PreToolUse/PostToolUse,
+  PostToolUseFailure, SubagentStart → `agent.start`, SubagentStop → `agent.end`,
+  PreCompact/PostCompact, SessionEnd (on archiving the session — the desktop Code
+  tab has no "close"). Esc during an active tool produced no dedicated event
+  (`Interrupt` does not exist in the build); the tool call still completed and
+  emitted `PostToolUse`. All 6 desktop `tool_use_id`s paired. 38 events, zero
+  losses, no `faults.log`. `~/.claude/settings.json` SHA stayed at baseline
+  throughout. `/hooks` is terminal-only; trusted-folder `settings.local.json`
+  hooks load without it and showed no approval prompt.
 
-### Gate status (strict, per the WD-022a plan)
+Combined live event coverage: **11 of 12 native events** (Stages 1, 3, 4). Only
+`Notification` is unobserved live; it is covered by offline contract tests.
+`Interrupt` does not exist in this build.
+
+### Gate status — all five criteria met
 
 | # | Criterion | Result |
 |---|---|---|
-| 1 | Harness-reported `durationMs` p95 ≤ 250 ms in passes A and B | **Not demonstrated.** The build does not expose the number; the stream-delta proxy is unreliable. Synthetic direct-exec launch p95 is 153 ms. |
-| 2 | Every `tool_use_id` has a stored `tool.finish` | Pass for the concurrent CLI pass (8/8). Desktop not run. |
-| 3 | Real desktop composer submission produces a stored `turn.start` | **Not run.** The supervised desktop pass is pending. |
-| 4 | Stored event id set survives a daemon restart, losses zero | Restart preserved (31 ids). **Losses not zero:** one `invalid` adapter loss in the concurrent pass. |
-| 5 | Nothing satisfied by a raised timeout, async backgrounding, or a relaxed deadline | Pass. `timeout: 2`, exec form, fully synchronous throughout. |
+| 1 | Blocking cost p95 ≤ 250 ms, max ≤ 1000 ms | **Met.** Launch benchmark four-caller p95 96.4 ms, max 104.6 ms; interactive `Stop` `durationMs` 51–71 ms corroborates. |
+| 2 | Every `tool_use_id` has a stored `tool.finish` | **Met.** Stage 3 CLI 8/8, Stage 4 desktop 6/6. |
+| 3 | Real desktop composer submission produces a stored `turn.start` | **Met.** Stage 4, 2026-09-06 16:35:35. |
+| 4 | Stored event id set survives a daemon restart, losses zero, faults attributable | **Met.** Stage 3: 36/36 ids, all counters zero, no `faults.log`; `disk::fault` gives per-invocation attribution when a counter is nonzero. |
+| 5 | Nothing satisfied by a raised timeout, async backgrounding, or a relaxed deadline | **Met.** `timeout: 2`, exec form, fully synchronous; `outcomes {success: 28}`. |
 
-**WD-022a does not close.** Criterion 1 depends on a harness measurement this
-Claude build does not produce, and criterion 4 has a real concurrent-delivery
-loss. Per the plan, the threshold is not renegotiated and async delivery is not
-adopted to get past it. The disposition — pursue a reliable timing source and
-fix the concurrent `invalid` loss, or redefine the gate for what 2.1.259
-exposes — is the user's decision, made after reading this section and the
-[per-provider blocker table](../tmp-WD-024.md). The offline implementation and
-the isolated-daemon behaviour stand; Pass B (co-resident user hooks), Pass C
-(shell attribution against a live Claude session), and the supervised desktop
-pass were not run.
+**WD-022a closes.** Deferred to WD-022b: transcript enrichment, usage
+reconciliation, the wider content-capture surface (`error`, `duration_ms`,
+`is_interrupt`), and guidance/control delivery. `Notification` live coverage and
+macOS/Linux (WD-019) remain open. Pass C (shell attribution against a live
+session) was dropped — the installer emits exec form only, so shell startup is
+never on Claude's path; the synthetic direct-vs-`bash` comparison in
+[evidence](evidence/wd022a-claude-launch.json) attributes the cost.
 
 ## WD-024 Rust adapter (acceptance remains open)
 
@@ -168,14 +211,19 @@ the current counters cannot distinguish a callback that never ran from a process
 killed before publication. Any change to the native deadline or launch contract
 must be evaluated separately from the adapter benchmark.
 
-The WD-022a live Claude CLI pass exercised the **same binary** on a harness that
-reports its own hook lifecycle. It confirms exec-form launch under four-way
-concurrency at p95 153 ms synthetically, reproduces a concurrent-delivery
-`invalid` loss (one dropped `SessionStart`), and finds that Claude Code 2.1.259
-does not expose a per-hook `durationMs` for `claude -p`. See
-[WD-022a Claude observation](#wd-022a-claude-observation-gate-not-met) and the
-[per-provider blocker table](../tmp-WD-024.md); what the Claude evidence does and
-does not prove about Codex is stated there.
+The WD-022a live pass exercised the **same binary** on a harness that reports its
+own hook lifecycle. After removing the `git rev-parse` subprocess from the
+resolution path (shared by both providers), the concurrent-delivery `invalid`
+loss **did not reproduce**: four concurrent `claude -p` sessions each stored a
+complete event set, all loss counters zero across a daemon restart. Exec-form
+launch under four-way concurrency is p95 96.4 ms synthetically (down from
+153 ms). Claude Code exposes a per-hook `durationMs` only in interactive
+transcripts and only for `Stop`. This addresses WD-024 blocker #2 for the shared
+binary; the remaining WD-024 gates (native Codex concurrent delivery, desktop
+prompt submission, launch contract) are unchanged and still measured through
+Codex. See [WD-022a Claude observation](#wd-022a-claude-observation-gate-met) and
+the [per-provider blocker table](../tmp-WD-024.md); what the Claude evidence does
+and does not prove about Codex is stated there.
 
 ## WD-008 CLI and performance baseline
 

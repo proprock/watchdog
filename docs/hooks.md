@@ -219,8 +219,10 @@ Codex manifest without `provider`. It never installs into an active provider
 configuration or invokes a model.
 
 Live Windows evidence and remaining limits are recorded in
-[verification](verification.md); the WD-022a Claude CLI pass did not meet its
-gate. macOS/Linux live checks remain WD-019.
+[verification](verification.md#wd-022a-claude-observation-gate-met); the WD-022a
+gate is met (interactive `durationMs` probe, four-concurrent `claude -p` Pass A
+re-run with no dropped events and zero losses, and a supervised desktop pass
+with a real composer submission). macOS/Linux live checks remain WD-019.
 
 `scripts/hook_stream_timing.py` supports the live CLI pass: `capture` records a
 stamped NDJSON of `hook_started`/`hook_response` and tool records from a headless
