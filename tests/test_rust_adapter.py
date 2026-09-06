@@ -8,7 +8,16 @@ from uuid import uuid4
 
 import pytest
 
-from agent_watchdog.config import Config, Limits, Project, UserPaths, save_config
+from agent_watchdog.config import (
+    Config,
+    ConfigError,
+    Limits,
+    Project,
+    UserPaths,
+    load_config,
+    save_config,
+)
+from agent_watchdog.daemon import _drain_spool, write_spool_limits
 from agent_watchdog.events import Envelope
 from agent_watchdog.storage import Inbox, Store, writer_lock
 
@@ -61,7 +70,30 @@ def invoke(binary, paths, payload, provider="codex", extra_args=()):
     )
 
 
-def test_native_envelope_is_consumed_by_python(rust_adapter, native_setup):
+def spool_files(paths):
+    directory = paths.data / "spool"
+    if not directory.is_dir():
+        return []
+    return [entry for entry in directory.glob("*.json") if entry.name != "limits.json"]
+
+
+def drain_spool(paths):
+    """Run the daemon's spool resolution once, synchronously, as `_poll` would.
+
+    `_poll` skips the drain when the config is unreadable, so mirror that.
+    """
+    try:
+        config = load_config(paths.config)
+    except ConfigError:
+        return
+    _drain_spool(paths, config)
+
+
+def inbox_files(paths, project):
+    return list((paths.project_data(project.id) / "inbox").glob("*.json"))
+
+
+def test_native_spools_then_daemon_resolves_and_admits(rust_adapter, native_setup):
     paths, project = native_setup
     result = invoke(
         rust_adapter,
@@ -74,12 +106,23 @@ def test_native_envelope_is_consumed_by_python(rust_adapter, native_setup):
         },
     )
     assert result.returncode == 0 and result.stdout == "{}\n" and not result.stderr
-    root = paths.project_data(project.id)
-    incoming = list((root / "inbox").glob("*.json"))
+    # The adapter only spools; nothing reaches the project inbox until the daemon drains.
+    spooled = spool_files(paths)
+    assert len(spooled) == 1
+    record = json.loads(spooled[0].read_bytes())
+    assert record["cwd"] == str(project.root) and record["provider"] == "codex"
+    assert b"private-value" not in spooled[0].read_bytes()
+    assert not inbox_files(paths, project)
+
+    drain_spool(paths)
+    assert not spool_files(paths)
+    incoming = inbox_files(paths, project)
     assert len(incoming) == 1 and b"private-value" not in incoming[0].read_bytes()
     envelope = Envelope.model_validate_json(incoming[0].read_bytes())
+    assert str(envelope.event_id) == record["event_id"]
     assert envelope.session_id == "native" and envelope.kind == "turn.start"
     assert "explain code" in envelope.model_dump_json()
+    root = paths.project_data(project.id)
     with Store(root, project.id) as store:
         assert Inbox(root).drain(store).inserted == 1
         assert store.events() == [envelope]
@@ -96,22 +139,35 @@ def test_native_pause_and_config_opt_out(rust_adapter, native_setup):
         "last_assistant_message": "omit this",
     }
     assert invoke(rust_adapter, paths, payload).returncode == 0
-    incoming = list((paths.project_data(project.id) / "inbox").glob("*.json"))
+    drain_spool(paths)
+    incoming = inbox_files(paths, project)
     assert len(incoming) == 1 and b"omit this" not in incoming[0].read_bytes()
+
     set_desired(paths, paused=True)
     assert invoke(rust_adapter, paths, payload).stdout == "{}\n"
-    assert len(list(incoming[0].parent.glob("*.json"))) == 1
+    # A paused adapter does not even spool.
+    assert not spool_files(paths)
+    drain_spool(paths)
+    assert len(inbox_files(paths, project)) == 1
 
 
-def test_native_respects_python_control_lock(rust_adapter, native_setup):
+def test_native_drain_respects_the_python_control_lock(rust_adapter, native_setup):
     paths, project = native_setup
+    assert (
+        invoke(rust_adapter, paths, {"cwd": str(project.root), "hook_event_name": "Stop"}).stdout
+        == "{}\n"
+    )
+    assert len(spool_files(paths)) == 1
     with writer_lock(paths.data / "control.lock"):
-        result = invoke(rust_adapter, paths, {"cwd": str(project.root), "hook_event_name": "Stop"})
-    assert result.stdout == "{}\n"
-    assert not list(paths.project_data(project.id).glob("inbox/*.json"))
+        drain_spool(paths)
+    # The drain could not admit while the control lock was held; the record survives.
+    assert not inbox_files(paths, project)
+    assert len(spool_files(paths)) == 1
+    drain_spool(paths)
+    assert len(inbox_files(paths, project)) == 1 and not spool_files(paths)
 
 
-def test_native_counts_expanded_unicode_payload(rust_adapter, native_setup):
+def test_native_expanded_unicode_payload_is_rejected_at_drain(rust_adapter, native_setup):
     from agent_watchdog.resources import losses
 
     paths, project = native_setup
@@ -119,11 +175,14 @@ def test_native_counts_expanded_unicode_payload(rust_adapter, native_setup):
     payload = {
         "cwd": str(project.root),
         "hook_event_name": "UserPromptSubmit",
-        "prompt": "\u754c" * 600,
+        "prompt": "界" * 600,
     }
-    result = invoke(rust_adapter, paths, payload)
-    assert result.stdout == "{}\n"
-    assert not list(paths.project_data(project.id).glob("inbox/*.json"))
+    # 1800 raw bytes clear the adapter's fallback cap; ensure_ascii expansion in the
+    # daemon's canonical form pushes it past the project's 4096-byte limit.
+    assert invoke(rust_adapter, paths, payload).stdout == "{}\n"
+    assert len(spool_files(paths)) == 1
+    drain_spool(paths)
+    assert not inbox_files(paths, project)
     assert losses(paths.project_data(project.id))["payload"] == 1
 
 
@@ -167,30 +226,37 @@ def test_native_matches_python_event_contract(rust_adapter, native_setup, monkey
     }
     observe(paths, io.BytesIO(json.dumps(payload).encode()))
     assert invoke(rust_adapter, paths, payload).stdout == "{}\n"
-    incoming = next(paths.project_data(project.id).glob("inbox/*.json"))
+    drain_spool(paths)
+    incoming = inbox_files(paths, project)[0]
     actual = Envelope.model_validate_json(incoming.read_bytes())
     exclude = {"received_at", "event_id"}
     assert actual.model_dump(exclude=exclude) == captured[0].model_dump(exclude=exclude)
 
 
 @pytest.mark.parametrize("lock_name", ["admission.lock", "losses.lock"])
-def test_native_respects_project_locks(rust_adapter, native_setup, lock_name):
+def test_native_drain_respects_project_locks(rust_adapter, native_setup, lock_name):
     from agent_watchdog.resources import losses
 
     paths, project = native_setup
     root = paths.project_data(project.id)
     root.mkdir(parents=True)
+    assert invoke(rust_adapter, paths, {"cwd": str(project.root)}).stdout == "{}\n"
     with writer_lock(root / lock_name):
-        if lock_name == "losses.lock":
-            with writer_lock(paths.data / "control.lock"):
-                result = invoke(rust_adapter, paths, {"cwd": str(project.root)})
-        else:
-            result = invoke(rust_adapter, paths, {"cwd": str(project.root)})
-    assert result.stdout == "{}\n" and not list(root.glob("inbox/*.json"))
-    assert losses(root)["busy"] == (lock_name == "admission.lock")
+        drain_spool(paths)
+    if lock_name == "admission.lock":
+        # Admission cannot proceed; the busy loss is recorded and the record kept.
+        assert not inbox_files(paths, project)
+        assert len(spool_files(paths)) == 1
+        assert losses(root)["busy"] == 1
+    else:
+        # The losses lock does not gate admission.
+        assert len(inbox_files(paths, project)) == 1
+        assert losses(root)["busy"] == 0
+    drain_spool(paths)
+    assert len(inbox_files(paths, project)) == 1 and not spool_files(paths)
 
 
-def test_native_quota_and_concurrent_publication(rust_adapter, native_setup):
+def test_native_concurrent_spool_then_quota_enforced_at_drain(rust_adapter, native_setup):
     from concurrent.futures import ThreadPoolExecutor
 
     from agent_watchdog.resources import losses, usage
@@ -203,15 +269,21 @@ def test_native_quota_and_concurrent_publication(rust_adapter, native_setup):
             pool.map(lambda _: invoke(rust_adapter, paths, {"cwd": str(project.root)}), range(8))
         )
     assert all(result.stdout == "{}\n" for result in results)
+    spooled = spool_files(paths)
+    assert len(spooled) == 8
+    ids = {json.loads(entry.read_bytes())["event_id"] for entry in spooled}
+    assert len(ids) == 8
+    assert not list((paths.data / "spool").glob("*.tmp"))
+
+    drain_spool(paths)
     root = paths.project_data(project.id)
-    incoming = list(root.glob("inbox/*.json"))
+    incoming = inbox_files(paths, project)
     assert 0 < len(incoming) < 8
     assert usage(root / "inbox") <= limits.inbox_bytes
-    assert len(incoming) + losses(root)["quota"] + losses(root)["busy"] == 8
+    assert len(incoming) + losses(root)["quota"] == 8
     assert len({Envelope.model_validate_json(p.read_bytes()).event_id for p in incoming}) == len(
         incoming
     )
-    assert not list(root.glob("inbox/*.tmp"))
 
 
 def test_native_unregistered_and_invalid_config_fail_open(rust_adapter, native_setup, tmp_path):
@@ -219,8 +291,13 @@ def test_native_unregistered_and_invalid_config_fail_open(rust_adapter, native_s
     foreign = tmp_path / "foreign"
     foreign.mkdir()
     assert invoke(rust_adapter, paths, {"cwd": str(foreign)}).stdout == "{}\n"
+    drain_spool(paths)
+    assert not inbox_files(paths, project)
+    assert not spool_files(paths)  # unregistered cwd is discarded at drain
+
     paths.config.write_text("schema_version = 999\n", encoding="utf-8")
     assert invoke(rust_adapter, paths, {"cwd": str(project.root)}).stdout == "{}\n"
+    drain_spool(paths)
     assert not list(paths.data.glob("projects/*/inbox/*.json"))
 
 
@@ -272,6 +349,7 @@ def test_copied_native_binary_starts_python_core_and_preserves_worktrees(rust_ad
                 == "{}\n"
             )
         wait(lambda: status(paths)["state"] == "running")
+        wait(lambda: not spool_files(paths))
         wait(lambda: not list(paths.project_data(project.id).glob("inbox/*.json")))
     finally:
         stop(paths)
@@ -327,7 +405,8 @@ def test_native_matches_python_claude_contract(rust_adapter, native_setup, monke
     }
     observe(paths, io.BytesIO(json.dumps(payload).encode()), "claude")
     assert invoke(rust_adapter, paths, payload, provider="claude").stdout == ""
-    incoming = next(paths.project_data(project.id).glob("inbox/*.json"))
+    drain_spool(paths)
+    incoming = inbox_files(paths, project)[0]
     actual = Envelope.model_validate_json(incoming.read_bytes())
     exclude = {"received_at", "event_id"}
     assert actual.model_dump(exclude=exclude) == captured[0].model_dump(exclude=exclude)
@@ -362,7 +441,7 @@ def test_native_unknown_provider_token_is_rejected(rust_adapter, native_setup):
         provider="banana",
     )
     assert result.returncode == 0 and result.stdout == "{}\n"
-    assert not list(paths.project_data(project.id).glob("inbox/*.json"))
+    assert not spool_files(paths)
 
 
 @pytest.fixture
@@ -402,9 +481,10 @@ def native_git_setup(tmp_path):
         yield paths, project, registry, root, worktree
 
 
-def test_native_git_fast_path_matches_registry_resolution(rust_adapter, native_git_setup):
-    """The Rust filesystem checkout resolution agrees with the Python registry,
-    which test_checkout_resolution.py pins directly to `git rev-parse`."""
+def test_native_spooled_cwd_resolves_like_the_registry(rust_adapter, native_git_setup):
+    """The adapter spools `cwd` verbatim; the daemon's drain resolves it, and the
+    result must match the Python registry that test_checkout_resolution.py pins to
+    `git rev-parse`."""
     paths, project, registry, root, worktree = native_git_setup
     inbox = paths.project_data(project.id) / "inbox"
     seen = {}
@@ -413,6 +493,7 @@ def test_native_git_fast_path_matches_registry_resolution(rust_adapter, native_g
             leftover.unlink()
         result = invoke(rust_adapter, paths, {"cwd": str(cwd), "hook_event_name": "Stop"})
         assert result.stdout == "{}\n"
+        drain_spool(paths)
         incoming = list(inbox.glob("*.json"))
         assert len(incoming) == 1
         envelope = Envelope.model_validate_json(incoming[0].read_bytes())
@@ -446,11 +527,15 @@ def test_native_claude_shares_pause_and_payload_limit_paths(rust_adapter, native
 
     paths, project = native_setup
     save_config(paths.config, Config(defaults=Limits(payload_bytes=4096), projects=(project,)))
+    # Publish the snapshot a running daemon would, so the adapter enforces the cap itself.
+    write_spool_limits(paths, load_config(paths.config))
     big = {"cwd": str(project.root), "hook_event_name": "UserPromptSubmit", "prompt": "x" * 8000}
     assert invoke(rust_adapter, paths, big, provider="claude").stdout == ""
-    root = paths.project_data(project.id)
-    assert not list(root.glob("inbox/*.json")) and losses(paths.data)["payload"] == 1
+    assert not spool_files(paths) and losses(paths.data)["payload"] == 1
+
     set_desired(paths, paused=True)
     stop_payload = {"cwd": str(project.root), "hook_event_name": "Stop"}
     assert invoke(rust_adapter, paths, stop_payload, provider="claude").stdout == ""
-    assert not list(root.glob("inbox/*.json"))
+    assert not spool_files(paths)
+    drain_spool(paths)
+    assert not inbox_files(paths, project)

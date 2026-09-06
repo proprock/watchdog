@@ -1,4 +1,4 @@
-use crate::{Result, config::Limits};
+use crate::Result;
 use chrono::{SecondsFormat, Utc};
 use fs2::FileExt;
 use std::fs::{self, File, OpenOptions};
@@ -47,41 +47,37 @@ pub fn linked(path: &Path) -> bool {
     }
 }
 
-pub fn usage(root: &Path) -> Result<u64> {
-    if linked(root) {
-        return Err("linked data directory".into());
-    }
-    if !root.exists() {
-        return Ok(0);
-    }
-    let mut total: u64 = 0;
-    for entry in fs::read_dir(root)? {
-        let path = entry?.path();
-        if linked(&path) {
+/// Count and total the size of `*.json` records directly under `dir` (flat, no
+/// recursion — the spool has no subdirectories, and the daemon drains it fast).
+/// A missing directory is `(0, 0)`. `limits.json` is the daemon's own snapshot,
+/// not a record, so it is not counted.
+pub fn spool_footprint(dir: &Path) -> Result<(u64, u64)> {
+    let entries = match fs::read_dir(dir) {
+        Ok(entries) => entries,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok((0, 0)),
+        Err(error) => return Err(error.into()),
+    };
+    let mut files: u64 = 0;
+    let mut bytes: u64 = 0;
+    for entry in entries {
+        let entry = entry?;
+        let path = entry.path();
+        if path.extension().and_then(|value| value.to_str()) != Some("json")
+            || path.file_name().and_then(|value| value.to_str()) == Some("limits.json")
+        {
             continue;
         }
-        let metadata = match path.metadata() {
+        let metadata = match entry.metadata() {
             Ok(value) => value,
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => continue,
             Err(error) => return Err(error.into()),
         };
-        total = total
-            .checked_add(if metadata.is_dir() {
-                usage(&path)?
-            } else {
-                metadata.len()
-            })
-            .ok_or("size overflow")?;
+        if metadata.is_file() {
+            files = files.saturating_add(1);
+            bytes = bytes.saturating_add(metadata.len());
+        }
     }
-    Ok(total)
-}
-
-pub fn room(root: &Path, limits: &Limits) -> Result<u64> {
-    Ok(limits
-        .project_bytes
-        .saturating_sub(usage(root)?)
-        .min(fs2::available_space(root)?)
-        .saturating_sub(limits.reserve_bytes))
+    Ok((files, bytes))
 }
 
 pub fn atomic(path: &Path, bytes: &[u8]) -> Result<()> {

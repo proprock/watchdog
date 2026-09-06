@@ -3,15 +3,140 @@ import subprocess
 import sys
 import time
 from concurrent.futures import ThreadPoolExecutor
+from datetime import UTC, datetime
 from pathlib import Path
 from uuid import uuid4
 
 import pytest
 
-from agent_watchdog.config import UserPaths, load_config
-from agent_watchdog.daemon import enqueue, mutate_registry, start, status, stop
+from agent_watchdog.config import Limits, UserPaths, load_config
+from agent_watchdog.daemon import (
+    _drain_spool,
+    enqueue,
+    mutate_registry,
+    start,
+    status,
+    stop,
+    write_spool_limits,
+)
 from agent_watchdog.events import Envelope
-from agent_watchdog.storage import Store, WriterBusy, writer_lock
+from agent_watchdog.registry import Registry
+from agent_watchdog.resources import losses
+from agent_watchdog.storage import Inbox, Store, WriterBusy, writer_lock
+
+
+def spool_record(cwd, **input_fields):
+    return {
+        "schema_version": 1,
+        "event_id": str(uuid4()),
+        "received_at": datetime.now(UTC).isoformat(),
+        "provider": "codex",
+        "cwd": str(cwd),
+        "input": input_fields,
+    }
+
+
+def write_spool_record(paths, record):
+    directory = paths.data / "spool"
+    directory.mkdir(parents=True, exist_ok=True)
+    (directory / f"{uuid4().hex}.json").write_text(json.dumps(record), encoding="utf-8")
+
+
+def drain_inbox(paths, project, config):
+    root = paths.project_data(project.id)
+    limits = project.overrides.apply(config.defaults)
+    with Store(root, project.id, limits=limits) as store:
+        return Inbox(root, limits=limits).drain(store)
+
+
+def test_spool_record_is_resolved_built_and_admitted(paths, tmp_path):
+    root = tmp_path / "project"
+    root.mkdir()
+    mutate_registry(paths, lambda registry: registry.add(root))
+    config = load_config(paths.config)
+    project = config.projects[0]
+    record = spool_record(
+        root,
+        hook_event_name="UserPromptSubmit",
+        session_id="s1",
+        prompt="explain code; password=private-value",
+    )
+    write_spool_record(paths, record)
+    inbox = paths.project_data(project.id) / "inbox"
+
+    assert _drain_spool(paths, config) is True
+    assert not list((paths.data / "spool").glob("*.json"))
+    incoming = list(inbox.glob("*.json"))
+    assert len(incoming) == 1
+    envelope = Envelope.model_validate_json(incoming[0].read_bytes())
+    assert str(envelope.event_id) == record["event_id"]
+    assert envelope.kind == "turn.start" and envelope.session_id == "s1"
+    resolved = Registry(config).resolve(root)
+    assert resolved is not None and envelope.checkout_id == resolved.checkout_id
+    assert b"private-value" not in incoming[0].read_bytes()
+    assert "explain code" in envelope.model_dump_json()
+
+
+def test_spool_unregistered_cwd_is_discarded_without_loss(paths, tmp_path):
+    root = tmp_path / "project"
+    root.mkdir()
+    mutate_registry(paths, lambda registry: registry.add(root))
+    config = load_config(paths.config)
+    foreign = tmp_path / "foreign"
+    foreign.mkdir()
+    write_spool_record(paths, spool_record(foreign, hook_event_name="Stop"))
+
+    assert _drain_spool(paths, config) is True
+    assert not list((paths.data / "spool").glob("*.json"))
+    assert not list(paths.data.glob("projects/*/inbox/*.json"))
+    assert losses(paths.data)["invalid"] == 0
+
+
+def test_spool_drain_enforces_the_project_payload_limit(paths, tmp_path):
+    root = tmp_path / "project"
+    root.mkdir()
+    mutate_registry(paths, lambda registry: registry.add(root))
+    config = load_config(paths.config).model_copy(update={"defaults": Limits(payload_bytes=4096)})
+    project = config.projects[0]
+    # ensure_ascii expansion of these code points pushes the canonical envelope
+    # past 4096 bytes; the drain, not the adapter, rejects it here.
+    write_spool_record(
+        paths, spool_record(root, hook_event_name="UserPromptSubmit", prompt="界" * 600)
+    )
+
+    assert _drain_spool(paths, config) is True
+    assert not list((paths.project_data(project.id) / "inbox").glob("*.json"))
+    assert losses(paths.project_data(project.id))["payload"] == 1
+
+
+def test_spool_redrain_is_idempotent(paths, tmp_path):
+    root = tmp_path / "project"
+    root.mkdir()
+    mutate_registry(paths, lambda registry: registry.add(root))
+    config = load_config(paths.config)
+    project = config.projects[0]
+    record = spool_record(root, hook_event_name="Stop")
+    write_spool_record(paths, record)
+    assert _drain_spool(paths, config) is True
+    # A second identical record (a replayed spool file) must not duplicate the event.
+    write_spool_record(paths, record)
+    assert _drain_spool(paths, config) is True
+    result = drain_inbox(paths, project, config)
+    assert result.inserted == 1 and result.duplicates == 1
+    with Store(paths.project_data(project.id), project.id) as store:
+        assert [str(item.event_id) for item in store.events()] == [record["event_id"]]
+
+
+def test_write_spool_limits_uses_largest_project_payload(paths, tmp_path):
+    root = tmp_path / "project"
+    root.mkdir()
+    mutate_registry(paths, lambda registry: registry.add(root))
+    config = load_config(paths.config)
+    write_spool_limits(paths, config)
+    published = json.loads((paths.data / "spool" / "limits.json").read_text())
+    assert published["schema_version"] == 1
+    assert published["payload_bytes"] == config.defaults.payload_bytes
+    assert published["spool_files"] > 0 and published["spool_bytes"] > 0
 
 
 def wait_for(predicate, timeout=10):

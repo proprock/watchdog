@@ -1,14 +1,16 @@
 """Codex observation only: bounded, redacted content and no model feedback."""
 
 import json
+from datetime import datetime
 from pathlib import Path
 from typing import BinaryIO
+from uuid import UUID
 
 from agent_watchdog import daemon, resources
-from agent_watchdog.config import UserPaths, load_config
+from agent_watchdog.config import Limits, UserPaths, load_config
 from agent_watchdog.events import Envelope, EventKind
 from agent_watchdog.privacy import sanitize
-from agent_watchdog.registry import Registry
+from agent_watchdog.registry import Registry, Resolution
 
 EVENTS: dict[str, dict[str, EventKind]] = {
     "codex": {
@@ -46,8 +48,70 @@ def identifier(payload: dict, field: str) -> str | None:
     return value if isinstance(value, str) and value.strip() and len(value) <= 256 else None
 
 
-def observe(paths: UserPaths, stream: BinaryIO, provider: str = "codex") -> None:
+def build_envelope(
+    payload: dict,
+    resolution: Resolution,
+    limits: Limits,
+    provider: str,
+    *,
+    event_id: UUID | None = None,
+    received_at: datetime | None = None,
+) -> Envelope:
+    """Shared hook-envelope construction for the Python path and the spool drain.
+
+    ``event_id`` / ``received_at`` are supplied only when replaying a spool record
+    stamped by the native adapter; otherwise the model defaults apply.
+    """
     events = EVENTS[provider]
+    content = (
+        {
+            key: payload[key]
+            for key in ("prompt", "tool_input", "tool_response", "last_assistant_message")
+            if key in payload
+        }
+        if limits.capture_content
+        else {}
+    )
+    native = identifier(payload, "hook_event_name")
+    envelope = Envelope(
+        provider=provider,
+        project_id=resolution.project_id,
+        checkout_id=resolution.checkout_id,
+        session_id=identifier(payload, "session_id"),
+        turn_id=identifier(payload, "turn_id"),
+        agent_id=identifier(payload, "agent_id"),
+        kind=events.get(native or "", "unknown"),
+        source="hook",
+        payload={
+            provider: {
+                "hook_event_name": native if native in events else "unknown",
+                "tool_use_id": identifier(payload, "tool_use_id"),
+                "tool_name": identifier(payload, "tool_name"),
+                "tool_response_type": type(payload["tool_response"]).__name__
+                if "tool_response" in payload
+                else None,
+                "content": content or "omitted",
+            }
+        },
+        availability={
+            "content": "observed" if content else "unavailable",
+            "surface": "unknown",
+            "provider_version": "unknown",
+            "occurred_at": "unavailable",
+            "tool_outcome": "unknown",
+        },
+    )
+    replay: dict[str, object] = {}
+    if event_id is not None:
+        replay["event_id"] = event_id
+    if received_at is not None:
+        replay["received_at"] = received_at
+    return envelope.model_copy(update=replay) if replay else envelope
+
+
+def observe(paths: UserPaths, stream: BinaryIO, provider: str = "codex") -> None:
+    if provider not in EVENTS:
+        raise KeyError(provider)
     try:
         if daemon.desired(paths).get("paused", False):
             return
@@ -77,44 +141,7 @@ def observe(paths: UserPaths, stream: BinaryIO, provider: str = "codex") -> None
         if len(raw) > limits.payload_bytes:
             resources.count_loss(paths.project_data(project.id), "payload")
             return
-        content = (
-            {
-                key: payload[key]
-                for key in ("prompt", "tool_input", "tool_response", "last_assistant_message")
-                if key in payload
-            }
-            if limits.capture_content
-            else {}
-        )
-        native = identifier(payload, "hook_event_name")
-        event = Envelope(
-            provider=provider,
-            project_id=resolution.project_id,
-            checkout_id=resolution.checkout_id,
-            session_id=identifier(payload, "session_id"),
-            turn_id=identifier(payload, "turn_id"),
-            agent_id=identifier(payload, "agent_id"),
-            kind=events.get(native or "", "unknown"),
-            source="hook",
-            payload={
-                provider: {
-                    "hook_event_name": native if native in events else "unknown",
-                    "tool_use_id": identifier(payload, "tool_use_id"),
-                    "tool_name": identifier(payload, "tool_name"),
-                    "tool_response_type": type(payload["tool_response"]).__name__
-                    if "tool_response" in payload
-                    else None,
-                    "content": content or "omitted",
-                }
-            },
-            availability={
-                "content": "observed" if content else "unavailable",
-                "surface": "unknown",
-                "provider_version": "unknown",
-                "occurred_at": "unavailable",
-                "tool_outcome": "unknown",
-            },
-        )
+        event = build_envelope(payload, resolution, limits, provider)
         # Admission records project-level rejection counts itself.
         try:
             daemon.enqueue(paths, sanitize(event))
