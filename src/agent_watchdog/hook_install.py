@@ -51,7 +51,7 @@ def parse(content: bytes | None) -> dict:
     return value
 
 
-def group(paths: UserPaths, token: str) -> dict:
+def group(paths: UserPaths, token: str, adapter_executable: Path | None = None) -> dict:
     arguments = [
         sys.executable,
         "-m",
@@ -67,6 +67,8 @@ def group(paths: UserPaths, token: str) -> dict:
         "--installation",
         token,
     ]
+    if adapter_executable is not None:
+        arguments[:3] = [str(adapter_executable), "--python", sys.executable]
     return {
         "hooks": [
             {
@@ -84,18 +86,39 @@ def encode(document: dict) -> bytes:
     return (json.dumps(document, indent=2, ensure_ascii=False) + "\n").encode("utf-8")
 
 
-def change(target: Path, paths: UserPaths, *, install: bool, apply: bool) -> dict:
+def change(
+    target: Path,
+    paths: UserPaths,
+    *,
+    install: bool,
+    apply: bool,
+    adapter_executable: Path | None = None,
+) -> dict:
+    if adapter_executable is not None:
+        if not install or not adapter_executable.is_absolute() or not adapter_executable.is_file():
+            raise ValueError("Choose an existing absolute adapter executable for installation")
     target = target.absolute()
     if target.name != "hooks.json":
         raise ValueError("Choose an explicit hooks.json file; inline TOML is not edited")
     if not apply:
-        return _change(target, paths, install=install, apply=False)
+        return _change(
+            target, paths, install=install, apply=False, adapter_executable=adapter_executable
+        )
     target.parent.mkdir(parents=True, exist_ok=True)
     with writer_lock(target.with_name("hooks.json.watchdog.lock")):
-        return _change(target, paths, install=install, apply=True)
+        return _change(
+            target, paths, install=install, apply=True, adapter_executable=adapter_executable
+        )
 
 
-def _change(target: Path, paths: UserPaths, *, install: bool, apply: bool) -> dict:
+def _change(
+    target: Path,
+    paths: UserPaths,
+    *,
+    install: bool,
+    apply: bool,
+    adapter_executable: Path | None = None,
+) -> dict:
     original = read(target)
     document = parse(original)
     manifest_path = target.with_name("hooks.json.watchdog.json")
@@ -116,7 +139,7 @@ def _change(target: Path, paths: UserPaths, *, install: bool, apply: bool) -> di
     ):
         raise ValueError("Invalid installation record; files left unchanged")
     if manifest is None:
-        if "--installation" in json.dumps(document) and "agent_watchdog" in json.dumps(document):
+        if "--installation" in json.dumps(document):
             raise ValueError(
                 "Existing Watchdog hooks have no ownership record; restore that record first"
             )
@@ -126,7 +149,7 @@ def _change(target: Path, paths: UserPaths, *, install: bool, apply: bool) -> di
         manifest = {
             "schema_version": 1,
             "token": token,
-            "group": group(paths, token),
+            "group": group(paths, token, adapter_executable),
             "events": list(EVENTS),
             "original": original.decode("utf-8") if original is not None else None,
         }
@@ -154,7 +177,7 @@ def _change(target: Path, paths: UserPaths, *, install: bool, apply: bool) -> di
                     hooks[event] = []
                 else:
                     hooks.pop(event)
-    if install and expected != group(paths, manifest["token"]):
+    if install and expected != group(paths, manifest["token"], adapter_executable):
         raise ValueError("Installation paths changed; uninstall the recorded installation first")
     if not install and not hooks and "hooks" not in baseline:
         updated.pop("hooks")

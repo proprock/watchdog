@@ -1,0 +1,79 @@
+{
+  "schema_version": 1,
+  "date": "2026-09-06",
+  "scope": "Sanitized aggregate native CLI/desktop observations; no transcripts or native identities",
+  "restart_preserved": true,
+  "native_sessions": {
+    "primary": {
+      "all_kinds": {
+        "session.start": 3,
+        "turn.start": 1,
+        "tool.start": 4,
+        "tool.finish": 5,
+        "turn.end": 4,
+        "session.end": 2,
+        "agent.start": 1,
+        "agent.end": 1
+      },
+      "resumed_check_kinds": {
+        "session.start": 1,
+        "tool.finish": 1,
+        "turn.end": 2,
+        "tool.start": 1,
+        "session.end": 1
+      },
+      "concurrent_check_kinds": {
+        "tool.start": 1,
+        "turn.end": 1
+      }
+    },
+    "worktree": {
+      "all_kinds": {
+        "turn.start": 4,
+        "tool.start": 4,
+        "turn.end": 3,
+        "session.start": 2,
+        "tool.finish": 1,
+        "session.end": 2,
+        "interrupt": 1,
+        "compaction.start": 1,
+        "compaction.end": 1
+      },
+      "resumed_check_kinds": {
+        "session.start": 2,
+        "turn.start": 3,
+        "tool.start": 3,
+        "tool.finish": 1,
+        "session.end": 2,
+        "turn.end": 2,
+        "interrupt": 1,
+        "compaction.start": 1,
+        "compaction.end": 1
+      },
+      "concurrent_check_kinds": {
+        "turn.start": 1,
+        "session.start": 1,
+        "tool.start": 1,
+        "turn.end": 1
+      }
+    }
+  },
+  "losses": {
+    "adapter": {
+      "quota": 0,
+      "payload": 0,
+      "invalid": 7,
+      "io": 0,
+      "busy": 0
+    },
+    "project": {
+      "quota": 0,
+      "payload": 0,
+      "invalid": 0,
+      "io": 0,
+      "busy": 0
+    }
+  },
+  "loss_counter_note": "Aggregate state includes both synthetic shell diagnostics and native probes; the seven adapter invalid observations are not attributed individually. Native callbacks that never ran or timed out before publication are not enumerated by these counters.",
+  "acceptance_complete": false
+}

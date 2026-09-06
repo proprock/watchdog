@@ -10,15 +10,10 @@ Use an installed Watchdog environment with a stable Python executable location.
 Generated commands use that interpreter and absolute Watchdog paths, so moving
 or deleting the environment requires uninstalling and reinstalling the hooks.
 
-Project CLI commands arrive in WD-008. For now, explicitly register a repository
-using the existing Python API from that repository:
+Explicitly register the repository before installing observation hooks:
 
-```python
-from pathlib import Path
-from agent_watchdog.config import user_paths
-from agent_watchdog.daemon import mutate_registry
-
-mutate_registry(user_paths(), lambda registry: registry.add(Path.cwd()))
+```console
+agent-watchdog project add /absolute/project
 ```
 
 Choose an explicit absolute `hooks.json` path. Use a project-local
@@ -32,6 +27,19 @@ agent-watchdog hooks install codex --file /absolute/project/.codex/hooks.json --
 agent-watchdog hooks uninstall codex --file /absolute/project/.codex/hooks.json
 agent-watchdog hooks uninstall codex --file /absolute/project/.codex/hooks.json --apply
 ```
+
+For the Rust adapter, add `--adapter-executable /absolute/bin/agent-watchdog-hook`
+to both install commands (`.exe` on Windows). Build it using the commands in
+[README](../README.md), then copy it to a stable location. The generated command
+also records the current Python executable, used only to start a missing core.
+Omitting this option selects the Python fallback. Switching adapters requires
+uninstalling the recorded installation first, reinstalling, and reviewing the new
+definitions through Codex. Uninstall uses the ownership record and works even if
+the native binary has been removed; omit `--adapter-executable` when uninstalling.
+
+The native adapter uses the existing config, locks, loss counters, and durable
+JSON inbox. Python retains SQLite ownership, retention, analysis, and CLI duties.
+Rust contract tests run through pytest after the release binary has been built.
 
 Without `--apply`, commands return the proposed configuration and perform no
 writes. `--home`, or individual `--config`, `--data`, and `--runtime` options, go
@@ -82,6 +90,12 @@ registered payload limit before parsing, then at the selected project's limit
 (1 MiB by default). Each admission/diagnostic lock waits at most 100 ms. Native
 handlers are synchronous with a two-second timeout. These bounds are not a p95
 whole-hook latency measurement; WD-008 measured an above-target baseline; the Rust adapter and native acceptance remain WD-024.
+
+The WD-024 direct Rust recheck meets the adapter target, but measured Windows
+shell launches remain above 250 ms and the first PowerShell 7 launch exceeded
+two seconds. Concurrent native probes also have missing callbacks. See the
+[separate launch measurements and open gates](verification.md#wd-024-rust-adapter-acceptance-remains-open).
+Do not treat zero adapter loss counters as proof that Codex invoked every hook.
 
 Normal completion and handled failures emit exactly `{}` and exit zero. The adapter
 does not return continuation, denial, context, or other control fields. Missing

@@ -33,6 +33,7 @@ def main() -> int:
     hooks.add_argument("action", choices=("install", "uninstall"))
     hooks.add_argument("provider", choices=("codex",))
     hooks.add_argument("--file", type=Path, required=True)
+    hooks.add_argument("--adapter-executable", type=Path, help="Absolute native adapter path")
     hooks.add_argument("--apply", action="store_true", help="Apply changes; default is dry-run")
     projects = commands.add_parser("project", help="Manage explicitly registered projects")
     actions = projects.add_subparsers(dest="action", required=True)
@@ -133,7 +134,13 @@ def main() -> int:
         if args.command == "hooks":
             print(
                 json.dumps(
-                    change(args.file, paths, install=args.action == "install", apply=args.apply)
+                    change(
+                        args.file,
+                        paths,
+                        install=args.action == "install",
+                        apply=args.apply,
+                        adapter_executable=args.adapter_executable,
+                    )
                 )
             )
             return 0

@@ -77,9 +77,26 @@ plus 20 seconds idle. It verifies two session identities, all 81 events, and
 restart persistence, then stops its owned daemon and removes temporary state.
 `--samples` requires at least 20; `--idle-seconds` accepts 1..60.
 
-Latency includes process startup, Python imports, Git resolution, and admission
-with an already running daemon. It excludes native shell/provider overhead and
-does not measure cold daemon startup. Percentiles use nearest rank. On Windows,
+Select a built or installed native binary with `--adapter-executable PATH`.
+On Windows, `--shell powershell.exe` or `--shell pwsh.exe` includes the generated
+`commandWindows` invocation with `-NoLogo -NoProfile -NonInteractive -Command`.
+The default `--shell direct` excludes the shell. For example:
+
+```console
+uv run python scripts/benchmark_hooks.py --adapter-executable native/target/release/agent-watchdog-hook.exe --shell pwsh.exe --output shell-benchmark.json
+```
+
+The benchmark waits for a healthy daemon/PID before measuring. Each subprocess
+has a 15-second diagnostic timeout, unlike the installed hook's two-second
+timeout. The first call is reported separately from the percentile samples;
+neither warmed percentiles nor successful delivery under 15 seconds establishes
+that the first native hook will finish within two seconds. Reports identify the
+launch mode and remain synthetic, even when the generated shell command is used.
+
+Latency includes process startup, adapter runtime, Git resolution, and admission
+with an already running daemon, plus the shell when explicitly selected. It
+excludes provider scheduling and does not measure cold daemon startup.
+Percentiles use nearest rank. On Windows,
 idle CPU is the daemon's process CPU-time delta and memory is its working set;
 other hosts report those fields unavailable until WD-019 verification.
 

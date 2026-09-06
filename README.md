@@ -17,10 +17,13 @@ A local external observer for Codex coding sessions, built on top of the stock h
 
 ## Development
 
-Python 3.12+ and uv; the commands are identical in PowerShell and POSIX shells:
+Python 3.12+, uv, and Rust stable with the platform linker/build tools. The commands are identical in PowerShell and POSIX shells:
 
 ```console
 uv sync --locked
+cargo build --release --locked --manifest-path native/Cargo.toml
+cargo fmt --manifest-path native/Cargo.toml --check
+cargo clippy --locked --manifest-path native/Cargo.toml -- -D warnings
 uv run agent-watchdog --help
 uv run pytest
 uv run ruff check .
@@ -30,6 +33,10 @@ uv build
 ```
 
 The package is `agent_watchdog` and the command is `agent-watchdog`, avoiding a collision with the `watchdog` filesystem monitoring library. Package publication is not currently planned.
+
+The native adapter builds to `native/target/release/agent-watchdog-hook` (`.exe` on Windows).
+Copy it to a stable location and select it during [hook installation](docs/hooks.md).
+It is a separate host-specific binary; the Python wheel contains the portable core and fallback adapter.
 
 To enable observation, follow [registration and hook installation](docs/hooks.md).
 Installation defaults to dry-run and never changes native trust. Review hooks in

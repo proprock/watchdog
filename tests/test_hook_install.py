@@ -11,6 +11,23 @@ from agent_watchdog.config import UserPaths
 from agent_watchdog.hook_install import change, group
 
 
+def test_native_install_preserves_ownership_and_uninstalls_without_binary(tmp_path):
+    paths = UserPaths(tmp_path / "config.toml", tmp_path / "data", tmp_path / "runtime")
+    binary = tmp_path / "native adapter"
+    binary.write_bytes(b"fixture")
+    target = tmp_path / "hooks.json"
+    change(target, paths, install=True, apply=True, adapter_executable=binary)
+    document = json.loads(target.read_text())
+    command = document["hooks"]["Stop"][0]["hooks"][0]["command"]
+    assert str(binary) in command and "--python" in command
+    assert not change(target, paths, install=True, apply=True, adapter_executable=binary)["changed"]
+    with pytest.raises(ValueError, match="Installation paths changed"):
+        change(target, paths, install=True, apply=True)
+    binary.unlink()
+    change(target, paths, install=False, apply=True)
+    assert not target.exists()
+
+
 @pytest.fixture
 def paths(tmp_path):
     return UserPaths(tmp_path / "config.toml", tmp_path / "data", tmp_path / "runtime")

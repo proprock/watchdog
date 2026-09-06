@@ -1,4 +1,18 @@
-# WD-002 live evidence
+# Verification evidence
+
+`wd024-windows-baseline.json` preserves the original direct Rust measurement.
+`wd024-windows-direct-recheck.json`, `wd024-windows-powershell.json`, and
+`wd024-windows-pwsh.json` compare direct and shell launches of the installed Rust
+binary. All are synthetic 81-event workloads, with a 15-second process timeout;
+they are not native hook-runner deadline tests. The recheck/shell runs use a
+one-second requested idle interval, so the original 20-second baseline remains
+the meaningful idle-cost observation. See [verification](../verification.md)
+for the first-call latency, native event gaps, and open WD-024 acceptance.
+
+`wd024-windows-native.json` contains sanitized aggregate counts from the two
+isolated native coding sessions, with separate recovery/concurrent windows. It
+excludes synthetic shell-timing events and contains no transcripts or native IDs.
+Aggregate loss counters are not a complete native callback delivery audit.
 
 `wd008-windows-baseline.json` is a separate **synthetic** hook-process and idle
 benchmark, not native provider evidence. See [CLI measurement](../cli.md) for its

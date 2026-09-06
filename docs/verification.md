@@ -1,5 +1,88 @@
 # Foundation verification
 
+## WD-024 Rust adapter (acceptance remains open)
+
+2026-09-06, Windows, CPython 3.12.13, Rust 1.98.1. The interrupted implementation
+was recovered on `feature/wd-024-rust-adapter`. Release build and all 172 offline
+pytest tests passed, including Rust/Python envelope, privacy, pause, allowlist,
+quota, compatible lock, concurrent publication, copied-binary/core startup, and
+worktree contracts. Cargo fmt/clippy, Ruff lint/format, ty, and wheel/sdist build
+passed. The native binary remains separate from the portable Python wheel.
+No remote CI or other-OS runtime result is claimed.
+
+The installed Rust binary's [original baseline](evidence/wd024-windows-baseline.json)
+is retained. A [direct recheck](evidence/wd024-windows-direct-recheck.json) confirms
+the adapter target. Shell measurements use the same installed binary and generated
+Windows command, with `-NoLogo -NoProfile -NonInteractive -Command`:
+
+| Launch | First call (ms) | Sequential p95 (ms) | Four callers p95 (ms) |
+|---|---:|---:|---:|
+| Direct Rust recheck | 100.3 | 110.7 | 225.7 |
+| [Windows PowerShell](evidence/wd024-windows-powershell.json) | 324.3 | 338.8 | 833.0 |
+| [PowerShell 7](evidence/wd024-windows-pwsh.json) | 2147.1 | 722.9 | 1375.2 |
+
+Each successful run admitted 81 synthetic events across two sessions/checkouts,
+preserved them across core restart, and recorded zero losses. These diagnostic
+subprocesses have a **15-second** timeout, not the installed hook's two seconds.
+The first PowerShell 7 call exceeded that native budget; repeated short shell
+diagnostics also measured first calls of 2125 ms before interruption and 2101 ms
+after recovery. This identifies shell startup as a material cost and a plausible
+timeout source; it does not attribute every missing native event to that cause.
+Shell choice here is a benchmark option, not a Codex configuration override.
+The 250 ms end-to-end target is not demonstrated through either measured shell.
+
+One direct benchmark attempt failed with `KeyError: 'pid'`: detached startup can
+invalidate the status snapshot before a live PID is published. The benchmark now
+waits for a healthy live PID before timing, reading idle metrics, and inspecting
+restart results. Two behavioral regressions first failed, then passed, including
+bounded rejection of a stale PID. The corrected installed-binary run passed.
+The first full pytest run had a sandbox cache-directory warning; the final run
+used the writable `.cache/pytest` and passed without warnings.
+
+### Native observations and remaining gates
+
+[Sanitized aggregate evidence](evidence/wd024-windows-native.json) excludes content,
+native identities, and the synthetic shell-timing session. The original CLI and
+desktop observations remain in the aggregate; the recovery run has separate
+counts. The adapter does not infer the surface from a session's cwd. Attribution
+below comes from the probe controller, not from envelope metadata.
+
+- CLI: the npm-installed executable reports 0.153.3 in the TUI. A stock `exec
+  resume` probe captured session/prompt start, a pre/post pair, Stop, and SessionEnd.
+  The separate desktop `codex` command reported 0.153.4 but could not find the
+  saved CLI rollout, so that failed resume was not treated as a provider test.
+- Concurrent CLI/desktop: both 30-second tools and their requested replies
+  completed. Both checkouts recorded tool start and turn end, but neither recorded
+  the corresponding PostToolUse in this run. The adapter's project counters were
+  zero; this does not establish lossless native delivery. The earlier run explicitly
+  reported two-second native hook timeouts. The recovery run did not reproduce an
+  explicit timeout message, and the missing callbacks remain unexplained.
+- Desktop: the original run captured session start, an `exit 1` tool completion,
+  subagent start/stop, and Stop. Recovery again captured an `exit 1` completion.
+  Task archival/unload captured SessionEnd. Follow-ups sent through the desktop
+  task API did not produce UserPromptSubmit; actual composer submission remains
+  unverified. Desktop interrupt/compaction controls were unavailable through the
+  current tools, so CLI observations do not establish their desktop coverage.
+- CLI lifecycle: Escape during a 45-second tool produced Interrupt. `/compact`
+  completed and produced PreCompact/PostCompact. `/quit` produced SessionEnd.
+  `/hooks` showed all 11 handlers active. No hook timeout or trust setting was
+  increased, copied, or bypassed.
+- Restart: the exact set of stored live event IDs survived an explicit stop/start
+  of the isolated daemon. Raw local observations remain under ignored test state.
+
+Cleanup completed: both scratch hook installations were removed using their
+ownership records, the probe tasks were archived, the owned TUI exited, and the
+isolated daemon reported `paused` with `alive=false`. Native trust records and
+the local diagnostic data were retained; no global hooks were installed.
+
+WD-024 remains open for reliable native concurrent delivery, actual desktop prompt
+submission and remaining desktop lifecycle triggers, and end-to-end latency.
+The direct Rust target passing is not sufficient to close these gates. Next
+diagnostics need native runner start/exit/timeout evidence for each missing callback;
+the current counters cannot distinguish a callback that never ran from a process
+killed before publication. Any change to the native deadline or launch contract
+must be evaluated separately from the adapter benchmark.
+
 ## WD-008 CLI and performance baseline
 
 2026-09-06, Windows, CPython 3.12.13. New pytest cases first failed because the
