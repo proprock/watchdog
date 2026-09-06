@@ -1,0 +1,49 @@
+{
+  "schema_version": 1,
+  "python": "3.12.13",
+  "os": "Windows-11-10.0.22621-SP0",
+  "scope": "synthetic hook process wall time including selected launch, runtime and Git; daemon already running",
+  "process_timeout_seconds": 15,
+  "adapter": "rust",
+  "provider": "codex",
+  "launch": "direct",
+  "first_ms": 166.38010001042858,
+  "sequential": {
+    "samples": 20,
+    "p50_ms": 33.53960003005341,
+    "p95_ms": 64.6460999851115,
+    "max_ms": 97.17830002773553
+  },
+  "concurrent_four": {
+    "samples": 20,
+    "p50_ms": 74.0304000210017,
+    "p95_ms": 172.98430000664666,
+    "max_ms": 191.01000000955537
+  },
+  "idle": {
+    "seconds": 20.53100000001723,
+    "cpu_seconds": 0.0625,
+    "working_set_bytes": 33427456
+  },
+  "events": 41,
+  "sessions": 2,
+  "checkouts": 2,
+  "restart_preserved": true,
+  "losses": {
+    "adapter": {
+      "quota": 0,
+      "payload": 0,
+      "invalid": 0,
+      "io": 0,
+      "busy": 0
+    },
+    "c9138d18-1138-4530-9cd5-b85b3a3587b6": {
+      "quota": 0,
+      "payload": 0,
+      "invalid": 0,
+      "io": 0,
+      "busy": 0
+    }
+  },
+  "native_provider_validation": false
+}

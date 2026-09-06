@@ -128,7 +128,7 @@ session) was dropped — the installer emits exec form only, so shell startup is
 never on Claude's path; the synthetic direct-vs-`bash` comparison in
 [evidence](evidence/wd022a-claude-launch.json) attributes the cost.
 
-## WD-024 Rust adapter (acceptance remains open)
+## WD-024 Rust adapter (closed with external limitations)
 
 2026-09-06, Windows, CPython 3.12.13, Rust 1.98.1. The interrupted implementation
 was recovered on `feature/wd-024-rust-adapter`. Release build and all 172 offline
@@ -146,6 +146,7 @@ Windows command, with `-NoLogo -NoProfile -NonInteractive -Command`:
 | Launch | First call (ms) | Sequential p95 (ms) | Four callers p95 (ms) |
 |---|---:|---:|---:|
 | Direct Rust recheck | 100.3 | 110.7 | 225.7 |
+| [Direct Rust recheck after shared-resolution optimization](evidence/wd024-windows-direct-fast-recheck.json) (20 samples) | 166.4 | 64.6 | 173.0 |
 | [Windows PowerShell](evidence/wd024-windows-powershell.json) | 324.3 | 338.8 | 833.0 |
 | [PowerShell 7](evidence/wd024-windows-pwsh.json) | 2147.1 | 722.9 | 1375.2 |
 
@@ -158,6 +159,56 @@ after recovery. This identifies shell startup as a material cost and a plausible
 timeout source; it does not attribute every missing native event to that cause.
 Shell choice here is a benchmark option, not a Codex configuration override.
 The 250 ms end-to-end target is not demonstrated through either measured shell.
+The new direct result shows that the shared-resolution optimization benefits the
+native adapter too, but direct launch remains a synthetic comparison mode rather
+than an observed Codex hook runner.
+
+A later 40-sample Windows PowerShell recheck after the shared-resolution change
+improved p95 to 278.7 ms sequential and 563.3 ms for four callers, with all 81
+events retained and zero losses. It is materially faster than the original
+338.8/833.0 ms measurement, but still misses the 250 ms end-to-end target.
+
+### Console hook-launch canary
+
+2026-09-06: `scripts/codex_hook_canary.py` adds an opt-in canary for the Windows
+Codex **CLI** command-launch contract. It writes a randomly named temporary
+profile under the normal `CODEX_HOME`, enables only a `SessionStart` hook, and
+removes that profile in `finally`. The profile's `commandWindows` invokes
+the same PowerShell command form as the production installer and the handler
+records only its event name and executable ancestry, never hook input or model
+output. A Windows Job Object owns the launched CLI tree and closes it before
+the process is collected.
+
+Run it from a standalone PowerShell or `cmd.exe` console, not from a Codex
+Desktop terminal:
+
+```powershell
+uv run python scripts/codex_hook_canary.py probe --record
+```
+
+Save the JSON result, then supply its exact `codex_version` and comma-separated
+`process_chain` on subsequent invocations with `--expected-version` and
+`--expected-process-chain`. Any version, event, or process-chain difference
+fails the command. The canary explicitly refuses a desktop-host environment
+because its local `codex.exe` and `cua_node` runtime are shared with the active
+application. Two attempted in-host runs produced no marker and therefore did
+not establish a baseline; their runtime processes exited without manual
+termination. That in-host observation is an execution-host limitation and does
+not assess the standalone CMD variation described below.
+
+Standalone CLI baseline, 2026-09-06: `codex-cli 0.153.3` produced
+`SessionStart` through `python.exe, python.exe, powershell.exe, codex.exe,
+node.exe, cmd.exe, python.exe, python.exe`; the exact expected-value invocation
+also passed. The optional `--launcher cmd` variation failed before starting the
+handler, while Codex itself exited successfully and reported `SessionStart
+Failed`. Thus `commandWindows` is a Windows override, not evidence of a
+supported direct-CMD runner selection. Retain the PowerShell launch contract;
+do not use the CMD variation as a WD-024 mitigation.
+
+The canary has 20 offline contract tests with the benchmark tests. It verifies
+only the console command-launch shape. It neither substitutes for the native
+concurrent-delivery/desktop lifecycle matrix nor demonstrates the WD-024
+250 ms end-to-end target.
 
 One direct benchmark attempt failed with `KeyError: 'pid'`: detached startup can
 invalidate the status snapshot before a live PID is published. The benchmark now
@@ -203,13 +254,12 @@ ownership records, the probe tasks were archived, the owned TUI exited, and the
 isolated daemon reported `paused` with `alive=false`. Native trust records and
 the local diagnostic data were retained; no global hooks were installed.
 
-WD-024 remains open for reliable native concurrent delivery, actual desktop prompt
-submission and remaining desktop lifecycle triggers, and end-to-end latency.
-The direct Rust target passing is not sufficient to close these gates. Next
-diagnostics need native runner start/exit/timeout evidence for each missing callback;
-the current counters cannot distinguish a callback that never ran from a process
-killed before publication. Any change to the native deadline or launch contract
-must be evaluated separately from the adapter benchmark.
+WD-024 is closed by explicit user decision with reliable native concurrent delivery,
+actual desktop prompt submission/remaining desktop lifecycle triggers, and actual
+Codex Windows end-to-end latency recorded as external provider limitations. The
+direct Rust target passing is not treated as proof that those gates passed. Future
+Windows Codex hook-performance work belongs to WD-026; unavailable lifecycle
+triggers remain documented rather than inferred or silently accepted.
 
 The WD-022a live pass exercised the **same binary** on a harness that reports its
 own hook lifecycle. After removing the `git rev-parse` subprocess from the

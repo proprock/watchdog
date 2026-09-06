@@ -51,6 +51,11 @@ def test_hook_invocation_bash_wraps_with_a_posix_command_string(benchmark):
     assert wrapped[2] == "/adapter --config /c hook claude"
 
 
+def test_hook_invocation_cmd_builds_a_windows_command_string(benchmark):
+    wrapped = benchmark.hook_invocation("cmd.exe", ARGUMENTS)
+    assert wrapped == 'cmd.exe /d /s /c ""/adapter" "--config" "/c" "hook" "claude""'
+
+
 @pytest.mark.parametrize("shell", ["powershell.exe", "pwsh.exe"])
 def test_hook_invocation_powershell_builds_command_without_command_windows(benchmark, shell):
     wrapped = benchmark.hook_invocation(shell, ARGUMENTS)
@@ -65,4 +70,4 @@ def test_benchmark_cli_accepts_claude_provider_and_bash_shell(benchmark, monkeyp
     with pytest.raises(SystemExit):
         benchmark.main()
     assert "at least 20 samples" in capsys.readouterr().err
-    assert set(benchmark.SHELLS) == {"direct", "bash", "powershell.exe", "pwsh.exe"}
+    assert set(benchmark.SHELLS) == {"direct", "bash", "cmd.exe", "powershell.exe", "pwsh.exe"}

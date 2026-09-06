@@ -107,7 +107,7 @@ whole-hook latency measurement; WD-008 measured an above-target baseline; the Ru
 The WD-024 direct Rust recheck meets the adapter target, but measured Windows
 shell launches remain above 250 ms and the first PowerShell 7 launch exceeded
 two seconds. Concurrent native probes also have missing callbacks. See the
-[separate launch measurements and open gates](verification.md#wd-024-rust-adapter-acceptance-remains-open).
+[separate launch measurements and recorded limitations](verification.md#wd-024-rust-adapter-closed-with-external-limitations).
 Do not treat zero adapter loss counters as proof that Codex invoked every hook.
 
 Normal completion and handled failures emit exactly `{}` and exit zero. The adapter

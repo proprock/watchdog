@@ -13,24 +13,31 @@ import time
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
-SHELLS = ("direct", "bash", "powershell.exe", "pwsh.exe")
+SHELLS = ("direct", "bash", "cmd.exe", "powershell.exe", "pwsh.exe")
 
 
-def run(command: list[str], **kwargs) -> subprocess.CompletedProcess:
+def run(command: list[str] | str, **kwargs) -> subprocess.CompletedProcess:
     return subprocess.run(command, capture_output=True, text=True, timeout=15, check=True, **kwargs)
 
 
-def hook_invocation(shell: str, arguments: list[str]) -> list[str]:
+def hook_invocation(shell: str, arguments: list[str]) -> list[str] | str:
     """Wrap the adapter argument list for the requested launch mode.
 
     `direct` is exactly what Claude's exec form does; `bash -c` mirrors Claude's
-    default Windows-with-Git-Bash path; the PowerShell forms build the command
-    from the same argument list without relying on a `commandWindows` field.
+    default Windows-with-Git-Bash path. The Windows shell forms let us compare
+    CMD and PowerShell command-string startup without changing a provider hook.
     """
     if shell == "direct":
         return list(arguments)
     if shell == "bash":
         return ["bash", "-c", shlex.join(arguments)]
+    if shell == "cmd.exe":
+        # Keep argv[0] quoted even without spaces. ``cmd /c`` otherwise folds the
+        # first command token and its following arguments into a program name.
+        # A string prevents Python from escaping the inner quotes while it starts
+        # cmd.exe; the outer quotes are part of CMD's documented /s /c grammar.
+        command = " ".join(f'"{argument.replace(chr(34), chr(34) * 2)}"' for argument in arguments)
+        return f'{shell} /d /s /c "{command}"'
     quoted = "& " + " ".join("'" + arg.replace("'", "''") + "'" for arg in arguments)
     return [shell, "-NoLogo", "-NoProfile", "-NonInteractive", "-Command", quoted]
 
