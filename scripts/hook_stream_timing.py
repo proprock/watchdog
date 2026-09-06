@@ -83,6 +83,8 @@ def capture(args: argparse.Namespace) -> int:
         "--include-hook-events",
         "--verbose",
     ]
+    if getattr(args, "model", None):
+        command += ["--model", args.model]
     for directory in args.add_dir:
         command += ["--add-dir", directory]
     args.out.parent.mkdir(parents=True, exist_ok=True)
@@ -210,6 +212,7 @@ def main() -> None:
     cap.add_argument("--settings", required=True)
     cap.add_argument("--setting-sources", default="")
     cap.add_argument("--add-dir", action="append", default=[])
+    cap.add_argument("--model", help="Optional model alias passed to claude -p")
     cap.add_argument("--prompt", required=True)
     cap.add_argument("--out", type=Path, required=True)
     cap.set_defaults(func=capture)
