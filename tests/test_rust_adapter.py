@@ -365,6 +365,81 @@ def test_native_unknown_provider_token_is_rejected(rust_adapter, native_setup):
     assert not list(paths.project_data(project.id).glob("inbox/*.json"))
 
 
+@pytest.fixture
+def native_git_setup(tmp_path):
+    from agent_watchdog.registry import Registry
+
+    root = tmp_path / "repo with spaces"
+    root.mkdir()
+
+    def git(*args):
+        subprocess.run(["git", "-C", str(root), *args], check=True, capture_output=True, timeout=15)
+
+    git("init")
+    git(
+        "-c",
+        "user.name=Test",
+        "-c",
+        "user.email=test@example.invalid",
+        "-c",
+        "core.hooksPath=/dev/null",
+        "commit",
+        "--allow-empty",
+        "-m",
+        "initial",
+    )
+    worktree = tmp_path / "worktree with spaces"
+    git("worktree", "add", "--detach", str(worktree))
+    (root / "sub").mkdir()
+    (worktree / "nested").mkdir()
+
+    registry = Registry()
+    project = registry.add(root)
+    paths = UserPaths(tmp_path / "config.toml", tmp_path / "data", tmp_path / "runtime")
+    save_config(paths.config, registry.config)
+    paths.data.mkdir()
+    with writer_lock(paths.data / "daemon.lock"):
+        yield paths, project, registry, root, worktree
+
+
+def test_native_git_fast_path_matches_registry_resolution(rust_adapter, native_git_setup):
+    """The Rust filesystem checkout resolution agrees with the Python registry,
+    which test_checkout_resolution.py pins directly to `git rev-parse`."""
+    paths, project, registry, root, worktree = native_git_setup
+    inbox = paths.project_data(project.id) / "inbox"
+    seen = {}
+    for cwd in (root, root / "sub", worktree, worktree / "nested"):
+        for leftover in inbox.glob("*.json"):
+            leftover.unlink()
+        result = invoke(rust_adapter, paths, {"cwd": str(cwd), "hook_event_name": "Stop"})
+        assert result.stdout == "{}\n"
+        incoming = list(inbox.glob("*.json"))
+        assert len(incoming) == 1
+        envelope = Envelope.model_validate_json(incoming[0].read_bytes())
+        expected = registry.resolve(cwd)
+        assert expected is not None
+        assert envelope.project_id == project.id
+        assert str(envelope.checkout_id) == str(expected.checkout_id)
+        seen[cwd] = envelope.checkout_id
+    assert seen[root] == seen[root / "sub"]
+    assert seen[worktree] == seen[worktree / "nested"]
+    assert seen[root] != seen[worktree]
+
+
+def test_native_records_attributable_fault_reason(rust_adapter, native_setup):
+    from agent_watchdog.resources import losses
+
+    paths, _ = native_setup
+    result = invoke(rust_adapter, paths, {"cwd": "relative/path", "hook_event_name": "Stop"})
+    assert result.returncode == 0 and result.stdout == "{}\n"
+    assert losses(paths.data)["invalid"] == 1
+    log = (paths.data / "faults.log").read_text(encoding="utf-8").strip().splitlines()
+    assert len(log) == 1
+    stamp, event, reason = log[0].split(" ")
+    assert event == "Stop" and reason == "cwd-relative"
+    assert stamp.endswith("Z")
+
+
 def test_native_claude_shares_pause_and_payload_limit_paths(rust_adapter, native_setup):
     from agent_watchdog.daemon import set_desired
     from agent_watchdog.resources import losses

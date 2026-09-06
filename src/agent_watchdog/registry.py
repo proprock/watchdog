@@ -26,13 +26,49 @@ class Resolution:
     root: Path
 
 
+def _fast_checkout(dot_git: Path) -> tuple[Path, Path] | None:
+    """Resolve (toplevel, git-common-dir) from a `.git` entry without spawning git.
+
+    Returns None for any layout this does not recognize, so ``discover`` falls
+    back to ``git rev-parse`` unchanged (WD-022a Part 2.2).
+    """
+    toplevel = dot_git.parent
+    if dot_git.is_dir():
+        git_dir = dot_git
+    elif dot_git.is_file():
+        first = dot_git.read_text(encoding="utf-8").splitlines()[:1]
+        if not first or not first[0].startswith("gitdir:"):
+            return None
+        target = Path(first[0][len("gitdir:") :].strip())
+        git_dir = target if target.is_absolute() else toplevel / target
+        if not git_dir.is_dir():
+            return None
+    else:
+        return None
+    commondir = git_dir / "commondir"
+    if commondir.is_file():
+        relative = Path(commondir.read_text(encoding="utf-8").strip())
+        common = relative if relative.is_absolute() else git_dir / relative
+    else:
+        common = git_dir
+    return toplevel, common
+
+
 def discover(path: Path, *, timeout: float = 10) -> Checkout:
     try:
         root = path.resolve(strict=True)
         if not root.is_dir():
             raise RegistryError("Project path must be an existing directory")
-        if not any((parent / ".git").exists() for parent in (root, *root.parents)):
+        dot_git = next(
+            (parent / ".git" for parent in (root, *root.parents) if (parent / ".git").exists()),
+            None,
+        )
+        if dot_git is None:
             return Checkout(root, None)
+        fast = _fast_checkout(dot_git)
+        if fast is not None:
+            toplevel, common = fast
+            return Checkout(toplevel.resolve(strict=True), common.resolve(strict=True))
         result = subprocess.run(
             [
                 "git",

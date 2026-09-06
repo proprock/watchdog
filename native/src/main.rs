@@ -84,13 +84,62 @@ fn git_checkout(cwd: &Path) -> Result<(PathBuf, Option<PathBuf>)> {
     if !root.is_dir() {
         return Err("cwd is not a directory".into());
     }
-    if !root.ancestors().any(|parent| parent.join(".git").exists()) {
+    let Some(dot_git) = root
+        .ancestors()
+        .map(|parent| parent.join(".git"))
+        .find(|candidate| candidate.exists())
+    else {
         return Ok((normalized(&root), None));
+    };
+    // Resolve the checkout from filesystem reads; spawning git is the fallback for
+    // layouts this does not recognize (see WD-022a Part 2.2).
+    if let Some((toplevel, common)) = fast_checkout(&dot_git) {
+        return Ok((normalized(&toplevel), Some(normalized(&common))));
     }
+    git_checkout_via_git(&root)
+}
+
+/// Join `path` onto `base` unless it is already absolute.
+fn join_relative(base: &Path, path: &Path) -> PathBuf {
+    if path.is_absolute() {
+        path.to_path_buf()
+    } else {
+        base.join(path)
+    }
+}
+
+/// Resolve `(toplevel, git-common-dir)` from a discovered `.git` entry without
+/// spawning git. Returns `None` for anything unrecognized so the caller can fall
+/// back. `normalized()` collapses the `..` segments a `commondir` file introduces.
+fn fast_checkout(dot_git: &Path) -> Option<(PathBuf, PathBuf)> {
+    let toplevel = dot_git.parent()?.to_path_buf();
+    let metadata = fs::symlink_metadata(dot_git).ok()?;
+    let git_dir = if metadata.is_dir() {
+        dot_git.to_path_buf()
+    } else if metadata.is_file() {
+        let text = fs::read_to_string(dot_git).ok()?;
+        let target = text.lines().next()?.strip_prefix("gitdir:")?.trim();
+        let git_dir = join_relative(&toplevel, Path::new(target));
+        if !git_dir.is_dir() {
+            return None;
+        }
+        git_dir
+    } else {
+        return None;
+    };
+    let common = match fs::read_to_string(git_dir.join("commondir")) {
+        Ok(text) => join_relative(&git_dir, Path::new(text.trim())),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => git_dir.clone(),
+        Err(_) => return None,
+    };
+    Some((toplevel, common))
+}
+
+fn git_checkout_via_git(root: &Path) -> Result<(PathBuf, Option<PathBuf>)> {
     let mut command = Command::new("git");
     command
         .arg("-C")
-        .arg(&root)
+        .arg(root)
         .args([
             "rev-parse",
             "--path-format=absolute",
@@ -292,7 +341,7 @@ fn ensure_daemon(paths: &Paths) -> Result<()> {
     Ok(())
 }
 
-fn observe(paths: &Paths, provider: &str) -> Result<()> {
+fn observe(paths: &Paths, provider: &str, event_hint: &mut Option<String>) -> Result<()> {
     if paused(paths)? || !paths.config.exists() {
         return Ok(());
     }
@@ -317,6 +366,9 @@ fn observe(paths: &Paths, provider: &str) -> Result<()> {
         return Ok(());
     }
     let input: Value = serde_json::from_slice(&raw)?;
+    if let Some(name) = identifier(&input, "hook_event_name") {
+        *event_hint = Some(name.to_string());
+    }
     let cwd = Path::new(input["cwd"].as_str().ok_or("missing cwd")?);
     if !cwd.is_absolute() {
         return Err("relative cwd".into());
@@ -398,6 +450,27 @@ fn observe(paths: &Paths, provider: &str) -> Result<()> {
     ensure_daemon(paths)
 }
 
+/// Map an `observe()` failure to a stable, content-free category for the fault
+/// log. The raw error text is never written out: it may carry a config snippet
+/// or an OS path (WD-022a Part 2.1 — reason strings only).
+fn fault_category(error: &(dyn std::error::Error + 'static)) -> &'static str {
+    match error.to_string().as_str() {
+        "git lookup timed out" => "git-timeout",
+        "git lookup failed" => "git-failed",
+        "unsupported git layout" => "git-layout",
+        "cwd is not a directory" => "cwd-not-dir",
+        "relative cwd" => "cwd-relative",
+        "missing cwd" => "cwd-missing",
+        "configuration changed during admission" => "config-race",
+        "linked project data" => "linked-data",
+        "oversized control" | "invalid control" => "control-invalid",
+        "no limit" | "limit overflow" => "limits-invalid",
+        _ if error.is::<std::io::Error>() => "io-error",
+        _ if error.is::<serde_json::Error>() => "json-error",
+        _ => "other",
+    }
+}
+
 fn main() {
     #[cfg(windows)]
     prevent_stdio_inheritance();
@@ -416,8 +489,14 @@ fn main() {
         return;
     }
     if let Ok((paths, provider)) = arguments() {
-        if observe(&paths, &provider).is_err() {
+        let mut event_hint = None;
+        if let Err(error) = observe(&paths, &provider, &mut event_hint) {
             disk::loss(&paths.data, 2);
+            disk::fault(
+                &paths.data,
+                fault_category(error.as_ref()),
+                event_hint.as_deref().unwrap_or("unknown"),
+            );
         }
     }
     // Claude adds hook stdout to model context on SessionStart and UserPromptSubmit;

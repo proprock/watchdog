@@ -1,4 +1,5 @@
 use crate::{Result, config::Limits};
+use chrono::{SecondsFormat, Utc};
 use fs2::FileExt;
 use std::fs::{self, File, OpenOptions};
 use std::io::{Read, Seek, SeekFrom, Write};
@@ -114,6 +115,42 @@ pub fn atomic(path: &Path, bytes: &[u8]) -> Result<()> {
     })();
     let _ = fs::remove_file(temporary);
     result
+}
+
+/// Append one content-free line describing an adapter failure to a rotating,
+/// size-capped log under the data directory. Best-effort, like `loss`. The
+/// caller passes a fixed category string; only the event name comes from input,
+/// and it is stripped to `[A-Za-z0-9._-]` and truncated here.
+pub fn fault(root: &Path, reason: &str, event: &str) {
+    const CAP: u64 = 32 * 1024;
+    let _ = (|| -> Result<()> {
+        if linked(root) {
+            return Err("linked diagnostics directory".into());
+        }
+        fs::create_dir_all(root)?;
+        let guard = lock(&root.join("faults.lock"), Duration::from_millis(100))?;
+        let safe: String = event
+            .chars()
+            .filter(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '_' | '-'))
+            .take(64)
+            .collect();
+        let line = format!(
+            "{} {} {}\n",
+            Utc::now().to_rfc3339_opts(SecondsFormat::Millis, true),
+            if safe.is_empty() { "unknown" } else { &safe },
+            reason,
+        );
+        let path = root.join("faults.log");
+        let existing = fs::metadata(&path).map(|m| m.len()).unwrap_or(0);
+        if existing.saturating_add(line.len() as u64) > CAP {
+            let _ = fs::rename(&path, root.join("faults.log.1"));
+        }
+        let mut file = OpenOptions::new().create(true).append(true).open(&path)?;
+        file.write_all(line.as_bytes())?;
+        drop(guard);
+        file.sync_all()?;
+        Ok(())
+    })();
 }
 
 pub fn loss(root: &Path, reason: usize) {

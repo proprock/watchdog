@@ -92,11 +92,16 @@ not a transactional configuration manager.
 ## Adapter behavior
 
 `agent-watchdog hook codex` reads JSON stdin, resolves an explicitly registered
-project/worktree, and atomically admits an envelope through the daemon API. Git
-identity lookup has a 250 ms subprocess timeout; raw input is capped at the largest
-registered payload limit before parsing, then at the selected project's limit
-(1 MiB by default). Each admission/diagnostic lock waits at most 100 ms. Native
-handlers are synchronous with a two-second timeout. These bounds are not a p95
+project/worktree, and atomically admits an envelope through the daemon API.
+Checkout identity (toplevel and git-common-dir) is resolved from filesystem reads
+— the nearest `.git` entry, a worktree `.git` file's `gitdir:` line, and a
+`commondir` file when present — producing the same values as
+`git rev-parse --path-format=absolute --show-toplevel --git-common-dir`. Only an
+unrecognized layout falls back to spawning `git`, which keeps its 250 ms
+subprocess timeout. Raw input is capped at the largest registered payload limit
+before parsing, then at the selected project's limit (1 MiB by default). Each
+admission/diagnostic lock waits at most 100 ms. Native handlers are synchronous
+with a two-second timeout. These bounds are not a p95
 whole-hook latency measurement; WD-008 measured an above-target baseline; the Rust adapter and native acceptance remain WD-024.
 
 The WD-024 direct Rust recheck meets the adapter target, but measured Windows
@@ -110,6 +115,11 @@ does not return continuation, denial, context, or other control fields. Missing
 daemon recovery is detached and does not wait for readiness. Persistent pause
 prevents input processing, queuing, and restart. Invalid input, unavailable Git,
 registry/config errors, and storage/launch failures are ignored by the hook.
+An internal failure increments the `invalid` counter and appends one
+content-free line — `<timestamp> <event-name> <reason-category>` — to a rotating,
+size-capped `faults.log` under the data directory, so a nonzero counter is
+attributable. Reason categories only (for example `git-timeout`, `config-race`,
+`io-error`); never prompt, path, command, or tool-output text.
 Missing Python or a broken installation cannot be handled inside Python; repair
 the installation if the product reports command-launch errors.
 
@@ -211,3 +221,13 @@ configuration or invokes a model.
 Live Windows evidence and remaining limits are recorded in
 [verification](verification.md); the WD-022a Claude CLI pass did not meet its
 gate. macOS/Linux live checks remain WD-019.
+
+`scripts/hook_stream_timing.py` supports the live CLI pass: `capture` records a
+stamped NDJSON of `hook_started`/`hook_response` and tool records from a headless
+session (ids, counts, outcomes only — never prompt, command, or tool output), and
+`report` (schema 2) emits `hook_pairs`, `unpaired_hook_started`, `per_event`,
+`outcomes`, `nonempty_stdout_responses`, and `tool_use_ids`. It reports **no
+timing delta**: the read-time gap between the two stream records is dominated by
+Claude's stdout-flush cadence, not by hook wall time, so it is not a substitute
+for a harness-reported duration. The tool is kept only for pairing, outcome, and
+`tool_use_id` verification.
