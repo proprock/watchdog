@@ -1,0 +1,90 @@
+{
+  "schema_version": 1,
+  "note": "Sanitized aggregate of the WD-022a live Claude CLI pass. Counts, kinds, durations and outcome tallies only; no prompts, paths, commands, tool output, or native identities. Alias ids are the isolated project id only.",
+  "date": "2026-09-06",
+  "os": "Windows-11-10.0.22621-SP0",
+  "python": "3.12.13",
+  "claude_code": "2.1.259",
+  "adapter": "rust-exec-form",
+  "hook_timeout_seconds": 2,
+  "async_backgrounding": false,
+  "isolated_project_id": "f8a91a5e-48ad-4097-a7e7-d66fa057b93b",
+  "settings_target": "isolated settings.json (--setting-sources \"\")",
+  "user_settings_sha256_unchanged": "b84accab828e59ae757dbe729ceb15c20c8e8a6852d27fd2166041cc0d1ba9bc",
+  "pass_A_concurrent_four": {
+    "sessions": 4,
+    "stored_events": 31,
+    "per_session_events": [
+      8,
+      8,
+      8,
+      7
+    ],
+    "hook_pairs_observed": 28,
+    "unpaired_hook_started": 0,
+    "per_event_hook_pairs": {
+      "SessionStart": 4,
+      "UserPromptSubmit": 4,
+      "PreToolUse": 8,
+      "PostToolUse": 4,
+      "PostToolUseFailure": 4,
+      "Stop": 4
+    },
+    "hook_outcomes": {
+      "success": 28
+    },
+    "nonempty_stdout_responses": 0,
+    "tool_use_ids_in_streams": 8,
+    "tool_finish_envelopes_matched": 8,
+    "unmatched_tool_use_ids": 0,
+    "adapter_losses": {
+      "quota": 0,
+      "payload": 0,
+      "invalid": 1,
+      "io": 0,
+      "busy": 0
+    },
+    "project_losses": {
+      "quota": 0,
+      "payload": 0,
+      "invalid": 0,
+      "io": 0,
+      "busy": 0
+    },
+    "dropped_events": {
+      "SessionStart": 1
+    },
+    "restart_preserved_event_ids": 31
+  },
+  "sequential_single_session": {
+    "sessions": 1,
+    "hook_pairs_observed": 7,
+    "stream_delta_ms": {
+      "p50": 672.0,
+      "p95": 1906.0,
+      "max": 1906.0
+    },
+    "note": "Sequential stream deltas exceed the concurrent ones (below). The hook_started/hook_response stream delta is contaminated by Claude's stdout-flush and event-loop cadence and is not a trustworthy hook wall-time on this build."
+  },
+  "harness_observed_hook_delta_ms": {
+    "source": "t(hook_response) - t(hook_started), monotonic read timestamps on the --include-hook-events stream",
+    "pass_A_concurrent_four": {
+      "count": 28,
+      "p50": 125.0,
+      "p95": 515.0,
+      "max": 672.0
+    },
+    "reliability": "low; see sequential_single_session"
+  },
+  "adapter_launch_cost_ms": {
+    "source": "scripts/benchmark_hooks.py against the same binary, isolated, 20 samples",
+    "direct_exec_concurrent_four_p95": 153.2,
+    "bash_c_concurrent_four_p95": 240.0,
+    "pwsh": "unavailable on host"
+  },
+  "gate_8_1_p95_le_250ms": "not demonstrated (stream delta unreliable; synthetic direct-exec launch p95 153 ms is within budget)",
+  "gate_8_2_tool_finish_correlation": "pass for Pass A (8/8)",
+  "gate_8_3_desktop_turn_start": "not run (WD-022a desktop pass pending)",
+  "gate_8_4_restart_and_losses": "restart preserved 31 event ids; losses NOT zero (1 adapter invalid loss in Pass A, more under the sequential probe)",
+  "gate_8_5_synchronous_only": "pass (timeout 2, exec form, no async backgrounding)"
+}

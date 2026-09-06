@@ -1,0 +1,71 @@
+{
+  "schema_version": 1,
+  "note": "Synthetic launch-cost comparison of the WD-022a Claude adapter binary. Not a provider validation.",
+  "python": "3.12.13",
+  "os": "Windows-11-10.0.22621-SP0",
+  "adapter": "rust",
+  "provider": "claude",
+  "samples_per_launch": 20,
+  "process_timeout_seconds": 15,
+  "native_provider_validation": false,
+  "launches": {
+    "direct": {
+      "first_ms": 74.4,
+      "sequential_p95_ms": 82.4,
+      "sequential_max_ms": 82.4,
+      "concurrent_four_p95_ms": 153.2,
+      "concurrent_four_max_ms": 199.4,
+      "events": 41,
+      "sessions": 2,
+      "checkouts": 2,
+      "restart_preserved": true,
+      "losses": {
+        "adapter": {
+          "quota": 0,
+          "payload": 0,
+          "invalid": 0,
+          "io": 0,
+          "busy": 0
+        },
+        "5d6a905b-1a3c-4afa-987c-702243b54e92": {
+          "quota": 0,
+          "payload": 0,
+          "invalid": 0,
+          "io": 0,
+          "busy": 0
+        }
+      }
+    },
+    "bash": {
+      "first_ms": 214.2,
+      "sequential_p95_ms": 139.9,
+      "sequential_max_ms": 144.7,
+      "concurrent_four_p95_ms": 240.0,
+      "concurrent_four_max_ms": 247.1,
+      "events": 41,
+      "sessions": 2,
+      "checkouts": 2,
+      "restart_preserved": true,
+      "losses": {
+        "adapter": {
+          "quota": 0,
+          "payload": 0,
+          "invalid": 0,
+          "io": 0,
+          "busy": 0
+        },
+        "d5308e42-e22b-44e4-b0ce-0947cbc69942": {
+          "quota": 0,
+          "payload": 0,
+          "invalid": 0,
+          "io": 0,
+          "busy": 0
+        }
+      }
+    },
+    "pwsh.exe": {
+      "status": "unavailable",
+      "detail": "PowerShell 7 (pwsh.exe) is not installed on this host (WinError 2). WD-024 retains Windows PowerShell 5.1 and PowerShell 7 shell numbers for the same adapter."
+    }
+  }
+}

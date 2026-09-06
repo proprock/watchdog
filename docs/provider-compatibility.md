@@ -2,7 +2,7 @@
 
 Date: 2026-09-05. Windows, CPython 3.12.13. The locally resolved Codex version command reported 0.153.4; the interactive probe banner reported 0.153.3. Claude CLI reported 2.1.259. Desktop backend versions are not inferred from installed CLI versions.
 
-**Status:** WD-002 is complete as a compatibility investigation with user-accepted limitations. Subsequent Codex lifecycle evidence is in the [WD-005 daemon report](daemon.md); remaining Codex desktop event checks moved from WD-008 to WD-024 after the Python adapter timed out in native probes. Claude implementation and remaining event/lifecycle validation belong to M-Anthropic / WD-022, after WD-014 and before WD-015. Untested event cells below remain untested.
+**Status:** WD-002 is complete as a compatibility investigation with user-accepted limitations. Subsequent Codex lifecycle evidence is in the [WD-005 daemon report](daemon.md); remaining Codex desktop event checks moved from WD-008 to WD-024 after the Python adapter timed out in native probes. Claude observation is implemented in WD-022a (adapter, installer, offline tests, and a live Windows Claude CLI pass; see [verification](verification.md#wd-022a-claude-observation-gate-not-met)); enrichment and guidance/control remain WD-022b. The Claude CLI cells below marked "WD-022a" come from that live pass through the production adapter; unmarked Claude cells are WD-002 capture-probe history and the Claude desktop column is still WD-002 only.
 
 This historical report distinguishes live observations from documented capabilities and untested combinations. The subsequent [WD-006 adapter and installer](hooks.md) now provide metadata-only observation; current live results are in [verification](verification.md).
 
@@ -16,15 +16,16 @@ The opt-in `scripts/capture_hook.py` reads at most 1 MiB, writes a temporary fil
 
 | Event / operation | Codex CLI | Codex desktop task API | Claude CLI | Claude desktop Code |
 |---|---|---|---|---|
-| SessionStart | Not captured on initial launch before trust | Captured on resume | Captured, including init-only | Captured on folder selection |
-| UserPromptSubmit | Captured | Not observed in API-submitted turn | Captured | Captured |
-| PreToolUse / PostToolUse | Captured | Captured for one successful shell call | Captured | Captured for Agent |
-| Nonzero shell exit | PostToolUse captured after exit 1 | Not exercised | PostToolUseFailure captured | Not exercised |
-| PreCompact / PostCompact | Captured via /compact | Not exercised separately | Captured via /compact | Captured via /compact |
-| SubagentStart / SubagentStop | Captured for one child | Not exercised separately | Captured for one child | Captured for one child |
-| Stop | Captured with no-op JSON | Captured | Captured with empty stdout | Captured with empty stdout |
-| Interrupt | Captured after Escape during active turn | Not exercised separately | No same-named native event configured | Not exercised |
-| SessionEnd | Captured on /quit | Not exercised separately | Not configured in this spike | Not configured |
+| SessionStart | Not captured on initial launch before trust | Captured on resume | WD-022a: stored via the adapter; one dropped under 4-way concurrent start (counted `invalid` loss) | Captured on folder selection |
+| UserPromptSubmit | Captured | Not observed in API-submitted turn | WD-022a: stored (`turn.start`), empty stdout accepted | Captured |
+| PreToolUse / PostToolUse | Captured | Captured for one successful shell call | WD-022a: stored for every Bash call (8/8 `tool_use_id` correlated to `tool.finish`) | Captured for Agent |
+| Nonzero shell exit | PostToolUse captured after exit 1 | Not exercised | WD-022a: `PostToolUseFailure` stored as `tool.finish`, `tool_outcome` unknown | Not exercised |
+| PreCompact / PostCompact | Captured via /compact | Not exercised separately | WD-002 via /compact; not re-exercised in the WD-022a CLI pass | Captured via /compact |
+| SubagentStart / SubagentStop | Captured for one child | Not exercised separately | WD-002 for one child; not re-exercised in the WD-022a CLI pass | Captured for one child |
+| Stop | Captured with no-op JSON | Captured | WD-022a: stored (`turn.end`) with empty stdout | Captured with empty stdout |
+| Interrupt | Captured after Escape during active turn | Not exercised separately | No such native event exists in Claude Code 2.1.259 | Not exercised |
+| SessionEnd | Captured on /quit | Not exercised separately | WD-022a: installed and mapped (`session.end`); not observed in headless `-p` before stdout closed | Not configured |
+| Notification | n/a | n/a | WD-022a: installed and mapped to `waiting`; not exercised in the CLI pass | Not exercised |
 
 Codex desktop evidence comes from resuming the same idle scratch session through the native desktop task API. This proves hooks on that execution path, not every GUI operation or backend. Attempting concurrent ownership while the TUI was open failed with an active-writer error; after /quit the API turn completed. This is probe orchestration, not an App Server dependency for Watchdog.
 

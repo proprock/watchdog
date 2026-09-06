@@ -1,6 +1,6 @@
 # TODO
 
-Queue: WD-024 -> WD-009 -> WD-010 -> WD-011 -> WD-012 -> WD-013 -> WD-014 -> WD-022 (M-Anthropic) -> WD-015. WD-016 is optional; WD-019 remains in the final milestone. M1-M4 support Codex coding only; ordinary chats are excluded. Design: ROADMAP.md and docs/architecture.md. This file contains open work only; completed entries move to [DONE.md](DONE.md) with their IDs and verification evidence. Pending work has not yet been verified.
+Queue: WD-024 / WD-022a (in progress, gates open) -> WD-009 -> WD-010 -> WD-011 -> WD-012 -> WD-013 -> WD-014 -> WD-022b (M-Anthropic) -> WD-015. WD-016 is optional; WD-019 remains in the final milestone. M1-M4 support Codex coding only; ordinary chats are excluded. Design: ROADMAP.md and docs/architecture.md. This file contains open work only; completed entries move to [DONE.md](DONE.md) with their IDs and verification evidence. Pending work has not yet been verified.
 
 ## M1 - Collection
 
@@ -19,9 +19,13 @@ Queue: WD-024 -> WD-009 -> WD-010 -> WD-011 -> WD-012 -> WD-013 -> WD-014 -> WD-
 - [ ] **WD-013 - M3 guidance policy.** After WD-012, select calibrated rules for Codex coding sessions, cooldown/expiry, and provider-specific safe delivery. Acceptance: observe by default, opt-in, kill switch, and at least 90% precision with sample size disclosed; distinguish delivery from advice acceptance.
 - [ ] **WD-014 - M4 LLM/control design.** After M3, decide CLI/API execution for Codex coding sessions, budget, isolation, and human-gate semantics. Acceptance: a separately accepted decision before implementation; checks against recursion and unintended data sharing.
 
+## M-Anthropic
+
+- [ ] **WD-022a - Claude observation.** In progress alongside WD-024 (branch `feature/wd-022a-claude-observation`). Provider-parameterized Python and Rust adapters, a `settings.json` / `settings.local.json` installer emitting exec-form entries with `timeout: 2`, the 12-event Claude map, empty-stdout no-op, and offline tests are done and green. The live Windows Claude CLI pass **did not meet its gate**: Claude Code 2.1.259 does not expose a per-hook `durationMs` for `claude -p`, and one `SessionStart` was dropped (counted `invalid` loss) under four-way concurrent session start. Remaining: choose a reliable harness-timing source (or redefine the gate for 2.1.259), fix the concurrent `invalid` loss, run Pass B (co-resident user hooks), Pass C (shell attribution on a live session), and the supervised desktop pass (real composer submission -> stored `turn.start`, subagent, `/compact`, Escape interrupt, session unload). Content capture stays the four Codex-equivalent fields. Evidence: [verification](docs/verification.md#wd-022a-claude-observation-gate-not-met), [tmp-WD-024.md](tmp-WD-024.md). No ordinary chats or Cowork. Does not block M1-M4; macOS/Linux stays WD-019.
+
 ## M-Anthropic - After WD-014, before WD-015
 
-- [ ] **WD-022 - Independent Claude coding support.** Scheduled after WD-014; reuse M1-M4 contracts and preserve existing spike evidence. Add Claude Code CLI/local desktop Code adapters, installer/uninstaller, transcript enrichment, and supported guidance/control delivery. Acceptance: refresh schemas/trust, complete remaining Windows Claude event checks, apply WD-005 lifecycle checks to actual CLI/desktop exit, verify mixed-provider isolation and bounded overhead, and document unavailable control capabilities. No ordinary chats or Cowork. Does not block M1-M4; macOS/Linux validation remains WD-019.
+- [ ] **WD-022b - Claude enrichment, lifecycle, and guidance/control.** Scheduled after WD-014; builds on WD-022a. Add Claude transcript enrichment (versioned readers, offsets/rotation/partial tails), usage reconciliation, the wider content-capture surface (`error`, `duration_ms`, `is_interrupt`), remaining CLI/desktop lifecycle checks beyond observation, supported guidance/control delivery, and — separately recorded — async hook delivery only after the synchronous baseline is fixed and recorded. Acceptance: no cumulative usage double counting, mixed-provider isolation and bounded overhead, documented unavailable control capabilities, and durability of any backgrounded hook verified with the WD-022a evidence standard. No ordinary chats or Cowork. Does not block M1-M4; macOS/Linux validation remains WD-019.
 
 ## Optional extensions after M-Anthropic
 

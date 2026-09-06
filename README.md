@@ -2,11 +2,11 @@
 
 A local external observer for Codex coding sessions, built on top of the stock harness. Claude Code support is a later independent milestone. One process per user, lightweight hook adapters, and one SQLite database per repository.
 
-**Status:** A local [background core](docs/daemon.md), [Codex hooks with an explicit installer](docs/hooks.md), validated configuration and registry ([API](docs/contracts.md)), and [SQLite storage with retention, quotas, and redaction](docs/storage.md). Project registration, doctor, and session inspection are available through the [CLI](docs/cli.md). Analysis remains planned; the measured Python hook latency exceeds target, so WD-024 adds a Rust adapter before WD-009. See [ROADMAP.md](ROADMAP.md), [TODO.md](TODO.md), and [DONE.md](DONE.md).
+**Status:** A local [background core](docs/daemon.md), [Codex and Claude observation hooks with an explicit installer](docs/hooks.md), validated configuration and registry ([API](docs/contracts.md)), and [SQLite storage with retention, quotas, and redaction](docs/storage.md). Project registration, doctor, and session inspection are available through the [CLI](docs/cli.md). Analysis remains planned; the measured Python hook latency exceeds target, so WD-024 adds a Rust adapter before WD-009. WD-022a adds a Claude observation adapter (CLI/desktop Code); its live acceptance gate is not yet met, and Claude enrichment and guidance/control are WD-022b. See [ROADMAP.md](ROADMAP.md), [TODO.md](TODO.md), and [DONE.md](DONE.md).
 
 ## Agreed behavior
 
-- M1-M4 target only Codex CLI and local coding sessions in ChatGPT desktop. Ordinary chats are outside product scope; Cowork and cloud/SSH sessions are excluded. Claude Code CLI and desktop Code are deferred to M-Anthropic, after WD-014 and before WD-015.
+- M1-M4 target only Codex CLI and local coding sessions in ChatGPT desktop. Ordinary chats are outside product scope; Cowork and cloud/SSH sessions are excluded. Claude Code CLI and desktop Code observation is implemented in WD-022a (M-Anthropic); enrichment, lifecycle beyond observation, and guidance/control are WD-022b, after WD-014.
 - The first hook starts an independent core that runs until logout or an explicit stop; a subsequent hook restarts it after a crash. MCP is not required.
 - Collection is enabled for selected repositories. Worktrees share a database; separate clones have separate databases. Data lives outside working copies.
 - Observation comes first: repetitions, errors, validation, duration, tool calls, compaction, available token counts, and output sizes. CLI and Markdown/JSON reports; a cross-project overview comes later.

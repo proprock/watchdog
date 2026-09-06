@@ -1,5 +1,90 @@
 # Foundation verification
 
+## WD-022a Claude observation (gate not met)
+
+2026-09-06, Windows, CPython 3.12.13, Claude Code 2.1.259. Branch
+`feature/wd-022a-claude-observation`. WD-022a implements Claude observation only:
+a provider-parameterized Python and Rust adapter, a `settings.json` /
+`settings.local.json` installer that emits exec-form entries with `timeout: 2`,
+and offline tests. Transcript enrichment, usage reconciliation, and
+guidance/control delivery are deferred to WD-022b.
+
+Offline: the full pytest suite, Ruff lint/format, ty, `uv build`, and
+`cargo fmt`/`clippy`/`build --release` pass. New coverage: the 12-event Claude
+map for both adapters, empty stdout for Claude on every path (success,
+unregistered project, malformed JSON, oversized payload, pause, storage
+failure), redaction of `prompt` and `tool_response`, `capture_content = false`,
+Rust/Python envelope agreement for all 12 Claude events, unknown-provider
+refusal, exec-form installer round trips, realistic multi-key `settings.json`
+preservation, a legacy Codex manifest without `provider`, and cross-provider
+file/path mismatches.
+
+### Live Claude CLI pass
+
+Isolated Watchdog `--home`, a scratch Git repo with a space in its path plus a
+linked worktree (one project, two checkouts), the release binary copied to a
+stable path, and Claude hooks installed with `--adapter-executable` and
+`timeout: 2` into an isolated `settings.json`. The user's real
+`~/.claude/settings.json` SHA-256 was recorded before the run and is unchanged
+after it (`b84accab…9bc`). No native trust record was edited. All state is under
+the ignored `.cache/wd022a-live/`. [Sanitized aggregate
+evidence](evidence/wd022a-windows-claude.json) carries counts, kinds, durations,
+and outcome tallies only.
+
+- **Adapter behaviour is correct under real Claude CLI.** Four concurrent
+  `claude -p` sessions (`--settings <iso> --setting-sources ""`,
+  `--allowedTools Bash --permission-prompts none`), each running two Bash tool
+  calls including one non-zero exit, drove all relevant hooks. Every hook
+  returned `outcome: "success"` with empty stdout (28/28), `PostToolUseFailure`
+  mapped to a stored `tool.finish`, and every one of the 8 `tool_use_id` values
+  in the streams has a matching stored `tool.finish` envelope. The stored set of
+  31 event ids is byte-identical before and after an isolated daemon restart.
+- **One reliability gap.** One `SessionStart` was dropped under four-way
+  concurrent session start: the adapter's `invalid` loss counter incremented
+  (fail-open and counted), and one session stored 7 events instead of 8. A
+  single sequential probe run produced further `invalid` losses. This is a real
+  concurrent-delivery defect, not a measurement artefact.
+- **Harness-side hook duration could not be measured on this build.** Claude
+  Code 2.1.259 does **not** write `hookInfos` / `durationMs` into `claude -p`
+  JSON transcripts, so `scripts/hook_timing.py` finds no durations there (it
+  still extracts `tool_use_id`s correctly). The `--include-hook-events` stream
+  emits paired `hook_started` / `hook_response` records with no timestamp or
+  duration field. Timestamping those records on read
+  (`scripts/hook_stream_timing.py`) gives a four-concurrent p95 of 515 ms but a
+  **sequential** single-session p95 of 1906 ms — an inversion that shows the
+  stream delta is dominated by Claude's stdout-flush and event-loop cadence, not
+  by hook wall time. This method is not a trustworthy substitute for the
+  transcript number the gate is written against.
+- **Adapter launch cost, measured synthetically.** `scripts/benchmark_hooks.py`
+  against the same binary, isolated, 20 samples
+  ([evidence](evidence/wd022a-claude-launch.json)): direct exec form
+  four-caller p95 **153 ms** (max 199 ms); `bash -c` four-caller p95 **240 ms**.
+  PowerShell 7 (`pwsh.exe`) is not installed on this host; WD-024 retains the
+  Windows PowerShell 5.1 and PowerShell 7 shell numbers for the same adapter.
+  The adapter's own exec-form launch is within the 250 ms budget; the shell
+  wrappers are at or above it, which is why the installer emits exec form.
+
+### Gate status (strict, per the WD-022a plan)
+
+| # | Criterion | Result |
+|---|---|---|
+| 1 | Harness-reported `durationMs` p95 ≤ 250 ms in passes A and B | **Not demonstrated.** The build does not expose the number; the stream-delta proxy is unreliable. Synthetic direct-exec launch p95 is 153 ms. |
+| 2 | Every `tool_use_id` has a stored `tool.finish` | Pass for the concurrent CLI pass (8/8). Desktop not run. |
+| 3 | Real desktop composer submission produces a stored `turn.start` | **Not run.** The supervised desktop pass is pending. |
+| 4 | Stored event id set survives a daemon restart, losses zero | Restart preserved (31 ids). **Losses not zero:** one `invalid` adapter loss in the concurrent pass. |
+| 5 | Nothing satisfied by a raised timeout, async backgrounding, or a relaxed deadline | Pass. `timeout: 2`, exec form, fully synchronous throughout. |
+
+**WD-022a does not close.** Criterion 1 depends on a harness measurement this
+Claude build does not produce, and criterion 4 has a real concurrent-delivery
+loss. Per the plan, the threshold is not renegotiated and async delivery is not
+adopted to get past it. The disposition — pursue a reliable timing source and
+fix the concurrent `invalid` loss, or redefine the gate for what 2.1.259
+exposes — is the user's decision, made after reading this section and the
+[per-provider blocker table](../tmp-WD-024.md). The offline implementation and
+the isolated-daemon behaviour stand; Pass B (co-resident user hooks), Pass C
+(shell attribution against a live Claude session), and the supervised desktop
+pass were not run.
+
 ## WD-024 Rust adapter (acceptance remains open)
 
 2026-09-06, Windows, CPython 3.12.13, Rust 1.98.1. The interrupted implementation
@@ -82,6 +167,15 @@ diagnostics need native runner start/exit/timeout evidence for each missing call
 the current counters cannot distinguish a callback that never ran from a process
 killed before publication. Any change to the native deadline or launch contract
 must be evaluated separately from the adapter benchmark.
+
+The WD-022a live Claude CLI pass exercised the **same binary** on a harness that
+reports its own hook lifecycle. It confirms exec-form launch under four-way
+concurrency at p95 153 ms synthetically, reproduces a concurrent-delivery
+`invalid` loss (one dropped `SessionStart`), and finds that Claude Code 2.1.259
+does not expose a per-hook `durationMs` for `claude -p`. See
+[WD-022a Claude observation](#wd-022a-claude-observation-gate-not-met) and the
+[per-provider blocker table](../tmp-WD-024.md); what the Claude evidence does and
+does not prove about Codex is stated there.
 
 ## WD-008 CLI and performance baseline
 

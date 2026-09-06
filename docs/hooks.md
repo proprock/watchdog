@@ -1,8 +1,16 @@
-# Codex observation hooks
+# Observation hooks
 
-WD-006 supports the same native hook adapter for Codex CLI and local desktop
-coding sessions. It neither changes harness behavior nor invokes a model. Ordinary
-chats and Claude are outside this milestone.
+WD-006 supports the native hook adapter for Codex CLI and local desktop coding
+sessions. WD-022a adds Claude Code CLI and desktop Code as a second provider,
+observation only. The adapter never changes harness behavior and never invokes a
+model. Ordinary chats and Cowork are out of scope. Claude transcript enrichment,
+usage reconciliation, and guidance/control delivery are deferred to WD-022b.
+
+The provider is a required positional: `agent-watchdog hook codex|claude` and
+`agent-watchdog hooks install|uninstall codex|claude`. The two providers share
+the envelope schema, the daemon API, locks, loss counters, redaction, and the
+durable JSON inbox; only the native-event map, the target file, and the no-op
+output differ.
 
 ## Register and install
 
@@ -120,13 +128,86 @@ them; the adapter does not guess from cwd or the installed CLI version. Tool-cal
 IDs are not event IDs. A PostToolUse string is not parsed as a universal exit code,
 and Stop means turn end, not task success. Missing native fields remain null.
 
+## Claude observation (WD-022a)
+
+Register the repository first, then install into an explicit absolute
+`settings.json` or `settings.local.json` — no other file name is accepted for
+`claude`, and `hooks.json` is refused. Use a project-local
+`<project>/.claude/settings.local.json` for one checkout or a user-level
+`settings.json` for registered repositories and worktrees.
+
+```console
+agent-watchdog project add /absolute/project
+agent-watchdog hooks install claude --file /absolute/project/.claude/settings.local.json
+agent-watchdog hooks install claude --file /absolute/project/.claude/settings.local.json --apply
+agent-watchdog hooks uninstall claude --file /absolute/project/.claude/settings.local.json --apply
+```
+
+**Exec form, no shell.** Each entry is `{"type": "command", "command": <abs
+executable>, "args": [...], "timeout": 2}`. Claude resolves `command` as an
+executable and spawns it directly with `args`, so paths containing quotes, `$`,
+or backticks never reach a shell parser and no `shlex.join` or `commandWindows`
+is needed. With `--adapter-executable`, `command` is the native binary and `args`
+begin `--python <sys.executable> …`; without it, `command` is `sys.executable`
+and `args` begin `-m agent_watchdog …`. There is no `matcher` (optional per
+schema; absent matches all) and no `commandWindows` (Claude has no such field).
+
+**`timeout: 2` is fixed** — the same production budget as Codex. It is not
+parameterized and is not raised to pass acceptance.
+
+**Empty stdout is required, not stylistic.** Claude adds a hook's stdout to the
+model context on `SessionStart` and `UserPromptSubmit`. Printing `{}` there would
+inject model context and break the invariant that observation hooks do not
+continue a turn or inject context. The adapter therefore prints **nothing** for
+`claude` on every path — success, unregistered project, malformed JSON, oversized
+payload, pause, and internal failure — and always exits 0. The Rust adapter makes
+the same choice by scanning its raw arguments for the `claude` token, so a
+parse failure is also silent. Codex still receives `{}`.
+
+**Twelve native events map to existing envelope kinds:**
+
+| Native | Kind | Native | Kind |
+|---|---|---|---|
+| `SessionStart` | `session.start` | `PostToolUse` | `tool.finish` |
+| `SessionEnd` | `session.end` | `PostToolUseFailure` | `tool.finish` |
+| `UserPromptSubmit` | `turn.start` | `PreCompact` | `compaction.start` |
+| `Stop` | `turn.end` | `PostCompact` | `compaction.end` |
+| `PreToolUse` | `tool.start` | `SubagentStart` | `agent.start` |
+| `Notification` | `waiting` | `SubagentStop` | `agent.end` |
+
+`PostToolUseFailure` maps to `tool.finish` with `availability.tool_outcome =
+"unknown"`, identical to every other tool event; the failure signal survives only
+as the native `hook_event_name` in `payload.claude`. No outcome parser is added —
+tool success is not progress, and neither is its converse. **Claude has no
+`Interrupt` event** in this build. An unknown native name yields kind `unknown`
+with `payload.claude.hook_event_name = "unknown"`, preserved, not fabricated.
+`turn_id` is not sent by Claude and stays null; it is not invented.
+
+**Content capture is deliberately the four Codex-equivalent fields only** —
+`prompt`, `tool_input`, `tool_response`, `last_assistant_message` under
+`payload.claude.content`, subject to `capture_content`. Claude's additional
+`error`, `duration_ms`, and `is_interrupt` fields are **not** captured in
+WD-022a: widening the captured set widens the redaction surface, and it belongs
+to WD-022b along with transcript enrichment.
+
+The ownership record adds `"provider"` at `schema_version` 1. A Codex manifest
+written before this change has no such key and is read as `"codex"`, so an
+existing Codex installation still uninstalls cleanly. Sibling files follow the
+target name: `settings.json.watchdog.json`, `settings.json.watchdog-backup-<sha>`,
+`settings.json.watchdog.lock` (and the `settings.local.json.*` equivalents).
+Review the generated definitions through Claude `/hooks` and restart the session;
+this command never changes trust.
+
 ## Verification
 
-Offline pytest covers known synthetic Codex payload shapes, opaque and structured
-tool responses, exact no-op output on failures, input bounds, registry exclusion,
-persistent pause, shell quoting, idempotent installation, original-file recovery,
-later user edits, edited owned hooks, and interrupted installation. It never
-installs into an active provider configuration or invokes a model.
+Offline pytest covers known synthetic Codex and Claude payload shapes, opaque and
+structured tool responses, exact no-op output on failures (`{}` for Codex, empty
+for Claude), input bounds, registry exclusion, persistent pause, shell quoting,
+idempotent installation, original-file recovery, later user edits, edited owned
+hooks, interrupted installation, cross-provider file/path mismatch, and a legacy
+Codex manifest without `provider`. It never installs into an active provider
+configuration or invokes a model.
 
 Live Windows evidence and remaining limits are recorded in
-[verification](verification.md). macOS/Linux live checks remain WD-019.
+[verification](verification.md); the WD-022a Claude CLI pass did not meet its
+gate. macOS/Linux live checks remain WD-019.

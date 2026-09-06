@@ -2,7 +2,7 @@
 
 Agreed on 2026-09-05. A plan for small projects on top of stock harnesses. Each milestone delivers an independently useful result; later milestones are not enabled automatically. Open tasks: [TODO.md](TODO.md). Completed work: [DONE.md](DONE.md). Contracts: [architecture](docs/architecture.md).
 
-Execution order: M1-M4 for Codex coding only -> M-Anthropic / WD-022 -> App Server / WD-015 -> final cross-platform validation / M5. Anthropic support does not block the Codex observation, analysis, or intervention milestones. Ordinary chats are outside product scope.
+Execution order: M1-M4 for Codex coding only -> M-Anthropic / WD-022a+b -> App Server / WD-015 -> final cross-platform validation / M5. Anthropic support does not block the Codex observation, analysis, or intervention milestones. Ordinary chats are outside product scope.
 
 ## M0 - Foundation and verifiable design
 
@@ -68,21 +68,24 @@ Execution order: M1-M4 for Codex coding only -> M-Anthropic / WD-022 -> App Serv
 
 ## M-Anthropic - Independent Claude coding support
 
-**Schedule:** after M4 / WD-014 and before App Server / WD-015. Tracked as WD-022; it does not block M1-M4. Keep existing Claude spike evidence as a starting point and refresh it when this milestone begins.
+**Schedule:** split into **WD-022a** (Claude observation, in progress now alongside WD-024; does not block M1-M4) and **WD-022b** (enrichment, lifecycle beyond observation, guidance/control; after M4 / WD-014, before App Server / WD-015). Keep existing Claude spike evidence as a starting point.
 
 **Outcome:** Claude Code CLI and local desktop Code use the established core, storage, reports, and applicable intervention policies. Ordinary chats and Cowork remain excluded.
 
-1. Refresh supported hook schemas, native trust/reload behavior, and per-event capabilities on Windows. Preserve unknown or unavailable events explicitly.
-2. Add the Claude adapter, safe installer/uninstaller, and versioned transcript enrichment. Reuse the shared contracts; add provider-specific behavior only where evidence requires it.
-3. Apply the WD-005 process-lifecycle protocol to Claude CLI and desktop, including child survival after actual harness exit; do not infer it from the earlier init-only probe.
-4. Validate simultaneous Codex/Claude sessions and worktrees, isolation, retention, usage accounting, and no-op responses. Cover the remaining Claude desktop event gaps from WD-002.
-5. Validate advisory/control delivery separately against the M3/M4 policies. Unsupported control capabilities remain disabled; do not promise parity with Codex.
+**WD-022a - observation.** Provider-parameterized Python and Rust adapters, a safe `settings.json` / `settings.local.json` installer emitting exec-form entries with `timeout: 2`, the 12-event Claude map, and empty-stdout no-op are implemented with offline tests. The live Windows Claude CLI pass did not meet its gate: Claude Code 2.1.259 does not expose a per-hook `durationMs` for `claude -p`, and one `SessionStart` was dropped under four-way concurrent session start. Remaining: a reliable harness-timing source or a redefined gate, the concurrent `invalid` loss fix, Pass B / Pass C, and the supervised desktop pass. Content capture stays the four Codex-equivalent fields.
+
+**WD-022b.**
+1. Refresh native trust/reload behavior and any per-event capability gaps not covered by WD-022a.
+2. Add versioned Claude transcript enrichment and the wider content-capture surface (`error`, `duration_ms`, `is_interrupt`). Reuse the shared contracts.
+3. Apply the WD-005 process-lifecycle protocol to Claude CLI and desktop, including child survival after actual harness exit.
+4. Validate simultaneous Codex/Claude sessions and worktrees, isolation, retention, usage accounting (no cumulative double counting), and no-op responses.
+5. Validate advisory/control delivery separately against the M3/M4 policies. Async hook delivery is a separately recorded change, only after the synchronous baseline is fixed and recorded; verify backgrounded-hook durability with the WD-022a evidence standard. Unsupported control capabilities remain disabled.
 
 **Acceptance:** offline adapter tests and Windows live evidence, preserved existing hooks, bounded overhead, independent core lifetime, and an explicit event/control capability matrix. Claude-specific failures do not break Codex. macOS/Linux host validation stays in final M5 / WD-019.
 
 ## Optional extensions after M-Anthropic
 
-- **WD-015:** Codex App Server spike, scheduled after WD-022. Investigate event/control contracts and ownership/attach for existing sessions. Add an adapter only after confirmation; retain hooks. If integration requires launching a harness itself, document a separate mode. M4 remains bounded by verified hook capabilities and does not depend on this extension.
+- **WD-015:** Codex App Server spike, scheduled after WD-022b. Investigate event/control contracts and ownership/attach for existing sessions. Add an adapter only after confirmation; retain hooks. If integration requires launching a harness itself, document a separate mode. M4 remains bounded by verified hook capabilities and does not depend on this extension.
 - **WD-016:** a shared read-only project overview without merging databases; later, a local web UI if needed. Evaluate only after a useful M2 release.
 - A catalog/eval runner and automated skill improvement only if M2 manual export no longer meets workflow needs.
 - MCP adviser only for a real agent-query use case, not as a process startup placeholder.
