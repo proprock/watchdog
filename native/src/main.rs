@@ -23,18 +23,25 @@ struct Paths {
     python: PathBuf,
 }
 
-fn arguments() -> Result<Paths> {
+fn arguments() -> Result<(Paths, String)> {
     let mut values = std::collections::HashMap::new();
+    let mut positionals: Vec<String> = Vec::new();
     let mut args = std::env::args().skip(1);
     while let Some(arg) = args.next() {
         match arg.as_str() {
             "--config" | "--data" | "--runtime" | "--python" | "--installation" => {
                 values.insert(arg, args.next().ok_or("missing argument")?);
             }
-            "hook" | "codex" => {}
-            _ => return Err("unknown argument".into()),
+            other if other.starts_with("--") => return Err("unknown argument".into()),
+            _ => positionals.push(arg),
         }
     }
+    let provider = match positionals.as_slice() {
+        [verb, provider] if verb == "hook" && (provider == "codex" || provider == "claude") => {
+            provider.clone()
+        }
+        _ => return Err("expected: hook <codex|claude>".into()),
+    };
     let mut path = |name: &str| -> Result<PathBuf> {
         let path = PathBuf::from(values.remove(name).ok_or("missing path")?);
         if !path.is_absolute() {
@@ -42,12 +49,15 @@ fn arguments() -> Result<Paths> {
         }
         Ok(path)
     };
-    Ok(Paths {
-        config: path("--config")?,
-        data: path("--data")?,
-        runtime: path("--runtime")?,
-        python: path("--python")?,
-    })
+    Ok((
+        Paths {
+            config: path("--config")?,
+            data: path("--data")?,
+            runtime: path("--runtime")?,
+            python: path("--python")?,
+        },
+        provider,
+    ))
 }
 
 fn paused(paths: &Paths) -> Result<bool> {
@@ -150,21 +160,44 @@ fn identifier<'a>(input: &'a Value, key: &str) -> Option<&'a str> {
         .filter(|s| !s.trim().is_empty() && s.chars().count() <= 256)
 }
 
-fn event(input: &Value, project: &Project, checkout: Uuid, capture: bool) -> Result<Value> {
+fn event(
+    input: &Value,
+    project: &Project,
+    checkout: Uuid,
+    capture: bool,
+    provider: &str,
+) -> Result<Value> {
     let native = identifier(input, "hook_event_name").unwrap_or("unknown");
-    let kind = match native {
-        "SessionStart" => "session.start",
-        "SessionEnd" => "session.end",
-        "UserPromptSubmit" => "turn.start",
-        "Stop" => "turn.end",
-        "PreToolUse" => "tool.start",
-        "PostToolUse" => "tool.finish",
-        "PreCompact" => "compaction.start",
-        "PostCompact" => "compaction.end",
-        "SubagentStart" => "agent.start",
-        "SubagentStop" => "agent.end",
-        "Interrupt" => "interrupt",
-        _ => "unknown",
+    let kind = if provider == "claude" {
+        match native {
+            "SessionStart" => "session.start",
+            "SessionEnd" => "session.end",
+            "UserPromptSubmit" => "turn.start",
+            "Stop" => "turn.end",
+            "PreToolUse" => "tool.start",
+            "PostToolUse" | "PostToolUseFailure" => "tool.finish",
+            "PreCompact" => "compaction.start",
+            "PostCompact" => "compaction.end",
+            "SubagentStart" => "agent.start",
+            "SubagentStop" => "agent.end",
+            "Notification" => "waiting",
+            _ => "unknown",
+        }
+    } else {
+        match native {
+            "SessionStart" => "session.start",
+            "SessionEnd" => "session.end",
+            "UserPromptSubmit" => "turn.start",
+            "Stop" => "turn.end",
+            "PreToolUse" => "tool.start",
+            "PostToolUse" => "tool.finish",
+            "PreCompact" => "compaction.start",
+            "PostCompact" => "compaction.end",
+            "SubagentStart" => "agent.start",
+            "SubagentStop" => "agent.end",
+            "Interrupt" => "interrupt",
+            _ => "unknown",
+        }
     };
     let redact = privacy::Redactor::new()?;
     let mut content = serde_json::Map::new();
@@ -190,16 +223,21 @@ fn event(input: &Value, project: &Project, checkout: Uuid, capture: bool) -> Res
         Value::Number(n) if n.is_f64() => "float",
         Value::Number(_) => "int",
     });
+    let namespace = json!({
+        "hook_event_name": if kind == "unknown" { "unknown" } else { native },
+        "tool_use_id": identifier(input, "tool_use_id"),
+        "tool_name": identifier(input, "tool_name"),
+        "tool_response_type": response_type,
+        "content": if has_content { Value::Object(content) } else { json!("omitted") }});
+    let mut payload = serde_json::Map::new();
+    payload.insert(provider.to_string(), namespace);
     let mut envelope = json!({"schema_version": 1, "event_id": Uuid::new_v4(),
-        "provider": "codex", "provider_version": null, "surface": "unknown",
+        "provider": provider, "provider_version": null, "surface": "unknown",
         "project_id": project.id, "checkout_id": checkout,
         "kind": kind, "source": "hook", "occurred_at": null,
         "received_at": Utc::now().to_rfc3339_opts(SecondsFormat::Micros, true),
         "native_event_id": null, "parent_agent_id": null,
-        "payload": {"codex": {"hook_event_name": if kind == "unknown" { "unknown" } else {native},
-            "tool_use_id": identifier(input,"tool_use_id"), "tool_name": identifier(input,"tool_name"),
-            "tool_response_type": response_type,
-            "content": if has_content { Value::Object(content) } else { json!("omitted") }}},
+        "payload": Value::Object(payload),
         "availability": {"content": if has_content {"observed"} else {"unavailable"},
             "surface": "unknown", "provider_version": "unknown", "occurred_at": "unavailable",
             "tool_outcome": "unknown"}});
@@ -254,7 +292,7 @@ fn ensure_daemon(paths: &Paths) -> Result<()> {
     Ok(())
 }
 
-fn observe(paths: &Paths) -> Result<()> {
+fn observe(paths: &Paths, provider: &str) -> Result<()> {
     if paused(paths)? || !paths.config.exists() {
         return Ok(());
     }
@@ -292,7 +330,7 @@ fn observe(paths: &Paths) -> Result<()> {
         disk::loss(&root, 1);
         return Ok(());
     }
-    let envelope = event(&input, project, checkout, limits.capture_content)?;
+    let envelope = event(&input, project, checkout, limits.capture_content, provider)?;
     // Match Python's ASCII JSON size accounting before durable admission.
     let serialized = serde_json::to_string(&envelope)?;
     let mut bytes = Vec::new();
@@ -364,21 +402,29 @@ fn main() {
     #[cfg(windows)]
     prevent_stdio_inheritance();
     if std::env::args().any(|arg| arg == "--version") {
-        println!("agent-watchdog-hook {}", env!("CARGO_PKG_VERSION"));
+        println!(
+            "agent-watchdog-hook {} (providers: codex, claude)",
+            env!("CARGO_PKG_VERSION")
+        );
         return;
     }
     if std::env::args().any(|arg| arg == "--help") {
         println!(
-            "agent-watchdog-hook --python PATH --config PATH --data PATH --runtime PATH hook codex"
+            "agent-watchdog-hook --python PATH --config PATH --data PATH --runtime PATH \
+             hook <codex|claude>"
         );
         return;
     }
-    if let Ok(paths) = arguments() {
-        if observe(&paths).is_err() {
+    if let Ok((paths, provider)) = arguments() {
+        if observe(&paths, &provider).is_err() {
             disk::loss(&paths.data, 2);
         }
     }
-    println!("{{}}");
+    // Claude adds hook stdout to model context on SessionStart and UserPromptSubmit;
+    // stay silent for Claude even when argument parsing failed.
+    if !std::env::args().any(|arg| arg == "claude") {
+        println!("{{}}");
+    }
 }
 
 #[cfg(windows)]

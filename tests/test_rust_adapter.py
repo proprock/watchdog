@@ -38,7 +38,7 @@ def native_setup(tmp_path):
         yield paths, project
 
 
-def invoke(binary, paths, payload):
+def invoke(binary, paths, payload, provider="codex", extra_args=()):
     return subprocess.run(
         [
             str(binary),
@@ -50,8 +50,9 @@ def invoke(binary, paths, payload):
             str(paths.data),
             "--runtime",
             str(paths.runtime),
+            *extra_args,
             "hook",
-            "codex",
+            provider,
         ],
         input=json.dumps(payload),
         capture_output=True,
@@ -285,3 +286,96 @@ def test_copied_native_binary_starts_python_core_and_preserves_worktrees(rust_ad
             main.checkout_id,
             linked.checkout_id,
         }
+
+
+CLAUDE_EVENTS = [
+    "SessionStart",
+    "SessionEnd",
+    "UserPromptSubmit",
+    "Stop",
+    "PreToolUse",
+    "PostToolUse",
+    "PostToolUseFailure",
+    "PreCompact",
+    "PostCompact",
+    "SubagentStart",
+    "SubagentStop",
+    "Notification",
+]
+
+
+@pytest.mark.parametrize("native", CLAUDE_EVENTS)
+def test_native_matches_python_claude_contract(rust_adapter, native_setup, monkeypatch, native):
+    from agent_watchdog.hooks import observe
+
+    paths, project = native_setup
+    captured = []
+    monkeypatch.setattr(
+        "agent_watchdog.hooks.daemon.enqueue", lambda paths, event: captured.append(event)
+    )
+    payload = {
+        "cwd": str(project.root),
+        "hook_event_name": native,
+        "session_id": "session",
+        "agent_id": "agent",
+        "tool_name": "exec",
+        "tool_use_id": "call",
+        "prompt": "password=private-value; sk-proj-" + "a" * 40,
+        "tool_input": {"password": "private-value", "command": "echo hello"},
+        "tool_response": {"output": "Authorization: Basic private-value", "exit_code": 1},
+        "last_assistant_message": "-----BEGIN PRIVATE KEY-----\nprivate-value",
+    }
+    observe(paths, io.BytesIO(json.dumps(payload).encode()), "claude")
+    assert invoke(rust_adapter, paths, payload, provider="claude").stdout == ""
+    incoming = next(paths.project_data(project.id).glob("inbox/*.json"))
+    actual = Envelope.model_validate_json(incoming.read_bytes())
+    exclude = {"received_at", "event_id"}
+    assert actual.model_dump(exclude=exclude) == captured[0].model_dump(exclude=exclude)
+    assert actual.provider == "claude" and "claude" in actual.payload
+
+
+def test_native_claude_emits_empty_stdout_and_codex_emits_object(rust_adapter, native_setup):
+    paths, project = native_setup
+    payload = {"cwd": str(project.root), "hook_event_name": "Stop"}
+    assert invoke(rust_adapter, paths, payload, provider="claude").stdout == ""
+    assert invoke(rust_adapter, paths, payload, provider="codex").stdout == "{}\n"
+
+
+def test_native_invalid_args_with_claude_token_stay_silent(rust_adapter, native_setup):
+    paths, _ = native_setup
+    result = subprocess.run(
+        [str(rust_adapter), "--config", str(paths.config), "bogus", "hook", "claude"],
+        input="{}",
+        capture_output=True,
+        text=True,
+        timeout=2,
+    )
+    assert result.returncode == 0 and result.stdout == "" and not result.stderr
+
+
+def test_native_unknown_provider_token_is_rejected(rust_adapter, native_setup):
+    paths, project = native_setup
+    result = invoke(
+        rust_adapter,
+        paths,
+        {"cwd": str(project.root), "hook_event_name": "Stop"},
+        provider="banana",
+    )
+    assert result.returncode == 0 and result.stdout == "{}\n"
+    assert not list(paths.project_data(project.id).glob("inbox/*.json"))
+
+
+def test_native_claude_shares_pause_and_payload_limit_paths(rust_adapter, native_setup):
+    from agent_watchdog.daemon import set_desired
+    from agent_watchdog.resources import losses
+
+    paths, project = native_setup
+    save_config(paths.config, Config(defaults=Limits(payload_bytes=4096), projects=(project,)))
+    big = {"cwd": str(project.root), "hook_event_name": "UserPromptSubmit", "prompt": "x" * 8000}
+    assert invoke(rust_adapter, paths, big, provider="claude").stdout == ""
+    root = paths.project_data(project.id)
+    assert not list(root.glob("inbox/*.json")) and losses(paths.data)["payload"] == 1
+    set_desired(paths, paused=True)
+    stop_payload = {"cwd": str(project.root), "hook_event_name": "Stop"}
+    assert invoke(rust_adapter, paths, stop_payload, provider="claude").stdout == ""
+    assert not list(root.glob("inbox/*.json"))
