@@ -5,6 +5,7 @@ import json
 import math
 import os
 import platform
+import shlex
 import subprocess
 import sys
 import tempfile
@@ -12,9 +13,26 @@ import time
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
+SHELLS = ("direct", "bash", "powershell.exe", "pwsh.exe")
+
 
 def run(command: list[str], **kwargs) -> subprocess.CompletedProcess:
     return subprocess.run(command, capture_output=True, text=True, timeout=15, check=True, **kwargs)
+
+
+def hook_invocation(shell: str, arguments: list[str]) -> list[str]:
+    """Wrap the adapter argument list for the requested launch mode.
+
+    `direct` is exactly what Claude's exec form does; `bash -c` mirrors Claude's
+    default Windows-with-Git-Bash path; the PowerShell forms build the command
+    from the same argument list without relying on a `commandWindows` field.
+    """
+    if shell == "direct":
+        return list(arguments)
+    if shell == "bash":
+        return ["bash", "-c", shlex.join(arguments)]
+    quoted = "& " + " ".join("'" + arg.replace("'", "''") + "'" for arg in arguments)
+    return [shell, "-NoLogo", "-NoProfile", "-NonInteractive", "-Command", quoted]
 
 
 def wait_for_daemon(command: list[str]) -> dict:
@@ -49,16 +67,17 @@ def main() -> None:
     parser.add_argument("--idle-seconds", type=float, default=20)
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--adapter-executable", type=Path)
+    parser.add_argument("--provider", choices=("codex", "claude"), default="codex")
     parser.add_argument(
         "--shell",
-        choices=("direct", "powershell.exe", "pwsh.exe"),
+        choices=SHELLS,
         default="direct",
-        help="Include a Windows PowerShell launch using the generated hook command",
+        help="Wrap the generated hook command in this launch mode",
     )
     args = parser.parse_args()
     if args.samples < 20 or not 1 <= args.idle_seconds <= 60:
         parser.error("Require at least 20 samples and 1..60 idle seconds")
-    if args.shell != "direct" and os.name != "nt":
+    if args.shell in ("powershell.exe", "pwsh.exe") and os.name != "nt":
         parser.error("PowerShell launch measurements require Windows")
     with tempfile.TemporaryDirectory(prefix="wd008 benchmark ") as directory:
         home = Path(directory)
@@ -82,15 +101,14 @@ def main() -> None:
         worktree = home / "worktree"
         run(["git", "-C", str(root), "worktree", "add", "--detach", str(worktree)])
         command = [sys.executable, "-m", "agent_watchdog", "--home", str(home / "state")]
-        hook_command = command + ["hook", "codex"]
+        state_home = home / "state"
         if args.adapter_executable:
             from agent_watchdog.config import UserPaths
 
-            state_home = home / "state"
             paths = UserPaths(
                 state_home / "config.toml", state_home / "data", state_home / "runtime"
             )
-            hook_command = [
+            arguments = [
                 str(args.adapter_executable.resolve()),
                 "--python",
                 sys.executable,
@@ -101,26 +119,12 @@ def main() -> None:
                 "--runtime",
                 str(paths.runtime),
                 "hook",
-                "codex",
+                args.provider,
             ]
-        if args.shell != "direct":
-            from agent_watchdog.config import UserPaths
-            from agent_watchdog.hook_install import group
-
-            state_home = home / "state"
-            paths = UserPaths(
-                state_home / "config.toml", state_home / "data", state_home / "runtime"
-            )
-            adapter = args.adapter_executable.resolve() if args.adapter_executable else None
-            handler = group(paths, "synthetic-benchmark", adapter)["hooks"][0]
-            hook_command = [
-                args.shell,
-                "-NoLogo",
-                "-NoProfile",
-                "-NonInteractive",
-                "-Command",
-                handler["commandWindows"],
-            ]
+        else:
+            arguments = command + ["hook", args.provider]
+        hook_command = hook_invocation(args.shell, arguments)
+        expected_stdout = "" if args.provider == "claude" else "{}"
         project = json.loads(run(command + ["project", "add", str(root)]).stdout)
         try:
             run(command + ["daemon", "start"])
@@ -135,7 +139,7 @@ def main() -> None:
                 start = time.perf_counter()
                 result = run(hook_command, input=json.dumps(payload))
                 elapsed = (time.perf_counter() - start) * 1000
-                assert result.stdout.strip() == "{}"
+                assert result.stdout.strip() == expected_stdout
                 return elapsed
 
             first = hook(0)
@@ -158,7 +162,15 @@ def main() -> None:
                 details = json.loads(
                     run(
                         command
-                        + ["sessions", "show", session["session_id"], "--project", project["id"]]
+                        + [
+                            "sessions",
+                            "show",
+                            session["session_id"],
+                            "--project",
+                            project["id"],
+                            "--provider",
+                            args.provider,
+                        ]
                     ).stdout
                 )
                 checkouts.update(event["checkout_id"] for event in details["events"])
@@ -202,6 +214,7 @@ def main() -> None:
                 ),
                 "process_timeout_seconds": 15,
                 "adapter": "rust" if args.adapter_executable else "python",
+                "provider": args.provider,
                 "launch": args.shell,
                 "first_ms": first,
                 "sequential": distribution(sequential),

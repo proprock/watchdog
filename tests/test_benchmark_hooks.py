@@ -36,3 +36,33 @@ def test_benchmark_rejects_stale_daemon_and_bounds_readiness(benchmark, monkeypa
     monkeypatch.setattr(benchmark.time, "monotonic", lambda: next(clock))
     with pytest.raises(RuntimeError, match="did not become ready"):
         benchmark.wait_for_daemon(["watchdog"])
+
+
+ARGUMENTS = ["/adapter", "--config", "/c", "hook", "claude"]
+
+
+def test_hook_invocation_direct_is_the_bare_argument_list(benchmark):
+    assert benchmark.hook_invocation("direct", ARGUMENTS) == ARGUMENTS
+
+
+def test_hook_invocation_bash_wraps_with_a_posix_command_string(benchmark):
+    wrapped = benchmark.hook_invocation("bash", ARGUMENTS)
+    assert wrapped[:2] == ["bash", "-c"]
+    assert wrapped[2] == "/adapter --config /c hook claude"
+
+
+@pytest.mark.parametrize("shell", ["powershell.exe", "pwsh.exe"])
+def test_hook_invocation_powershell_builds_command_without_command_windows(benchmark, shell):
+    wrapped = benchmark.hook_invocation(shell, ARGUMENTS)
+    assert wrapped[0] == shell and wrapped[-2] == "-Command"
+    assert wrapped[-1] == "& '/adapter' '--config' '/c' 'hook' 'claude'"
+
+
+def test_benchmark_cli_accepts_claude_provider_and_bash_shell(benchmark, monkeypatch, capsys):
+    monkeypatch.setattr(
+        benchmark.sys, "argv", ["benchmark_hooks.py", "--output", "x", "--samples", "10"]
+    )
+    with pytest.raises(SystemExit):
+        benchmark.main()
+    assert "at least 20 samples" in capsys.readouterr().err
+    assert set(benchmark.SHELLS) == {"direct", "bash", "powershell.exe", "pwsh.exe"}

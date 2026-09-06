@@ -1,0 +1,7 @@
+{"type": "assistant", "message": {"content": [{"type": "tool_use", "id": "toolu_a", "name": "Bash", "input": {"command": "echo synthetic"}}]}}
+{"type": "user", "message": {"content": [{"type": "tool_result", "tool_use_id": "toolu_a", "content": "synthetic output text"}]}}
+{"type": "system", "hookEventName": "PostToolUse", "hookInfos": [{"command": "/home/u/.local/bin/agent-watchdog-hook --config /secret/path/config.toml hook claude --installation WD-TOKEN", "durationMs": 120}, {"command": "/usr/bin/other-plugin-hook --run", "durationMs": 999}]}
+not valid json at all
+[]
+{"type": "system", "hookInfos": [{"command": "python -m agent_watchdog --config /secret/path hook claude --installation WD-TOKEN", "hook_event_name": "PreToolUse"}]}
+{"type": "system", "hookEventName": "PreToolUse", "hookInfos": [{"command": "/home/u/.local/bin/agent-watchdog-hook hook claude --installation WD-TOKEN", "durationMs": 240}]}
