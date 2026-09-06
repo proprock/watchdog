@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "note": "Synthetic launch-cost comparison of the WD-022a Claude adapter binary. Not a provider validation.",
+  "note": "Synthetic launch-cost comparison of the WD-022a Claude adapter binary. Not a provider validation. The 'direct' block was re-measured on 2026-09-06 after WD-022a Part 2.2 removed the git rev-parse subprocess from the resolution path; 'bash' predates that change.",
   "python": "3.12.13",
   "os": "Windows-11-10.0.22621-SP0",
   "adapter": "rust",
@@ -10,11 +10,12 @@
   "native_provider_validation": false,
   "launches": {
     "direct": {
-      "first_ms": 74.4,
-      "sequential_p95_ms": 82.4,
-      "sequential_max_ms": 82.4,
-      "concurrent_four_p95_ms": 153.2,
-      "concurrent_four_max_ms": 199.4,
+      "measured": "2026-09-06, filesystem checkout resolution (git rev-parse only on unrecognized layouts)",
+      "first_ms": 43.6,
+      "sequential_p95_ms": 36.4,
+      "sequential_max_ms": 38.3,
+      "concurrent_four_p95_ms": 96.4,
+      "concurrent_four_max_ms": 104.6,
       "events": 41,
       "sessions": 2,
       "checkouts": 2,
@@ -27,16 +28,23 @@
           "io": 0,
           "busy": 0
         },
-        "5d6a905b-1a3c-4afa-987c-702243b54e92": {
+        "3304d3d6-5559-4fb6-bc77-79c63a30bc20": {
           "quota": 0,
           "payload": 0,
           "invalid": 0,
           "io": 0,
           "busy": 0
         }
+      },
+      "previous_direct_with_git_subprocess": {
+        "first_ms": 74.4,
+        "sequential_p95_ms": 82.4,
+        "concurrent_four_p95_ms": 153.2,
+        "concurrent_four_max_ms": 199.4
       }
     },
     "bash": {
+      "note": "Predates the WD-022a Part 2.2 git-subprocess removal; still includes a git rev-parse spawn per invocation.",
       "first_ms": 214.2,
       "sequential_p95_ms": 139.9,
       "sequential_max_ms": 144.7,
