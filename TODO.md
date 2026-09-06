@@ -1,6 +1,6 @@
 # TODO
 
-Queue: WD-009 -> WD-010 -> WD-011 -> WD-012 -> WD-013 -> WD-014 -> WD-022b (M-Anthropic) -> WD-015 -> WD-019 -> WD-026. WD-022a and WD-024 are complete (see [DONE.md](DONE.md)). WD-016 is optional; WD-026 is the final deferred provider-performance task. M1-M4 support Codex coding only; ordinary chats are excluded. Design: ROADMAP.md and docs/architecture.md. This file contains open work only; completed entries move to [DONE.md](DONE.md) with their IDs and verification evidence. Pending work has not yet been verified.
+Queue: WD-009 -> WD-010 -> WD-011 -> WD-012 -> WD-013 -> WD-014 -> WD-022b (M-Anthropic) -> WD-015 -> WD-019 -> WD-026. WD-022a, WD-024, and WD-027 are complete (see [DONE.md](DONE.md)). WD-016 is optional; WD-026 is the final deferred provider-performance task. M1-M4 support Codex coding only; ordinary chats are excluded. Design: ROADMAP.md and docs/architecture.md. This file contains open work only; completed entries move to [DONE.md](DONE.md) with their IDs and verification evidence. Pending work has not yet been verified.
 
 ## M2 - Analysis
 

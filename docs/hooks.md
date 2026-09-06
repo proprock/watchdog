@@ -45,8 +45,10 @@ uninstalling the recorded installation first, reinstalling, and reviewing the ne
 definitions through Codex. Uninstall uses the ownership record and works even if
 the native binary has been removed; omit `--adapter-executable` when uninstalling.
 
-The native adapter uses the existing config, locks, loss counters, and durable
-JSON inbox. Python retains SQLite ownership, retention, analysis, and CLI duties.
+The native adapter shares the existing loss counters and atomic-write / lock
+primitives, and durably spools each event as JSON under `<data>/spool/`. The
+daemon resolves, builds, and admits those records into the durable JSON inbox it
+already owns, alongside SQLite ownership, retention, analysis, and CLI duties.
 Rust contract tests run through pytest after the release binary has been built.
 
 Without `--apply`, commands return the proposed configuration and perform no
@@ -91,47 +93,64 @@ not a transactional configuration manager.
 
 ## Adapter behavior
 
-`agent-watchdog hook codex` reads JSON stdin, resolves an explicitly registered
-project/worktree, and atomically admits an envelope through the daemon API.
-Checkout identity (toplevel and git-common-dir) is resolved from filesystem reads
-— the nearest `.git` entry, a worktree `.git` file's `gitdir:` line, and a
-`commondir` file when present — producing the same values as
-`git rev-parse --path-format=absolute --show-toplevel --git-common-dir`. Only an
-unrecognized layout falls back to spawning `git`, which keeps its 250 ms
-subprocess timeout. Raw input is capped at the largest registered payload limit
-before parsing, then at the selected project's limit (1 MiB by default). Each
-admission/diagnostic lock waits at most 100 ms. Native handlers are synchronous
-with a two-second timeout. These bounds are not a p95
-whole-hook latency measurement; WD-008 measured an above-target baseline; the Rust adapter and native acceptance remain WD-024.
+Since WD-027 the native adapter is spool-and-forget. `agent-watchdog hook <codex|claude>`
+reads JSON stdin, redacts known credential forms from a fixed field projection
+(`hook_event_name`, `tool_name`, `tool_use_id`, `session_id`, `turn_id`,
+`agent_id`, `tool_response`, `prompt`, `tool_input`, `last_assistant_message`),
+and durably writes one record — the projection plus a raw `cwd`, an
+adapter-stamped `event_id`, and `received_at` — under `<data>/spool/`. That is the
+whole hook.
 
-The WD-024 direct Rust recheck meets the adapter target, but measured Windows
-shell launches remain above 250 ms and the first PowerShell 7 launch exceeded
-two seconds. Concurrent native probes also have missing callbacks. See the
-[separate launch measurements and recorded limitations](verification.md#wd-024-rust-adapter-closed-with-external-limitations).
-Do not treat zero adapter loss counters as proof that Codex invoked every hook.
+Checkout resolution, envelope construction, per-project payload/inbox/project
+quota, and inbox admission all run in the daemon's spool drain, once per poll.
+The drain resolves the spooled `cwd` from filesystem reads — the nearest `.git`
+entry, a worktree `.git` file's `gitdir:` line, and a `commondir` file when
+present — producing the same values as
+`git rev-parse --path-format=absolute --show-toplevel --git-common-dir`; only an
+unrecognized layout falls back to spawning `git` with its 250 ms subprocess
+timeout. An unregistered or since-removed `cwd` discards the record. A busy
+project writer leaves the record for the next poll; admission/diagnostic lock
+waits are at most 100 ms.
 
-Normal completion and handled failures emit exactly `{}` and exit zero. The adapter
-does not return continuation, denial, context, or other control fields. Missing
-daemon recovery is detached and does not wait for readiness. Persistent pause
-prevents input processing, queuing, and restart. Invalid input, unavailable Git,
-registry/config errors, and storage/launch failures are ignored by the hook.
-An internal failure increments the `invalid` counter and appends one
-content-free line — `<timestamp> <event-name> <reason-category>` — to a rotating,
-size-capped `faults.log` under the data directory, so a nonzero counter is
-attributable. Reason categories only (for example `git-timeout`, `config-race`,
-`io-error`); never prompt, path, command, or tool-output text.
-Missing Python or a broken installation cannot be handled inside Python; repair
-the installation if the product reports command-launch errors.
+The adapter reads only `<data>/spool/limits.json`, which the daemon publishes:
+the largest registered payload limit and the spool cap. When it is absent the
+adapter uses built-in defaults (1 MiB payload, 64 MiB / 4096-file spool). Raw
+stdin is capped at that payload limit; over it increments the `payload` counter.
+A full spool increments `quota`. `event_id` / `received_at` are stamped at
+arrival and trusted by the daemon, so a replayed spool record yields the same
+event and the project store deduplicates it. Native handlers are synchronous
+with a two-second timeout; the launch-cost measurements are not a p95 whole-hook
+latency figure. WD-024 closed with recorded Windows shell-launch limitations; the
+final Codex hook-performance resolution is WD-026. WD-027 removed the per-hook
+config parse, redaction-regex compile, and project-tree walks, cutting the
+synthetic concurrent four-caller p95 from 96 ms to 65 ms
+([evidence](evidence/wd027-spool-bench.json)). Do not treat zero loss counters as
+proof that a provider invoked every hook.
+
+Normal completion and handled failures emit exactly `{}` (codex) or nothing
+(claude) and exit zero. The adapter returns no continuation, denial, context, or
+other control field. Missing-daemon recovery is detached and does not wait for
+readiness. Persistent pause prevents spooling and restart. Invalid input,
+registry/config errors, and spool-write failures are ignored by the hook. An
+internal failure increments the `invalid` counter and appends one content-free
+line — `<timestamp> <event-name> <reason-category>` — to a rotating, size-capped
+`faults.log` under the data directory, so a nonzero counter is attributable.
+Reason categories only (for example `cwd-relative`, `control-invalid`,
+`io-error`); never prompt, path, command, or tool-output text. Missing Python or
+a broken installation cannot be handled inside Python; repair the installation if
+the product reports command-launch errors.
 
 Metadata includes session/turn/agent identifiers, checkout identity, event kind,
 tool-call ID/name, and tool-response type. Identifiers are bounded. WD-007 also
 captures the native `prompt`, `tool_input`, `tool_response`, and
-`last_assistant_message` fields under `payload.codex.content`, when present.
+`last_assistant_message` fields under `payload.<provider>.content`, when present.
 Capture defaults to true for registered projects; `capture_content = false` in
-defaults or project overrides omits those fields. Transcript paths and arbitrary
-native fields are not copied. Known credential forms are removed before any
-persistent write; this is not an anonymization or complete secret-detection claim.
-Quotas and persistent diagnostic counters are described in [storage](storage.md).
+defaults or project overrides omits those fields at drain. Transcript paths and
+arbitrary native fields are not copied. Known credential forms are removed in the
+adapter before the spool write — the first durable write — and the daemon
+re-sanitizes when it builds the canonical envelope; this is not an anonymization
+or complete secret-detection claim. Quotas and persistent diagnostic counters are
+described in [storage](storage.md).
 
 CLI versus desktop and backend version remain unknown unless evidence supplies
 them; the adapter does not guess from cwd or the installed CLI version. Tool-call

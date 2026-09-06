@@ -1,29 +1,28 @@
 # Architecture and contracts
 
-Status: accepted design decisions. WD-003 [contracts](contracts.md), WD-004/007 [storage, retention, and redaction](storage.md), WD-005 [daemon](daemon.md), and WD-006 [hooks](hooks.md) are implemented. WD-008 provides the [observation CLI](cli.md). Analysis remains planned; WD-024 will replace the slow Python adapter with Rust, retaining the Python core and inbox contract. The implementation reports record exact verified boundaries. Date: 2026-09-06.
+Status: accepted design decisions. WD-003 [contracts](contracts.md), WD-004/007 [storage, retention, and redaction](storage.md), WD-005 [daemon](daemon.md), and WD-006 [hooks](hooks.md) are implemented. WD-008 provides the [observation CLI](cli.md). Analysis remains planned; WD-024 replaced the slow Python adapter with Rust, retaining the Python core and inbox contract. WD-027 made that adapter spool-and-forget: it redacts and durably spools each event, and the daemon resolves the checkout, builds the envelope, and admits it. The implementation reports record exact verified boundaries. Date: 2026-09-06.
 
 ## Boundaries
 
 A local single-user system, without a network service, centralized database, container infrastructure, or custom agent harness. M1-M4 implement one Codex adapter serving CLI and local desktop coding; the surface is an observation attribute, not a separate core. Claude coding support follows in M-Anthropic / WD-022, after WD-014 and before WD-015. Ordinary chats are outside scope. Keep provider-neutral events and a small adapter interface without a general plugin framework. If the surface cannot be reliably identified, record `unknown`.
 
 ```text
-Codex hooks -- adapter --+
-                        +-- atomic file inbox -- single user core
-Claude hooks - adapter -+                        +-- project A / SQLite + artifacts
-                                                 +-- project B / SQLite + artifacts
-transcripts (optional enrichment) ----------------+
+Codex hooks -- adapter --+                         single user core
+                        +-- redacted spool -- drain --+-- project A inbox -- SQLite + artifacts
+Claude hooks - adapter -+   (resolve + build here)    +-- project B inbox -- SQLite + artifacts
+transcripts (optional enrichment) --------------------+
 CLI -- project selection -- read-only queries / queued mutations
 ```
 
 ## Processes and delivery
 
-- `agent-watchdog hook codex` and `agent-watchdog hook claude` (the latter added in WD-022a) read JSON stdin, check the registered project, limit size, redact known credential forms, and atomically place an envelope in the project inbox. Content capture defaults to true with global/project opt-out. Do not run Git diff, analysis, or LLM calls inside a hook. Use the provider's no-op response: empty stdout for Claude; an empty JSON object was exercised for Codex, including Stop/SubagentStop. Never return feedback or control fields in observation mode. Expected errors exit with code 0. WD-007 provides bounded persistent loss diagnostics.
-- Create the envelope ID before writing and preserve it during replay. Reprocessing an envelope is idempotent. Deduplicate repeated provider events only when a stable native ID is available, not merely by text hash.
+- `agent-watchdog hook codex` and `agent-watchdog hook claude` (the latter added in WD-022a) read JSON stdin, redact known credential forms from a fixed field projection, and atomically write one record — projection plus raw `cwd`, `event_id`, and `received_at` — to a durable spool (WD-027). The daemon's spool drain resolves the registered project/worktree, applies size and quota limits, builds the envelope, and admits it to the project inbox; an unregistered or since-removed `cwd` is discarded there. Content capture defaults to true with global/project opt-out, applied at drain. Do not run Git diff, analysis, or LLM calls inside a hook. Use the provider's no-op response: empty stdout for Claude; an empty JSON object was exercised for Codex, including Stop/SubagentStop. Never return feedback or control fields in observation mode. Expected errors exit with code 0. WD-007 provides bounded persistent loss diagnostics.
+- The adapter stamps the envelope ID and received time when it spools; the drain preserves both, so a replayed spool record yields the same envelope. Reprocessing is idempotent. Deduplicate repeated provider events only when a stable native ID is available, not merely by text hash.
 - The hook ensures a detached `agent-watchdog daemon run` starts if the core is unavailable. POSIX: a new session; Windows: a detached process without a window. Do not inherit the harness stdin/stdout/stderr handles.
 - One OS-backed lock per user, held for the core's lifetime. Competing starts fail to acquire the lock and exit. PID/heartbeat are diagnostics, not the sole exclusivity mechanism. Never kill an unrelated process after PID reuse.
 - The core lives until logout/stop; the next hook recovers a crash. This does not guarantee continuous operation without new events. Validate Codex CLI/desktop lifecycle on Windows in WD-005 and M1 acceptance; WD-022a lands the Claude observation adapter and installer; its live gate is met (see [verification](verification.md#wd-022a-claude-observation-gate-met)) across a CLI Pass A re-run and a supervised desktop pass; Claude enrichment, lifecycle beyond observation, and guidance/control stay in WD-022b; access to macOS/Linux hosts and compatibility verification are deferred to M5 / WD-019. Keep platform-specific launch/lock behavior isolated. Some process containers/job objects may restrict detachment; provide explicit user autostart as a fallback when that limitation is demonstrated.
 - `daemon stop` sets a persistent pause and stops the core through the control inbox; new hooks neither start it nor accumulate events until `daemon start`. A crash does not set pause. `daemon status` distinguishes paused, running, unavailable, and degraded.
-- The core commits events sequentially into each project's SQLite database; delete inbox entries only after commit. A crash between commit and deletion is safe on replay. Put malformed records in bounded quarantine without blocking the entire queue.
+- The core commits events sequentially into each project's SQLite database; delete inbox entries only after commit. The spool drain is the same shape one stage earlier: delete a spool record only after its inbox write, and a crash in between replays safely because the envelope ID is stable. Put malformed records in bounded quarantine without blocking the entire queue.
 - Poll inboxes every 250 ms while active, backing off to 2 s when idle. Store event time and received time separately; do not promise global ordering across processes. Late events recompute affected aggregates.
 - Hooks do not wait for analysis or core readiness. Target full-call p95 latency of at most 250 ms on the measured machine, with a 2 s hook timeout. Measure Python startup and writing separately; do not hide their cost through async configuration.
 

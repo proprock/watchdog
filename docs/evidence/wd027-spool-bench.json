@@ -1,0 +1,50 @@
+{
+  "schema_version": 1,
+  "note": "WD-027 spool-and-forget adapter. Synthetic launch cost only; not a provider validation. The adapter now redacts and spools; checkout resolution, envelope construction, and per-project quota moved to the daemon spool drain. Against the WD-022a direct-exec baseline (docs/evidence/wd022a-claude-launch.json): concurrent four-caller p95 96.4 -> 65.2 ms, first call 43.6 -> 33.4 ms. Sequential p95 was already at the process-spawn floor and is unchanged. 41/41 events delivered, zero losses, restart preserved.",
+  "python": "3.12.13",
+  "os": "Windows-11-10.0.22621-SP0",
+  "scope": "synthetic hook process wall time including selected launch, runtime and Git; daemon already running",
+  "process_timeout_seconds": 15,
+  "adapter": "rust",
+  "provider": "codex",
+  "launch": "direct",
+  "first_ms": 33.35569996852428,
+  "sequential": {
+    "samples": 20,
+    "p50_ms": 29.413599986582994,
+    "p95_ms": 35.6444000499323,
+    "max_ms": 45.330499997362494
+  },
+  "concurrent_four": {
+    "samples": 20,
+    "p50_ms": 51.34540004655719,
+    "p95_ms": 65.15489995945245,
+    "max_ms": 74.09929996356368
+  },
+  "idle": {
+    "seconds": 3.4209999999729916,
+    "cpu_seconds": 0.0,
+    "working_set_bytes": 34480128
+  },
+  "events": 41,
+  "sessions": 2,
+  "checkouts": 2,
+  "restart_preserved": true,
+  "losses": {
+    "adapter": {
+      "quota": 0,
+      "payload": 0,
+      "invalid": 0,
+      "io": 0,
+      "busy": 0
+    },
+    "7ec1f911-c21a-4999-b8f8-dfe5dbd9b538": {
+      "quota": 0,
+      "payload": 0,
+      "invalid": 0,
+      "io": 0,
+      "busy": 0
+    }
+  },
+  "native_provider_validation": false
+}
