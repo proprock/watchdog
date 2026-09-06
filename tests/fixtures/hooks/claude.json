@@ -102,5 +102,12 @@
     "hook_event_name": "Notification",
     "message": "Synthetic waiting notification.",
     "notification_type": "permission_prompt"
+  },
+  {
+    "session_id": "fixture-session",
+    "transcript_path": "/fixture/transcript.jsonl",
+    "cwd": "/fixture/project",
+    "hook_event_name": "SessionEnd",
+    "reason": "other"
   }
 ]

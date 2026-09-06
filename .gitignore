@@ -21,5 +21,7 @@ native/target/
 runtime/
 exports/
 hooks.json.watchdog*
+settings.json.watchdog*
+settings.local.json.watchdog*
 .DS_Store
 Thumbs.db

@@ -10,6 +10,16 @@ import pytest
 from agent_watchdog.config import UserPaths
 from agent_watchdog.hook_install import change, group
 
+REALISTIC_SETTINGS: dict = {
+    "theme": "dark",
+    "autoUpdatesChannel": "stable",
+    "enabledPlugins": ["a", "b"],
+    "extraKnownMarketplaces": {"m": {"source": "x"}},
+    "attribution": {"coAuthoredBy": False},
+    "tui": {"scrollback": 1000},
+    "hooks": {"Stop": [{"hooks": [{"type": "command", "command": "echo user"}]}]},
+}
+
 
 def test_native_install_preserves_ownership_and_uninstalls_without_binary(tmp_path):
     paths = UserPaths(tmp_path / "config.toml", tmp_path / "data", tmp_path / "runtime")
@@ -152,3 +162,83 @@ def test_invalid_ownership_record_is_preserved(paths, tmp_path, content):
         change(target, paths, install=True, apply=True)
     assert record.read_bytes() == content
     assert not target.exists()
+
+
+@pytest.mark.parametrize("name", ["settings.json", "settings.local.json"])
+def test_claude_install_uses_exec_form_and_round_trips(paths, tmp_path, name):
+    target = tmp_path / name
+    original = json.dumps(REALISTIC_SETTINGS, indent=2).encode() + b"\n"
+    target.write_bytes(original)
+    change(target, paths, install=True, apply=True, provider="claude")
+    handler = json.loads(target.read_text())["hooks"]["Stop"][-1]["hooks"][0]
+    assert handler["command"] == sys.executable
+    assert handler["args"][:2] == ["-m", "agent_watchdog"]
+    assert handler["args"][-4:-1] == ["hook", "claude", "--installation"]
+    assert "commandWindows" not in handler
+    assert "matcher" not in json.loads(target.read_text())["hooks"]["Stop"][-1]
+    assert handler["timeout"] == 2
+    assert not change(target, paths, install=True, apply=True, provider="claude")["changed"]
+    change(target, paths, install=False, apply=True, provider="claude")
+    assert target.read_bytes() == original
+
+
+def test_claude_install_preserves_unrelated_settings_and_user_hooks(paths, tmp_path):
+    target = tmp_path / "settings.json"
+    original = json.dumps(REALISTIC_SETTINGS, indent=2).encode() + b"\n"
+    target.write_bytes(original)
+    change(target, paths, install=True, apply=True, provider="claude")
+    installed = json.loads(target.read_text())
+    assert installed["theme"] == "dark"
+    assert installed["enabledPlugins"] == ["a", "b"]
+    assert installed["hooks"]["Stop"][0] == REALISTIC_SETTINGS["hooks"]["Stop"][0]
+    change(target, paths, install=False, apply=True, provider="claude")
+    assert target.read_bytes() == original
+
+
+def test_claude_native_install_records_provider_and_uninstalls_without_binary(paths, tmp_path):
+    binary = tmp_path / "native adapter"
+    binary.write_bytes(b"fixture")
+    target = tmp_path / "settings.json"
+    change(target, paths, install=True, apply=True, adapter_executable=binary, provider="claude")
+    record = json.loads(target.with_name("settings.json.watchdog.json").read_text())
+    assert record["provider"] == "claude"
+    handler = json.loads(target.read_text())["hooks"]["Stop"][0]["hooks"][0]
+    assert handler["command"] == str(binary)
+    assert handler["args"][:2] == ["--python", sys.executable]
+    binary.unlink()
+    change(target, paths, install=False, apply=True, provider="claude")
+    assert not target.exists()
+
+
+@pytest.mark.parametrize(
+    "name,provider",
+    [("hooks.json", "claude"), ("settings.json", "codex"), ("settings.local.json", "codex")],
+)
+def test_cross_provider_file_mismatch_is_refused(paths, tmp_path, name, provider):
+    target = tmp_path / name
+    with pytest.raises(ValueError):
+        change(target, paths, install=True, apply=True, provider=provider)
+    assert not target.exists()
+
+
+def test_legacy_codex_manifest_without_provider_still_uninstalls(paths, tmp_path):
+    target = tmp_path / "hooks.json"
+    change(target, paths, install=True, apply=True)
+    record_path = target.with_name("hooks.json.watchdog.json")
+    record = json.loads(record_path.read_text())
+    record.pop("provider", None)
+    record_path.write_text(json.dumps(record))
+    change(target, paths, install=False, apply=True)
+    assert not target.exists()
+
+
+def test_claude_symlink_target_is_refused(paths, tmp_path):
+    real = tmp_path / "real.json"
+    real.write_bytes(b'{"hooks":{}}\n')
+    link = tmp_path / "settings.json"
+    try:
+        link.symlink_to(real)
+    except (OSError, NotImplementedError):
+        pytest.skip("symlinks unavailable")
+    with pytest.raises(ValueError):
+        change(link, paths, install=True, apply=True, provider="claude")

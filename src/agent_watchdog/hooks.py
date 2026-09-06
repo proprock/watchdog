@@ -10,18 +10,34 @@ from agent_watchdog.events import Envelope, EventKind
 from agent_watchdog.privacy import sanitize
 from agent_watchdog.registry import Registry
 
-EVENTS: dict[str, EventKind] = {
-    "SessionStart": "session.start",
-    "SessionEnd": "session.end",
-    "UserPromptSubmit": "turn.start",
-    "PreToolUse": "tool.start",
-    "PostToolUse": "tool.finish",
-    "PreCompact": "compaction.start",
-    "PostCompact": "compaction.end",
-    "SubagentStart": "agent.start",
-    "SubagentStop": "agent.end",
-    "Stop": "turn.end",
-    "Interrupt": "interrupt",
+EVENTS: dict[str, dict[str, EventKind]] = {
+    "codex": {
+        "SessionStart": "session.start",
+        "SessionEnd": "session.end",
+        "UserPromptSubmit": "turn.start",
+        "PreToolUse": "tool.start",
+        "PostToolUse": "tool.finish",
+        "PreCompact": "compaction.start",
+        "PostCompact": "compaction.end",
+        "SubagentStart": "agent.start",
+        "SubagentStop": "agent.end",
+        "Stop": "turn.end",
+        "Interrupt": "interrupt",
+    },
+    "claude": {
+        "SessionStart": "session.start",
+        "SessionEnd": "session.end",
+        "UserPromptSubmit": "turn.start",
+        "Stop": "turn.end",
+        "PreToolUse": "tool.start",
+        "PostToolUse": "tool.finish",
+        "PostToolUseFailure": "tool.finish",
+        "PreCompact": "compaction.start",
+        "PostCompact": "compaction.end",
+        "SubagentStart": "agent.start",
+        "SubagentStop": "agent.end",
+        "Notification": "waiting",
+    },
 }
 
 
@@ -30,7 +46,8 @@ def identifier(payload: dict, field: str) -> str | None:
     return value if isinstance(value, str) and value.strip() and len(value) <= 256 else None
 
 
-def observe(paths: UserPaths, stream: BinaryIO) -> None:
+def observe(paths: UserPaths, stream: BinaryIO, provider: str = "codex") -> None:
+    events = EVENTS[provider]
     try:
         if daemon.desired(paths).get("paused", False):
             return
@@ -71,17 +88,17 @@ def observe(paths: UserPaths, stream: BinaryIO) -> None:
         )
         native = identifier(payload, "hook_event_name")
         event = Envelope(
-            provider="codex",
+            provider=provider,
             project_id=resolution.project_id,
             checkout_id=resolution.checkout_id,
             session_id=identifier(payload, "session_id"),
             turn_id=identifier(payload, "turn_id"),
             agent_id=identifier(payload, "agent_id"),
-            kind=EVENTS.get(native or "", "unknown"),
+            kind=events.get(native or "", "unknown"),
             source="hook",
             payload={
-                "codex": {
-                    "hook_event_name": native if native in EVENTS else "unknown",
+                provider: {
+                    "hook_event_name": native if native in events else "unknown",
                     "tool_use_id": identifier(payload, "tool_use_id"),
                     "tool_name": identifier(payload, "tool_name"),
                     "tool_response_type": type(payload["tool_response"]).__name__

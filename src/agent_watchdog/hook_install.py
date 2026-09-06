@@ -36,10 +36,16 @@ def read(path: Path, limit: int = 1024**2) -> bytes | None:
         return None
 
 
+TARGETS: dict[str, tuple[str, ...]] = {
+    "codex": ("hooks.json",),
+    "claude": ("settings.json", "settings.local.json"),
+}
+
+
 def parse(content: bytes | None) -> dict:
     value = json.loads(content, object_pairs_hook=unique_pairs) if content is not None else {}
     if not isinstance(value, dict) or not isinstance(value.get("hooks", {}), dict):
-        raise ValueError("Expected a hooks.json object")
+        raise ValueError("Expected a hook configuration object")
     for groups in value.get("hooks", {}).values():
         if not isinstance(groups, list) or any(
             not isinstance(group, dict)
@@ -51,7 +57,12 @@ def parse(content: bytes | None) -> dict:
     return value
 
 
-def group(paths: UserPaths, token: str, adapter_executable: Path | None = None) -> dict:
+def group(
+    paths: UserPaths,
+    token: str,
+    adapter_executable: Path | None = None,
+    provider: str = "codex",
+) -> dict:
     arguments = [
         sys.executable,
         "-m",
@@ -63,12 +74,26 @@ def group(paths: UserPaths, token: str, adapter_executable: Path | None = None) 
         "--runtime",
         str(paths.runtime),
         "hook",
-        "codex",
+        provider,
         "--installation",
         token,
     ]
     if adapter_executable is not None:
         arguments[:3] = [str(adapter_executable), "--python", sys.executable]
+    if provider == "claude":
+        # Exec form: Claude spawns `command` directly with `args`, no shell, so
+        # paths with quotes, $ or backticks never reach a parser. No commandWindows
+        # (Claude has no such field) and no matcher (optional; absent matches all).
+        return {
+            "hooks": [
+                {
+                    "type": "command",
+                    "command": arguments[0],
+                    "args": arguments[1:],
+                    "timeout": 2,
+                }
+            ]
+        }
     return {
         "hooks": [
             {
@@ -93,21 +118,34 @@ def change(
     install: bool,
     apply: bool,
     adapter_executable: Path | None = None,
+    provider: str = "codex",
 ) -> dict:
+    if provider not in TARGETS:
+        raise ValueError("Unknown hook provider")
     if adapter_executable is not None:
         if not install or not adapter_executable.is_absolute() or not adapter_executable.is_file():
             raise ValueError("Choose an existing absolute adapter executable for installation")
     target = target.absolute()
-    if target.name != "hooks.json":
-        raise ValueError("Choose an explicit hooks.json file; inline TOML is not edited")
+    if target.name not in TARGETS[provider]:
+        raise ValueError(f"Choose an explicit {' or '.join(TARGETS[provider])} file for {provider}")
     if not apply:
         return _change(
-            target, paths, install=install, apply=False, adapter_executable=adapter_executable
+            target,
+            paths,
+            install=install,
+            apply=False,
+            adapter_executable=adapter_executable,
+            provider=provider,
         )
     target.parent.mkdir(parents=True, exist_ok=True)
-    with writer_lock(target.with_name("hooks.json.watchdog.lock")):
+    with writer_lock(target.with_name(target.name + ".watchdog.lock")):
         return _change(
-            target, paths, install=install, apply=True, adapter_executable=adapter_executable
+            target,
+            paths,
+            install=install,
+            apply=True,
+            adapter_executable=adapter_executable,
+            provider=provider,
         )
 
 
@@ -118,22 +156,26 @@ def _change(
     install: bool,
     apply: bool,
     adapter_executable: Path | None = None,
+    provider: str = "codex",
 ) -> dict:
     original = read(target)
     document = parse(original)
-    manifest_path = target.with_name("hooks.json.watchdog.json")
+    manifest_path = target.with_name(target.name + ".watchdog.json")
     manifest_raw = read(manifest_path, limit=8 * 1024**2)
     manifest: dict | None = (
         json.loads(manifest_raw, object_pairs_hook=unique_pairs)
         if manifest_raw is not None
         else None
     )
+    # Codex manifests written before multi-provider support carry no "provider" key.
+    record_provider = manifest.get("provider", "codex") if isinstance(manifest, dict) else "codex"
     if manifest_raw is not None and (
         not isinstance(manifest, dict)
         or manifest.get("schema_version") != 1
         or not isinstance(manifest.get("token"), str)
         or not isinstance(manifest.get("group"), dict)
-        or manifest.get("events") != list(EVENTS)
+        or record_provider != provider
+        or manifest.get("events") != list(EVENTS[provider])
         or "original" not in manifest
         or (manifest["original"] is not None and not isinstance(manifest["original"], str))
     ):
@@ -149,8 +191,9 @@ def _change(
         manifest = {
             "schema_version": 1,
             "token": token,
-            "group": group(paths, token, adapter_executable),
-            "events": list(EVENTS),
+            "provider": provider,
+            "group": group(paths, token, adapter_executable, provider),
+            "events": list(EVENTS[provider]),
             "original": original.decode("utf-8") if original is not None else None,
         }
     expected = manifest["group"]
@@ -177,7 +220,7 @@ def _change(
                     hooks[event] = []
                 else:
                     hooks.pop(event)
-    if install and expected != group(paths, manifest["token"], adapter_executable):
+    if install and expected != group(paths, manifest["token"], adapter_executable, provider):
         raise ValueError("Installation paths changed; uninstall the recorded installation first")
     if not install and not hooks and "hooks" not in baseline:
         updated.pop("hooks")
@@ -188,18 +231,24 @@ def _change(
     if result is not None and len(result) > 1024**2:
         raise ValueError("Updated hook configuration would exceed 1 MiB")
     changed = updated != document or (not install and result != original)
+    notice = (
+        "Review through Claude `/hooks`, then restart the session. "
+        "This command never changes trust."
+        if provider == "claude"
+        else "Review through Codex /hooks, then restart. This command never changes trust."
+    )
     report = {
         "changed": changed,
         "file": str(target),
         "configuration": updated,
-        "notice": "Review through Codex /hooks, then restart. This command never changes trust.",
+        "notice": notice,
     }
     if not apply:
         return report
     if changed:
         if original is not None:
             backup = target.with_name(
-                "hooks.json.watchdog-backup-" + hashlib.sha256(original).hexdigest() + ".json"
+                target.name + ".watchdog-backup-" + hashlib.sha256(original).hexdigest() + ".json"
             )
             existing = read(backup)
             if existing is not None and existing != original:

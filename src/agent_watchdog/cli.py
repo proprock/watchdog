@@ -27,11 +27,11 @@ def main() -> int:
     core = commands.add_parser("daemon", help="Control the local background process")
     core.add_argument("action", choices=("start", "stop", "pause", "status", "run"))
     hook = commands.add_parser("hook", help="Observe one native hook from stdin")
-    hook.add_argument("provider", choices=("codex",))
+    hook.add_argument("provider", choices=("codex", "claude"))
     hook.add_argument("--installation", help=argparse.SUPPRESS)
-    hooks = commands.add_parser("hooks", help="Preview or apply a Codex hooks.json edit")
+    hooks = commands.add_parser("hooks", help="Preview or apply a Codex or Claude hook edit")
     hooks.add_argument("action", choices=("install", "uninstall"))
-    hooks.add_argument("provider", choices=("codex",))
+    hooks.add_argument("provider", choices=("codex", "claude"))
     hooks.add_argument("--file", type=Path, required=True)
     hooks.add_argument("--adapter-executable", type=Path, help="Absolute native adapter path")
     hooks.add_argument("--apply", action="store_true", help="Apply changes; default is dry-run")
@@ -125,11 +125,14 @@ def main() -> int:
             return 0
         if args.command == "hook":
             try:
-                observe(paths, sys.stdin.buffer)
+                observe(paths, sys.stdin.buffer, args.provider)
             except KeyboardInterrupt:
                 pass
             finally:
-                print("{}")
+                # Claude adds hook stdout to model context on SessionStart and
+                # UserPromptSubmit; an observation hook must stay silent there.
+                if args.provider == "codex":
+                    print("{}")
             return 0
         if args.command == "hooks":
             print(
@@ -140,6 +143,7 @@ def main() -> int:
                         install=args.action == "install",
                         apply=args.apply,
                         adapter_executable=args.adapter_executable,
+                        provider=args.provider,
                     )
                 )
             )
