@@ -25,3 +25,6 @@ settings.json.watchdog*
 settings.local.json.watchdog*
 .DS_Store
 Thumbs.db
+
+# Per-task working notes; delete once the task and its dependants are settled.
+/tmp-*.md
