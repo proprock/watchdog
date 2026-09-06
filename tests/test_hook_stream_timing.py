@@ -34,7 +34,7 @@ def stamped(subtype, hook_id, event, ns, **extra):
     }
 
 
-def test_report_pairs_by_hook_id_and_computes_deltas(mod, tmp_path):
+def test_report_pairs_by_hook_id_without_timing_delta(mod, tmp_path):
     rows = [
         stamped("hook_started", "h1", "PreToolUse", 1_000_000_000),
         stamped("hook_response", "h1", "PreToolUse", 1_040_000_000),
@@ -51,9 +51,10 @@ def test_report_pairs_by_hook_id_and_computes_deltas(mod, tmp_path):
     rc = mod.report(SimpleNamespace(stream=[stream], output=out))
     assert rc == 0
     result = json.loads(out.read_text())
+    assert result["schema_version"] == 2
+    assert "delta_ms" not in result
     assert result["hook_pairs"] == 2
     assert result["unpaired_hook_started"] == 1
-    assert result["delta_ms"] == {"count": 2, "p50_ms": 40.0, "p95_ms": 210.0, "max_ms": 210.0}
     assert result["per_event"] == {"PostToolUse": 1, "PreToolUse": 1}
     assert result["outcomes"] == {"success": 2}
     assert result["nonempty_stdout_responses"] == 1

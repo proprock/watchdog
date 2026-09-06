@@ -1,45 +1,37 @@
-"""Measure Claude hook wall time from the ``--include-hook-events`` stream.
+"""Verify Claude hook pairing, outcomes, and tool-use ids from the stream.
 
 Claude Code 2.1.259 does not write ``hookInfos``/``durationMs`` into ``-p`` JSON
 transcripts (see docs/verification.md). It does emit, on
 ``--output-format stream-json --include-hook-events``, a ``hook_started`` record
 and a matching ``hook_response`` record per hook invocation, keyed by
-``hook_id``. This tool stamps each such record with a monotonic read timestamp
-and reports ``t(hook_response) - t(hook_started)`` as the harness-side blocking
-cost of the hook.
+``hook_id``. This tool pairs those records and reports counts, per-event tallies,
+and outcomes.
+
+It does **not** report a timing delta. The read-time gap between the two stream
+records is dominated by Claude's stdout-flush cadence, not by hook wall time
+(a sequential run measured slower than a four-way concurrent one), so it is not a
+substitute for a harness-reported duration. A monotonic read stamp is still
+written into the capture NDJSON for provenance, but ``report`` ignores it.
 
 Subcommands:
-  capture  run one headless Claude session, writing a stamped NDJSON of its
-           hook + tool records (ids, counts, timings only; never prompt,
-           command or tool output text).
-  report   read one or more stamped NDJSON files and print the timing JSON.
+  capture  run one headless Claude session, writing an NDJSON of its hook + tool
+           records (ids, counts, outcomes only; never prompt, command or tool
+           output text).
+  report   read one or more capture NDJSON files and print the verification JSON.
 
 Never writes into ``~/.claude``.
 """
 
 import argparse
 import json
-import math
 import subprocess
 import time
 from collections import Counter
 from pathlib import Path
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 HOOK_SUBTYPES = ("hook_started", "hook_response")
 _STAMP = "readMonotonicNs"
-
-
-def distribution(values: list[float]) -> dict:
-    if not values:
-        return {"count": 0, "p50_ms": None, "p95_ms": None, "max_ms": None}
-    ordered = sorted(values)
-    return {
-        "count": len(ordered),
-        "p50_ms": ordered[math.ceil(len(ordered) * 0.5) - 1],
-        "p95_ms": ordered[math.ceil(len(ordered) * 0.95) - 1],
-        "max_ms": max(ordered),
-    }
 
 
 def _keep_hook(record: dict, stamp: int) -> dict:
@@ -156,7 +148,7 @@ def _load(paths: list[Path]) -> list[dict]:
 def report(args: argparse.Namespace) -> int:
     rows = _load(args.stream)
     started: dict[str, dict] = {}
-    deltas: list[float] = []
+    paired = 0
     per_event: Counter[str] = Counter()
     outcomes: Counter[str] = Counter()
     nonempty_stdout = 0
@@ -184,16 +176,15 @@ def report(args: argparse.Namespace) -> int:
                 if row.get("stdout_len"):
                     nonempty_stdout += 1
                 if begin is not None:
-                    deltas.append((row[_STAMP] - begin[_STAMP]) / 1e6)
+                    paired += 1
     unpaired_started = len(started)
     result = {
         "schema_version": SCHEMA_VERSION,
         "streams": len(args.stream),
         "runs": runs,
         "errored_runs": errored_runs,
-        "hook_pairs": len(deltas),
+        "hook_pairs": paired,
         "unpaired_hook_started": unpaired_started,
-        "delta_ms": distribution(deltas),
         "per_event": dict(sorted(per_event.items())),
         "outcomes": dict(sorted(outcomes.items())),
         "nonempty_stdout_responses": nonempty_stdout,
