@@ -32,7 +32,7 @@ Resolve user config/data/runtime directories with platformdirs. User TOML contai
 
 One directory per UUID: SQLite (WAL), inbox, artifacts, and quarantine. The registry contains no aggregate analytics. Store large raw outputs as separate redacted artifacts; the database holds references, fingerprints, and bounded excerpts. Do not recursively scan user files: the transcript reader opens only an absolute Codex path previously recorded from a Codex hook and validates it against the observed session.
 
-The core is the only database writer. The CLI uses read-only connections; future labels, pin, and purge pass through a control inbox with request IDs and acknowledgments. WD-005 implements only a single-slot desired-state file for lifecycle controls; it does not add a general command queue. Read-only reports will work while the core is stopped. Require a schema version and sequential migrations; reject unsupported newer schemas with a clear error and no overwrite.
+The core is the only database writer. The CLI uses read-only connections; WD-011 labels, pins, and purges pass through a bounded control inbox with request IDs and acknowledgments. Lifecycle controls remain a single-slot desired-state file. Read-only reports and exports work while the core is stopped. Require a schema version and sequential migrations; reject unsupported newer schemas with a clear error and no overwrite.
 
 Defaults are configurable in user TOML, with overrides by project UUID:
 
@@ -62,7 +62,7 @@ Hooks are the primary source. Codex rollout-v1 enrichment runs only in the daemo
 - Compute debounced Git diff fingerprints per checkout in the core; concurrent agents/user edits make attribution uncertain. A->B->A is a signal, not proof of a stall. Snapshots must not modify the index or worktree.
 - No universal no-progress score based on missing events. Distinguish observed, inferred, and unknown for every finding; waiting for a user/tool or incomplete data is not a stall. Exit code 0 does not automatically reset signals.
 - CLI reports show timeline, coverage/gaps, active time separately from wall time, repetitions, available usage/compaction, and labels. Without evidence of interval start/end, active time is unknown.
-- Export selected sessions as a Markdown summary, JSONL events, a manifest with versions/completeness/redaction, optional redacted artifacts, and a prompt template for manual LLM analysis. No automatic transmission. Clearly mark trace content as untrusted data.
+- Export selected sessions as a Markdown summary, JSONL events, a manifest with versions/completeness/redaction, and a prompt template for manual LLM analysis. No automatic transmission. Clearly mark trace content as untrusted data and require human content review before external sharing.
 
 ## Later extensions
 

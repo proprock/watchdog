@@ -87,9 +87,10 @@ the same UUID is rejected. Fingerprints expire with the event metrics.
 FULL, foreign keys, and secure deletion of freed cells. Schema v2 adds session pins
 and replay fingerprints; schema v3 adds durable Codex transcript source cursors,
 partial tails, file identity, reader errors, and cumulative usage baselines; schema
-v4 adds debounced per-checkout Git diff fingerprints and byte counts. Diff text is
-never stored. The core runs the bounded Git read after spool admission; hook paths do
-not invoke Git or snapshot a worktree.
+v4 adds debounced per-checkout Git diff fingerprints and byte counts; schema v5
+adds provider-scoped session outcome/type labels. Diff text is never stored. The
+core runs the bounded Git read after spool admission; hook paths do not invoke Git
+or snapshot a worktree.
 Reader sources expire after 30 days without a hook observation; no vendor file is
 deleted or modified. New databases enable incremental vacuum before creating
 tables; v1 databases need a one-time VACUUM rebuild with a space check. If the
@@ -114,8 +115,9 @@ kind, times, and availability remain.
 Under pressure, cleanup removes oldest unpinned content, then oldest unpinned
 sessions. Null-session events form one unpinned group. Pins protect the entire
 session, including later events sharing its ID, from expiry and eviction.
-`store.pin(session_id, pinned=False)` removes protection. User-facing pin, label,
-and export commands remain WD-011.
+`store.pin(session_id, pinned=False)` removes protection. WD-011 adds
+provider-scoped user-facing label, pin, and purge requests through the core plus
+offline exports; legacy pin retention remains keyed by native session ID.
 
 Cleanup removes unreferenced hash-named artifacts and `.tmp` files older than one
 hour in Watchdog-owned locations. Referenced shared artifacts and recent temporary

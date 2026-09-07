@@ -31,6 +31,7 @@ from agent_watchdog.storage import (
 
 SPOOL_BYTES = 64 * 1024**2
 SPOOL_FILES = 4096
+CONTROL_REQUEST_BYTES = 8192
 
 
 def _capture_diff_snapshot(
@@ -256,6 +257,106 @@ def enqueue(paths: UserPaths, event: Envelope) -> bool:
         return True
 
 
+def request_control(paths: UserPaths, request: dict, *, timeout: float = 10) -> dict:
+    """Submit one user control request and wait for the core's durable acknowledgement."""
+    request_id = str(uuid4())
+    document = {"schema_version": 1, "request_id": request_id, **request}
+    with control_lock(paths):
+        atomic_write(
+            paths.data / "requests" / f"{request_id}.json",
+            json.dumps(document, sort_keys=True).encode(),
+        )
+    start(paths)
+    deadline = time.monotonic() + timeout
+    acknowledgement = paths.data / "acks" / f"{request_id}.json"
+    while time.monotonic() < deadline:
+        result = read_json(acknowledgement)
+        if result is not None:
+            acknowledgement.unlink(missing_ok=True)
+            if result.get("request_id") != request_id or result.get("schema_version") != 1:
+                raise StorageError("Invalid core acknowledgement")
+            if result.get("ok") is not True:
+                raise StorageError(str(result.get("message", "Core request failed")))
+            value = result.get("result")
+            if not isinstance(value, dict):
+                raise StorageError("Invalid core acknowledgement")
+            return value
+        time.sleep(0.05)
+    raise StorageError("Timed out waiting for the core acknowledgement")
+
+
+def _drain_controls(paths: UserPaths, config: Config, *, limit: int = 100) -> bool:
+    """Execute bounded user requests in the core; never touch vendor files."""
+    directory = paths.data / "requests"
+    if not directory.is_dir():
+        return False
+    projects = {str(project.id): project for project in config.projects}
+    activity = False
+    for path in sorted(directory.glob("*.json"))[:limit]:
+        try:
+            if path.is_symlink():
+                raise ValueError("Invalid control request")
+            data = path.read_bytes()
+            if len(data) > CONTROL_REQUEST_BYTES:
+                raise ValueError("Oversized control request")
+            request = json.loads(data)
+            if not isinstance(request, dict) or request.get("schema_version") != 1:
+                raise ValueError("Invalid control request")
+            request_id = str(UUID(str(request["request_id"])))
+            project = projects[str(UUID(str(request["project_id"])))]
+            action, provider, session_id = (
+                request["action"],
+                request["provider"],
+                request["session_id"],
+            )
+            if action not in {"label", "pin", "purge"} or provider not in {"codex", "claude"}:
+                raise ValueError("Invalid control request")
+            if not isinstance(session_id, str) or not session_id.strip():
+                raise ValueError("Invalid control request")
+            with Store(paths.project_data(project.id), project.id) as store:
+                if action == "label":
+                    outcome, task_type = request["outcome"], request.get("task_type")
+                    if not isinstance(outcome, str) or not (
+                        task_type is None or isinstance(task_type, str)
+                    ):
+                        raise ValueError("Invalid control request")
+                    result = {
+                        "label": store.label(
+                            provider, session_id, outcome=outcome, task_type=task_type
+                        )
+                    }
+                elif action == "pin":
+                    pinned = request.get("pinned")
+                    if type(pinned) is not bool:
+                        raise ValueError("Invalid control request")
+                    store.pin_provider_session(provider, session_id, pinned=pinned)
+                    result = {"pinned": pinned}
+                else:
+                    result = {"deleted_events": store.purge_provider_session(provider, session_id)}
+            acknowledgement = {
+                "schema_version": 1,
+                "request_id": request_id,
+                "ok": True,
+                "result": result,
+            }
+        except WriterBusy:
+            continue
+        except (KeyError, OSError, StorageError, ValueError, TypeError) as error:
+            request_id = path.stem
+            acknowledgement = {
+                "schema_version": 1,
+                "request_id": request_id,
+                "ok": False,
+                "message": str(error) or "Invalid control request",
+            }
+        atomic_write(
+            paths.data / "acks" / f"{request_id}.json", json.dumps(acknowledgement).encode()
+        )
+        _discard(path)
+        activity = True
+    return activity
+
+
 def _admit(paths: UserPaths, event: Envelope, config: Config) -> bool:
     """Publish one envelope under the control lock. The caller is the running
     daemon, so unlike `enqueue` this never self-launches. Raises on quota/busy."""
@@ -405,6 +506,8 @@ def _poll(paths: UserPaths, owner: ExitStack) -> None:
                 except OSError:
                     pass
             if _drain_spool(paths, config):
+                activity = True
+            if _drain_controls(paths, config):
                 activity = True
             for project in config.projects:
                 try:

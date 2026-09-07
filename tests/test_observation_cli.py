@@ -1,11 +1,13 @@
 import json
 import sys
+import time
 from uuid import uuid4
 
 import pytest
 
 from agent_watchdog.cli import main
-from agent_watchdog.config import Config, Project, save_config
+from agent_watchdog.config import Config, Project, UserPaths, save_config
+from agent_watchdog.daemon import status, stop
 from agent_watchdog.events import Envelope, EventKind
 from agent_watchdog.storage import Store
 
@@ -159,6 +161,100 @@ def test_report_is_read_only_and_returns_shadow_findings(tmp_path, monkeypatch, 
     }
     assert report["session_ids"] == ["one"]
     assert (data / "events.sqlite3").read_bytes() == before
+
+
+def test_label_pin_export_and_purge_are_offline_and_provider_scoped(tmp_path, monkeypatch, capsys):
+    project = Project(id=uuid4(), root=tmp_path)
+    save_config(tmp_path / "config.toml", Config(projects=(project,)))
+    paths = UserPaths(tmp_path / "config.toml", tmp_path / "data", tmp_path / "runtime")
+    data = tmp_path / "data" / "projects" / str(project.id)
+    with Store(data, project.id) as store:
+        for provider in ("codex", "claude"):
+            store.put(
+                Envelope(
+                    provider=provider,
+                    project_id=project.id,
+                    session_id="shared",
+                    kind="turn.end",
+                    source="hook",
+                    payload={provider: {"content": {"prompt": "review locally"}}},
+                )
+            )
+    try:
+        code, label = invoke(
+            monkeypatch,
+            capsys,
+            tmp_path,
+            "label",
+            "shared",
+            "--project",
+            str(project.id),
+            "--outcome",
+            "success",
+            "--task-type",
+            "bugfix",
+        )
+        assert code == 0, label
+        assert label["label"] == {"task_outcome": "success", "task_type": "bugfix"}
+
+        code, pin = invoke(
+            monkeypatch, capsys, tmp_path, "pin", "shared", "--project", str(project.id)
+        )
+        assert code == 0 and pin["pinned"] is True, pin
+
+        code, shown = invoke(
+            monkeypatch,
+            capsys,
+            tmp_path,
+            "sessions",
+            "show",
+            "shared",
+            "--project",
+            str(project.id),
+        )
+        assert code == 0, shown
+        assert shown["label"] == {"task_outcome": "success", "task_type": "bugfix"}
+        assert shown["pinned"] is True
+
+        output = tmp_path / "export"
+        code, exported = invoke(
+            monkeypatch,
+            capsys,
+            tmp_path,
+            "export",
+            "--project",
+            str(project.id),
+            "--session",
+            "shared",
+            "--output",
+            str(output),
+        )
+        assert code == 0
+        assert set(exported["files"]) == {
+            "events.jsonl",
+            "manifest.json",
+            "manual-prompt.md",
+            "summary.md",
+        }
+        manifest = json.loads((output / "manifest.json").read_text())
+        assert manifest["schema_version"] == 1
+        assert manifest["review_required"] is True
+        assert manifest["sessions"][0]["gaps"] == ["active_time_unknown", "usage_incomplete"]
+        assert "review the exported content" in (output / "manual-prompt.md").read_text().lower()
+
+        code, purged = invoke(
+            monkeypatch, capsys, tmp_path, "purge", "shared", "--project", str(project.id)
+        )
+        assert code == 0 and purged["deleted_events"] == 1
+        with Store(data, project.id) as store:
+            assert [event.provider for event in store.events()] == ["claude"]
+    finally:
+        stop(paths)
+        deadline = time.monotonic() + 10
+        while status(paths)["alive"]:
+            if time.monotonic() >= deadline:
+                pytest.fail("Timed out stopping daemon")
+            time.sleep(0.05)
 
 
 @pytest.mark.parametrize("fault", ["missing", "corrupt", "future", "wrong_project"])

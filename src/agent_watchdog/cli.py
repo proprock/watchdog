@@ -50,6 +50,30 @@ def main() -> int:
     report.add_argument("--project", type=UUID, help="Project UUID; default resolves cwd")
     report.add_argument("--session", help="Limit the report to one native session")
     report.add_argument("--provider", default="codex")
+    label = commands.add_parser("label", help="Label one collected session through the core")
+    label.add_argument("session_id")
+    label.add_argument("--project", type=UUID, help="Project UUID; default resolves cwd")
+    label.add_argument("--provider", default="codex")
+    label.add_argument(
+        "--outcome", required=True, choices=("success", "partial", "failed", "abandoned", "unknown")
+    )
+    label.add_argument("--task-type")
+    pin = commands.add_parser("pin", help="Pin or unpin one collected session through the core")
+    pin.add_argument("session_id")
+    pin.add_argument("--project", type=UUID, help="Project UUID; default resolves cwd")
+    pin.add_argument("--provider", default="codex")
+    pin.add_argument("--unpin", action="store_true")
+    purge = commands.add_parser("purge", help="Permanently delete Watchdog data for one session")
+    purge.add_argument("session_id")
+    purge.add_argument("--project", type=UUID, help="Project UUID; default resolves cwd")
+    purge.add_argument("--provider", default="codex")
+    export = commands.add_parser(
+        "export", help="Write an offline review bundle for selected sessions"
+    )
+    export.add_argument("--project", type=UUID, help="Project UUID; default resolves cwd")
+    export.add_argument("--provider", default="codex")
+    export.add_argument("--session", action="append", required=True)
+    export.add_argument("--output", type=Path, required=True)
     sessions = commands.add_parser(
         "sessions", help="Read collected sessions without starting collection"
     )
@@ -106,7 +130,7 @@ def main() -> int:
                 daemon.mutate_registry(paths, mutate)
             print(json.dumps(result))
             return 0
-        if args.command in ("doctor", "sessions", "report"):
+        if args.command in ("doctor", "sessions", "report", "export", "label", "pin", "purge"):
             from agent_watchdog import inspection
 
             if args.command == "doctor":
@@ -114,6 +138,33 @@ def main() -> int:
                 print(json.dumps(report))
                 return 0 if report["ok"] else 1
             project = inspection.project_at(paths, args.project)
+            if args.command == "export":
+                print(
+                    json.dumps(
+                        inspection.export_sessions(
+                            paths,
+                            project,
+                            provider=args.provider,
+                            session_ids=args.session,
+                            output=args.output,
+                        )
+                    )
+                )
+                return 0
+            if args.command in ("label", "pin", "purge"):
+                action = {"label": "label", "pin": "pin", "purge": "purge"}[args.command]
+                request = {
+                    "action": action,
+                    "project_id": str(project.id),
+                    "provider": args.provider,
+                    "session_id": args.session_id,
+                }
+                if args.command == "label":
+                    request |= {"outcome": args.outcome, "task_type": args.task_type}
+                elif args.command == "pin":
+                    request["pinned"] = not args.unpin
+                print(json.dumps(daemon.request_control(paths, request)))
+                return 0
             if args.command == "report":
                 print(
                     json.dumps(

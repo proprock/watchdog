@@ -1,10 +1,9 @@
 # TODO
 
-Queue: WD-011 -> WD-012 -> WD-013 -> WD-014 -> WD-022b (M-Anthropic) -> WD-015 -> WD-019 -> WD-026. WD-009, WD-010, WD-022a, WD-024, and WD-027 are complete (see [DONE.md](DONE.md)). WD-016 is optional; WD-026 is the final deferred provider-performance task. M1-M4 support Codex coding only; ordinary chats are excluded. Design: ROADMAP.md and docs/architecture.md. This file contains open work only; completed entries move to [DONE.md](DONE.md) with their IDs and verification evidence. Pending work has not yet been verified.
+Queue: WD-012 -> WD-013 -> WD-014 -> WD-022b (M-Anthropic) -> WD-015 -> WD-019 -> WD-026. WD-009, WD-010, WD-011, WD-022a, WD-024, and WD-027 are complete (see [DONE.md](DONE.md)). WD-016 is optional; WD-026 is the final deferred provider-performance task. M1-M4 support Codex coding only; ordinary chats are excluded. Design: ROADMAP.md and docs/architecture.md. This file contains open work only; completed entries move to [DONE.md](DONE.md) with their IDs and verification evidence. Pending work has not yet been verified.
 
 ## M2 - Analysis
 
-- [ ] **WD-011 - Labels, pin, and manual export.** Task outcome/type, Markdown/JSONL/manifest/prompt, session selection, and content review. Depends on WD-010. Acceptance: offline export without LLM/network, label round trips, purge of watchdog data only, and version/gaps in the manifest.
 - [ ] **WD-012 - Calibration on real work.** Manually label a target of 20-50 sessions, measure precision/false positives/overhead, and identify typical tasks. Depends on WD-011. Acceptance: an auditable report with counts, limitations, and recommendations, without automatic harness changes.
 
 ## Later milestones: research gates

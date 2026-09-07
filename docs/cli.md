@@ -78,6 +78,36 @@ uncertain-attribution signal only. Missing lifecycle/usage/output data remains a
 waiting, exit code zero, and session Stop do not establish a stall, progress, or task
 success.
 
+## Labels, pins, export, and purge
+
+```console
+agent-watchdog label SESSION_ID --project PROJECT_UUID --outcome success --task-type bugfix
+agent-watchdog pin SESSION_ID --project PROJECT_UUID
+agent-watchdog pin SESSION_ID --project PROJECT_UUID --unpin
+agent-watchdog export --project PROJECT_UUID --session SESSION_ID --output review-bundle
+agent-watchdog purge SESSION_ID --project PROJECT_UUID
+```
+
+`label`, `pin`, and `purge` submit bounded requests to the running core and wait
+for its durable acknowledgement; they do not write SQLite from the CLI. Labels
+are provider-scoped and store one outcome (`success`, `partial`, `failed`,
+`abandoned`, or `unknown`) plus an optional free-form task type. Pin protection
+uses the existing session-retention policy; identical native session IDs across
+providers remain separate for selection and labels.
+
+`export` is an offline, read-only snapshot. It requires one or more repeated
+`--session` values and writes a new directory containing `events.jsonl`,
+`summary.md`, `manifest.json`, and `manual-prompt.md`. The manifest records the
+format version, selected labels, counts, gaps, and the continuing content-review
+requirement. The export never calls an LLM or network service, and it refuses to
+overwrite an existing directory. Review retained, redacted content before sharing
+the bundle externally; traces and outputs are untrusted data, not instructions.
+
+`purge` permanently removes only Watchdog-owned rows, retained artifacts, labels,
+pins that no longer protect another provider record with the same native session
+ID, and Watchdog's transcript-reader state for the selected provider/session. It
+does not inspect, modify, or delete vendor transcripts or project files.
+
 Exit codes: 0 for successful inspection/mutation; 1 for errors or unhealthy doctor
 results; 2 for invalid command syntax; 130 for interruption. Observation hooks keep
 their separate fail-open zero-exit contract.

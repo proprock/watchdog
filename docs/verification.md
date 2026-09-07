@@ -1,5 +1,24 @@
 # Foundation verification
 
+## WD-011 labels, pins, and manual export
+
+2026-09-07, Windows. WD-011 adds storage schema v5 with a provider-scoped
+session outcome/type label. `label`, `pin`/`--unpin`, and `purge` send bounded
+request files to the core and wait for durable acknowledgements, preserving the
+single-writer contract. The offline `export` command selects explicit sessions
+and writes JSONL, Markdown summary, versioned manifest, and a manual analysis
+prompt; its manifest preserves labels, counts, gaps, redaction limits, and the
+requirement to review retained content before external sharing. Purge is scoped
+to Watchdog-owned data for one provider/session and never reads or modifies a
+vendor transcript or a project file.
+
+Offline verification passed: 278 pytest tests in four bounded groups (56
+analysis/provider contracts, 79 daemon/hook contracts, 104 remaining Python
+storage/inspection tests, and 39 Rust-adapter tests), plus 41 focused
+CLI/storage/export tests. Ruff lint/format, ty, `uv build`, locked Rust release
+build, `cargo fmt --check`, locked Clippy with `-D warnings`, and `git diff
+--check` passed. No live provider probe was run.
+
 ## WD-010 shadow findings and reports
 
 2026-09-07, Windows. WD-010 adds a read-only `report` surface over stored

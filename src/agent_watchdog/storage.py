@@ -139,7 +139,7 @@ class Store:
     def _initialize(self) -> None:
         db = self.connection
         version = db.execute("PRAGMA user_version").fetchone()[0]
-        if version not in (0, 1, 2, 3, 4):
+        if version not in (0, 1, 2, 3, 4, 5):
             raise StorageError("Unsupported database schema; database left unchanged")
         if version == 0:
             tables = db.execute("SELECT name FROM sqlite_master WHERE name NOT LIKE 'sqlite_%'")
@@ -222,6 +222,15 @@ class Store:
                     "ON diff_snapshots(checkout_id, observed_at)"
                 )
                 db.execute("PRAGMA user_version=4")
+        if version < 5:
+            with self._transaction():
+                db.execute(
+                    "CREATE TABLE session_labels ("
+                    "provider TEXT NOT NULL, session_id TEXT NOT NULL, "
+                    "task_outcome TEXT NOT NULL, task_type TEXT, "
+                    "PRIMARY KEY(provider, session_id))"
+                )
+                db.execute("PRAGMA user_version=5")
         # Existing v1 stores need a one-time rebuild to support physical reclamation.
         if db.execute("PRAGMA auto_vacuum").fetchone()[0] != 2:
             size = (self.root / "events.sqlite3").stat().st_size
@@ -442,6 +451,75 @@ class Store:
                 db.execute("INSERT OR IGNORE INTO pins VALUES (?)", (session_id,))
             else:
                 db.execute("DELETE FROM pins WHERE session_id=?", (session_id,))
+
+    def label(self, provider: str, session_id: str, *, outcome: str, task_type: str | None) -> dict:
+        if provider not in {"codex", "claude"} or not session_id.strip():
+            raise StorageError("A supported provider and session identity are required")
+        if outcome not in {"success", "partial", "failed", "abandoned", "unknown"}:
+            raise StorageError("Invalid task outcome")
+        if task_type is not None:
+            task_type = task_type.strip()
+            if not task_type or len(task_type) > 128:
+                raise StorageError("Task type must contain 1..128 characters")
+        with resources.admission(self.root), self._transaction() as db:
+            if not db.execute(
+                "SELECT 1 FROM events WHERE session_id=? "
+                "AND json_extract(envelope, '$.provider')=?",
+                (session_id, provider),
+            ).fetchone():
+                raise StorageError("Unknown session in the selected provider")
+            db.execute(
+                "INSERT INTO session_labels VALUES (?, ?, ?, ?) "
+                "ON CONFLICT(provider, session_id) DO UPDATE SET "
+                "task_outcome=excluded.task_outcome, task_type=excluded.task_type",
+                (provider, session_id, outcome, task_type),
+            )
+        return {"task_outcome": outcome, "task_type": task_type}
+
+    def pin_provider_session(self, provider: str, session_id: str, *, pinned: bool) -> None:
+        if provider not in {"codex", "claude"} or not session_id.strip():
+            raise StorageError("A supported provider and session identity are required")
+        with resources.admission(self.root), self._transaction() as db:
+            if not db.execute(
+                "SELECT 1 FROM events WHERE session_id=? "
+                "AND json_extract(envelope, '$.provider')=?",
+                (session_id, provider),
+            ).fetchone():
+                raise StorageError("Unknown session in the selected provider")
+            if pinned:
+                db.execute("INSERT OR IGNORE INTO pins VALUES (?)", (session_id,))
+            else:
+                db.execute("DELETE FROM pins WHERE session_id=?", (session_id,))
+
+    def purge_provider_session(self, provider: str, session_id: str) -> int:
+        """Delete only Watchdog-owned rows for one selected provider session."""
+        if provider not in {"codex", "claude"} or not session_id.strip():
+            raise StorageError("A supported provider and session identity are required")
+        with resources.admission(self.root), self._transaction() as db:
+            event_ids = [
+                row[0]
+                for row in db.execute(
+                    "SELECT event_id FROM events WHERE session_id=? "
+                    "AND json_extract(envelope, '$.provider')=?",
+                    (session_id, provider),
+                )
+            ]
+            if not event_ids:
+                raise StorageError("Unknown session in the selected provider")
+            for event_id in event_ids:
+                self._delete(event_id)
+            db.execute(
+                "DELETE FROM session_labels WHERE provider=? AND session_id=?",
+                (provider, session_id),
+            )
+            db.execute(
+                "DELETE FROM transcript_sources WHERE provider=? AND session_id=?",
+                (provider, session_id),
+            )
+            if not db.execute("SELECT 1 FROM events WHERE session_id=?", (session_id,)).fetchone():
+                db.execute("DELETE FROM pins WHERE session_id=?", (session_id,))
+        self._reclaim()
+        return len(event_ids)
 
     def maintain(self, *, now: datetime | None = None) -> None:
         with resources.admission(self.root):
