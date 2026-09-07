@@ -1,6 +1,6 @@
 # Architecture and contracts
 
-Status: accepted design decisions. WD-003 [contracts](contracts.md), WD-004/007 [storage, retention, and redaction](storage.md), WD-005 [daemon](daemon.md), and WD-006 [hooks](hooks.md) are implemented. WD-008 provides the [observation CLI](cli.md). Analysis remains planned; WD-024 replaced the slow Python adapter with Rust, retaining the Python core and inbox contract. WD-027 made that adapter spool-and-forget: it redacts and durably spools each event, and the daemon resolves the checkout, builds the envelope, and admits it. The implementation reports record exact verified boundaries. Date: 2026-09-06.
+Status: accepted design decisions. WD-003 [contracts](contracts.md), WD-004/007 [storage, retention, and redaction](storage.md), WD-005 [daemon](daemon.md), and WD-006 [hooks](hooks.md) are implemented. WD-008 provides the [observation CLI](cli.md); WD-009 adds Codex rollout-v1 usage enrichment. WD-024 replaced the slow Python adapter with Rust, retaining the Python core and inbox contract. WD-027 made that adapter spool-and-forget: it redacts and durably spools each event, and the daemon resolves the checkout, builds the envelope, and admits it. The implementation reports record exact verified boundaries. Date: 2026-09-07.
 
 ## Boundaries
 
@@ -30,7 +30,7 @@ CLI -- project selection -- read-only queries / queued mutations
 
 Resolve user config/data/runtime directories with platformdirs. User TOML contains the registered project list and defaults. `project add <path>` explicitly registers a UUID, canonical root, and Git common-dir; worktrees resolve to that UUID. A separate clone gets a separate UUID. Identify non-Git projects by canonical root. Moving a project requires explicit `project relocate`, not merging by remote URL.
 
-One directory per UUID: SQLite (WAL), inbox, artifacts, and quarantine. The registry contains no aggregate analytics. Store large raw outputs as separate redacted artifacts; the database holds references, fingerprints, and bounded excerpts. Do not read arbitrary paths supplied by hooks: transcripts must be within known provider directories and associated with the observed session. Do not recursively scan all user files.
+One directory per UUID: SQLite (WAL), inbox, artifacts, and quarantine. The registry contains no aggregate analytics. Store large raw outputs as separate redacted artifacts; the database holds references, fingerprints, and bounded excerpts. Do not recursively scan user files: the transcript reader opens only an absolute Codex path previously recorded from a Codex hook and validates it against the observed session.
 
 The core is the only database writer. The CLI uses read-only connections; future labels, pin, and purge pass through a control inbox with request IDs and acknowledgments. WD-005 implements only a single-slot desired-state file for lifecycle controls; it does not add a general command queue. Read-only reports will work while the core is stopped. Require a schema version and sequential migrations; reject unsupported newer schemas with a clear error and no overwrite.
 
@@ -52,7 +52,7 @@ Versioned envelope: `schema_version`, `event_id`, `provider`, `provider_version`
 
 Kinds: session/turn lifecycle, tool start/finish, compaction, subagent lifecycle, waiting/interrupt, usage, and observation gap. Allow provider-specific payloads in a namespaced field. Preserve unsupported versions/events as unknown with a bounded payload. CLI JSON export uses the same versioned envelope; this is the first external data interface.
 
-Hooks are the primary source. Transcript enrichment is separate, with persisted offsets and handling for partial lines, truncation, rotation, and resume. Bind reader formats to verified fixtures/versions. On format changes, disable only enrichment and report a gap. Correlate by native IDs; do not sum identical usage snapshots. Distinguish cumulative counters from per-turn deltas. Input/output/cached tokens are nullable; keep estimated and measured values separate. Subscription cost cannot be derived from token counts; defer monetary estimates.
+Hooks are the primary source. Codex rollout-v1 enrichment runs only in the daemon from hook-provided absolute paths; it never persists transcript content. Its durable reader state handles partial lines, truncation, rotation, and resume. Bind readers to verified fixtures/versions. On a format change, disable only that enrichment source and persist an observation gap. Correlate usage by response, turn, and session IDs; use `thread_token_usage` as the sole cumulative scope and derive fieldwise deltas, never summing the three provider snapshots. Input/output/cached tokens are independently observed or unavailable. Keep estimated and measured values separate. Subscription cost cannot be derived from token counts; defer monetary estimates.
 
 ## Analysis and reports
 

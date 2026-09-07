@@ -139,7 +139,7 @@ class Store:
     def _initialize(self) -> None:
         db = self.connection
         version = db.execute("PRAGMA user_version").fetchone()[0]
-        if version not in (0, 1, 2):
+        if version not in (0, 1, 2, 3):
             raise StorageError("Unsupported database schema; database left unchanged")
         if version == 0:
             tables = db.execute("SELECT name FROM sqlite_master WHERE name NOT LIKE 'sqlite_%'")
@@ -197,6 +197,18 @@ class Store:
                         (event_id, self._fingerprint(document, refs)),
                     )
                 db.execute("PRAGMA user_version=2")
+        if version < 3:
+            with self._transaction():
+                db.execute(
+                    "CREATE TABLE transcript_sources ("
+                    "provider TEXT NOT NULL, session_id TEXT NOT NULL, path TEXT NOT NULL, "
+                    "last_seen TEXT NOT NULL, reader TEXT, device INTEGER, inode INTEGER, "
+                    "size INTEGER, mtime INTEGER, "
+                    "offset INTEGER NOT NULL DEFAULT 0, tail BLOB NOT NULL DEFAULT X'', "
+                    "counters TEXT, last_error TEXT, error_signature TEXT, "
+                    "PRIMARY KEY(provider, session_id, path))"
+                )
+                db.execute("PRAGMA user_version=3")
         # Existing v1 stores need a one-time rebuild to support physical reclamation.
         if db.execute("PRAGMA auto_vacuum").fetchone()[0] != 2:
             size = (self.root / "events.sqlite3").stat().st_size
@@ -280,7 +292,87 @@ class Store:
                 [(event_id, name, references[name], len(data)) for name, data in artifacts.items()],
             )
             db.execute("INSERT INTO receipts VALUES (?, ?)", (event_id, fingerprint))
+            self._register_transcript_source(db, event)
         return True
+
+    @staticmethod
+    def _register_transcript_source(db: sqlite3.Connection, event: Envelope) -> None:
+        """Persist a Codex reader source atomically with its hook envelope."""
+        from agent_watchdog.transcripts import source_from_hook
+
+        source = source_from_hook(event)
+        if source is None:
+            return
+        db.execute(
+            "INSERT INTO transcript_sources (provider, session_id, path, last_seen) "
+            "VALUES (?, ?, ?, ?) "
+            "ON CONFLICT(provider, session_id, path) DO UPDATE SET last_seen=excluded.last_seen",
+            (source.provider, source.session_id, source.path, event.received_at.isoformat()),
+        )
+
+    def transcript_sources(self) -> list[dict[str, object]]:
+        rows = self.connection.execute(
+            "SELECT provider, session_id, path, last_seen, reader, device, inode, size, mtime, "
+            "offset, tail, counters, last_error, error_signature FROM transcript_sources "
+            "ORDER BY last_seen, provider, session_id, path"
+        ).fetchall()
+        names = (
+            "provider",
+            "session_id",
+            "path",
+            "last_seen",
+            "reader",
+            "device",
+            "inode",
+            "size",
+            "mtime",
+            "offset",
+            "tail",
+            "counters",
+            "last_error",
+            "error_signature",
+        )
+        return [dict(zip(names, row, strict=True)) for row in rows]
+
+    def update_transcript_source(
+        self,
+        source: Mapping[str, object],
+        *,
+        reader: str | None,
+        device: int | None,
+        inode: int | None,
+        size: int | None,
+        mtime: int | None,
+        offset: int,
+        tail: bytes,
+        counters: dict[str, int | None] | None,
+        last_error: str | None,
+        error_signature: str | None,
+    ) -> None:
+        if offset < 0 or len(tail) > 1024**2:
+            raise StorageError("Invalid transcript reader state")
+        serialized = json.dumps(counters, sort_keys=True) if counters is not None else None
+        with self._transaction() as db:
+            db.execute(
+                "UPDATE transcript_sources SET reader=?, device=?, inode=?, size=?, mtime=?, "
+                "offset=?, tail=?, counters=?, last_error=?, error_signature=? "
+                "WHERE provider=? AND session_id=? AND path=?",
+                (
+                    reader,
+                    device,
+                    inode,
+                    size,
+                    mtime,
+                    offset,
+                    tail,
+                    serialized,
+                    last_error,
+                    error_signature,
+                    source["provider"],
+                    source["session_id"],
+                    source["path"],
+                ),
+            )
 
     def pin(self, session_id: str, *, pinned: bool = True) -> None:
         if not session_id.strip():
@@ -346,6 +438,9 @@ class Store:
                     self._delete(event_id)
                 elif event.received_at < cutoff_content:
                     self._strip_content(event_id, document)
+            db.execute(
+                "DELETE FROM transcript_sources WHERE last_seen < ?", (cutoff_content.isoformat(),)
+            )
         # Admission lock excludes active publishers; age also protects recent crash recovery.
         for directory in (
             self.root,

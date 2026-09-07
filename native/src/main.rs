@@ -14,7 +14,7 @@ type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;
 /// Fields the daemon reads back when it builds the envelope. `cwd` is carried
 /// separately, unredacted, because the daemon needs it verbatim to resolve the
 /// checkout.
-const PROJECTION: [&str; 10] = [
+const PROJECTION: [&str; 11] = [
     "hook_event_name",
     "tool_name",
     "tool_use_id",
@@ -25,6 +25,8 @@ const PROJECTION: [&str; 10] = [
     "prompt",
     "tool_input",
     "last_assistant_message",
+    // Operational metadata only. The daemon, never the hook, opens this file.
+    "transcript_path",
 ];
 
 // Loss counter slots, matching agent_watchdog.resources.REASONS.

@@ -34,7 +34,7 @@ def database(paths: UserPaths, project: Project) -> Iterator[sqlite3.Connection]
     with closing(sqlite3.connect(path.as_uri() + "?mode=ro", uri=True, timeout=0.1)) as db:
         db.execute("PRAGMA query_only=ON")
         db.execute("BEGIN")
-        if db.execute("PRAGMA user_version").fetchone()[0] not in (1, 2):
+        if db.execute("PRAGMA user_version").fetchone()[0] not in (1, 2, 3):
             raise StorageError("Unsupported database schema")
         if db.execute("SELECT project_id FROM metadata").fetchall() != [(str(project.id),)]:
             raise StorageError("Database belongs to a different project")
@@ -52,13 +52,16 @@ def sessions(paths: UserPaths, project: Project, *, limit: int, offset: int) -> 
         rows = db.execute(
             "SELECT json_extract(envelope, '$.provider'), session_id, COUNT(*), "
             "MIN(received_at), MAX(received_at), SUM(kind='session.start'), "
-            "SUM(kind='session.end'), COUNT(DISTINCT json_extract(envelope, '$.checkout_id')) "
+            "SUM(kind='session.end'), SUM(kind='usage'), "
+            "COUNT(DISTINCT json_extract(envelope, '$.checkout_id')) "
             "FROM events GROUP BY 1, 2 ORDER BY MAX(received_at) DESC, 1, 2 LIMIT ? OFFSET ?",
             (limit + 1, offset),
         ).fetchall()
     result = []
-    for provider, session_id, count, first, last, started, ended, checkouts in rows[:limit]:
-        gaps = ["usage_not_enriched", "task_outcome_unknown"]
+    for provider, session_id, count, first, last, started, ended, usage, checkouts in rows[:limit]:
+        gaps = ["task_outcome_unknown"]
+        if not usage:
+            gaps.insert(0, "usage_not_enriched")
         if not started:
             gaps.append("session_start_not_observed")
         if not ended:

@@ -1,5 +1,29 @@
 # Foundation verification
 
+## WD-009 Codex transcript enrichment
+
+2026-09-07, Windows, CPython 3.12.13. Branch
+`feature/wd-009-transcript-enrichment`. WD-009 implements asynchronous Codex
+only enrichment: a daemon reads exact, hook-provided transcript paths through
+the version-gated `codex-rollout-v1` reader. The hook never opens a transcript.
+The reader validates `session_meta` and the expected session before accepting
+`token_usage_record` data, persists no transcript content, and reports
+unsupported or malformed sources as durable `observation.gap` records.
+
+Schema v3 persists reader identity, offset, partial UTF-8 tail, canonical
+`thread_token_usage` counters, and last reported failure. Coverage uses
+synthetic JSONL only and includes normal enrichment/replay, field availability,
+hook/session reconciliation, partial tails, malformed and unsupported inputs,
+truncation/replacement, counter resets, duplicate records, capture disabled,
+unreadable sources without blocking normal admission, v1/v2 migration,
+retention, and read-only inspection.
+
+Offline verification passed: 271 pytest tests in five bounded batches (the
+execution host returns terminal control at roughly 30 seconds per command),
+Ruff lint and format check, ty, `uv build`, `cargo fmt --check`, locked Clippy
+with `-D warnings`, locked release build, and `git diff --check`. No live
+provider probe was run.
+
 ## WD-022a Claude observation (gate met)
 
 2026-09-06, Windows, CPython 3.12.13, Claude Code 2.1.259 then 2.1.263 (auto

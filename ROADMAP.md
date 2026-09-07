@@ -35,7 +35,7 @@ Execution order: M1-M4 for Codex coding only -> M-Anthropic / WD-022a+b -> App S
 
 **Outcome:** the first complete analytical release for Codex coding sessions; behavioral and token/context metrics have equal priority.
 
-1. Transcript readers for verified formats, persisted offsets, partial lines/rotation, native ID reconciliation, and correct cumulative usage counters. Reader failure does not stop hooks.
+1. **WD-009 (complete 2026-09-07).** Codex rollout-v1 transcript reader with persisted offsets, partial lines/rotation, native ID reconciliation, correct cumulative usage counters, and durable reader gaps. Reader failure does not stop hooks.
 2. Timeline and durations, tool repetitions/errors, pytest/JUnit results, output size, compactions, usage/cached tokens. Debounced Git diff fingerprints with uncertain attribution explicitly marked.
 3. Deterministic shadow findings: at least three repetitions, identical errors/comparable test sets, and diff oscillation. Evidence, versioned rules, and unknown coverage. No automatic stall verdict based on missing events.
 4. CLI `report --project --session|--since --format md|json`, `label`, `pin`, `export`, and `purge`; label/pin/purge are acknowledged control requests to the core. Read-only reports work offline.

@@ -9,7 +9,9 @@ import pytest
 
 from agent_watchdog.cli import main
 from agent_watchdog.config import Config, Limits, Project, UserPaths, save_config
-from agent_watchdog.hooks import observe
+from agent_watchdog.hooks import build_envelope, observe
+from agent_watchdog.privacy import sanitize
+from agent_watchdog.registry import Resolution
 
 
 @pytest.fixture
@@ -54,6 +56,36 @@ def test_metadata_observation_without_content(setup, native, kind):
     assert event.native_event_id is None
     assert "secret" not in event.model_dump_json()
     assert event.payload["codex"]["tool_use_id"] == "call"
+
+
+def test_transcript_path_is_preserved_as_metadata_when_content_is_disabled(setup):
+    paths, events = setup
+    transcript = paths.config.parent / "rollout.jsonl"
+    observe(
+        paths,
+        io.BytesIO(
+            json.dumps(
+                {
+                    "cwd": str(paths.config.parent),
+                    "session_id": "s",
+                    "hook_event_name": "Stop",
+                    "transcript_path": str(transcript),
+                }
+            ).encode()
+        ),
+    )
+    assert events[0].payload["codex"]["transcript_path"] == str(transcript)
+
+
+def test_build_envelope_without_a_transcript_path_remains_valid(tmp_path):
+    event = build_envelope(
+        {"hook_event_name": "Stop"},
+        Resolution(uuid4(), uuid4(), tmp_path),
+        Limits(capture_content=False),
+        "codex",
+    )
+    payload = sanitize(event).payload["codex"]
+    assert isinstance(payload, dict) and "transcript_path" not in payload
 
 
 @pytest.mark.parametrize(

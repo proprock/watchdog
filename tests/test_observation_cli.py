@@ -96,6 +96,28 @@ def test_sessions_separate_identities_and_report_gaps(tmp_path, monkeypatch, cap
     assert result["events"][0]["session_id"] == "one"
 
 
+def test_sessions_hide_usage_gap_after_transcript_enrichment(tmp_path, monkeypatch, capsys):
+    project = Project(id=uuid4(), root=tmp_path)
+    save_config(tmp_path / "config.toml", Config(projects=(project,)))
+    data = tmp_path / "data" / "projects" / str(project.id)
+    with Store(data, project.id) as store:
+        store.put(
+            Envelope(
+                provider="codex",
+                project_id=project.id,
+                session_id="one",
+                kind="usage",
+                source="transcript",
+                availability={"input_tokens": "observed"},
+            )
+        )
+    code, result = invoke(
+        monkeypatch, capsys, tmp_path, "sessions", "list", "--project", str(project.id)
+    )
+    assert code == 0
+    assert "usage_not_enriched" not in result["sessions"][0]["gaps"]
+
+
 @pytest.mark.parametrize("fault", ["missing", "corrupt", "future", "wrong_project"])
 def test_doctor_distinguishes_database_failures(tmp_path, monkeypatch, capsys, fault):
     project = Project(id=uuid4(), root=tmp_path)

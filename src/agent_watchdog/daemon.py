@@ -393,6 +393,13 @@ def _poll(paths: UserPaths, owner: ExitStack) -> None:
                             store.maintain()
                             maintenance[str(project.id)] = time.monotonic() + 60
                         result = Inbox(root, limits=limits).drain(store)
+                        try:
+                            from agent_watchdog.transcripts import enrich
+
+                            activity |= bool(enrich(store))
+                        except (OSError, StorageError, ValueError):
+                            if len(errors) < 32:
+                                errors.append(str(project.id))
                         if resources.available(root, limits) < 65536 and len(errors) < 32:
                             errors.append(str(project.id))
                     activity |= bool(

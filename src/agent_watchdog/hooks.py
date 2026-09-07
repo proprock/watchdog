@@ -48,6 +48,14 @@ def identifier(payload: dict, field: str) -> str | None:
     return value if isinstance(value, str) and value.strip() and len(value) <= 256 else None
 
 
+def transcript_path(payload: dict) -> str | None:
+    value = payload.get("transcript_path")
+    if not isinstance(value, str) or not value.strip() or len(value) > 4096:
+        return None
+    path = Path(value)
+    return str(path) if path.is_absolute() else None
+
+
 def build_envelope(
     payload: dict,
     resolution: Resolution,
@@ -73,6 +81,18 @@ def build_envelope(
         else {}
     )
     native = identifier(payload, "hook_event_name")
+    provider_payload = {
+        "hook_event_name": native if native in events else "unknown",
+        "tool_use_id": identifier(payload, "tool_use_id"),
+        "tool_name": identifier(payload, "tool_name"),
+        "tool_response_type": type(payload["tool_response"]).__name__
+        if "tool_response" in payload
+        else None,
+        "content": content or "omitted",
+    }
+    path = transcript_path(payload) if provider == "codex" else None
+    if path is not None:
+        provider_payload["transcript_path"] = path
     envelope = Envelope(
         provider=provider,
         project_id=resolution.project_id,
@@ -82,17 +102,7 @@ def build_envelope(
         agent_id=identifier(payload, "agent_id"),
         kind=events.get(native or "", "unknown"),
         source="hook",
-        payload={
-            provider: {
-                "hook_event_name": native if native in events else "unknown",
-                "tool_use_id": identifier(payload, "tool_use_id"),
-                "tool_name": identifier(payload, "tool_name"),
-                "tool_response_type": type(payload["tool_response"]).__name__
-                if "tool_response" in payload
-                else None,
-                "content": content or "omitted",
-            }
-        },
+        payload={provider: provider_payload},
         availability={
             "content": "observed" if content else "unavailable",
             "surface": "unknown",

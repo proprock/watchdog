@@ -223,6 +223,7 @@ def test_native_matches_python_event_contract(rust_adapter, native_setup, monkey
         "tool_input": {"password": "private-value", "command": "echo hello"},
         "tool_response": {"output": "Authorization: Basic private-value", "exit_code": 1},
         "last_assistant_message": "-----BEGIN PRIVATE KEY-----\nprivate-value",
+        "transcript_path": str(project.root / ".codex" / "rollout.jsonl"),
     }
     observe(paths, io.BytesIO(json.dumps(payload).encode()))
     assert invoke(rust_adapter, paths, payload).stdout == "{}\n"

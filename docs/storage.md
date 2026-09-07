@@ -3,7 +3,8 @@
 WD-004 provides the inbox and SQLite writer; WD-007 adds retention, redaction,
 cooperative quotas, pins, and persistent loss diagnostics. No new dependency or
 service is required. Data lives in the registered project's UUID directory,
-outside its source checkout. Vendor transcripts are never cleanup targets.
+outside its source checkout. Vendor transcripts are never cleanup targets; the
+Codex reader opens only exact paths recorded from hooks.
 
 ```python
 from agent_watchdog.storage import Inbox, Store
@@ -48,7 +49,10 @@ Shared content-addressed artifacts count once. Pins do not waive the quota.
 Hooks capture native `prompt`, `tool_input`, `tool_response`, and
 `last_assistant_message` fields when present. Capture defaults to true for
 registered projects; set `capture_content = false` globally or per project to
-omit text. Arbitrary native fields and transcript paths are not copied.
+omit text. Codex `transcript_path` is retained as operational reader metadata
+even when text capture is disabled, but enrichment stores only validated numeric
+usage records and never transcript text or raw lines. Other arbitrary native
+fields are not copied.
 `Inbox.publish` and `Store.put` also sanitize inputs before writing temporary or
 persistent files. Artifact names cannot collide after redaction. Only UTF-8 text
 artifacts are supported, capped at 8 MiB per call before and after redaction.
@@ -81,7 +85,10 @@ the same UUID is rejected. Fingerprints expire with the event metrics.
 
 `writer.lock` gives one Store ownership per project. SQLite uses WAL, synchronous
 FULL, foreign keys, and secure deletion of freed cells. Schema v2 adds session pins
-and replay fingerprints. New databases enable incremental vacuum before creating
+and replay fingerprints; schema v3 adds durable Codex transcript source cursors,
+partial tails, file identity, reader errors, and cumulative usage baselines.
+Reader sources expire after 30 days without a hook observation; no vendor file is
+deleted or modified. New databases enable incremental vacuum before creating
 tables; v1 databases need a one-time VACUUM rebuild with a space check. If the
 rebuild cannot finish, reopening retries it. Unknown versions, unrelated
 unversioned databases, and wrong project ownership are refused before journal or
@@ -112,7 +119,8 @@ hour in Watchdog-owned locations. Referenced shared artifacts and recent tempora
 files survive. Incremental vacuum and WAL checkpoint reclaim disk space. A reader
 can delay truncation; admission can remain degraded until it releases its
 snapshot. Cleanup is not forensic erasure of backups, snapshots, or old WAL
-readers. Vendor transcript directories are never scanned.
+readers. Vendor transcript directories are never recursively scanned or used as
+cleanup targets; WD-009 reads only exact hook-provided files.
 
 ## Loss diagnostics and degraded state
 

@@ -48,7 +48,11 @@ def redact(value: JsonValue) -> JsonValue:
             # Never silently merge two provider fields after redaction.
             if safe_key in result:
                 safe_key = f"{safe_key}:{len(result)}"
-            result[safe_key] = REDACTED if _KEY.search(key) else redact(item)
+            # Token-shaped keys often hold numeric usage metrics. Redacting those
+            # counters would turn known usage into false content and defeat the
+            # explicit availability contract; only free-form token values are secrets.
+            metric = item is None or (type(item) in (int, float))
+            result[safe_key] = REDACTED if _KEY.search(key) and not metric else redact(item)
         return result
     return value
 
