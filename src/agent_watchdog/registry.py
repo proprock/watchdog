@@ -112,20 +112,53 @@ class Registry:
                 return project
         return None
 
-    def resolve(self, path: Path, *, timeout: float = 10) -> Resolution | None:
-        checkout = discover(path, timeout=timeout)
-        project = self._find(checkout)
-        if project is None:
-            return None
+    @staticmethod
+    def _resolution(checkout: Checkout, project: Project) -> Resolution:
         root = checkout.root
         if checkout.git_common_dir is None or same_path(root, project.root):
             root = project.root
         return Resolution(project.id, uuid5(project.id, os.path.normcase(str(root))), root)
 
+    def resolve(self, path: Path, *, timeout: float = 10) -> Resolution | None:
+        checkout = discover(path, timeout=timeout)
+        project = self._find(checkout)
+        if project is None:
+            return None
+        return self._resolution(checkout, project)
+
+    def resolve_or_auto_add(
+        self, path: Path, *, timeout: float = 10
+    ) -> tuple[Resolution | None, bool]:
+        """Resolve a checkout and opt in to registration only below the trusted Git root."""
+        checkout = discover(path, timeout=timeout)
+        project = self._find(checkout)
+        added = False
+        trusted = self.config.trusted_projects_dir
+        if (
+            project is None
+            and self.config.auto_add_projects
+            and trusted is not None
+            and checkout.git_common_dir is not None
+            and checkout.root.is_relative_to(trusted)
+        ):
+            project = Project(
+                id=uuid4(), root=checkout.root, git_common_dir=checkout.git_common_dir
+            )
+            self._replace((*self.config.projects, project))
+            added = True
+        if project is None:
+            return None, False
+        return self._resolution(checkout, project), added
+
     def _replace(self, projects: tuple[Project, ...]) -> None:
         # Validate before changing state, including duplicate and overlap checks.
         try:
-            updated = Config(defaults=self.config.defaults, projects=projects)
+            updated = Config(
+                defaults=self.config.defaults,
+                projects=projects,
+                auto_add_projects=self.config.auto_add_projects,
+                trusted_projects_dir=self.config.trusted_projects_dir,
+            )
         except ValueError as error:
             raise RegistryError("Project registration conflicts with the registry") from error
         self.config = updated

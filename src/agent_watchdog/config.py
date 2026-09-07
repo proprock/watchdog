@@ -76,9 +76,28 @@ class Project(StrictModel):
 class Config(Versioned):
     defaults: Limits = Field(default_factory=Limits)
     projects: tuple[Project, ...] = ()
+    auto_add_projects: bool = False
+    trusted_projects_dir: Path | None = None
+
+    @field_validator("trusted_projects_dir")
+    @classmethod
+    def trusted_directory(cls, value: Path | None) -> Path | None:
+        if value is None:
+            return None
+        try:
+            expanded = value.expanduser()
+        except RuntimeError as error:
+            raise ValueError("Trusted projects directory cannot expand home") from error
+        if not expanded.is_absolute() or ".." in expanded.parts:
+            raise ValueError("Trusted projects directory must be absolute and normalized")
+        return expanded.resolve(strict=False)
 
     @model_validator(mode="after")
     def unique_projects(self) -> Self:
+        if self.auto_add_projects and (
+            self.trusted_projects_dir is None or not self.trusted_projects_dir.is_dir()
+        ):
+            raise ValueError("Auto-add requires an existing trusted projects directory")
         for index, project in enumerate(self.projects):
             project.overrides.apply(self.defaults)
             for other in self.projects[:index]:

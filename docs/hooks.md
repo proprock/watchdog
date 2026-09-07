@@ -18,10 +18,21 @@ Use an installed Watchdog environment with a stable Python executable location.
 Generated commands use that interpreter and absolute Watchdog paths, so moving
 or deleting the environment requires uninstalling and reinstalling the hooks.
 
-Explicitly register the repository before installing observation hooks:
+Explicitly register the repository before installing observation hooks, unless
+the opt-in trusted Git auto-add configuration below applies:
 
 ```console
 agent-watchdog project add /absolute/project
+```
+
+To collect any new Git checkout below one trusted directory, configure both
+options. `~` expands to the local home directory and is saved as a canonical
+absolute path. The directory must already exist. Auto-add never registers
+non-Git directories or paths outside that directory.
+
+```toml
+auto_add_projects = true
+trusted_projects_dir = "~/repos"
 ```
 
 Choose an explicit absolute `hooks.json` path. Use a project-local
@@ -108,7 +119,9 @@ entry, a worktree `.git` file's `gitdir:` line, and a `commondir` file when
 present — producing the same values as
 `git rev-parse --path-format=absolute --show-toplevel --git-common-dir`; only an
 unrecognized layout falls back to spawning `git` with its 250 ms subprocess
-timeout. An unregistered or since-removed `cwd` discards the record. A busy
+timeout. An unregistered or since-removed `cwd` discards the record, except an
+unregistered Git checkout under the configured trusted directory is added and
+then admitted. A busy
 project writer leaves the record for the next poll; admission/diagnostic lock
 waits are at most 100 ms.
 

@@ -17,7 +17,7 @@ from pydantic import ValidationError
 from agent_watchdog import resources
 from agent_watchdog.config import Config, ConfigError, UserPaths, load_config, save_config
 from agent_watchdog.events import Envelope
-from agent_watchdog.registry import Registry
+from agent_watchdog.registry import Registry, Resolution
 from agent_watchdog.storage import (
     Inbox,
     QuotaExceeded,
@@ -236,6 +236,18 @@ def mutate_registry(paths: UserPaths, mutation: Callable[[Registry], object]) ->
         save_config(paths.config, registry.config)
 
 
+def resolve_or_auto_register(
+    paths: UserPaths, path: Path, *, timeout: float = 10
+) -> tuple[Config, Resolution | None]:
+    """Resolve a path against the latest config and persist a permitted auto-add."""
+    with control_lock(paths, timeout=timeout):
+        registry = Registry(load_config(paths.config))
+        resolution, added = registry.resolve_or_auto_add(path, timeout=timeout)
+        if added:
+            save_config(paths.config, registry.config)
+        return registry.config, resolution
+
+
 def enqueue(paths: UserPaths, event: Envelope) -> bool:
     """Adapter entry point; pause and allowlist admission share the control lock."""
     with control_lock(paths, timeout=0.1):
@@ -428,6 +440,9 @@ def _drain_spool(paths: UserPaths, config: Config, *, limit: int = 100) -> bool:
             activity = True
             continue
         resolution = registry.resolve(Path(cwd), timeout=0.25)
+        if resolution is None and config.auto_add_projects:
+            config, resolution = resolve_or_auto_register(paths, Path(cwd), timeout=0.25)
+            registry = Registry(config)
         if resolution is None:
             _discard(path)
             activity = True

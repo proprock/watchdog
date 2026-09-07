@@ -126,10 +126,11 @@ def observe(paths: UserPaths, stream: BinaryIO, provider: str = "codex") -> None
         if daemon.desired(paths).get("paused", False):
             return
         config = load_config(paths.config)
-        if not config.projects:
+        if not config.projects and not config.auto_add_projects:
             return
         maximum = max(
-            project.overrides.apply(config.defaults).payload_bytes for project in config.projects
+            (project.overrides.apply(config.defaults).payload_bytes for project in config.projects),
+            default=config.defaults.payload_bytes,
         )
         raw = stream.read(maximum + 1)
         if len(raw) > maximum:
@@ -144,6 +145,8 @@ def observe(paths: UserPaths, stream: BinaryIO, provider: str = "codex") -> None
             resources.count_loss(paths.data, "invalid")
             return
         resolution = Registry(config).resolve(Path(cwd), timeout=0.25)
+        if resolution is None and config.auto_add_projects:
+            config, resolution = daemon.resolve_or_auto_register(paths, Path(cwd), timeout=0.25)
         if resolution is None:
             return
         project = next(item for item in config.projects if item.id == resolution.project_id)

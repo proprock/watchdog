@@ -9,7 +9,7 @@ from uuid import uuid4
 
 import pytest
 
-from agent_watchdog.config import Limits, UserPaths, load_config
+from agent_watchdog.config import Config, Limits, UserPaths, load_config, save_config
 from agent_watchdog.daemon import (
     _drain_spool,
     enqueue,
@@ -111,6 +111,23 @@ def test_spool_unregistered_cwd_is_discarded_without_loss(paths, tmp_path):
     assert not list((paths.data / "spool").glob("*.json"))
     assert not list(paths.data.glob("projects/*/inbox/*.json"))
     assert losses(paths.data)["invalid"] == 0
+
+
+def test_spool_trusted_git_project_is_auto_added_and_admitted(paths, tmp_path):
+    trusted = tmp_path / "repos"
+    repository = trusted / "new-project"
+    repository.mkdir(parents=True)
+    subprocess.run(["git", "-C", str(repository), "init"], check=True, capture_output=True)
+    config = Config(auto_add_projects=True, trusted_projects_dir=trusted)
+    save_config(paths.config, config)
+    write_spool_record(paths, spool_record(repository, hook_event_name="Stop"))
+
+    assert _drain_spool(paths, config) is True
+    persisted = load_config(paths.config)
+    assert len(persisted.projects) == 1
+    project = persisted.projects[0]
+    assert project.root == repository.resolve()
+    assert len(list((paths.project_data(project.id) / "inbox").glob("*.json"))) == 1
 
 
 def test_spool_drain_enforces_the_project_payload_limit(paths, tmp_path):

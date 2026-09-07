@@ -1,5 +1,6 @@
 import json
 from datetime import UTC, datetime
+from pathlib import Path
 from uuid import uuid4
 
 import pytest
@@ -24,6 +25,8 @@ def test_missing_config_uses_defaults_without_creating_files(tmp_path):
     assert config.defaults.metrics_days == 180
     assert config.defaults.project_bytes == 2 * 1024**3
     assert config.projects == ()
+    assert config.auto_add_projects is False
+    assert config.trusted_projects_dir is None
     assert list(tmp_path.iterdir()) == []
     paths = user_paths()
     assert all(path.is_absolute() for path in (paths.config, paths.data, paths.runtime))
@@ -56,6 +59,25 @@ def test_default_config_round_trip(tmp_path):
     config = Config()
     save_config(path, config)
     assert load_config(path) == config
+
+
+def test_auto_add_configuration_expands_home_and_requires_a_trusted_directory(tmp_path):
+    home = Path.home()
+    config = Config(auto_add_projects=True, trusted_projects_dir=Path("~"))
+    assert config.trusted_projects_dir == home.resolve()
+    path = tmp_path / "config.toml"
+    save_config(path, config)
+    assert load_config(path).trusted_projects_dir == home.resolve()
+
+    with pytest.raises(ValidationError):
+        Config(auto_add_projects=True)
+    with pytest.raises(ValidationError):
+        Config(auto_add_projects=True, trusted_projects_dir=tmp_path / "missing")
+
+    file = tmp_path / "not-a-directory"
+    file.write_text("x", encoding="utf-8")
+    with pytest.raises(ValidationError):
+        Config(auto_add_projects=True, trusted_projects_dir=file)
 
 
 def test_project_overrides_round_trip_and_do_not_change_other_projects(tmp_path):

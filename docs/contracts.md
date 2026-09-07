@@ -22,6 +22,8 @@ Minimal configuration, with all other limits inherited from the architecture:
 ```toml
 schema_version = 1
 projects = []
+auto_add_projects = false
+# trusted_projects_dir = "~/repos"
 
 [defaults]
 content_days = 30
@@ -31,7 +33,12 @@ reserve_bytes = 1048576
 ```
 
 Projects contain `id`, absolute `root`, optional `git_common_dir`, and partial
-`overrides`. Overrides apply only to that project. Numeric limits must be positive integers,
+`overrides`. Overrides apply only to that project. `auto_add_projects` defaults
+to false. When enabled, `trusted_projects_dir` is required and must name an
+existing directory; `~` is expanded and the canonical absolute path is stored.
+Only an unregistered Git checkout whose canonical root is inside that directory
+is added automatically. Non-Git directories and all paths outside it remain
+unregistered. Numeric limits must be positive integers,
 and `payload_bytes <= inbox_bytes <= project_bytes`; numeric strings and booleans
 are rejected. TOML serialization omits optional values rather than inventing nulls.
 `capture_content` is a strict boolean, default true. `reserve_bytes` defaults to

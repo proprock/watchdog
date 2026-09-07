@@ -302,6 +302,27 @@ def test_native_unregistered_and_invalid_config_fail_open(rust_adapter, native_s
     assert not list(paths.data.glob("projects/*/inbox/*.json"))
 
 
+def test_native_spool_auto_adds_a_trusted_git_project(rust_adapter, native_setup, tmp_path):
+    paths, _ = native_setup
+    trusted = tmp_path / "repos"
+    repository = trusted / "new-project"
+    repository.mkdir(parents=True)
+    subprocess.run(["git", "-C", str(repository), "init"], check=True, capture_output=True)
+    save_config(paths.config, Config(auto_add_projects=True, trusted_projects_dir=trusted))
+
+    assert (
+        invoke(rust_adapter, paths, {"cwd": str(repository), "hook_event_name": "Stop"}).stdout
+        == "{}\n"
+    )
+    drain_spool(paths)
+
+    config = load_config(paths.config)
+    assert len(config.projects) == 1
+    project = config.projects[0]
+    assert project.root == repository.resolve()
+    assert len(inbox_files(paths, project)) == 1
+
+
 def test_copied_native_binary_starts_python_core_and_preserves_worktrees(rust_adapter, tmp_path):
     import shutil
     import time

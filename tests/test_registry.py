@@ -3,7 +3,7 @@ import subprocess
 
 import pytest
 
-from agent_watchdog.config import load_config, save_config
+from agent_watchdog.config import Config, load_config, save_config
 from agent_watchdog.registry import Registry, RegistryError
 
 
@@ -139,6 +139,42 @@ def test_unregistered_nested_git_repository_is_not_collected(repository):
     registry = Registry()
     registry.add(repository.parent)
     assert registry.resolve(repository) is None
+
+
+def test_trusted_git_repository_is_auto_added_once(repository, tmp_path):
+    trusted = tmp_path / "repos"
+    trusted.mkdir()
+    repository.rename(trusted / "project")
+    repository = trusted / "project"
+    nested = repository / "nested"
+    nested.mkdir()
+    registry = Registry(Config(auto_add_projects=True, trusted_projects_dir=trusted))
+
+    resolution, added = registry.resolve_or_auto_add(nested)
+    assert resolution is not None and added
+    assert registry.config.projects[0].root == repository.resolve()
+
+    repeated, added = registry.resolve_or_auto_add(repository)
+    assert repeated == resolution and not added
+
+    worktree = trusted / "project-worktree"
+    git(repository, "worktree", "add", "-b", "auto-add-worktree", str(worktree))
+    linked, added = registry.resolve_or_auto_add(worktree)
+    assert linked is not None and not added
+    assert linked.project_id == resolution.project_id
+    assert linked.checkout_id != resolution.checkout_id
+
+
+def test_auto_add_rejects_non_git_and_outside_trusted_directory(repository, tmp_path):
+    trusted = tmp_path / "repos"
+    trusted.mkdir()
+    registry = Registry(Config(auto_add_projects=True, trusted_projects_dir=trusted))
+    plain = trusted / "plain"
+    plain.mkdir()
+
+    assert registry.resolve_or_auto_add(plain) == (None, False)
+    assert registry.resolve_or_auto_add(repository) == (None, False)
+    assert registry.config.projects == ()
 
 
 def test_git_environment_cannot_redirect_project_identity(repository, tmp_path, monkeypatch):

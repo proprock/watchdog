@@ -8,7 +8,7 @@ from uuid import uuid4
 import pytest
 
 from agent_watchdog.cli import main
-from agent_watchdog.config import Config, Limits, Project, UserPaths, save_config
+from agent_watchdog.config import Config, Limits, Project, UserPaths, load_config, save_config
 from agent_watchdog.hooks import build_envelope, observe
 from agent_watchdog.privacy import sanitize
 from agent_watchdog.registry import Resolution
@@ -106,6 +106,27 @@ def test_unregistered_project_is_ignored(setup, tmp_path):
         paths, io.BytesIO(json.dumps({"cwd": str(tmp_path), "hook_event_name": "Stop"}).encode())
     )
     assert events == []
+
+
+def test_trusted_git_project_is_auto_added_and_observed(setup, tmp_path):
+    paths, events = setup
+    trusted = tmp_path / "repos"
+    repository = trusted / "new-project"
+    repository.mkdir(parents=True)
+    subprocess.run(["git", "-C", str(repository), "init"], check=True, capture_output=True)
+    save_config(
+        paths.config,
+        Config(auto_add_projects=True, trusted_projects_dir=trusted),
+    )
+
+    observe(
+        paths,
+        io.BytesIO(json.dumps({"cwd": str(repository), "hook_event_name": "Stop"}).encode()),
+    )
+
+    assert len(events) == 1
+    config = load_config(paths.config)
+    assert len(config.projects) == 1 and config.projects[0].root == repository.resolve()
 
 
 @pytest.mark.parametrize(
