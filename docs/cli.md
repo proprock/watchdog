@@ -60,6 +60,24 @@ indicates another page. Each call uses a read-only SQLite snapshot and closes it
 promptly so maintenance can reclaim WAL space. Pages from separate calls are not
 a single snapshot if concurrent ingestion changes the data.
 
+## Shadow report
+
+```console
+agent-watchdog report --project PROJECT_UUID --session SESSION_ID
+agent-watchdog report --project PROJECT_UUID --provider codex
+```
+
+`report` reads one provider namespace from a SQLite snapshot and makes no control
+request, network call, or worktree mutation. It returns a timeline, wall/active-time
+coverage, tool outcome/output-size metrics, compaction and usage observations, and
+versioned shadow findings. A finding contains rule version, evidence event IDs, count,
+and an explicit attribution state. The v1 rules require three matching observations:
+same tool input/outcome, same structured error, or the same pytest/JUnit failing set
+for a matching test command. Git A-to-B-to-A fingerprints are reported as an
+uncertain-attribution signal only. Missing lifecycle/usage/output data remains a gap;
+waiting, exit code zero, and session Stop do not establish a stall, progress, or task
+success.
+
 Exit codes: 0 for successful inspection/mutation; 1 for errors or unhealthy doctor
 results; 2 for invalid command syntax; 130 for interruption. Observation hooks keep
 their separate fail-open zero-exit contract.

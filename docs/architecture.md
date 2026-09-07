@@ -1,6 +1,6 @@
 # Architecture and contracts
 
-Status: accepted design decisions. WD-003 [contracts](contracts.md), WD-004/007 [storage, retention, and redaction](storage.md), WD-005 [daemon](daemon.md), and WD-006 [hooks](hooks.md) are implemented. WD-008 provides the [observation CLI](cli.md); WD-009 adds Codex rollout-v1 usage enrichment. WD-024 replaced the slow Python adapter with Rust, retaining the Python core and inbox contract. WD-027 made that adapter spool-and-forget: it redacts and durably spools each event, and the daemon resolves the checkout, builds the envelope, and admits it. The implementation reports record exact verified boundaries. Date: 2026-09-07.
+Status: accepted design decisions. WD-003 [contracts](contracts.md), WD-004/007 [storage, retention, and redaction](storage.md), WD-005 [daemon](daemon.md), and WD-006 [hooks](hooks.md) are implemented. WD-008 provides the [observation CLI](cli.md); WD-009 adds Codex rollout-v1 usage enrichment; WD-010 adds deterministic, read-only shadow analysis and reports. WD-024 replaced the slow Python adapter with Rust, retaining the Python core and inbox contract. WD-027 made that adapter spool-and-forget: it redacts and durably spools each event, and the daemon resolves the checkout, builds the envelope, and admits it. The implementation reports record exact verified boundaries. Date: 2026-09-07.
 
 ## Boundaries
 
@@ -57,7 +57,7 @@ Hooks are the primary source. Codex rollout-v1 enrichment runs only in the daemo
 ## Analysis and reports
 
 - Distinguish turn completion, session stop, and verified task outcome. Users label outcomes: success, partial, failed, abandoned, unknown. Task type is a free-form label with suggested bugfix/feature/refactor/docs/research values.
-- M2 rules: repeated command+outcome, identical error fingerprint, repeated failing-test set from comparable runs, compactions, and output size. Preserve rule versions, evidence IDs, counts, and explanations. An initial repetition threshold of 3 is a shadow-analysis hypothesis, not an intervention command.
+- M2 rules: repeated command+outcome, identical error fingerprint, repeated failing-test set from comparable runs, compactions, and output size. Preserve rule versions, evidence IDs, counts, and explanations. An initial repetition threshold of 3 is a shadow-analysis hypothesis, not an intervention command. WD-010 implements these rules in the offline `report` view; findings remain observations, not control requests.
 - Do not normalize commands aggressively: `pytest -x` changes the observed failure set. Compare test deltas only with matching target/configuration and completed results. The first structured parser covers pytest/JUnit; other outputs provide best-effort signals, not proof of acceptance.
 - Compute debounced Git diff fingerprints per checkout in the core; concurrent agents/user edits make attribution uncertain. A->B->A is a signal, not proof of a stall. Snapshots must not modify the index or worktree.
 - No universal no-progress score based on missing events. Distinguish observed, inferred, and unknown for every finding; waiting for a user/tool or incomplete data is not a stall. Exit code 0 does not automatically reset signals.

@@ -86,7 +86,10 @@ the same UUID is rejected. Fingerprints expire with the event metrics.
 `writer.lock` gives one Store ownership per project. SQLite uses WAL, synchronous
 FULL, foreign keys, and secure deletion of freed cells. Schema v2 adds session pins
 and replay fingerprints; schema v3 adds durable Codex transcript source cursors,
-partial tails, file identity, reader errors, and cumulative usage baselines.
+partial tails, file identity, reader errors, and cumulative usage baselines; schema
+v4 adds debounced per-checkout Git diff fingerprints and byte counts. Diff text is
+never stored. The core runs the bounded Git read after spool admission; hook paths do
+not invoke Git or snapshot a worktree.
 Reader sources expire after 30 days without a hook observation; no vendor file is
 deleted or modified. New databases enable incremental vacuum before creating
 tables; v1 databases need a one-time VACUUM rebuild with a space check. If the

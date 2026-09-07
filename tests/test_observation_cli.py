@@ -118,6 +118,49 @@ def test_sessions_hide_usage_gap_after_transcript_enrichment(tmp_path, monkeypat
     assert "usage_not_enriched" not in result["sessions"][0]["gaps"]
 
 
+def test_report_is_read_only_and_returns_shadow_findings(tmp_path, monkeypatch, capsys):
+    project = Project(id=uuid4(), root=tmp_path)
+    save_config(tmp_path / "config.toml", Config(projects=(project,)))
+    data = tmp_path / "data" / "projects" / str(project.id)
+    with Store(data, project.id) as store:
+        for _ in range(3):
+            store.put(
+                Envelope(
+                    provider="codex",
+                    project_id=project.id,
+                    session_id="one",
+                    kind="tool.finish",
+                    source="hook",
+                    payload={
+                        "codex": {
+                            "tool_name": "exec",
+                            "content": {
+                                "tool_input": {"command": "pytest tests/test_sample.py"},
+                                "tool_response": {
+                                    "exit_code": 1,
+                                    "output": (
+                                        "FAILED tests/test_sample.py::test_x - AssertionError"
+                                    ),
+                                },
+                            },
+                        }
+                    },
+                )
+            )
+    before = (data / "events.sqlite3").read_bytes()
+    code, report = invoke(
+        monkeypatch, capsys, tmp_path, "report", "--project", str(project.id), "--session", "one"
+    )
+    assert code == 0
+    assert {item["rule"] for item in report["findings"]} == {
+        "identical_error",
+        "repeated_test_failure",
+        "repeated_tool_outcome",
+    }
+    assert report["session_ids"] == ["one"]
+    assert (data / "events.sqlite3").read_bytes() == before
+
+
 @pytest.mark.parametrize("fault", ["missing", "corrupt", "future", "wrong_project"])
 def test_doctor_distinguishes_database_failures(tmp_path, monkeypatch, capsys, fault):
     project = Project(id=uuid4(), root=tmp_path)

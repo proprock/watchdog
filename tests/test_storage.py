@@ -159,7 +159,7 @@ def test_only_one_writer_and_wrong_project_cannot_reopen(tmp_path, event):
         assert store.events() == []
 
 
-@pytest.mark.parametrize("version", [4, 99])
+@pytest.mark.parametrize("version", [5, 99])
 def test_newer_database_is_not_changed(tmp_path, event, version):
     path = tmp_path / "events.sqlite3"
     with sqlite3.connect(path) as db:
@@ -297,7 +297,7 @@ def test_interrupted_initial_migration_rolls_back_and_can_restart(tmp_path, even
     finally:
         connection.close()
     with Store(tmp_path, event.project_id) as store:
-        assert store.connection.execute("PRAGMA user_version").fetchone()[0] == 3
+        assert store.connection.execute("PRAGMA user_version").fetchone()[0] == 4
         assert store.put(event)
 
 
@@ -305,12 +305,13 @@ def test_interrupted_initial_migration_rolls_back_and_can_restart(tmp_path, even
 def test_v1_and_v2_databases_migrate_transcript_reader_state(tmp_path, event, version):
     with Store(tmp_path, event.project_id) as store:
         store.connection.execute("DROP TABLE transcript_sources")
+        store.connection.execute("DROP TABLE diff_snapshots")
         if version == 1:
             store.connection.execute("DROP TABLE receipts")
             store.connection.execute("DROP TABLE pins")
         store.connection.execute(f"PRAGMA user_version={version}")
     with Store(tmp_path, event.project_id) as store:
-        assert store.connection.execute("PRAGMA user_version").fetchone()[0] == 3
+        assert store.connection.execute("PRAGMA user_version").fetchone()[0] == 4
         assert store.transcript_sources() == []
 
 

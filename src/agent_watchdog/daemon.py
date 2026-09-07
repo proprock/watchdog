@@ -8,7 +8,7 @@ import sys
 import time
 from collections.abc import Callable, Iterator
 from contextlib import ExitStack, contextmanager
-from datetime import datetime
+from datetime import UTC, datetime
 from pathlib import Path
 from uuid import UUID, uuid4
 
@@ -31,6 +31,26 @@ from agent_watchdog.storage import (
 
 SPOOL_BYTES = 64 * 1024**2
 SPOOL_FILES = 4096
+
+
+def _capture_diff_snapshot(
+    event: Envelope, checkout: Path, project_id: UUID, paths: UserPaths
+) -> None:
+    """Run the bounded Git read in the core, never synchronously in a hook."""
+    if event.checkout_id is None:
+        return
+    from agent_watchdog.analysis import git_diff_fingerprint
+
+    now = datetime.now(UTC)
+    try:
+        with Store(paths.project_data(project_id), project_id) as store:
+            if not store.diff_due(event.checkout_id, now=now):
+                return
+            fingerprint = git_diff_fingerprint(checkout)
+            if fingerprint is not None:
+                store.record_diff_snapshot(event.checkout_id, *fingerprint, observed_at=now)
+    except (OSError, StorageError, ValueError):
+        return
 
 
 @contextmanager
@@ -336,6 +356,8 @@ def _drain_spool(paths: UserPaths, config: Config, *, limit: int = 100) -> bool:
             continue
         if not admitted and desired(paths).get("paused", False):
             continue  # Keep the record for the next unpaused poll.
+        if admitted:
+            _capture_diff_snapshot(event, resolution.root, project.id, paths)
         # Admitted, or the project was unregistered mid-drain: either way, drop it.
         # A failed unlink replays the same event_id, which Store.put deduplicates.
         _discard(path)

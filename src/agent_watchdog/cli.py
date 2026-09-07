@@ -44,6 +44,12 @@ def main() -> int:
     relocate.add_argument("project_id", type=UUID)
     relocate.add_argument("path", type=Path)
     commands.add_parser("doctor", help="Inspect configuration, storage, and daemon health")
+    report = commands.add_parser(
+        "report", help="Analyze collected observations without control actions"
+    )
+    report.add_argument("--project", type=UUID, help="Project UUID; default resolves cwd")
+    report.add_argument("--session", help="Limit the report to one native session")
+    report.add_argument("--provider", default="codex")
     sessions = commands.add_parser(
         "sessions", help="Read collected sessions without starting collection"
     )
@@ -100,7 +106,7 @@ def main() -> int:
                 daemon.mutate_registry(paths, mutate)
             print(json.dumps(result))
             return 0
-        if args.command in ("doctor", "sessions"):
+        if args.command in ("doctor", "sessions", "report"):
             from agent_watchdog import inspection
 
             if args.command == "doctor":
@@ -108,6 +114,15 @@ def main() -> int:
                 print(json.dumps(report))
                 return 0 if report["ok"] else 1
             project = inspection.project_at(paths, args.project)
+            if args.command == "report":
+                print(
+                    json.dumps(
+                        inspection.report(
+                            paths, project, session_id=args.session, provider=args.provider
+                        )
+                    )
+                )
+                return 0
             if args.action == "list":
                 result = inspection.sessions(paths, project, limit=args.limit, offset=args.offset)
             else:

@@ -1,5 +1,20 @@
 # Foundation verification
 
+## WD-010 shadow findings and reports
+
+2026-09-07, Windows. WD-010 adds a read-only `report` surface over stored
+observations. The deterministic `wd-010.v1` rules retain only evidence IDs and
+fingerprints in their findings: three matching tool outcomes, structured errors,
+or comparable pytest/JUnit failing sets; an A-to-B-to-A Git diff signal is always
+marked uncertain attribution. Report output keeps lifecycle, usage, and content
+coverage explicit; neither zero exit, waiting, nor Stop is a task verdict.
+
+Offline verification passed: 276 pytest tests in three bounded batches (60 core,
+149 contracts/hooks/transcripts/retention, 67 Rust adapter/tooling), plus three
+focused post-change analysis tests; Ruff lint/format, ty, `uv build`, locked Rust
+release build, `cargo fmt --check`, locked Clippy with `-D warnings`, and `git diff
+--check`. No live provider probe was run.
+
 ## WD-009 Codex transcript enrichment
 
 2026-09-07, Windows, CPython 3.12.13. Branch

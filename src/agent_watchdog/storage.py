@@ -139,7 +139,7 @@ class Store:
     def _initialize(self) -> None:
         db = self.connection
         version = db.execute("PRAGMA user_version").fetchone()[0]
-        if version not in (0, 1, 2, 3):
+        if version not in (0, 1, 2, 3, 4):
             raise StorageError("Unsupported database schema; database left unchanged")
         if version == 0:
             tables = db.execute("SELECT name FROM sqlite_master WHERE name NOT LIKE 'sqlite_%'")
@@ -209,6 +209,19 @@ class Store:
                     "PRIMARY KEY(provider, session_id, path))"
                 )
                 db.execute("PRAGMA user_version=3")
+        if version < 4:
+            with self._transaction():
+                db.execute(
+                    "CREATE TABLE diff_snapshots ("
+                    "snapshot_id TEXT PRIMARY KEY, checkout_id TEXT NOT NULL, "
+                    "fingerprint TEXT NOT NULL, byte_count INTEGER NOT NULL, "
+                    "observed_at TEXT NOT NULL)"
+                )
+                db.execute(
+                    "CREATE INDEX diff_snapshots_checkout "
+                    "ON diff_snapshots(checkout_id, observed_at)"
+                )
+                db.execute("PRAGMA user_version=4")
         # Existing v1 stores need a one-time rebuild to support physical reclamation.
         if db.execute("PRAGMA auto_vacuum").fetchone()[0] != 2:
             size = (self.root / "events.sqlite3").stat().st_size
@@ -372,6 +385,49 @@ class Store:
                     source["session_id"],
                     source["path"],
                 ),
+            )
+
+    def diff_due(self, checkout_id: UUID, *, now: datetime, debounce_seconds: float = 5) -> bool:
+        """Avoid invoking Git more than once per checkout debounce interval."""
+        row = self.connection.execute(
+            "SELECT MAX(observed_at) FROM diff_snapshots WHERE checkout_id=?", (str(checkout_id),)
+        ).fetchone()
+        if row is None or row[0] is None:
+            return True
+        try:
+            previous = datetime.fromisoformat(row[0])
+        except (TypeError, ValueError):
+            return True
+        return (now - previous).total_seconds() >= debounce_seconds
+
+    def record_diff_snapshot(
+        self,
+        checkout_id: UUID,
+        fingerprint: str,
+        byte_count: int,
+        *,
+        observed_at: datetime,
+    ) -> None:
+        """Persist only a debounced content hash, never Git diff text."""
+        if len(fingerprint) != 64 or any(char not in "0123456789abcdef" for char in fingerprint):
+            raise StorageError("Invalid Git diff fingerprint")
+        if byte_count < 0:
+            raise StorageError("Invalid Git diff byte count")
+        with self._transaction() as db:
+            latest = db.execute(
+                "SELECT snapshot_id, fingerprint FROM diff_snapshots WHERE checkout_id=? "
+                "ORDER BY observed_at DESC, rowid DESC LIMIT 1",
+                (str(checkout_id),),
+            ).fetchone()
+            if latest is not None and latest[1] == fingerprint:
+                db.execute(
+                    "UPDATE diff_snapshots SET observed_at=? WHERE snapshot_id=?",
+                    (observed_at.isoformat(), latest[0]),
+                )
+                return
+            db.execute(
+                "INSERT INTO diff_snapshots VALUES (?, ?, ?, ?, ?)",
+                (str(uuid4()), str(checkout_id), fingerprint, byte_count, observed_at.isoformat()),
             )
 
     def pin(self, session_id: str, *, pinned: bool = True) -> None:

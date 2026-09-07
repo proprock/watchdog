@@ -77,6 +77,27 @@ def test_spool_record_is_resolved_built_and_admitted(paths, tmp_path):
     assert "explain code" in envelope.model_dump_json()
 
 
+def test_spool_drain_records_a_debounced_content_free_diff_fingerprint(
+    paths, tmp_path, monkeypatch
+):
+    root = tmp_path / "project"
+    root.mkdir()
+    mutate_registry(paths, lambda registry: registry.add(root))
+    config = load_config(paths.config)
+    project = config.projects[0]
+    monkeypatch.setattr(
+        "agent_watchdog.analysis.git_diff_fingerprint", lambda checkout: ("a" * 64, 123)
+    )
+    write_spool_record(paths, spool_record(root, hook_event_name="Stop", session_id="s1"))
+
+    assert _drain_spool(paths, config) is True
+    with Store(paths.project_data(project.id), project.id) as store:
+        rows = store.connection.execute(
+            "SELECT fingerprint, byte_count FROM diff_snapshots"
+        ).fetchall()
+    assert rows == [("a" * 64, 123)]
+
+
 def test_spool_unregistered_cwd_is_discarded_without_loss(paths, tmp_path):
     root = tmp_path / "project"
     root.mkdir()

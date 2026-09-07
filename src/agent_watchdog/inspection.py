@@ -34,7 +34,7 @@ def database(paths: UserPaths, project: Project) -> Iterator[sqlite3.Connection]
     with closing(sqlite3.connect(path.as_uri() + "?mode=ro", uri=True, timeout=0.1)) as db:
         db.execute("PRAGMA query_only=ON")
         db.execute("BEGIN")
-        if db.execute("PRAGMA user_version").fetchone()[0] not in (1, 2, 3):
+        if db.execute("PRAGMA user_version").fetchone()[0] not in (1, 2, 3, 4):
             raise StorageError("Unsupported database schema")
         if db.execute("SELECT project_id FROM metadata").fetchall() != [(str(project.id),)]:
             raise StorageError("Database belongs to a different project")
@@ -114,6 +114,55 @@ def show(
         "has_more": len(rows) > limit,
         "task_outcome": "unknown",
     }
+
+
+def report(
+    paths: UserPaths,
+    project: Project,
+    *,
+    session_id: str | None,
+    provider: str,
+) -> dict:
+    """Analyze a consistent read-only event snapshot for one provider/session."""
+    from agent_watchdog.analysis import analyze
+
+    with database(paths, project) as db:
+        condition = "json_extract(envelope, '$.provider')=?"
+        parameters: list[object] = [provider]
+        if session_id is not None:
+            condition += " AND session_id=?"
+            parameters.append(session_id)
+        rows = db.execute(
+            f"SELECT envelope FROM events WHERE {condition} ORDER BY rowid", parameters
+        ).fetchall()
+        if session_id is not None and not rows:
+            raise StorageError("Unknown session in the selected project/provider")
+        snapshots: list[dict[str, object]] = []
+        table = db.execute(
+            "SELECT 1 FROM sqlite_master WHERE type='table' AND name='diff_snapshots'"
+        ).fetchone()
+        if table is not None:
+            checkouts = {
+                event.checkout_id
+                for event in (persisted_envelope(row[0]) for row in rows)
+                if event.checkout_id is not None
+            }
+            if checkouts:
+                placeholders = ",".join("?" for _ in checkouts)
+                snapshots = [
+                    {
+                        "snapshot_id": snapshot_id,
+                        "checkout_id": checkout_id,
+                        "fingerprint": fingerprint,
+                    }
+                    for snapshot_id, checkout_id, fingerprint in db.execute(
+                        "SELECT snapshot_id, checkout_id, fingerprint FROM diff_snapshots "
+                        f"WHERE checkout_id IN ({placeholders}) ORDER BY observed_at, rowid",
+                        tuple(str(checkout) for checkout in checkouts),
+                    )
+                ]
+    result = analyze((persisted_envelope(row[0]) for row in rows), snapshots=snapshots)
+    return {"project_id": str(project.id), "provider": provider, **result}
 
 
 def doctor(paths: UserPaths) -> dict:
