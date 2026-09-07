@@ -33,16 +33,18 @@ Execution order: M1-M4 for Codex coding only -> M-Anthropic / WD-022a+b -> App S
 
 ## M2 - Analytics and a manual optimization loop
 
-**Outcome:** the first complete analytical release for Codex coding sessions; behavioral and token/context metrics have equal priority.
+**Outcome:** the first complete analytical release for Codex coding sessions; behavioral and token/context metrics have equal priority. The [WD-103 software-factory audit](docs/software-factory-audit.md) confirms that the observability and shadow-analysis direction is sound, while calibration and measured progress remain required before guidance.
 
 1. **WD-009 (complete 2026-09-07).** Codex rollout-v1 transcript reader with persisted offsets, partial lines/rotation, native ID reconciliation, correct cumulative usage counters, and durable reader gaps. Reader failure does not stop hooks.
 2. **WD-010 (complete 2026-09-07).** Read-only timeline and durations, tool repetitions/errors, comparable pytest/JUnit results, output size, compactions, usage/cached tokens, versioned evidence IDs, and debounced Git diff fingerprints with uncertain attribution explicitly marked.
 3. Deterministic shadow findings: at least three repetitions, identical errors/comparable test sets, and diff oscillation. Evidence, versioned rules, and unknown coverage. No automatic stall verdict based on missing events.
 4. **WD-011 (complete 2026-09-07).** CLI `label`, `pin`, `export`, and `purge`; label/pin/purge are acknowledged control requests to the core. Read-only reports and exports work offline.
 5. **WD-011 (complete 2026-09-07).** Export selected sessions with a manifest, JSONL, Markdown, and a manual LLM prompt: typical tasks, costly patterns, and candidates for helper/skill/instruction improvements. Review content before sharing it.
-6. Manually label 20-50 real sessions: outcome, progress/slow/stuck/externally blocked, and finding correctness. The session count is a calibration target, not proof of representativeness.
+6. Before labeling, add auditable provider-scoped session-state labels (`progress`, `slow`, `stuck`, `externally_blocked`) and per-finding correctness verdicts. Manually label 20-50 real sessions, including negative examples with no finding, and report false positives and false negatives. The session count is a calibration target, not proof of representativeness.
 
-**Acceptance:** replay/enrichment does not double usage; unknown is not displayed as zero. Reports are reproducible from fixtures. Incremental readers preserve partial tails and report unsupported formats. Users can select, label, and export a session for manual LLM analysis without network access. Measure overhead and finding quality; list false positives. No eval runner or automatic benchmark task generation.
+**Acceptance:** replay/enrichment does not double usage; unknown is not displayed as zero. Reports are reproducible from fixtures. Incremental readers preserve partial tails and report unsupported formats. Users can select, label, and export a session for manual LLM analysis without network access. The WD-012 report defines its dataset and includes a confusion table, false positives, false negatives, overhead, and limitations. No eval runner or automatic benchmark task generation.
+
+WD-101 closes practical offline test boundaries identified by the audit, and WD-102 defines the evidence taxonomy for future manual/live probes. Neither task substitutes for WD-012 real-session calibration. The release order remains observe -> calibrate -> guide -> semantic escalation.
 
 ## M3 - Limited opt-in guidance
 
@@ -87,7 +89,7 @@ Execution order: M1-M4 for Codex coding only -> M-Anthropic / WD-022a+b -> App S
 
 - **WD-015:** Codex App Server spike, scheduled after WD-022b. Investigate event/control contracts and ownership/attach for existing sessions. Add an adapter only after confirmation; retain hooks. If integration requires launching a harness itself, document a separate mode. M4 remains bounded by verified hook capabilities and does not depend on this extension.
 - **WD-016:** a shared read-only project overview without merging databases; later, a local web UI if needed. Evaluate only after a useful M2 release.
-- A catalog/eval runner and automated skill improvement only if M2 manual export no longer meets workflow needs.
+- A real-work benchmark for model routing, a catalog/eval runner, and automated skill improvement only after M2 produces enough labeled exports to measure completed-task quality, cost, latency, and rework. Repository routing rules remain policy rather than a proven product capability until then.
 - MCP adviser only for a real agent-query use case, not as a process startup placeholder.
 
 ## M5 - Final cross-platform validation
