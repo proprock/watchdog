@@ -1,5 +1,32 @@
 # Foundation verification
 
+## WD-012 calibration (in progress)
+
+2026-09-07: the first manual calibration pass reviewed 20 completed root Codex
+coding sessions from 2026-08-24 through 2026-09-07. The auditable, content-free
+record is [wd012-calibration.json](evidence/wd012-calibration.json): it retains
+only source session IDs, start times, repository names, manual task/outcome
+labels, and local source hashes where the source was not locked. Raw rollout
+JSONL, prompts, assistant output, absolute paths, and provider credentials are
+not copied into this repository.
+
+The convenience sample is deliberately not representative: it contains 11
+`ventFather`, 6 `watchdog`, and 3 `agent-session-insights` sessions. Manual
+outcomes were 16 `success` and 4 `partial`; its typical work was feature delivery
+(11), hardware validation (4), debugging/investigation (3), and research/design
+(2). This establishes a review protocol and a task/outcome baseline, not a
+claim that a completed turn or tool success proves task success.
+
+The local Watchdog store had no registered project or captured sessions at
+review time. Therefore its shadow findings, false-positive count, precision, and
+per-hook overhead are **not evaluable** for this sample; they are recorded as
+`null`, never as zero. Earlier synthetic adapter benchmarks remain separate
+evidence and do not measure these real sessions. WD-012 remains open until a
+registered Watchdog capture provides 20--50 sessions with report findings and
+timing data. The next pass must label outcomes through the existing CLI, retain
+each finding's `correct`/`false_positive`/`unknown` review, report the denominator
+for precision, and preserve the same no-automatic-harness-change boundary.
+
 ## WD-011 labels, pins, and manual export
 
 2026-09-07, Windows. WD-011 adds storage schema v5 with a provider-scoped
