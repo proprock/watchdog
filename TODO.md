@@ -25,3 +25,10 @@ Queue: WD-012 -> WD-013 -> WD-014 -> WD-022b (M-Anthropic) -> WD-015 -> WD-019 -
 - [ ] **WD-019 - macOS/Linux host access and compatibility verification.** Obtain test hosts in the final milestone; verify package installation, hooks, detached launch, locks, path handling, and cleanup for both CLIs and officially available desktop surfaces. Reuse the Python core and existing probes. Acceptance: per-OS/version evidence and fixes for demonstrated differences, with unavailable surfaces explicitly marked. This task does not block WD-002, WD-008, M0-M4, or M-Anthropic; existing CI remains early feedback.
 
 - [ ] **WD-026 - Resolve Codex hook performance on Windows.** Deferred until the end of the queue after WD-019. Investigate the external Windows/Codex command-runner cost that remains after the Rust adapter and shared-resolution optimization. The observed standalone CLI PowerShell contract is p95 279 ms sequential / 563 ms four-way; direct Rust is 65 / 173 ms, while a nested CMD `commandWindows` variation fails before handler start. Acceptance: either a reproducible vendor-supported launch path that meets the documented latency target under the actual Codex runner, or an evidence-backed external limitation/issue report with versioned measurements and a documented operational decision. Do not relax the historical WD-024 result retroactively.
+
+## Misc
+
+- [] **WD-101 - cleanup tests (audit, src vs stand vs live)** 
+- [] **WD-102 - manual/local gates in adapter (retries count, failures, etc.)** 
+- [] **WD-103 - audit of features vs initial plan/research (uber-*.md)** 
+- [] **WD-10 - ** 
