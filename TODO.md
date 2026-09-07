@@ -35,4 +35,3 @@ Queue: WD-012 -> WD-101/WD-102 -> WD-013 -> WD-014 -> WD-022b (M-Anthropic) -> W
 
 - [] **WD-103 - manual/local gates in adapter (retries count, failures, etc.)** 
 - [] **WD-104 - add logs to the daemon** 
-- [] **WD-106 - check all configs and migrate them all to the toml/yaml format**

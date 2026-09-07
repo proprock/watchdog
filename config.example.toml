@@ -1,0 +1,43 @@
+# Copy this file to the user configuration path to start with the built-in defaults.
+# Registered project paths are intentionally omitted because they are machine-specific.
+
+schema_version = 1
+projects = []
+auto_add_projects = false
+
+[defaults]
+# Capture selected prompt, tool, and assistant text after redaction. Set false to
+# retain metadata only.
+capture_content = true
+# Keep this many bytes available for cleanup and diagnostic work per project.
+reserve_bytes = 1048576
+# Retain provider payloads and their artifact references for this many days.
+content_days = 30
+# Retain events, metrics, labels, and replay fingerprints for this many days.
+metrics_days = 180
+# Maximum total size of regular files stored for one project (2 GiB).
+project_bytes = 2147483648
+# Maximum size of pending inbox data and temporary inbox files (64 MiB).
+inbox_bytes = 67108864
+# Maximum size of one incoming event payload (1 MiB).
+payload_bytes = 1048576
+# Reserved configuration for the maximum number of log files.
+log_files = 5
+# Reserved configuration for the total log size (10 MiB).
+log_bytes = 10485760
+
+# The quota relationship must remain:
+# payload_bytes <= inbox_bytes <= project_bytes
+
+# To enable automatic registration, set an existing trusted directory and enable it:
+# auto_add_projects = true
+# trusted_projects_dir = "C:/path/to/trusted/projects"
+
+# To register a project explicitly, add an entry like this:
+# [[projects]]
+# id = "00000000-0000-0000-0000-000000000000"
+# root = "C:/path/to/project"
+#
+# Optional per-project overrides go under the project:
+# [projects.overrides]
+# capture_content = false

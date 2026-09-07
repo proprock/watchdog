@@ -61,6 +61,12 @@ def test_default_config_round_trip(tmp_path):
     assert load_config(path) == config
 
 
+def test_repository_config_example_matches_default_configuration():
+    path = Path(__file__).resolve().parents[1] / "config.example.toml"
+    assert path.is_file()
+    assert load_config(path) == Config()
+
+
 def test_auto_add_configuration_expands_home_and_requires_a_trusted_directory(tmp_path):
     home = Path.home()
     config = Config(auto_add_projects=True, trusted_projects_dir=Path("~"))
