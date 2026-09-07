@@ -4,7 +4,7 @@ import json
 import tomllib
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Self
+from typing import Literal, Self
 from uuid import UUID
 
 import tomli_w
@@ -36,6 +36,7 @@ class Limits(StrictModel):
     payload_bytes: Positive = 1024**2
     log_files: Positive = 5
     log_bytes: Positive = 10 * 1024**2
+    log_level: Literal["DEBUG", "INFO", "WARNING", "ERROR"] = "INFO"
 
     @model_validator(mode="after")
     def ordered_quotas(self) -> Self:
@@ -52,8 +53,6 @@ class Overrides(StrictModel):
     project_bytes: Positive | None = None
     inbox_bytes: Positive | None = None
     payload_bytes: Positive | None = None
-    log_files: Positive | None = None
-    log_bytes: Positive | None = None
 
     def apply(self, defaults: Limits) -> Limits:
         return Limits.model_validate(defaults.model_dump() | self.model_dump(exclude_none=True))

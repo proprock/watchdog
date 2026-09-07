@@ -7,11 +7,20 @@ from pathlib import Path
 from uuid import UUID
 
 from agent_watchdog import daemon
-from agent_watchdog.config import UserPaths, load_config, user_paths
+from agent_watchdog.config import ConfigError, Limits, UserPaths, load_config, user_paths
+from agent_watchdog.diagnostics import Level, emit
 from agent_watchdog.hook_install import change
 from agent_watchdog.hooks import observe
 from agent_watchdog.registry import RegistryError
 from agent_watchdog.storage import StorageError
+
+
+def _log(paths: UserPaths, level: Level, *, event: str, decision: str) -> None:
+    try:
+        limits = load_config(paths.config).defaults
+    except ConfigError:
+        limits = Limits()
+    emit(paths.data, limits, level, component="cli", event=event, decision=decision)
 
 
 def main() -> int:
@@ -102,6 +111,7 @@ def main() -> int:
         (args.data or paths.data).resolve(),
         (args.runtime or paths.runtime).resolve(),
     )
+    _log(paths, "DEBUG", event="command", decision="received")
     try:
         if args.command == "project":
             if args.action == "list":
@@ -239,10 +249,13 @@ def main() -> int:
                 return 1
             time.sleep(0.05)
     except (StorageError, RegistryError) as error:
+        _log(paths, "WARNING", event="command", decision="failed")
         print(json.dumps({"error": type(error).__name__, "message": str(error)}))
         return 1
     except (OSError, ValueError, sqlite3.Error) as error:
+        _log(paths, "ERROR", event="command", decision="failed")
         print(json.dumps({"error": type(error).__name__}))
         return 1
     except KeyboardInterrupt:
+        _log(paths, "INFO", event="command", decision="interrupted")
         return 130

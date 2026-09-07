@@ -30,13 +30,30 @@ with Store(root, event.project_id, limits=limits) as store:
 | `inbox_bytes` | 64 MiB | Bound pending deliveries and inbox temporary files |
 | `payload_bytes` | 1 MiB | Bound raw hook input and serialized envelopes |
 | `reserve_bytes` | 1 MiB | Withhold room for cleanup and diagnostics |
-| `log_files`, `log_bytes` | 5, 10 MiB | Reserved configuration; no append-only logger exists |
+| `log_files`, `log_bytes`, `log_level` | 5, 10 MiB, `INFO` | Global daemon diagnostic log retention and threshold |
 
-All settings support global defaults and project overrides. Admission checks both
+All settings except the daemon-wide log settings support global defaults and project overrides. Admission checks both
 remaining project budget and actual free disk space, withholding the reserve from
 each. This margin is not a preallocated reservation against other applications.
 Filesystem allocation overhead and unrelated writers are outside this cooperative
 quota. Impractically small budgets refuse initialization or new events.
+
+## Daemon diagnostic log
+
+The Python core writes best-effort, human-readable records to
+`<data>/watchdog.log`. `log_bytes` caps each file; `log_files` counts the active
+file, so the defaults retain `watchdog.log` and `.1` through `.4`. Rotation and
+append are serialized across Python daemon and CLI processes. A busy lock or I/O
+failure drops only that diagnostic record; it never changes hook stdout/stderr,
+admission, or fail-open behavior.
+
+`log_level` is global under `[defaults]` and accepts only `DEBUG`, `INFO`,
+`WARNING`, or `ERROR`. Normal hot-path and quiet decisions use `DEBUG`; lifecycle,
+configuration, control, drops, and degradation use higher levels. Log records use
+only fixed component/event/decision/reason codes, nonnegative counts and byte
+sizes, plus Watchdog project/event UUIDs where available. They never include
+prompts, paths, commands, provider/session IDs, payloads, tool input/output,
+exception text, or tracebacks.
 
 Publishers and storage writes/maintenance share `admission.lock`, with a 100 ms
 acquisition timeout. Pending temporary files count; SQLite admission additionally

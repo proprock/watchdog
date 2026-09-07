@@ -75,3 +75,32 @@ def test_content_capture_defaults_on_and_can_be_disabled(tmp_path, monkeypatch):
     save_config(paths.config, Config(defaults=Limits(capture_content=False), projects=(project,)))
     observe(paths, io.BytesIO(raw))
     assert "explain this code" not in events[-1].model_dump_json()
+
+
+def test_hook_log_records_only_safe_decision_metadata(tmp_path, monkeypatch):
+    paths = UserPaths(tmp_path / "config.toml", tmp_path / "data", tmp_path / "runtime")
+    project = Project(id=uuid4(), root=tmp_path)
+    emitted = []
+    monkeypatch.setattr(
+        "agent_watchdog.hooks.daemon.enqueue", lambda paths, event: emitted.append(event) or True
+    )
+    secret = "sk-proj-" + "a" * 40
+    session_id = "provider-session-secret"
+    raw = json.dumps(
+        {
+            "cwd": str(tmp_path),
+            "hook_event_name": "UserPromptSubmit",
+            "session_id": session_id,
+            "prompt": secret,
+            "tool_response": "private tool output",
+        }
+    ).encode()
+    save_config(paths.config, Config(defaults=Limits(log_level="DEBUG"), projects=(project,)))
+
+    observe(paths, io.BytesIO(raw))
+
+    body = (paths.data / "watchdog.log").read_text(encoding="ascii")
+    assert "component=hook event=observe decision=admitted" in body
+    assert str(project.id) in body and str(emitted[0].event_id) in body
+    for forbidden in (secret, session_id, str(tmp_path), "private tool output", "prompt"):
+        assert forbidden not in body

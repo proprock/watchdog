@@ -102,7 +102,7 @@ def test_spool_unregistered_cwd_is_discarded_without_loss(paths, tmp_path):
     root = tmp_path / "project"
     root.mkdir()
     mutate_registry(paths, lambda registry: registry.add(root))
-    config = load_config(paths.config)
+    config = load_config(paths.config).model_copy(update={"defaults": Limits(log_level="DEBUG")})
     foreign = tmp_path / "foreign"
     foreign.mkdir()
     write_spool_record(paths, spool_record(foreign, hook_event_name="Stop"))
@@ -111,6 +111,22 @@ def test_spool_unregistered_cwd_is_discarded_without_loss(paths, tmp_path):
     assert not list((paths.data / "spool").glob("*.json"))
     assert not list(paths.data.glob("projects/*/inbox/*.json"))
     assert losses(paths.data)["invalid"] == 0
+    body = (paths.data / "watchdog.log").read_text(encoding="ascii")
+    assert "component=daemon event=spool decision=unregistered" in body
+    assert str(foreign) not in body
+
+
+def test_invalid_spool_log_uses_a_fixed_reason_without_record_content(paths):
+    config = Config(defaults=Limits(log_level="DEBUG"))
+    secret = "prompt=private-value"
+    paths.data.joinpath("spool").mkdir(parents=True)
+    (paths.data / "spool" / "broken.json").write_text(secret, encoding="utf-8")
+
+    assert _drain_spool(paths, config) is True
+
+    body = (paths.data / "watchdog.log").read_text(encoding="ascii")
+    assert "component=daemon event=spool decision=discarded reason=invalid" in body
+    assert secret not in body
 
 
 def test_spool_trusted_git_project_is_auto_added_and_admitted(paths, tmp_path):

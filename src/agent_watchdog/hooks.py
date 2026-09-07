@@ -8,6 +8,7 @@ from uuid import UUID
 
 from agent_watchdog import daemon, resources
 from agent_watchdog.config import Limits, UserPaths, load_config
+from agent_watchdog.diagnostics import emit, error_code
 from agent_watchdog.events import Envelope, EventKind
 from agent_watchdog.privacy import sanitize
 from agent_watchdog.registry import Registry, Resolution
@@ -123,10 +124,26 @@ def observe(paths: UserPaths, stream: BinaryIO, provider: str = "codex") -> None
     if provider not in EVENTS:
         raise KeyError(provider)
     try:
-        if daemon.desired(paths).get("paused", False):
-            return
         config = load_config(paths.config)
+        if daemon.desired(paths).get("paused", False):
+            emit(
+                paths.data,
+                config.defaults,
+                "DEBUG",
+                component="hook",
+                event="observe",
+                decision="paused",
+            )
+            return
         if not config.projects and not config.auto_add_projects:
+            emit(
+                paths.data,
+                config.defaults,
+                "DEBUG",
+                component="hook",
+                event="observe",
+                decision="disabled",
+            )
             return
         maximum = max(
             (project.overrides.apply(config.defaults).payload_bytes for project in config.projects),
@@ -135,32 +152,109 @@ def observe(paths: UserPaths, stream: BinaryIO, provider: str = "codex") -> None
         raw = stream.read(maximum + 1)
         if len(raw) > maximum:
             resources.count_loss(paths.data, "payload")
+            emit(
+                paths.data,
+                config.defaults,
+                "WARNING",
+                component="hook",
+                event="observe",
+                decision="discarded",
+                reason="oversized",
+                bytes=len(raw),
+            )
             return
         payload = json.loads(raw)
         if not isinstance(payload, dict):
             resources.count_loss(paths.data, "invalid")
+            emit(
+                paths.data,
+                config.defaults,
+                "WARNING",
+                component="hook",
+                event="observe",
+                decision="discarded",
+                reason="invalid",
+            )
             return
         cwd = payload.get("cwd")
         if not isinstance(cwd, str) or not Path(cwd).is_absolute():
             resources.count_loss(paths.data, "invalid")
+            emit(
+                paths.data,
+                config.defaults,
+                "WARNING",
+                component="hook",
+                event="observe",
+                decision="discarded",
+                reason="invalid",
+            )
             return
         resolution = Registry(config).resolve(Path(cwd), timeout=0.25)
         if resolution is None and config.auto_add_projects:
             config, resolution = daemon.resolve_or_auto_register(paths, Path(cwd), timeout=0.25)
         if resolution is None:
+            emit(
+                paths.data,
+                config.defaults,
+                "DEBUG",
+                component="hook",
+                event="observe",
+                decision="unregistered",
+            )
             return
         project = next(item for item in config.projects if item.id == resolution.project_id)
         limits = project.overrides.apply(config.defaults)
         if len(raw) > limits.payload_bytes:
             resources.count_loss(paths.project_data(project.id), "payload")
+            emit(
+                paths.data,
+                config.defaults,
+                "WARNING",
+                component="hook",
+                event="observe",
+                decision="discarded",
+                reason="oversized",
+                project_id=project.id,
+                bytes=len(raw),
+            )
             return
         event = build_envelope(payload, resolution, limits, provider)
         # Admission records project-level rejection counts itself.
         try:
-            daemon.enqueue(paths, sanitize(event))
-        except Exception:
+            admitted = daemon.enqueue(paths, sanitize(event))
+            emit(
+                paths.data,
+                config.defaults,
+                "DEBUG",
+                component="hook",
+                event="observe",
+                decision="admitted" if admitted else "paused",
+                project_id=project.id,
+                event_id=event.event_id,
+            )
+        except Exception as error:
+            emit(
+                paths.data,
+                config.defaults,
+                "WARNING",
+                component="hook",
+                event="observe",
+                decision="failed",
+                error_type=error_code(error),
+                project_id=project.id,
+                event_id=event.event_id,
+            )
             return
-    except Exception:
+    except Exception as error:
         # Hooks must fail open even when a dependency or an unexpected payload fails.
         resources.count_loss(paths.data, "invalid")
+        emit(
+            paths.data,
+            Limits(),
+            "WARNING",
+            component="hook",
+            event="observe",
+            decision="failed",
+            error_type=error_code(error),
+        )
         return

@@ -21,10 +21,12 @@ project_bytes = 2147483648
 inbox_bytes = 67108864
 # Maximum size of one incoming event payload (1 MiB).
 payload_bytes = 1048576
-# Reserved configuration for the maximum number of log files.
+# Keep this many daemon diagnostic files, including the active watchdog.log.
 log_files = 5
-# Reserved configuration for the total log size (10 MiB).
+# Rotate the active diagnostic log before it exceeds this many bytes (10 MiB).
 log_bytes = 10485760
+# Write INFO, WARNING, and ERROR by default; set DEBUG for hot-path decisions.
+log_level = "INFO"
 
 # The quota relationship must remain:
 # payload_bytes <= inbox_bytes <= project_bytes

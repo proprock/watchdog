@@ -15,7 +15,8 @@ from uuid import UUID, uuid4
 from pydantic import ValidationError
 
 from agent_watchdog import resources
-from agent_watchdog.config import Config, ConfigError, UserPaths, load_config, save_config
+from agent_watchdog.config import Config, ConfigError, Limits, UserPaths, load_config, save_config
+from agent_watchdog.diagnostics import Level, emit, error_code
 from agent_watchdog.events import Envelope
 from agent_watchdog.registry import Registry, Resolution
 from agent_watchdog.storage import (
@@ -32,6 +33,43 @@ from agent_watchdog.storage import (
 SPOOL_BYTES = 64 * 1024**2
 SPOOL_FILES = 4096
 CONTROL_REQUEST_BYTES = 8192
+
+
+def _log(
+    paths: UserPaths,
+    config: Config | None,
+    level: Level,
+    *,
+    event: str,
+    decision: str | None = None,
+    reason: str | None = None,
+    error_type: str | None = None,
+    project_id: UUID | None = None,
+    event_id: UUID | None = None,
+    count: int | None = None,
+    bytes: int | None = None,
+) -> None:
+    if config is None:
+        try:
+            limits = load_config(paths.config).defaults
+        except ConfigError:
+            limits = Limits()
+    else:
+        limits = config.defaults
+    emit(
+        paths.data,
+        limits,
+        level,
+        component="daemon",
+        event=event,
+        decision=decision,
+        reason=reason,
+        error_type=error_type,
+        project_id=project_id,
+        event_id=event_id,
+        count=count,
+        bytes=bytes,
+    )
 
 
 def _capture_diff_snapshot(
@@ -245,6 +283,9 @@ def resolve_or_auto_register(
         resolution, added = registry.resolve_or_auto_add(path, timeout=timeout)
         if added:
             save_config(paths.config, registry.config)
+            _log(paths, registry.config, "INFO", event="registry", decision="auto_registered")
+        elif resolution is None:
+            _log(paths, registry.config, "DEBUG", event="registry", decision="unregistered")
         return registry.config, resolution
 
 
@@ -252,20 +293,48 @@ def enqueue(paths: UserPaths, event: Envelope) -> bool:
     """Adapter entry point; pause and allowlist admission share the control lock."""
     with control_lock(paths, timeout=0.1):
         if desired(paths).get("paused", False):
+            _log(paths, None, "DEBUG", event="enqueue", decision="paused")
             return False
         config = load_config(paths.config)
         project = next((item for item in config.projects if item.id == event.project_id), None)
         if project is None:
+            _log(
+                paths,
+                config,
+                "DEBUG",
+                event="enqueue",
+                decision="unregistered",
+                event_id=event.event_id,
+            )
             return False
         limits = project.overrides.apply(config.defaults)
         try:
             Inbox(paths.project_data(project.id), limits=limits).publish(event)
         except QuotaExceeded:
+            _log(
+                paths,
+                config,
+                "WARNING",
+                event="enqueue",
+                decision="rejected",
+                reason="quota",
+                project_id=project.id,
+                event_id=event.event_id,
+            )
             if not alive(paths):
                 launch(paths)
             raise
         if not alive(paths):
             launch(paths)
+        _log(
+            paths,
+            config,
+            "DEBUG",
+            event="enqueue",
+            decision="admitted",
+            project_id=project.id,
+            event_id=event.event_id,
+        )
         return True
 
 
@@ -351,7 +420,16 @@ def _drain_controls(paths: UserPaths, config: Config, *, limit: int = 100) -> bo
                 "ok": True,
                 "result": result,
             }
+            _log(
+                paths,
+                config,
+                "INFO",
+                event="control",
+                decision="acknowledged",
+                project_id=project.id,
+            )
         except WriterBusy:
+            _log(paths, config, "DEBUG", event="control", decision="retry", reason="writer_busy")
             continue
         except (KeyError, OSError, StorageError, ValueError, TypeError) as error:
             request_id = path.stem
@@ -361,6 +439,14 @@ def _drain_controls(paths: UserPaths, config: Config, *, limit: int = 100) -> bo
                 "ok": False,
                 "message": str(error) or "Invalid control request",
             }
+            _log(
+                paths,
+                config,
+                "WARNING",
+                event="control",
+                decision="rejected",
+                error_type=error_code(error),
+            )
         atomic_write(
             paths.data / "acks" / f"{request_id}.json", json.dumps(acknowledgement).encode()
         )
@@ -415,6 +501,7 @@ def _drain_spool(paths: UserPaths, config: Config, *, limit: int = 100) -> bool:
         processed += 1
         try:
             if path.is_symlink():
+                _log(paths, config, "WARNING", event="spool", decision="discarded", reason="linked")
                 _discard(path)
                 activity = True
                 continue
@@ -436,6 +523,7 @@ def _drain_spool(paths: UserPaths, config: Config, *, limit: int = 100) -> bool:
             received_at = datetime.fromisoformat(record["received_at"])
         except (OSError, ValueError, KeyError, TypeError):
             resources.count_loss(paths.data, "invalid")
+            _log(paths, config, "WARNING", event="spool", decision="discarded", reason="invalid")
             _discard(path)
             activity = True
             continue
@@ -444,6 +532,7 @@ def _drain_spool(paths: UserPaths, config: Config, *, limit: int = 100) -> bool:
             config, resolution = resolve_or_auto_register(paths, Path(cwd), timeout=0.25)
             registry = Registry(config)
         if resolution is None:
+            _log(paths, config, "DEBUG", event="spool", decision="unregistered", event_id=event_id)
             _discard(path)
             activity = True
             continue
@@ -460,20 +549,68 @@ def _drain_spool(paths: UserPaths, config: Config, *, limit: int = 100) -> bool:
             )
             admitted = _admit(paths, sanitize(event), config)
         except QuotaExceeded:
+            _log(
+                paths,
+                config,
+                "WARNING",
+                event="spool",
+                decision="discarded",
+                reason="quota",
+                project_id=project.id,
+                event_id=event_id,
+            )
             _discard(path)  # Inbox.publish already counted the project loss.
             activity = True
             continue
         except WriterBusy:
+            _log(
+                paths,
+                config,
+                "DEBUG",
+                event="spool",
+                decision="retry",
+                reason="writer_busy",
+                project_id=project.id,
+                event_id=event_id,
+            )
             continue  # Transient; retry on the next poll.
         except (ValidationError, RejectedEvent, StorageError, ValueError, KeyError, TypeError):
             resources.count_loss(paths.data, "invalid")
+            _log(
+                paths,
+                config,
+                "WARNING",
+                event="spool",
+                decision="discarded",
+                reason="invalid",
+                project_id=project.id,
+                event_id=event_id,
+            )
             _discard(path)
             activity = True
             continue
         if not admitted and desired(paths).get("paused", False):
+            _log(
+                paths,
+                config,
+                "DEBUG",
+                event="spool",
+                decision="paused",
+                project_id=project.id,
+                event_id=event_id,
+            )
             continue  # Keep the record for the next unpaused poll.
         if admitted:
             _capture_diff_snapshot(event, resolution.root, project.id, paths)
+            _log(
+                paths,
+                config,
+                "DEBUG",
+                event="spool",
+                decision="admitted",
+                project_id=project.id,
+                event_id=event_id,
+            )
         # Admitted, or the project was unregistered mid-drain: either way, drop it.
         # A failed unlink replays the same event_id, which Store.put deduplicates.
         _discard(path)
@@ -486,9 +623,12 @@ def run(paths: UserPaths) -> int:
     try:
         with ExitStack() as owner:
             owner.enter_context(writer_lock(paths.data / "daemon.lock"))
+            _log(paths, None, "INFO", event="lifecycle", decision="started")
             _poll(paths, owner)
     except WriterBusy:
+        _log(paths, None, "DEBUG", event="lifecycle", decision="already_running")
         return 0
+    _log(paths, None, "INFO", event="lifecycle", decision="stopped")
     return 0
 
 
@@ -498,11 +638,13 @@ def _poll(paths: UserPaths, owner: ExitStack) -> None:
     maintenance: dict[str, float] = {}
     spool_mtime: float | None = None
     while True:
+        config: Config | None = None
         control = desired(paths)
         if control.get("paused", False):
             # Release ownership under the same lock as start, avoiding a lost restart.
             with control_lock(paths):
                 if desired(paths).get("paused", False):
+                    _log(paths, None, "INFO", event="lifecycle", decision="paused")
                     owner.close()
                     return
             continue
@@ -518,7 +660,9 @@ def _poll(paths: UserPaths, owner: ExitStack) -> None:
                 try:
                     write_spool_limits(paths, config)
                     spool_mtime = mtime
+                    _log(paths, config, "INFO", event="configuration", decision="reloaded")
                 except OSError:
+                    _log(paths, config, "WARNING", event="configuration", decision="deferred")
                     pass
             if _drain_spool(paths, config):
                 activity = True
@@ -540,6 +684,14 @@ def _poll(paths: UserPaths, owner: ExitStack) -> None:
                         except (OSError, StorageError, ValueError):
                             if len(errors) < 32:
                                 errors.append(str(project.id))
+                            _log(
+                                paths,
+                                config,
+                                "WARNING",
+                                event="enrichment",
+                                decision="failed",
+                                project_id=project.id,
+                            )
                         if resources.available(root, limits) < 65536 and len(errors) < 32:
                             errors.append(str(project.id))
                     activity |= bool(
@@ -548,8 +700,17 @@ def _poll(paths: UserPaths, owner: ExitStack) -> None:
                 except (OSError, StorageError, sqlite3.Error):
                     if len(errors) < 32:
                         errors.append(str(project.id))
+                    _log(
+                        paths,
+                        config,
+                        "WARNING",
+                        event="project",
+                        decision="degraded",
+                        project_id=project.id,
+                    )
         except ConfigError:
             errors.append("configuration")
+            _log(paths, None, "ERROR", event="configuration", decision="invalid")
         atomic_write(
             paths.runtime / "status.json",
             json.dumps(
@@ -564,4 +725,12 @@ def _poll(paths: UserPaths, owner: ExitStack) -> None:
             ).encode(),
         )
         delay = 0.25 if activity else min(2, delay * 2)
+        _log(
+            paths,
+            config,
+            "DEBUG",
+            event="poll",
+            decision="active" if activity else "idle",
+            count=len(errors),
+        )
         time.sleep(delay)
