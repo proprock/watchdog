@@ -10,6 +10,8 @@ import tempfile
 import time
 from pathlib import Path
 
+from agent_watchdog._proc import hidden_creationflags
+
 
 def wait_for(path: Path, seconds: float = 15) -> None:
     deadline = time.monotonic() + seconds
@@ -117,6 +119,7 @@ def probe(claude_init: bool) -> dict:
                 capture_output=True,
                 text=True,
                 timeout=30,
+                creationflags=hidden_creationflags(),
             )
             if result.returncode:
                 raise RuntimeError(f"Parent exited with code {result.returncode}")

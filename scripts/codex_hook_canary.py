@@ -14,6 +14,8 @@ from pathlib import Path
 from typing import TextIO
 from uuid import uuid4
 
+from agent_watchdog._proc import hidden_creationflags
+
 JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE = 0x00002000
 JOB_OBJECT_EXTENDED_LIMIT_INFORMATION = 9
 TH32CS_SNAPPROCESS = 0x00000002
@@ -216,7 +218,13 @@ def command_windows_cmd(python: Path, handler: Path, marker: Path) -> str:
 
 def codex_version(codex: str) -> str:
     try:
-        result = subprocess.run([codex, "--version"], capture_output=True, text=True, check=True)
+        result = subprocess.run(
+            [codex, "--version"],
+            capture_output=True,
+            text=True,
+            check=True,
+            creationflags=hidden_creationflags(),
+        )
     except OSError as error:
         raise RuntimeError(f"could not run Codex version command: {codex}") from error
     return result.stdout.strip()
@@ -282,7 +290,13 @@ def run_canary(args: argparse.Namespace) -> None:
     with tempfile.TemporaryDirectory(prefix="watchdog codex hook canary ") as temporary:
         root = Path(temporary)
         try:
-            subprocess.run(["git", "init", str(root)], capture_output=True, text=True, check=True)
+            subprocess.run(
+                ["git", "init", str(root)],
+                capture_output=True,
+                text=True,
+                check=True,
+                creationflags=hidden_creationflags(),
+            )
         except OSError as error:
             raise RuntimeError(
                 "could not run git init for the temporary canary repository"
@@ -337,7 +351,7 @@ def run_canary(args: argparse.Namespace) -> None:
                     stdout=subprocess.PIPE,
                     stderr=subprocess.PIPE,
                     text=True,
-                    creationflags=subprocess.CREATE_NEW_PROCESS_GROUP,
+                    creationflags=hidden_creationflags(subprocess.CREATE_NEW_PROCESS_GROUP),
                 )
             except OSError as error:
                 raise RuntimeError(f"could not start Codex CLI: {codex}") from error

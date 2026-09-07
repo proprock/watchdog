@@ -29,6 +29,8 @@ import time
 from collections import Counter
 from pathlib import Path
 
+from agent_watchdog._proc import hidden_creationflags
+
 SCHEMA_VERSION = 2
 HOOK_SUBTYPES = ("hook_started", "hook_response")
 _STAMP = "readMonotonicNs"
@@ -99,6 +101,7 @@ def capture(args: argparse.Namespace) -> int:
             stderr=subprocess.DEVNULL,
             text=True,
             bufsize=1,
+            creationflags=hidden_creationflags(),
         ) as proc,
     ):
         assert proc.stdout is not None

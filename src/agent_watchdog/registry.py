@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from uuid import UUID, uuid4, uuid5
 
+from agent_watchdog._proc import run as _run
 from agent_watchdog.config import Config, Project, same_path
 
 
@@ -69,7 +70,7 @@ def discover(path: Path, *, timeout: float = 10) -> Checkout:
         if fast is not None:
             toplevel, common = fast
             return Checkout(toplevel.resolve(strict=True), common.resolve(strict=True))
-        result = subprocess.run(
+        result = _run(
             [
                 "git",
                 "-C",

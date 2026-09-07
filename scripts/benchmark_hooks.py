@@ -13,10 +13,14 @@ import time
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
+from agent_watchdog._proc import hidden_creationflags
+
 SHELLS = ("direct", "bash", "cmd.exe", "powershell.exe", "pwsh.exe")
 
 
 def run(command: list[str] | str, **kwargs) -> subprocess.CompletedProcess:
+    if os.name == "nt":
+        kwargs["creationflags"] = hidden_creationflags(kwargs.get("creationflags", 0))
     return subprocess.run(command, capture_output=True, text=True, timeout=15, check=True, **kwargs)
 
 
