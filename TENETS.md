@@ -14,6 +14,7 @@ Milestones: ROADMAP.md
 - Features: use `feature/<name>`, write a failing behavioral test, implement the smallest solution, then refactor. Use a worktree only when isolation is needed (in case of staged changes or modified source files).
 - Debugging: reproduce, form a hypothesis, apply a minimal fix, run a focused test and relevant broader checks. Do not repeat an expensive failed run without changing the conditions.
 - Docs/config: review content and run `git diff --check`; do not write tests that merely assert documentation strings exist.
+- For a verified change that improves observation or control, update the user-local live Codex hook instance using the ignored [LIVE.md](LIVE.md). This file is local-only and must never be committed; do not update that instance for user-experience work or unrelated minor changes.
 - Use Conventional Commits, one subject per commit, and an action list in the commit body. Do not push unless requested.
 - Keep only open tasks in TODO.md. Move completed entries to DONE.md, preserving their WD-ID and recording actual verification. Do not retain completed entries or a Done section in TODO.md.
 - Read DONE.md only when historical evidence is needed, not on every iteration. Do not present CI configuration as a successful CI run.

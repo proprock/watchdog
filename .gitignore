@@ -11,3 +11,4 @@ dist/
 native/target/
 .DS_Store
 Thumbs.db
+/LIVE.md
