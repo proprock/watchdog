@@ -1,4 +1,5 @@
 import json
+import os
 import subprocess
 import sys
 import time
@@ -13,6 +14,7 @@ from agent_watchdog.config import Config, Limits, UserPaths, load_config, save_c
 from agent_watchdog.daemon import (
     _drain_spool,
     enqueue,
+    launch,
     mutate_registry,
     start,
     status,
@@ -347,6 +349,28 @@ def test_hook_start_contention_is_bounded(paths):
         with pytest.raises(WriterBusy):
             start(paths, explicit=False)
         assert time.monotonic() - before < 1
+
+
+@pytest.mark.skipif(os.name != "nt", reason="Windows process creation flags are platform-specific")
+def test_daemon_launch_uses_an_invisible_process_group(paths, monkeypatch):
+    save_config(paths.config, Config())
+    calls = []
+
+    class FakeProcess:
+        def poll(self):
+            return None
+
+    def fake_popen(*args, **kwargs):
+        calls.append(kwargs)
+        return FakeProcess()
+
+    monkeypatch.setattr("agent_watchdog.daemon.subprocess.Popen", fake_popen)
+    launch(paths)
+
+    flags = calls[0]["creationflags"]
+    assert flags & subprocess.CREATE_NO_WINDOW
+    assert flags & subprocess.CREATE_NEW_PROCESS_GROUP
+    assert not flags & subprocess.DETACHED_PROCESS
 
 
 def test_independent_cli_startup_contenders_and_pause(paths):

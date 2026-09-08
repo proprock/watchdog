@@ -15,6 +15,7 @@ from uuid import UUID, uuid4
 from pydantic import ValidationError
 
 from agent_watchdog import resources
+from agent_watchdog._proc import hidden_creationflags
 from agent_watchdog.config import Config, ConfigError, Limits, UserPaths, load_config, save_config
 from agent_watchdog.diagnostics import Level, emit, error_code
 from agent_watchdog.events import Envelope
@@ -244,7 +245,7 @@ def launch(paths: UserPaths) -> None:
         stderr=subprocess.DEVNULL,
         close_fds=True,
         start_new_session=os.name != "nt",
-        creationflags=(subprocess.DETACHED_PROCESS | subprocess.CREATE_NEW_PROCESS_GROUP)
+        creationflags=hidden_creationflags(subprocess.CREATE_NEW_PROCESS_GROUP)
         if os.name == "nt"
         else 0,
     )

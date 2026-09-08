@@ -10,6 +10,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
+from agent_watchdog._proc import run as _run
 from agent_watchdog.events import Envelope
 
 REPORT_SCHEMA_VERSION = 1
@@ -102,7 +103,7 @@ def _finding(
 def git_diff_fingerprint(checkout: Path) -> tuple[str, int] | None:
     """Hash an unmodified checkout diff; failures remain unknown, not clean."""
     try:
-        result = subprocess.run(
+        result = _run(
             [
                 "git",
                 "-C",

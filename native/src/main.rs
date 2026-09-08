@@ -146,7 +146,9 @@ fn ensure_daemon(paths: &Paths) -> Result<()> {
     #[cfg(windows)]
     {
         use std::os::windows::process::CommandExt;
-        command.creation_flags(0x00000008 | 0x00000200);
+        // CREATE_NO_WINDOW keeps the detached daemon invisible when the hook
+        // itself was launched without a console.
+        command.creation_flags(0x08000000 | 0x00000200);
     }
     #[cfg(unix)]
     {

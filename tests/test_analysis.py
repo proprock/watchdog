@@ -1,7 +1,14 @@
+import hashlib
+import subprocess
 from datetime import UTC, datetime, timedelta
 from uuid import uuid4
 
-from agent_watchdog.analysis import REPORT_SCHEMA_VERSION, analyze, diff_oscillations
+from agent_watchdog.analysis import (
+    REPORT_SCHEMA_VERSION,
+    analyze,
+    diff_oscillations,
+    git_diff_fingerprint,
+)
 from agent_watchdog.events import Envelope
 
 
@@ -100,6 +107,26 @@ def test_diff_oscillation_is_a_signal_with_uncertain_attribution():
             ),
         }
     ]
+
+
+def test_git_diff_fingerprint_uses_the_hidden_process_runner(tmp_path, monkeypatch):
+    calls = []
+
+    def fake_run(command, **kwargs):
+        calls.append((command, kwargs))
+        return subprocess.CompletedProcess(command, 0, stdout=b"diff", stderr=b"")
+
+    def unexpected_run(*args, **kwargs):
+        raise AssertionError("git_diff_fingerprint bypassed the hidden runner")
+
+    monkeypatch.setattr("agent_watchdog.analysis._run", fake_run)
+    monkeypatch.setattr("agent_watchdog.analysis.subprocess.run", unexpected_run)
+
+    assert git_diff_fingerprint(tmp_path) == (hashlib.sha256(b"diff").hexdigest(), 4)
+    assert len(calls) == 1
+    command, kwargs = calls[0]
+    assert command[:2] == ["git", "-C"]
+    assert kwargs == {"capture_output": True, "timeout": 0.5, "check": False}
 
 
 def test_report_pairs_tool_boundaries_for_observed_durations():
