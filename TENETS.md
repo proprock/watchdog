@@ -27,6 +27,7 @@ Milestones: ROADMAP.md
 - Write tests with pytest, using pytest fixtures, parametrization, and plain assertions where appropriate. Keep live provider probes explicit and separate from the offline pytest suite.
 - Checks: `uv run pytest`, `uv run ruff check .`, `uv run ruff format --check .`, `uv run ty check`; packaging: `uv build`. Commit uv.lock.
 - Before pytest, build the native adapter with `cargo build --release --locked --manifest-path native/Cargo.toml`. Cross-language behavioral tests remain in pytest; they never invoke providers. Run `cargo fmt --manifest-path native/Cargo.toml --check` and `cargo clippy --locked --manifest-path native/Cargo.toml -- -D warnings`. Commit native/Cargo.lock; keep native binaries separate from the portable Python wheel.
+- Agent-runner commands may return after roughly 30–35 seconds while pytest children continue running. Keep runner-launched pytest groups below that window, give each group a fresh external `--basetemp` under a writable temporary root (on this host, `C:\tmp`; never use the checkout), and require the final pytest summary and exit status. Treat partial dot output as inconclusive; run the full suite from a normal terminal when one command cannot fit the runner window.
 - Unit/contract tests require neither network access nor live accounts. Keep ty enabled in CI.
 - Use UTF-8 without BOM and LF; isolate platform-specific code.
 
