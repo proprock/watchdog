@@ -10,7 +10,7 @@ from agent_watchdog import daemon, resources
 from agent_watchdog.config import Limits, UserPaths, load_config
 from agent_watchdog.diagnostics import emit, error_code
 from agent_watchdog.events import Envelope, EventKind
-from agent_watchdog.privacy import sanitize
+from agent_watchdog.privacy import redact, sanitize
 from agent_watchdog.registry import Registry, Resolution
 
 EVENTS: dict[str, dict[str, EventKind]] = {
@@ -43,6 +43,102 @@ EVENTS: dict[str, dict[str, EventKind]] = {
     },
 }
 
+_CONTENT_FIELDS = ("prompt", "tool_input", "tool_response", "last_assistant_message")
+_COMMON_FIELDS = {
+    "cwd",
+    "hook_event_name",
+    "session_id",
+    "turn_id",
+    "agent_id",
+    "parent_agent_id",
+    "native_event_id",
+    "provider_version",
+    "surface",
+    "source",
+    "transcript_path",
+    "tool_name",
+    "tool_use_id",
+    *_CONTENT_FIELDS,
+}
+_TELEMETRY_FIELDS = {
+    "model",
+    "model_alias",
+    "reasoning_effort",
+    "reasoning_mode",
+    "client_version",
+    "context_window",
+    "context_tokens",
+    "cached_input_tokens",
+    "cache_read_tokens",
+    "cache_creation_tokens",
+    "input_tokens",
+    "output_tokens",
+    "reasoning_tokens",
+    "total_tokens",
+    "duration_ms",
+    "turn_duration_ms",
+    "tool_duration_ms",
+    "retry_count",
+    "is_interrupt",
+    "permission_outcome",
+    "error",
+    "parent_session_id",
+    "parent_turn_id",
+}
+_PROVIDER_FIELDS = {
+    "codex": {
+        "trigger",
+        "agent_type",
+        "agent_transcript_path",
+        "stop_hook_active",
+        "reason",
+    },
+    "claude": {
+        "trigger",
+        "agent_type",
+        "agent_transcript_path",
+        "stop_hook_active",
+        "reason",
+        "message",
+        "notification_type",
+    },
+}
+
+
+def unknown_fields(payload: dict, provider: str) -> tuple[str, ...]:
+    """Return unrecognised top-level provider fields, never nested user payload keys."""
+    known = _COMMON_FIELDS | _TELEMETRY_FIELDS | _PROVIDER_FIELDS[provider]
+    return tuple(sorted(key for key in payload if key not in known))
+
+
+def warn_unknown_fields(
+    paths: UserPaths,
+    limits: Limits,
+    payload: dict,
+    provider: str,
+    *,
+    component: str,
+    event: str,
+    project_id: UUID,
+    event_id: UUID,
+) -> None:
+    """Make new provider schema visible without logging provider values."""
+    for name in unknown_fields(payload, provider):
+        field = name if name.isascii() and name[:1].isalpha() and len(name) <= 64 else "nonstandard"
+        emit(
+            paths.data,
+            limits,
+            "WARNING",
+            component=component,
+            event=event,
+            decision="received",
+            reason="unknown_field",
+            provider=provider,
+            field=field,
+            project_id=project_id,
+            event_id=event_id,
+        )
+
 
 def identifier(payload: dict, field: str) -> str | None:
     value = payload.get(field)
@@ -73,15 +169,12 @@ def build_envelope(
     """
     events = EVENTS[provider]
     content = (
-        {
-            key: payload[key]
-            for key in ("prompt", "tool_input", "tool_response", "last_assistant_message")
-            if key in payload
-        }
+        {key: payload[key] for key in _CONTENT_FIELDS if key in payload}
         if limits.capture_content
         else {}
     )
     native = identifier(payload, "hook_event_name")
+    metadata = {key: value for key, value in payload.items() if key not in _CONTENT_FIELDS}
     provider_payload = {
         "hook_event_name": native if native in events else "unknown",
         "tool_use_id": identifier(payload, "tool_use_id"),
@@ -90,6 +183,8 @@ def build_envelope(
         if "tool_response" in payload
         else None,
         "content": content or "omitted",
+        "metadata": metadata,
+        "unknown_fields": list(unknown_fields(payload, provider)),
     }
     path = transcript_path(payload) if provider == "codex" else None
     if path is not None:
@@ -101,6 +196,9 @@ def build_envelope(
         session_id=identifier(payload, "session_id"),
         turn_id=identifier(payload, "turn_id"),
         agent_id=identifier(payload, "agent_id"),
+        parent_agent_id=identifier(payload, "parent_agent_id"),
+        native_event_id=identifier(payload, "native_event_id"),
+        provider_version=identifier(payload, "provider_version"),
         kind=events.get(native or "", "unknown"),
         source="hook",
         payload={provider: provider_payload},
@@ -110,6 +208,12 @@ def build_envelope(
             "provider_version": "unknown",
             "occurred_at": "unavailable",
             "tool_outcome": "unknown",
+        }
+        | {f"input.{key}": "observed" for key in metadata}
+        | {
+            f"input.{key}": "observed" if limits.capture_content else "unavailable"
+            for key in _CONTENT_FIELDS
+            if key in payload
         },
     )
     replay: dict[str, object] = {}
@@ -189,6 +293,9 @@ def observe(paths: UserPaths, stream: BinaryIO, provider: str = "codex") -> None
                 reason="invalid",
             )
             return
+        input_payload = redact({key: value for key, value in payload.items() if key != "cwd"})
+        if not isinstance(input_payload, dict):
+            raise ValueError("Invalid hook input")
         resolution = Registry(config).resolve(Path(cwd), timeout=0.25)
         if resolution is None and config.auto_add_projects:
             config, resolution = daemon.resolve_or_auto_register(paths, Path(cwd), timeout=0.25)
@@ -218,7 +325,17 @@ def observe(paths: UserPaths, stream: BinaryIO, provider: str = "codex") -> None
                 bytes=len(raw),
             )
             return
-        event = build_envelope(payload, resolution, limits, provider)
+        event = build_envelope(input_payload, resolution, limits, provider)
+        warn_unknown_fields(
+            paths,
+            config.defaults,
+            input_payload,
+            provider,
+            component="hook",
+            event="observe",
+            project_id=project.id,
+            event_id=event.event_id,
+        )
         # Admission records project-level rejection counts itself.
         try:
             admitted = daemon.enqueue(paths, sanitize(event))

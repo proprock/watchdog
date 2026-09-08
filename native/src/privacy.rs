@@ -48,7 +48,8 @@ impl Redactor {
                     }
                     result.insert(
                         safe_key,
-                        if self.key.is_match(key) {
+                        if self.key.is_match(key) && !matches!(item, Value::Null | Value::Number(_))
+                        {
                             Value::String("[REDACTED]".into())
                         } else {
                             self.value(item)

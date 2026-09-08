@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Literal
@@ -23,6 +24,8 @@ _FIELD_NAMES = {
     "event_id",
     "count",
     "bytes",
+    "provider",
+    "field",
 }
 _COMPONENTS = {"daemon", "hook", "cli"}
 _EVENTS = {
@@ -60,7 +63,7 @@ _DECISIONS = {
     "stopped",
     "unregistered",
 }
-_REASONS = {"invalid", "linked", "oversized", "quota", "writer_busy"}
+_REASONS = {"invalid", "linked", "oversized", "quota", "unknown_field", "writer_busy"}
 _ERROR_TYPES = {
     "keyerror",
     "operationalerror",
@@ -73,6 +76,8 @@ _ERROR_TYPES = {
     "validationerror",
     "valueerror",
 }
+_PROVIDERS = {"codex", "claude"}
+_FIELD = re.compile(r"[A-Za-z][A-Za-z0-9_.-]{0,63}")
 
 
 def error_code(error: BaseException) -> str:
@@ -95,6 +100,8 @@ def emit(
     event_id: UUID | None = None,
     count: int | None = None,
     bytes: int | None = None,
+    provider: str | None = None,
+    field: str | None = None,
 ) -> None:
     """Append one allowlisted record without delaying or exposing core work.
 
@@ -108,6 +115,8 @@ def emit(
         "decision": decision,
         "reason": reason,
         "error_type": error_type,
+        "provider": provider,
+        "field": field,
     }.items():
         if value is not None:
             fields[name] = value
@@ -140,6 +149,12 @@ def _valid(fields: dict[str, str | int]) -> bool:
     if "reason" in fields and fields["reason"] not in _REASONS:
         return False
     if "error_type" in fields and fields["error_type"] not in _ERROR_TYPES:
+        return False
+    if "provider" in fields and fields["provider"] not in _PROVIDERS:
+        return False
+    if "field" in fields and (
+        not isinstance(fields["field"], str) or _FIELD.fullmatch(fields["field"]) is None
+    ):
         return False
     for name in ("count", "bytes"):
         value = fields.get(name)

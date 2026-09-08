@@ -11,24 +11,6 @@ use uuid::Uuid;
 
 type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;
 
-/// Fields the daemon reads back when it builds the envelope. `cwd` is carried
-/// separately, unredacted, because the daemon needs it verbatim to resolve the
-/// checkout.
-const PROJECTION: [&str; 11] = [
-    "hook_event_name",
-    "tool_name",
-    "tool_use_id",
-    "session_id",
-    "turn_id",
-    "agent_id",
-    "tool_response",
-    "prompt",
-    "tool_input",
-    "last_assistant_message",
-    // Operational metadata only. The daemon, never the hook, opens this file.
-    "transcript_path",
-];
-
 // Loss counter slots, matching agent_watchdog.resources.REASONS.
 const QUOTA: usize = 0;
 const PAYLOAD: usize = 1;
@@ -184,9 +166,9 @@ fn ensure_daemon(paths: &Paths) -> Result<()> {
     Ok(())
 }
 
-/// The whole hook: read the event, redact known secret forms, and durably spool a
-/// content-free-of-secrets record. Checkout resolution, envelope construction,
-/// and per-project quota all move to the daemon's spool drain (WD-027).
+/// The whole hook: redact known secret forms and durably spool the complete
+/// provider input. `cwd` remains a transport field because the daemon needs it
+/// verbatim to resolve the checkout; all semantic projection happens at drain.
 fn observe(paths: &Paths, provider: &str, event_hint: &mut Option<String>) -> Result<()> {
     if paused(paths)? || !paths.config.exists() {
         return Ok(());
@@ -209,25 +191,24 @@ fn observe(paths: &Paths, provider: &str, event_hint: &mut Option<String>) -> Re
     if let Some(name) = identifier(&input, "hook_event_name") {
         *event_hint = Some(name.to_string());
     }
-    let cwd = input["cwd"].as_str().ok_or("missing cwd")?;
-    if !Path::new(cwd).is_absolute() {
+    let cwd = input["cwd"].as_str().ok_or("missing cwd")?.to_owned();
+    if !Path::new(&cwd).is_absolute() {
         return Err("relative cwd".into());
     }
 
     let redact = privacy::Redactor::new()?;
-    let mut projection = serde_json::Map::new();
-    for key in PROJECTION {
-        if let Some(value) = input.get(key) {
-            projection.insert(key.to_string(), redact.value(value));
-        }
-    }
+    let mut forwarded = input;
+    forwarded
+        .as_object_mut()
+        .ok_or("invalid input")?
+        .remove("cwd");
     let record = json!({
         "schema_version": 1,
         "event_id": Uuid::new_v4(),
         "received_at": Utc::now().to_rfc3339_opts(SecondsFormat::Micros, true),
         "provider": provider,
         "cwd": cwd,
-        "input": Value::Object(projection),
+        "input": redact.value(&forwarded),
     });
     let bytes = serde_json::to_vec(&record)?;
 

@@ -104,16 +104,18 @@ not a transactional configuration manager.
 
 ## Adapter behavior
 
-Since WD-027 the native adapter is spool-and-forget. `agent-watchdog hook <codex|claude>`
-reads JSON stdin, redacts known credential forms from a fixed field projection
-(`hook_event_name`, `tool_name`, `tool_use_id`, `session_id`, `turn_id`,
-`agent_id`, `tool_response`, `prompt`, `tool_input`, `last_assistant_message`),
-and durably writes one record — the projection plus a raw `cwd`, an
-adapter-stamped `event_id`, and `received_at` — under `<data>/spool/`. That is the
-whole hook.
+Since WD-027/107 the native adapter is spool-and-forget. `agent-watchdog hook
+<codex|claude>` reads JSON stdin, removes known credential forms recursively from
+the complete provider input, and durably writes that input plus raw `cwd`, an
+adapter-stamped `event_id`, and `received_at` under `<data>/spool/`. `cwd` is kept
+only for checkout resolution. The adapter does not maintain a semantic provider
+field allowlist or normalize provider telemetry.
 
 Checkout resolution, envelope construction, per-project payload/inbox/project
-quota, and inbox admission all run in the daemon's spool drain, once per poll.
+quota, unknown-field warnings, and inbox admission all run in the daemon's spool
+drain, once per poll. A newly seen top-level field is retained in provider metadata
+and emits one bounded WARNING containing the provider and safe field name, never
+its value.
 The drain resolves the spooled `cwd` from filesystem reads — the nearest `.git`
 entry, a worktree `.git` file's `gitdir:` line, and a `commondir` file when
 present — producing the same values as

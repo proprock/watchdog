@@ -41,6 +41,23 @@ Claude desktop uses project-local `.claude/settings.local.json` in a dedicated s
 - Initial Codex hooks failed due to Windows quoting and diagnostic timeouts. Adding `commandWindows` with PowerShell's `&` call operator fixed the quoted executable invocation. Most diagnostic timeouts were raised to 10 seconds; Interrupt/SessionEnd used 3 seconds. This does not validate the production latency target of 250 ms or the planned 2-second timeout.
 - An empty JSON object was exercised as Codex's no-op response, including Stop/SubagentStop. Claude accepted empty stdout. Never return block/continue/context fields in observation mode.
 
+## WD-107 telemetry inventory and gaps
+
+The daemon recognizes current hook identifiers and lifecycle/tool fields, plus
+model and alias, reasoning mode/effort, provider/client version, surface,
+context/cache/token counters, timing, retries, interruptions, permission outcome,
+errors, and parent relations. Values are retained only when a provider actually
+supplies them; absence stays `unknown` or `unavailable`, never zero. The current
+fixtures establish only the fields listed above in the payload findings; they do
+not establish that either provider exposes every telemetry signal on every surface.
+
+An input field outside this inventory remains in provider metadata and produces a
+WARNING with its safe top-level name, so it can be assessed and added deliberately.
+No model-quality, task-progress, or control inference follows from that retention.
+WD-012 must calibrate any later heuristic on 20-50 manually labelled real sessions,
+including sessions with no finding, and report precision plus false positives and
+false negatives. This task authorizes no live provider probe.
+
 ## Process lifetime
 
 `uv run python scripts/detach_probe.py` verifies that a detached Python child with disconnected standard handles responds after its intermediate parent exits, then signals completion within a bounded lifetime.

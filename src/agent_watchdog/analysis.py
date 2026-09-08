@@ -218,8 +218,16 @@ def analyze(
     usage: dict[str, int] = defaultdict(int)
     usage_records = 0
     usage_unavailable = False
+    telemetry_fields: Counter[str] = Counter()
+    unknown_fields: Counter[str] = Counter()
     for event in ordered:
         provider = _provider(event)
+        metadata = provider.get("metadata")
+        if isinstance(metadata, dict):
+            telemetry_fields.update(key for key in metadata if isinstance(key, str))
+        unknown = provider.get("unknown_fields")
+        if isinstance(unknown, list):
+            unknown_fields.update(item for item in unknown if isinstance(item, str))
         if event.kind == "usage":
             record = provider.get("usage")
             delta = record.get("delta") if isinstance(record, dict) else None
@@ -321,6 +329,10 @@ def analyze(
                 "completed": kinds["compaction.end"],
             },
             "usage": {"records": usage_records, "deltas": dict(sorted(usage.items()))},
+            "telemetry": {
+                "observed_fields": dict(sorted(telemetry_fields.items())),
+                "unknown_fields": dict(sorted(unknown_fields.items())),
+            },
         },
         "findings": findings,
         "gaps": gaps,

@@ -68,8 +68,12 @@ Hooks capture native `prompt`, `tool_input`, `tool_response`, and
 registered projects; set `capture_content = false` globally or per project to
 omit text. Codex `transcript_path` is retained as operational reader metadata
 even when text capture is disabled, but enrichment stores only validated numeric
-usage records and never transcript text or raw lines. Other arbitrary native
-fields are not copied.
+usage records and never transcript text or raw lines. Other top-level provider
+fields are retained as redacted metadata even when their schema is not yet known;
+this makes future model, reasoning, context, token, timing, retry, permission,
+error, and lifecycle telemetry recoverable without inventing a value. New field
+names are recorded in `unknown_fields` and a bounded diagnostic WARNING; nested
+tool input/output keys are not treated as provider-schema changes.
 `Inbox.publish` and `Store.put` also sanitize inputs before writing temporary or
 persistent files. Artifact names cannot collide after redaction. Only UTF-8 text
 artifacts are supported, capped at 8 MiB per call before and after redaction.

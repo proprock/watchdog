@@ -94,12 +94,17 @@ time remain nullable when unavailable. Received time and a new event UUID are
 assigned at construction; JSON round trips retain both for replay.
 
 Payloads are empty or namespaced by the provider, for example
-`{"codex": {"hook_event_name": "FutureEvent"}}`. Unknown provider event names can
-be retained with kind `unknown`; that is not a support claim. Unknown envelope
-schema versions are rejected and quarantined by WD-004 ingestion. Availability
-uses `observed`, `inferred`, `unknown`, or `unavailable`, never an invented zero.
-Envelope model serialization alone does not redact content. The WD-007 hook,
-Inbox.publish, and Store.put persistence boundaries apply redaction and size limits.
+`{"codex": {"hook_event_name": "FutureEvent", "metadata": {"model": "..."}}}`.
+The adapter preserves complete redacted provider input; the daemon keeps normalized
+fields at the namespace root and the remaining top-level input in `metadata`.
+`unknown_fields` records top-level names outside the current provider inventory.
+Unknown provider event names can be retained with kind `unknown`; that is not a
+support claim. Unknown envelope schema versions are rejected and quarantined by
+WD-004 ingestion. Availability uses `observed`, `inferred`, `unknown`, or
+`unavailable`, never an invented zero; `input.<field>` identifies observed or
+omitted provider input. Envelope model serialization alone does not redact content.
+The WD-107 adapter, Inbox.publish, and Store.put persistence boundaries apply
+redaction and size limits.
 
 Implementation references: [Pydantic strict validation](https://docs.pydantic.dev/latest/concepts/strict_mode/),
 [platformdirs paths](https://platformdirs.readthedocs.io/en/latest/api.html), and

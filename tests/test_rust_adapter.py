@@ -224,6 +224,10 @@ def test_native_matches_python_event_contract(rust_adapter, native_setup, monkey
         "tool_response": {"output": "Authorization: Basic private-value", "exit_code": 1},
         "last_assistant_message": "-----BEGIN PRIVATE KEY-----\nprivate-value",
         "transcript_path": str(project.root / ".codex" / "rollout.jsonl"),
+        "model": "gpt-test",
+        "reasoning_effort": "high",
+        "input_tokens": 123,
+        "future_metric": {"password": "private-value", "value": 7},
     }
     observe(paths, io.BytesIO(json.dumps(payload).encode()))
     assert invoke(rust_adapter, paths, payload).stdout == "{}\n"
@@ -232,6 +236,13 @@ def test_native_matches_python_event_contract(rust_adapter, native_setup, monkey
     actual = Envelope.model_validate_json(incoming.read_bytes())
     exclude = {"received_at", "event_id"}
     assert actual.model_dump(exclude=exclude) == captured[0].model_dump(exclude=exclude)
+    provider_payload = actual.payload["codex"]
+    assert isinstance(provider_payload, dict)
+    metadata = provider_payload["metadata"]
+    assert isinstance(metadata, dict)
+    assert metadata["model"] == "gpt-test" and metadata["input_tokens"] == 123
+    assert metadata["future_metric"] == {"password": "[REDACTED]", "value": 7}
+    assert provider_payload["unknown_fields"] == ["future_metric"]
 
 
 @pytest.mark.parametrize("lock_name", ["admission.lock", "losses.lock"])

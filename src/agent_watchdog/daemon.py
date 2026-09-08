@@ -483,7 +483,7 @@ def _drain_spool(paths: UserPaths, config: Config, *, limit: int = 100) -> bool:
     envelope construction, and per-project quota all happen here. Returns whether
     any record was processed.
     """
-    from agent_watchdog.hooks import EVENTS, build_envelope
+    from agent_watchdog.hooks import EVENTS, build_envelope, warn_unknown_fields
     from agent_watchdog.privacy import sanitize
 
     spool = paths.data / "spool"
@@ -546,6 +546,16 @@ def _drain_spool(paths: UserPaths, config: Config, *, limit: int = 100) -> bool:
                 provider,
                 event_id=event_id,
                 received_at=received_at,
+            )
+            warn_unknown_fields(
+                paths,
+                config.defaults,
+                payload,
+                provider,
+                component="daemon",
+                event="spool",
+                project_id=project.id,
+                event_id=event_id,
             )
             admitted = _admit(paths, sanitize(event), config)
         except QuotaExceeded:
