@@ -69,10 +69,11 @@ retention and exposes persistent rejection counters in `daemon status`.
 The Python core also keeps a bounded, best-effort diagnostic log at
 `data/watchdog.log`. It rotates to numbered archives according to global
 `[defaults]` `log_files` and `log_bytes`; `log_level = "INFO"` excludes normal
-hot-path DEBUG records. Entries contain only fixed decision codes, bounded numeric
-metadata, and local Watchdog project/event UUIDs. They never contain paths,
-prompts, provider/session IDs, commands, tool output, exception messages, or
-tracebacks; a logging failure never affects daemon or hook behavior.
+hot-path DEBUG records. Entries contain only fixed decision codes, a shape-bounded
+`error_type`/`field`, bounded numeric metadata, and local Watchdog project/event
+UUIDs. They never contain paths, prompts, provider/session IDs, commands, tool
+output, exception messages, or tracebacks; a logging failure never affects daemon
+or hook behavior.
 
 ## Python entry points
 

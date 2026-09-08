@@ -57,10 +57,11 @@ admission, or fail-open behavior.
 `log_level` is global under `[defaults]` and accepts only `DEBUG`, `INFO`,
 `WARNING`, or `ERROR`. Normal hot-path and quiet decisions use `DEBUG`; lifecycle,
 configuration, control, drops, and degradation use higher levels. Log records use
-only fixed component/event/decision/reason codes, nonnegative counts and byte
-sizes, plus Watchdog project/event UUIDs where available. They never include
-prompts, paths, commands, provider/session IDs, payloads, tool input/output,
-exception text, or tracebacks.
+only fixed component/event/decision/reason codes, a shape-bounded `error_type`
+(an exception class name or an internal failure code) and `field` name, nonnegative
+counts and byte sizes, plus Watchdog project/event UUIDs where available. They
+never include prompts, paths, commands, provider/session IDs, payloads, tool
+input/output, exception text, or tracebacks.
 
 Publishers and storage writes/maintenance share `admission.lock`, with a 100 ms
 acquisition timeout. Pending temporary files count; SQLite admission additionally

@@ -582,7 +582,18 @@ def _drain_spool(paths: UserPaths, config: Config, *, limit: int = 100) -> bool:
             with path.open("rb") as stream:
                 data = stream.read(payload_bytes + 1)
             if len(data) > payload_bytes:
-                raise ValueError("Oversized spool record")
+                resources.count_loss(paths.data, "invalid")
+                _log(
+                    paths,
+                    config,
+                    "WARNING",
+                    event="spool",
+                    decision="discarded",
+                    reason="oversized",
+                )
+                _discard(path)
+                activity = True
+                continue
             record = json.loads(data)
             if not isinstance(record, dict) or record.get("schema_version") != 1:
                 raise ValueError("Invalid spool record")
@@ -598,9 +609,17 @@ def _drain_spool(paths: UserPaths, config: Config, *, limit: int = 100) -> bool:
             delivery = record.get("delivery", {})
             if not isinstance(delivery, dict):
                 raise ValueError("Invalid spool delivery telemetry")
-        except (OSError, ValueError, KeyError, TypeError):
+        except (OSError, ValueError, KeyError, TypeError) as error:
             resources.count_loss(paths.data, "invalid")
-            _log(paths, config, "WARNING", event="spool", decision="discarded", reason="invalid")
+            _log(
+                paths,
+                config,
+                "WARNING",
+                event="spool",
+                decision="discarded",
+                reason="invalid",
+                error_type=error_code(error),
+            )
             _discard(path)
             activity = True
             continue
@@ -667,7 +686,14 @@ def _drain_spool(paths: UserPaths, config: Config, *, limit: int = 100) -> bool:
                 event_id=event_id,
             )
             continue  # Transient; retry on the next poll.
-        except (ValidationError, RejectedEvent, StorageError, ValueError, KeyError, TypeError):
+        except (
+            ValidationError,
+            RejectedEvent,
+            StorageError,
+            ValueError,
+            KeyError,
+            TypeError,
+        ) as error:
             resources.count_loss(paths.data, "invalid")
             _log(
                 paths,
@@ -676,6 +702,7 @@ def _drain_spool(paths: UserPaths, config: Config, *, limit: int = 100) -> bool:
                 event="spool",
                 decision="discarded",
                 reason="invalid",
+                error_type=error_code(error),
                 project_id=project.id,
                 event_id=event_id,
             )
@@ -755,8 +782,15 @@ def _poll(paths: UserPaths, owner: ExitStack) -> None:
                     write_spool_limits(paths, config)
                     spool_mtime = mtime
                     _log(paths, config, "INFO", event="configuration", decision="reloaded")
-                except OSError:
-                    _log(paths, config, "WARNING", event="configuration", decision="deferred")
+                except OSError as error:
+                    _log(
+                        paths,
+                        config,
+                        "WARNING",
+                        event="configuration",
+                        decision="deferred",
+                        error_type=error_code(error),
+                    )
                     pass
             if _drain_spool(paths, config):
                 activity = True
@@ -816,7 +850,7 @@ def _poll(paths: UserPaths, owner: ExitStack) -> None:
                     activity |= bool(
                         result.inserted + result.duplicates + result.quarantined + result.discarded
                     )
-                except (OSError, StorageError, sqlite3.Error):
+                except (OSError, StorageError, sqlite3.Error) as error:
                     if len(errors) < 32:
                         errors.append(str(project.id))
                     _log(
@@ -825,11 +859,19 @@ def _poll(paths: UserPaths, owner: ExitStack) -> None:
                         "WARNING",
                         event="project",
                         decision="degraded",
+                        error_type=error_code(error),
                         project_id=project.id,
                     )
-        except ConfigError:
+        except ConfigError as error:
             errors.append("configuration")
-            _log(paths, None, "ERROR", event="configuration", decision="invalid")
+            _log(
+                paths,
+                None,
+                "ERROR",
+                event="configuration",
+                decision="invalid",
+                error_type=error_code(error),
+            )
         atomic_write(
             paths.runtime / "status.json",
             json.dumps(

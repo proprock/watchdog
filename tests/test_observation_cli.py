@@ -99,6 +99,14 @@ def test_project_aliases_are_case_sensitive_and_resolve_duplicates_cwd_and_uuid_
     }
 
 
+def test_failed_command_log_names_the_error_category(tmp_path, monkeypatch, capsys):
+    home = tmp_path / "state"
+    code, error = invoke(monkeypatch, capsys, home, "sessions", "list", "--project", "missing")
+    assert code == 1 and error["error"] == "StorageError"
+    body = (home / "data" / "watchdog.log").read_text(encoding="ascii")
+    assert "component=cli event=command decision=failed error_type=storageerror" in body
+
+
 def test_doctor_does_not_initialize_fresh_home(tmp_path, monkeypatch, capsys):
     home = tmp_path / "absent"
     code, report = invoke(monkeypatch, capsys, home, "doctor")

@@ -18,19 +18,34 @@ from agent_watchdog.config import (
     project_for_reference,
     user_paths,
 )
-from agent_watchdog.diagnostics import Level, emit
+from agent_watchdog.diagnostics import Level, emit, error_code
 from agent_watchdog.hook_install import change
 from agent_watchdog.hooks import observe
 from agent_watchdog.registry import RegistryError
 from agent_watchdog.storage import StorageError
 
 
-def _log(paths: UserPaths, level: Level, *, event: str, decision: str) -> None:
+def _log(
+    paths: UserPaths,
+    level: Level,
+    *,
+    event: str,
+    decision: str,
+    error_type: str | None = None,
+) -> None:
     try:
         limits = load_config(paths.config).defaults
     except ConfigError:
         limits = Limits()
-    emit(paths.data, limits, level, component="cli", event=event, decision=decision)
+    emit(
+        paths.data,
+        limits,
+        level,
+        component="cli",
+        event=event,
+        decision=decision,
+        error_type=error_type,
+    )
 
 
 def _project_record(project: Project, aliases: dict[UUID, str]) -> dict:
@@ -308,11 +323,23 @@ def main() -> int:
                 return 1
             time.sleep(0.05)
     except (StorageError, RegistryError) as error:
-        _log(paths, "WARNING", event="command", decision="failed")
+        _log(
+            paths,
+            "WARNING",
+            event="command",
+            decision="failed",
+            error_type=error_code(error),
+        )
         print(json.dumps({"error": type(error).__name__, "message": str(error)}))
         return 1
     except (OSError, ValueError, sqlite3.Error) as error:
-        _log(paths, "ERROR", event="command", decision="failed")
+        _log(
+            paths,
+            "ERROR",
+            event="command",
+            decision="failed",
+            error_type=error_code(error),
+        )
         print(json.dumps({"error": type(error).__name__}))
         return 1
     except KeyboardInterrupt:

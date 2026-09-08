@@ -5,7 +5,7 @@ import pytest
 from pydantic import ValidationError
 
 from agent_watchdog.config import Config, Limits, Overrides
-from agent_watchdog.diagnostics import emit
+from agent_watchdog.diagnostics import emit, error_code
 
 
 def records(data):
@@ -71,6 +71,60 @@ def test_concurrent_writers_leave_complete_lines(tmp_path):
     lines = (tmp_path / "watchdog.log").read_text(encoding="ascii").splitlines()
     assert 1 <= len(lines) <= 40
     assert all(line.startswith("timestamp=") and " event=poll count=" in line for line in lines)
+
+
+def test_acknowledged_and_unavailable_decisions_reach_the_log(tmp_path):
+    limits = Limits(log_level="DEBUG")
+    emit(tmp_path, limits, "INFO", component="daemon", event="control", decision="acknowledged")
+    emit(
+        tmp_path,
+        limits,
+        "WARNING",
+        component="daemon",
+        event="enrichment",
+        decision="unavailable",
+        error_type="transcript_sources_unavailable",
+    )
+    body = (tmp_path / "watchdog.log").read_text(encoding="ascii")
+    assert "event=control decision=acknowledged" in body
+    assert "event=enrichment decision=unavailable error_type=transcript_sources_unavailable" in body
+
+
+def test_error_type_accepts_internal_codes_but_rejects_free_text(tmp_path):
+    limits = Limits(log_level="DEBUG")
+    emit(
+        tmp_path,
+        limits,
+        "WARNING",
+        component="daemon",
+        event="spool",
+        decision="discarded",
+        error_type="usage_counter_reset",
+    )
+    for rejected in ("Traceback (most recent call last)", "C:/secret/path", "x" * 64):
+        emit(
+            tmp_path,
+            limits,
+            "WARNING",
+            component="daemon",
+            event="spool",
+            decision="discarded",
+            error_type=rejected,
+        )
+    lines = (tmp_path / "watchdog.log").read_text(encoding="ascii").splitlines()
+    assert len(lines) == 1
+    assert lines[0].endswith("error_type=usage_counter_reset")
+
+
+def test_error_code_preserves_the_exception_class_name(tmp_path):
+    class TranscriptUnreadable(Exception):
+        pass
+
+    assert error_code(TranscriptUnreadable()) == "transcriptunreadable"
+    assert error_code(ValueError("boom")) == "valueerror"
+
+    weird = type("Weird Name!", (Exception,), {})
+    assert error_code(weird()) == "unexpected"
 
 
 def test_log_level_is_strict_and_log_limits_are_not_project_overrides():

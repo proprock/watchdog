@@ -42,6 +42,7 @@ _EVENTS = {
     "spool",
 }
 _DECISIONS = {
+    "acknowledged",
     "active",
     "admitted",
     "already_running",
@@ -61,29 +62,27 @@ _DECISIONS = {
     "retry",
     "started",
     "stopped",
+    "unavailable",
     "unregistered",
 }
 _REASONS = {"invalid", "linked", "oversized", "quota", "unknown_field", "writer_busy"}
-_ERROR_TYPES = {
-    "keyerror",
-    "operationalerror",
-    "oserror",
-    "registryerror",
-    "rejectedevent",
-    "storageerror",
-    "typeerror",
-    "unexpected",
-    "validationerror",
-    "valueerror",
-}
 _PROVIDERS = {"codex", "claude"}
 _FIELD = re.compile(r"[A-Za-z][A-Za-z0-9_.-]{0,63}")
+# An error category is a short, content-free code: either an exception class name
+# or an internal failure Literal. Its shape is bounded here, like ``field``; the
+# value never carries exception text, paths, or payload data.
+_ERROR_TYPE = re.compile(r"[a-z][a-z0-9_]{0,47}")
 
 
 def error_code(error: BaseException) -> str:
-    """Return a fixed error category without retaining exception text."""
+    """Return the exception class name as a content-free category.
+
+    Class names are source identifiers, never user data, so keeping the real name
+    (instead of collapsing unknown types to ``unexpected``) gives an investigation
+    a starting point without exposing the exception message.
+    """
     name = type(error).__name__.lower()
-    return name if name in _ERROR_TYPES else "unexpected"
+    return name if _ERROR_TYPE.fullmatch(name) else "unexpected"
 
 
 def emit(
@@ -105,8 +104,11 @@ def emit(
 ) -> None:
     """Append one allowlisted record without delaying or exposing core work.
 
-    The interface intentionally accepts no free-form data.  All strings are fixed
-    implementation codes, while IDs are Watchdog UUIDs created or persisted here.
+    The interface intentionally accepts no free-form data.  ``component``,
+    ``event``, ``decision``, ``reason`` and ``provider`` are closed allowlists;
+    ``error_type`` and ``field`` are shape-bounded identifiers (an exception class
+    name, an internal Literal, or an observed field name, never exception text or a
+    path); IDs are Watchdog UUIDs created or persisted here.
     """
     if _RANK[level] < _RANK[limits.log_level]:
         return
@@ -148,7 +150,10 @@ def _valid(fields: dict[str, str | int]) -> bool:
         return False
     if "reason" in fields and fields["reason"] not in _REASONS:
         return False
-    if "error_type" in fields and fields["error_type"] not in _ERROR_TYPES:
+    if "error_type" in fields and (
+        not isinstance(fields["error_type"], str)
+        or _ERROR_TYPE.fullmatch(fields["error_type"]) is None
+    ):
         return False
     if "provider" in fields and fields["provider"] not in _PROVIDERS:
         return False

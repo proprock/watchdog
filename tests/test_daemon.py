@@ -171,6 +171,35 @@ def test_invalid_spool_log_uses_a_fixed_reason_without_record_content(paths):
     assert secret not in body
 
 
+def test_invalid_spool_log_names_the_error_category(paths):
+    config = Config(defaults=Limits(log_level="DEBUG"))
+    paths.data.joinpath("spool").mkdir(parents=True)
+    (paths.data / "spool" / "broken.json").write_text("not json", encoding="utf-8")
+
+    assert _drain_spool(paths, config) is True
+
+    body = (paths.data / "watchdog.log").read_text(encoding="ascii")
+    assert (
+        "component=daemon event=spool decision=discarded reason=invalid error_type=jsondecodeerror"
+        in body
+    )
+
+
+def test_oversized_spool_record_is_discarded_with_a_size_reason(paths, tmp_path):
+    root = tmp_path / "project"
+    root.mkdir()
+    mutate_registry(paths, lambda registry: registry.add(root))
+    config = load_config(paths.config).model_copy(update={"defaults": Limits(log_level="DEBUG")})
+    record = spool_record(root, hook_event_name="Stop", filler="x" * (1024**2 + 128))
+    write_spool_record(paths, record)
+
+    assert _drain_spool(paths, config) is True
+
+    assert not list((paths.data / "spool").glob("*.json"))
+    body = (paths.data / "watchdog.log").read_text(encoding="ascii")
+    assert "component=daemon event=spool decision=discarded reason=oversized" in body
+
+
 def test_spool_trusted_git_project_is_auto_added_and_admitted(paths, tmp_path):
     trusted = tmp_path / "repos"
     repository = trusted / "new-project"

@@ -298,6 +298,7 @@ def observe(paths: UserPaths, stream: BinaryIO, provider: str = "codex") -> None
                 event="observe",
                 decision="discarded",
                 reason="invalid",
+                field="cwd",
             )
             return
         input_payload = redact({key: value for key, value in payload.items() if key != "cwd"})
