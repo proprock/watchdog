@@ -37,6 +37,11 @@ Milestones: ROADMAP.md
 - Strings/config/docs and fallback after insufficient semantic results: use rg. Do not index an empty foundation merely for formality.
 - Serena and codebase-memory are development tools, not runtime dependencies. Do not commit machine-specific paths or secrets.
 
+# Known environment issues
+
+- The managed sandbox can deny creation of `.git\\index.lock`. When staging is needed, request the approved elevated `git add` execution first; do not waste a normal staging attempt.
+- The managed sandbox can deny `Get-CimInstance Win32_Process`. For a justified owned-process or live-daemon check, request elevated read-only process inspection first; never use it to stop an unverified process.
+
 # Invariants
 
 - Observation hooks do not block, continue a turn, or inject model context. Watchdog failures must not stop the harness.
