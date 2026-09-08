@@ -10,7 +10,7 @@ from uuid import uuid4
 import pytest
 
 from agent_watchdog.events import Envelope
-from agent_watchdog.storage import Inbox, StorageError, Store, WriterBusy, writer_lock
+from agent_watchdog.storage import Inbox, StorageError, Store, WriterBusy, canonical, writer_lock
 
 
 @pytest.mark.skipif(os.name != "nt", reason="Windows byte-range lock initialization")
@@ -44,6 +44,11 @@ def test_publish_replay_and_reopen(tmp_path, event):
     assert not first.exists() and not second.exists()
     with Store(tmp_path, event.project_id) as reopened:
         assert reopened.events() == [event]
+
+
+def test_empty_delivery_keeps_legacy_canonical_document(event):
+    document = json.loads(canonical(event))
+    assert "delivery" not in document
 
 
 def test_partial_publish_is_not_visible_and_replace_failure_cleans_up(tmp_path, event, monkeypatch):

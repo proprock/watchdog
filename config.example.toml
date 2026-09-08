@@ -4,6 +4,8 @@
 schema_version = 1
 projects = []
 auto_add_projects = false
+# Record adapter and spool timing/occupancy metadata for delivery diagnostics.
+pipeline_telemetry = true
 
 [defaults]
 # Capture selected prompt, tool, and assistant text after redaction. Set false to

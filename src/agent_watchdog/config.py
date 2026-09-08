@@ -107,6 +107,7 @@ class Config(Versioned):
     defaults: Limits = Field(default_factory=Limits)
     projects: tuple[Project, ...] = ()
     auto_add_projects: bool = False
+    pipeline_telemetry: bool = True
     trusted_projects_dir: Path | None = None
 
     @field_validator("trusted_projects_dir")

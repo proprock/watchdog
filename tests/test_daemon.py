@@ -79,6 +79,46 @@ def test_spool_record_is_resolved_built_and_admitted(paths, tmp_path):
     assert "explain code" in envelope.model_dump_json()
 
 
+def test_spool_drain_preserves_enabled_delivery_trace_and_disabled_omits_it(paths, tmp_path):
+    root = tmp_path / "project"
+    root.mkdir()
+    mutate_registry(paths, lambda registry: registry.add(root))
+    config = load_config(paths.config)
+    project = config.projects[0]
+    record = spool_record(root, hook_event_name="Stop", session_id="s1")
+    record["delivery"] = {
+        "adapter_started_at": "2026-09-08T00:00:00+00:00",
+        "spool_enqueued_at": "2026-09-08T00:00:01+00:00",
+        "spool_occupancy": {"files": 0, "bytes": 0},
+    }
+    write_spool_record(paths, record)
+
+    assert _drain_spool(paths, config)
+    incoming = next((paths.project_data(project.id) / "inbox").glob("*.json"))
+    traced = Envelope.model_validate_json(incoming.read_bytes())
+    assert set(traced.delivery) == {
+        "adapter_started_at",
+        "spool_enqueued_at",
+        "spool_occupancy",
+        "spool_drained_at",
+        "inbox_enqueued_at",
+        "inbox_occupancy",
+    }
+    with Store(paths.project_data(project.id), project.id) as store:
+        assert (
+            Inbox(paths.project_data(project.id)).drain(store, pipeline_telemetry=True).inserted
+            == 1
+        )
+        stored = store.events()[0]
+    assert {"inbox_drained_at", "sqlite_write_started_at"} <= set(stored.delivery)
+
+    disabled = config.model_copy(update={"pipeline_telemetry": False})
+    write_spool_record(paths, record | {"event_id": str(uuid4())})
+    assert _drain_spool(paths, disabled)
+    incoming = next((paths.project_data(project.id) / "inbox").glob("*.json"))
+    assert Envelope.model_validate_json(incoming.read_bytes()).delivery == {}
+
+
 def test_spool_drain_records_a_debounced_content_free_diff_fingerprint(
     paths, tmp_path, monkeypatch
 ):
@@ -340,6 +380,24 @@ def test_stale_heartbeat_under_a_held_lock_is_degraded(paths):
         assert status(paths)["state"] == "degraded"
         assert status(paths)["alive"]
     assert status(paths)["state"] == "unavailable"
+
+
+def test_status_reports_current_queue_occupancy(paths, tmp_path):
+    root = tmp_path / "project"
+    root.mkdir()
+    mutate_registry(paths, lambda registry: registry.add(root))
+    config = load_config(paths.config)
+    project = config.projects[0]
+    Inbox(paths.project_data(project.id)).publish(
+        Envelope(project_id=project.id, provider="codex", kind="unknown", source="hook")
+    )
+
+    queues = status(paths)["queues"]
+    assert queues["spool"]["files"] == 0
+    inbox = queues["projects"][str(project.id)]
+    assert inbox["files"] == 1 and inbox["bytes"] > 0
+    assert inbox["byte_limit"] == config.defaults.inbox_bytes
+    assert inbox["file_limit"] is None
 
 
 def test_hook_start_contention_is_bounded(paths):

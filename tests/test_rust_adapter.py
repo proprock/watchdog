@@ -3,6 +3,7 @@ import json
 import os
 import subprocess
 import sys
+from datetime import UTC, datetime
 from pathlib import Path
 from uuid import uuid4
 
@@ -128,6 +129,69 @@ def test_native_spools_then_daemon_resolves_and_admits(rust_adapter, native_setu
         assert store.events() == [envelope]
 
 
+def test_native_v1_limits_default_pipeline_telemetry_and_sample_spool_occupancy(
+    rust_adapter, native_setup
+):
+    paths, project = native_setup
+    spool = paths.data / "spool"
+    spool.mkdir()
+    (spool / "limits.json").write_text(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "payload_bytes": 1024 * 1024,
+                "spool_bytes": 64 * 1024 * 1024,
+                "spool_files": 4096,
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    first_id = "first"
+    assert (
+        invoke(rust_adapter, paths, {"cwd": str(project.root), "session_id": first_id}).stdout
+        == "{}\n"
+    )
+    first_path = spool_files(paths)[0]
+    first = json.loads(first_path.read_bytes())
+    assert set(first["delivery"]) == {
+        "adapter_started_at",
+        "spool_enqueued_at",
+        "spool_occupancy",
+    }
+    adapter_started_at = datetime.fromisoformat(first["delivery"]["adapter_started_at"])
+    spool_enqueued_at = datetime.fromisoformat(first["delivery"]["spool_enqueued_at"])
+    assert adapter_started_at.tzinfo == UTC
+    assert spool_enqueued_at.tzinfo == UTC
+    assert adapter_started_at <= spool_enqueued_at
+    assert first["delivery"]["spool_occupancy"] == {"files": 0, "bytes": 0}
+
+    assert (
+        invoke(rust_adapter, paths, {"cwd": str(project.root), "session_id": "second"}).stdout
+        == "{}\n"
+    )
+    second = next(
+        json.loads(path.read_bytes())
+        for path in spool_files(paths)
+        if json.loads(path.read_bytes())["input"]["session_id"] == "second"
+    )
+    assert second["delivery"]["spool_occupancy"] == {
+        "files": 1,
+        "bytes": first_path.stat().st_size,
+    }
+
+
+def test_native_omits_pipeline_telemetry_when_disabled(rust_adapter, native_setup):
+    paths, project = native_setup
+    config = Config(projects=(project,), pipeline_telemetry=False)
+    save_config(paths.config, config)
+    write_spool_limits(paths, config)
+
+    assert invoke(rust_adapter, paths, {"cwd": str(project.root)}).stdout == "{}\n"
+    record = json.loads(spool_files(paths)[0].read_bytes())
+    assert "delivery" not in record
+
+
 def test_native_pause_and_config_opt_out(rust_adapter, native_setup):
     from agent_watchdog.daemon import set_desired
 
@@ -234,7 +298,7 @@ def test_native_matches_python_event_contract(rust_adapter, native_setup, monkey
     drain_spool(paths)
     incoming = inbox_files(paths, project)[0]
     actual = Envelope.model_validate_json(incoming.read_bytes())
-    exclude = {"received_at", "event_id"}
+    exclude = {"received_at", "event_id", "delivery"}
     assert actual.model_dump(exclude=exclude) == captured[0].model_dump(exclude=exclude)
     provider_payload = actual.payload["codex"]
     assert isinstance(provider_payload, dict)
@@ -441,7 +505,7 @@ def test_native_matches_python_claude_contract(rust_adapter, native_setup, monke
     drain_spool(paths)
     incoming = inbox_files(paths, project)[0]
     actual = Envelope.model_validate_json(incoming.read_bytes())
-    exclude = {"received_at", "event_id"}
+    exclude = {"received_at", "event_id", "delivery"}
     assert actual.model_dump(exclude=exclude) == captured[0].model_dump(exclude=exclude)
     assert actual.provider == "claude" and "claude" in actual.payload
 

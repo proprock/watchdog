@@ -5,10 +5,11 @@ import json
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Literal
 from uuid import NAMESPACE_URL, uuid5
 
 from agent_watchdog.events import Availability, Envelope
+from agent_watchdog.storage import RejectedEvent, StorageError
 
 if TYPE_CHECKING:
     from agent_watchdog.storage import Store
@@ -25,6 +26,45 @@ COUNTERS = (
     "total_tokens",
 )
 
+TranscriptFailureCode = Literal[
+    "rollout_line_invalid",
+    "rollout_record_invalid",
+    "session_meta_mismatch",
+    "session_meta_missing",
+    "session_meta_version_missing",
+    "thread_usage_invalid",
+    "thread_usage_missing",
+    "thread_usage_total_missing",
+    "transcript_source_invalid",
+    "transcript_sources_unavailable",
+    "transcript_path_not_regular",
+    "transcript_unreadable",
+    "usage_record_invalid",
+    "usage_response_missing",
+    "usage_session_mismatch",
+    "usage_counter_reset",
+]
+FAILURE_CODES: frozenset[str] = frozenset(
+    {
+        "rollout_line_invalid",
+        "rollout_record_invalid",
+        "session_meta_mismatch",
+        "session_meta_missing",
+        "session_meta_version_missing",
+        "thread_usage_invalid",
+        "thread_usage_missing",
+        "thread_usage_total_missing",
+        "transcript_source_invalid",
+        "transcript_sources_unavailable",
+        "transcript_path_not_regular",
+        "transcript_unreadable",
+        "usage_record_invalid",
+        "usage_response_missing",
+        "usage_session_mismatch",
+        "usage_counter_reset",
+    }
+)
+
 
 @dataclass(frozen=True)
 class TranscriptSource:
@@ -33,8 +73,22 @@ class TranscriptSource:
     path: str
 
 
+@dataclass(frozen=True)
+class EnrichmentResult:
+    accepted: int = 0
+    failures: tuple[TranscriptFailureCode, ...] = ()
+
+    def __bool__(self) -> bool:
+        """Report activity only when new usage observations were accepted."""
+        return self.accepted > 0
+
+
 class UnsupportedTranscript(ValueError):
-    pass
+    def __init__(self, code: TranscriptFailureCode) -> None:
+        if code not in FAILURE_CODES:
+            code = "transcript_source_invalid"
+        self.code = code
+        super().__init__(code)
 
 
 def source_from_hook(event: Envelope) -> TranscriptSource | None:
@@ -213,50 +267,78 @@ def _load_counters(value: object) -> dict[str, int | None] | None:
         return None
 
 
-def _process_source(store: "Store", source: dict[str, object]) -> int:
+def _update_failure(
+    store: "Store",
+    source: dict[str, object],
+    code: TranscriptFailureCode,
+    signature: str,
+    *,
+    device: int | None = None,
+    inode: int | None = None,
+    size: int | None = None,
+    mtime: int | None = None,
+) -> bool:
+    changed = source["last_error"] != code or source["error_signature"] != signature
+    if not changed:
+        return False
+    _gap(store, source, code, signature)
+    store.update_transcript_source(
+        source,
+        reader=None,
+        device=device,
+        inode=inode,
+        size=size,
+        mtime=mtime,
+        offset=0,
+        tail=b"",
+        counters=_load_counters(source["counters"]),
+        last_error=code,
+        error_signature=signature,
+    )
+    return True
+
+
+def _normalize_source(value: object) -> dict[str, object]:
+    if not isinstance(value, dict):
+        raise UnsupportedTranscript("transcript_source_invalid")
+    source = value.copy()
+    provider = source.get("provider")
+    session_id = source.get("session_id")
+    path_value = source.get("path")
+    if (
+        provider != "codex"
+        or not isinstance(session_id, str)
+        or not session_id
+        or not isinstance(path_value, str)
+        or not path_value
+        or len(path_value) > 4096
+        or not Path(path_value).is_absolute()
+    ):
+        raise UnsupportedTranscript("transcript_source_invalid")
+    for name in ("reader", "device", "inode", "size", "mtime", "counters", "last_error"):
+        source.setdefault(name, None)
+    source.setdefault("offset", 0)
+    source.setdefault("tail", b"")
+    source.setdefault("error_signature", None)
+    return source
+
+
+def _process_source(store: "Store", source: dict[str, object]) -> EnrichmentResult:
     path = Path(str(source["path"]))
     try:
         device, inode, size, mtime = _signature(path)
     except OSError:
-        reason, signature = "transcript_unreadable", "unreadable"
-        if source["last_error"] != reason or source["error_signature"] != signature:
-            _gap(store, source, reason, signature)
-        store.update_transcript_source(
-            source,
-            reader=None,
-            device=None,
-            inode=None,
-            size=None,
-            mtime=None,
-            offset=0,
-            tail=b"",
-            counters=_load_counters(source["counters"]),
-            last_error=reason,
-            error_signature=signature,
-        )
-        return 0
+        changed = _update_failure(store, source, "transcript_unreadable", "unreadable")
+        failures = ("transcript_unreadable",) if changed else ()
+        return EnrichmentResult(failures=failures)
     except UnsupportedTranscript as error:
-        reason, signature = str(error), "invalid"
-        if source["last_error"] != reason or source["error_signature"] != signature:
-            _gap(store, source, reason, signature)
-        store.update_transcript_source(
-            source,
-            reader=None,
-            device=None,
-            inode=None,
-            size=None,
-            mtime=None,
-            offset=0,
-            tail=b"",
-            counters=_load_counters(source["counters"]),
-            last_error=reason,
-            error_signature=signature,
-        )
-        return 0
+        changed = _update_failure(store, source, error.code, "invalid")
+        failures = (error.code,) if changed else ()
+        return EnrichmentResult(failures=failures)
 
     signature = f"{device}:{inode}:{size}:{mtime}"
     if source["last_error"] and source["error_signature"] == signature:
-        return 0
+        return EnrichmentResult()
     stored_offset = source["offset"]
     offset = stored_offset if type(stored_offset) is int and stored_offset >= 0 else 0
     tail = source["tail"] if isinstance(source["tail"], bytes) else b""
@@ -273,19 +355,44 @@ def _process_source(store: "Store", source: dict[str, object]) -> int:
             stream.seek(offset)
             raw = stream.read(READ_BYTES)
     except OSError:
-        return 0
+        changed = _update_failure(
+            store,
+            source,
+            "transcript_unreadable",
+            signature,
+            device=device,
+            inode=inode,
+            size=size,
+            mtime=mtime,
+        )
+        failures = ("transcript_unreadable",) if changed else ()
+        return EnrichmentResult(failures=failures)
     if not raw:
-        return 0
+        return EnrichmentResult()
     content = tail + raw
     lines = content.splitlines(keepends=True)
     if lines and not lines[-1].endswith((b"\n", b"\r")):
         tail = lines.pop()
     else:
         tail = b""
+    if len(tail) > 1024**2:
+        changed = _update_failure(
+            store,
+            source,
+            "rollout_line_invalid",
+            signature,
+            device=device,
+            inode=inode,
+            size=size,
+            mtime=mtime,
+        )
+        failures = ("rollout_line_invalid",) if changed else ()
+        return EnrichmentResult(failures=failures)
     line_offset = offset - len(source["tail"] if isinstance(source["tail"], bytes) else b"")
     counters = _load_counters(source["counters"])
     accepted = 0
-    error: str | None = None
+    error: TranscriptFailureCode | None = None
+    failures: list[TranscriptFailureCode] = []
     try:
         for line in lines:
             current_offset = line_offset
@@ -306,6 +413,7 @@ def _process_source(store: "Store", source: dict[str, object]) -> int:
             delta, reset = _delta(counters, current)
             if reset:
                 _gap(store, source, "usage_counter_reset", signature)
+                failures.append("usage_counter_reset")
             store.put(
                 _usage_event(
                     store,
@@ -321,9 +429,10 @@ def _process_source(store: "Store", source: dict[str, object]) -> int:
             counters = current
             accepted += 1
     except UnsupportedTranscript as exc:
-        error = str(exc)
+        error = exc.code
         if source["last_error"] != error or source["error_signature"] != signature:
             _gap(store, source, error, signature)
+            failures.append(error)
         reader = None
     store.update_transcript_source(
         source,
@@ -338,9 +447,61 @@ def _process_source(store: "Store", source: dict[str, object]) -> int:
         last_error=error,
         error_signature=signature if error else None,
     )
-    return accepted
+    return EnrichmentResult(accepted=accepted, failures=tuple(failures))
 
 
-def enrich(store: "Store") -> int:
+def _unexpected_source_failure(store: "Store", source: dict[str, object]) -> EnrichmentResult:
+    try:
+        device, inode, size, mtime = _signature(Path(str(source["path"])))
+        signature = f"{device}:{inode}:{size}:{mtime}"
+    except (OSError, UnsupportedTranscript, ValueError):
+        device, inode, size, mtime = None, None, None, None
+        signature = "invalid"
+    changed = _update_failure(
+        store,
+        source,
+        "transcript_source_invalid",
+        signature,
+        device=device,
+        inode=inode,
+        size=size,
+        mtime=mtime,
+    )
+    failures = ("transcript_source_invalid",) if changed else ()
+    return EnrichmentResult(failures=failures)
+
+
+def enrich(store: "Store") -> EnrichmentResult:
     """Read bounded deltas from known Codex transcript paths in the daemon only."""
-    return sum(_process_source(store, source) for source in store.transcript_sources())
+    try:
+        sources = store.transcript_sources()
+    except StorageError:
+        raise
+    except (OSError, KeyError, TypeError, ValueError):
+        return EnrichmentResult(failures=("transcript_sources_unavailable",))
+
+    accepted = 0
+    failures: list[TranscriptFailureCode] = []
+    for value in sources:
+        try:
+            source = _normalize_source(value)
+        except UnsupportedTranscript as error:
+            failures.append(error.code)
+            continue
+        try:
+            result = _process_source(store, source)
+        except RejectedEvent:
+            # A deterministic transcript-derived event can conflict with an
+            # older receipt after a provider format change.  This affects only
+            # this enrichment source; hook ingestion and other sources remain
+            # available. Do not surface its message or transcript details.
+            result = EnrichmentResult(failures=("transcript_source_invalid",))
+        except StorageError:
+            raise
+        except (OSError, KeyError, TypeError, ValueError):
+            result = _unexpected_source_failure(store, source)
+        accepted += result.accepted
+        for code in result.failures:
+            if code not in failures:
+                failures.append(code)
+    return EnrichmentResult(accepted=accepted, failures=tuple(failures))

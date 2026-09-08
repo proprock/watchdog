@@ -6,7 +6,7 @@ import re
 import subprocess
 from collections import Counter, defaultdict
 from collections.abc import Iterable, Mapping
-from datetime import datetime
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -16,6 +16,23 @@ from agent_watchdog.events import Envelope
 REPORT_SCHEMA_VERSION = 1
 RULE_VERSION = "wd-010.v1"
 REPETITION_THRESHOLD = 3
+TELEMETRY_SCHEMA_VERSION = 1
+_DELIVERY_TIMESTAMPS = (
+    "adapter_started_at",
+    "spool_enqueued_at",
+    "spool_drained_at",
+    "inbox_enqueued_at",
+    "inbox_drained_at",
+    "sqlite_write_started_at",
+)
+_PIPELINE_STAGES = {
+    "adapter_to_spool": ("adapter_started_at", "spool_enqueued_at"),
+    "spool_queue": ("spool_enqueued_at", "spool_drained_at"),
+    "spool_to_inbox": ("spool_drained_at", "inbox_enqueued_at"),
+    "inbox_queue": ("inbox_enqueued_at", "inbox_drained_at"),
+    "inbox_to_sqlite": ("inbox_drained_at", "sqlite_write_started_at"),
+    "end_to_end": ("adapter_started_at", "sqlite_write_started_at"),
+}
 _PYTEST_FAILURE = re.compile(r"^FAILED\s+([^\s]+)", re.MULTILINE)
 _JUNIT_FAILURE = re.compile(
     r"<testcase\b[^>]*(?:classname=[\"']([^\"']*)[\"'])?[^>]*"
@@ -30,6 +47,181 @@ def _canonical(value: object) -> str:
 
 def _fingerprint(value: object) -> str:
     return hashlib.sha256(_canonical(value).encode("utf-8")).hexdigest()
+
+
+def _nearest_rank(values: Iterable[float | int]) -> dict[str, float | int | None]:
+    ordered = sorted(values)
+    if not ordered:
+        return {"p50": None, "p95": None, "p99": None, "max": None}
+
+    def percentile(numerator: int) -> float | int:
+        rank = max(1, (numerator * len(ordered) + 99) // 100)
+        return ordered[rank - 1]
+
+    return {
+        "p50": percentile(50),
+        "p95": percentile(95),
+        "p99": percentile(99),
+        "max": ordered[-1],
+    }
+
+
+def _delivery_timestamp(value: object) -> tuple[str, datetime | None]:
+    if value is None:
+        return "missing", None
+    if not isinstance(value, str):
+        return "invalid", None
+    try:
+        parsed = datetime.fromisoformat(value)
+    except ValueError:
+        return "invalid", None
+    if parsed.tzinfo is None or parsed.utcoffset() is None:
+        return "invalid", None
+    return "observed", parsed.astimezone(UTC)
+
+
+def _occupancy_sample(delivery: Mapping[str, Any], name: str) -> tuple[str, tuple[int, int] | None]:
+    value = delivery.get(f"{name}_occupancy", delivery.get(f"{name}_queue"))
+    if value is None:
+        return "missing", None
+    if not isinstance(value, Mapping):
+        return "invalid", None
+    files = value.get("files")
+    byte_count = value.get("bytes")
+    if (
+        not isinstance(files, int)
+        or isinstance(files, bool)
+        or files < 0
+        or not isinstance(byte_count, int)
+        or isinstance(byte_count, bool)
+        or byte_count < 0
+    ):
+        return "invalid", None
+    return "observed", (files, byte_count)
+
+
+def analyze_telemetry(events: Iterable[Envelope]) -> dict[str, Any]:
+    """Summarize content-free delivery telemetry from persisted envelopes."""
+    ordered = sorted(events, key=lambda event: (event.received_at, str(event.event_id)))
+    timestamp_counts = {
+        name: Counter({"observed": 0, "missing": 0, "invalid": 0}) for name in _DELIVERY_TIMESTAMPS
+    }
+    stage_values: dict[str, list[float]] = {name: [] for name in _PIPELINE_STAGES}
+    stage_counts = {
+        name: Counter({"missing": 0, "invalid": 0, "out_of_order": 0}) for name in _PIPELINE_STAGES
+    }
+    occupancy_values = {name: {"files": [], "bytes": []} for name in ("spool", "inbox")}
+    occupancy_counts = {name: Counter({"missing": 0, "invalid": 0}) for name in occupancy_values}
+    events_with_delivery = 0
+    complete_traces = 0
+
+    for event in ordered:
+        delivery = event.delivery if isinstance(event.delivery, Mapping) else {}
+        if delivery:
+            events_with_delivery += 1
+        parsed: dict[str, datetime | None] = {}
+        statuses: dict[str, str] = {}
+        for field in _DELIVERY_TIMESTAMPS:
+            status, timestamp = _delivery_timestamp(delivery.get(field))
+            statuses[field] = status
+            parsed[field] = timestamp
+            timestamp_counts[field][status] += 1
+        full_trace = all(statuses[field] == "observed" for field in _DELIVERY_TIMESTAMPS)
+        if full_trace:
+            timestamps = [
+                timestamp
+                for field in _DELIVERY_TIMESTAMPS
+                if (timestamp := parsed[field]) is not None
+            ]
+            full_trace = all(
+                left <= right for left, right in zip(timestamps, timestamps[1:], strict=False)
+            )
+        if full_trace:
+            complete_traces += 1
+
+        for stage, (start_field, end_field) in _PIPELINE_STAGES.items():
+            endpoint_statuses = (statuses[start_field], statuses[end_field])
+            if "invalid" in endpoint_statuses:
+                stage_counts[stage]["invalid"] += 1
+                continue
+            if "missing" in endpoint_statuses:
+                stage_counts[stage]["missing"] += 1
+                continue
+            start = parsed[start_field]
+            end = parsed[end_field]
+            assert start is not None and end is not None
+            seconds = (end - start).total_seconds()
+            if seconds < 0:
+                stage_counts[stage]["out_of_order"] += 1
+                continue
+            stage_values[stage].append(seconds)
+
+        for name in occupancy_values:
+            status, sample = _occupancy_sample(delivery, name)
+            if sample is None:
+                occupancy_counts[name][status] += 1
+                continue
+            occupancy_values[name]["files"].append(sample[0])
+            occupancy_values[name]["bytes"].append(sample[1])
+
+    hourly: Counter[datetime] = Counter()
+    for event in ordered:
+        received = event.received_at.astimezone(UTC)
+        hourly[received.replace(minute=0, second=0, microsecond=0)] += 1
+    peak_hour = min(
+        (hour for hour, count in hourly.items() if count == max(hourly.values())),
+        default=None,
+    )
+    first = ordered[0].received_at if ordered else None
+    last = ordered[-1].received_at if ordered else None
+    span = (last - first).total_seconds() if first is not None and last is not None else None
+    average_per_second = len(ordered) / span if span is not None and span > 0 else None
+
+    return {
+        "schema_version": TELEMETRY_SCHEMA_VERSION,
+        "trace_coverage": {
+            "events": len(ordered),
+            "events_with_delivery": events_with_delivery,
+            "complete_traces": complete_traces,
+            "timestamp_fields": {
+                field: dict(timestamp_counts[field]) for field in _DELIVERY_TIMESTAMPS
+            },
+        },
+        "stage_durations_seconds": {
+            stage: {
+                "start": start,
+                "end": end,
+                "observed_count": len(stage_values[stage]),
+                "missing_count": stage_counts[stage]["missing"],
+                "invalid_count": stage_counts[stage]["invalid"],
+                "out_of_order_count": stage_counts[stage]["out_of_order"],
+                **_nearest_rank(stage_values[stage]),
+            }
+            for stage, (start, end) in _PIPELINE_STAGES.items()
+        },
+        "throughput": {
+            "event_count": len(ordered),
+            "first_received_at": first.isoformat() if first is not None else None,
+            "last_received_at": last.isoformat() if last is not None else None,
+            "observed_span_seconds": span,
+            "average_events_per_second": average_per_second,
+            "average_events_per_hour": (
+                average_per_second * 3600 if average_per_second is not None else None
+            ),
+            "peak_hourly_rate": hourly[peak_hour] if peak_hour is not None else 0,
+            "peak_hour_started_at": peak_hour.isoformat() if peak_hour is not None else None,
+        },
+        "occupancy": {
+            name: {
+                "observed_count": len(values["files"]),
+                "missing_count": occupancy_counts[name]["missing"],
+                "invalid_count": occupancy_counts[name]["invalid"],
+                "files": _nearest_rank(values["files"]),
+                "bytes": _nearest_rank(values["bytes"]),
+            }
+            for name, values in occupancy_values.items()
+        },
+    }
 
 
 def _provider(event: Envelope) -> Mapping[str, Any]:

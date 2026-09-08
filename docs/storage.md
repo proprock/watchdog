@@ -38,6 +38,13 @@ each. This margin is not a preallocated reservation against other applications.
 Filesystem allocation overhead and unrelated writers are outside this cooperative
 quota. Impractically small budgets refuse initialization or new events.
 
+`pipeline_telemetry` is a daemon-wide configuration switch, outside `[defaults]`.
+It defaults to true and records bounded delivery timestamps and queue-occupancy
+samples in new envelopes. Set it to false to remove this optional hot-path work;
+the spool, inbox, SQLite writer, loss counters, and their quota checks are
+unchanged. It cannot be a per-project override because the native adapter has not
+resolved the project when it accepts a hook.
+
 ## Daemon diagnostic log
 
 The Python core writes best-effort, human-readable records to

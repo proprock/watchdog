@@ -23,6 +23,7 @@ Minimal configuration, with all other limits inherited from the architecture:
 schema_version = 1
 projects = []
 auto_add_projects = false
+pipeline_telemetry = true
 # trusted_projects_dir = "~/repos"
 
 [defaults]
@@ -41,7 +42,11 @@ is added automatically. Non-Git directories and all paths outside it remain
 unregistered. Numeric limits must be positive integers,
 and `payload_bytes <= inbox_bytes <= project_bytes`; numeric strings and booleans
 are rejected. TOML serialization omits optional values rather than inventing nulls.
-`capture_content` is a strict boolean, default true. `reserve_bytes` defaults to
+`capture_content` and the daemon-wide `pipeline_telemetry` are strict booleans,
+defaulting to true. Pipeline telemetry is deliberately not a project override:
+the native adapter must decide before resolving a project. When disabled it omits
+delivery-stage timestamps and queue samples without changing delivery or quotas.
+`reserve_bytes` defaults to
 1 MiB and is withheld from both the project budget and available disk space.
 An impractically small project budget degrades collection instead of using the
 reserve for new events. See [storage policy](storage.md) for the remaining defaults.

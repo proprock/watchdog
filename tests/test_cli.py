@@ -11,7 +11,7 @@ def test_help_describes_bootstrap_without_starting_collection():
     )
     assert result.returncode == 0
     assert (
-        "{daemon,hook,hooks,project,doctor,summary,report,label,pin,purge,export,sessions}"
+        "{daemon,hook,hooks,project,doctor,summary,report,telemetry,label,pin,purge,export,sessions}"
         in result.stdout
     )
 

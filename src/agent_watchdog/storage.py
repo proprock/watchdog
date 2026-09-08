@@ -65,7 +65,13 @@ def writer_lock(path: Path) -> Iterator[None]:
 
 def canonical(event: Envelope) -> str:
     validated = privacy.sanitize(event)
-    return json.dumps(validated.model_dump(mode="json"), sort_keys=True, separators=(",", ":"))
+    document = validated.model_dump(mode="json")
+    # Pre-telemetry envelopes did not have this optional field.  Omitting an
+    # empty value keeps their canonical replay document and receipt fingerprint
+    # byte-for-byte compatible after model validation fills the default.
+    if not document["delivery"]:
+        document.pop("delivery")
+    return json.dumps(document, sort_keys=True, separators=(",", ":"))
 
 
 def persisted_envelope(document: str | bytes) -> Envelope:
@@ -241,8 +247,19 @@ class Store:
 
     @staticmethod
     def _fingerprint(document: str, references: Mapping[str, str]) -> str:
+        # Delivery telemetry is intentionally mutable: a replay can reach the
+        # inbox/SQLite stages at a different instant without changing the
+        # semantic observation identified by event_id.
+        fingerprint_document = json.loads(document)
+        if isinstance(fingerprint_document, dict):
+            fingerprint_document.pop("delivery", None)
         return hashlib.sha256(
-            json.dumps([document, sorted(references.items())]).encode()
+            json.dumps(
+                [
+                    json.dumps(fingerprint_document, sort_keys=True, separators=(",", ":")),
+                    sorted(references.items()),
+                ]
+            ).encode()
         ).hexdigest()
 
     def put(self, event: Envelope, *, artifacts: Mapping[str, bytes] | None = None) -> bool:
@@ -723,7 +740,9 @@ class Inbox:
         path.unlink()
         result.quarantined += 1
 
-    def drain(self, store: Store, *, limit: int = 100) -> DrainResult:
+    def drain(
+        self, store: Store, *, limit: int = 100, pipeline_telemetry: bool = False
+    ) -> DrainResult:
         if limit <= 0 or self.root != store.root or store.connection.in_transaction:
             raise StorageError("Invalid batch size, root mismatch, or active writer transaction")
         result = DrainResult()
@@ -741,7 +760,19 @@ class Inbox:
                     data = stream.read(self.payload_bytes + 1)
                 if len(data) > self.payload_bytes:
                     raise RejectedEvent("Envelope exceeds inbox payload limit")
-                inserted = store.put(persisted_envelope(data))
+                event = persisted_envelope(data)
+                if pipeline_telemetry and event.delivery:
+                    observed_at = datetime.now(UTC).isoformat()
+                    event = event.model_copy(
+                        update={
+                            "delivery": event.delivery
+                            | {
+                                "inbox_drained_at": observed_at,
+                                "sqlite_write_started_at": observed_at,
+                            }
+                        }
+                    )
+                inserted = store.put(event)
             except (ValidationError, RejectedEvent):
                 with resources.admission(self.root):
                     self._quarantine(path, result)

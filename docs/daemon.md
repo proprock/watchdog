@@ -19,7 +19,9 @@ Already admitted batches can finish; pending inbox files survive for a later sta
 A crash does not pause collection. `start` and `stop` wait up to ten seconds for
 the requested state after acquiring the control lock, returning a nonzero exit
 code on timeout. They never signal a PID. `status` returns a JSON snapshot without
-starting the core. Competing commands use the latest committed desired state.
+starting the core. It also returns an on-demand spool and per-project inbox
+file/byte occupancy snapshot with their limits; this does not add polling work.
+Competing commands use the latest committed desired state.
 
 Use `--home <directory>` before `daemon` to isolate configuration, data, and runtime
 for a manual experiment. Individual `--config <file>`, `--data <directory>`, and

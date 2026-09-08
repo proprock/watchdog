@@ -46,6 +46,9 @@ class Envelope(Versioned):
     source: Literal["hook", "transcript", "manual"]
     payload: dict[str, JsonValue] = Field(default_factory=dict)
     availability: dict[str, Availability] = Field(default_factory=dict)
+    # Operational timestamps and bounded queue samples.  They are optional so
+    # existing stored envelopes and disabled pipeline telemetry remain valid.
+    delivery: dict[str, JsonValue] = Field(default_factory=dict)
 
     @model_validator(mode="after")
     def provider_namespace(self) -> Self:

@@ -162,12 +162,16 @@ def status(paths: UserPaths) -> dict:
         state = "running" if healthy and not report.get("errors") else "degraded"
     if control.get("paused", False):
         state = "paused"
+    queues: dict[str, object] = {}
     try:
         loss_report = {"adapter": resources.losses(paths.data)}
-        for project in load_config(paths.config).projects[:32]:
+        config = load_config(paths.config)
+        for project in config.projects[:32]:
             loss_report[str(project.id)] = resources.losses(paths.project_data(project.id))
+        queues = _queue_status(paths, config)
     except (OSError, ValueError):
         loss_report = {"unavailable": True}
+        queues = {"unavailable": True}
         if running and state != "paused":
             state = "degraded"
     return report | {
@@ -175,6 +179,44 @@ def status(paths: UserPaths) -> dict:
         "alive": running,
         "request_id": control.get("request_id"),
         "losses": loss_report,
+        "queues": queues,
+    }
+
+
+def _queue_snapshot(
+    directory: Path, *, byte_limit: int, file_limit: int | None, skip: str | None = None
+) -> dict:
+    entries = [
+        path
+        for path in directory.glob("*.json")
+        if path.is_file() and (skip is None or path.name != skip)
+    ]
+    used = sum(path.stat().st_size for path in entries)
+    return {
+        "files": len(entries),
+        "bytes": used,
+        "file_limit": file_limit,
+        "byte_limit": byte_limit,
+    }
+
+
+def _queue_status(paths: UserPaths, config: Config) -> dict[str, object]:
+    projects: dict[str, object] = {}
+    for project in config.projects[:32]:
+        limits = project.overrides.apply(config.defaults)
+        projects[str(project.id)] = _queue_snapshot(
+            paths.project_data(project.id) / "inbox",
+            byte_limit=limits.inbox_bytes,
+            file_limit=None,
+        )
+    return {
+        "spool": _queue_snapshot(
+            paths.data / "spool",
+            byte_limit=SPOOL_BYTES,
+            file_limit=SPOOL_FILES,
+            skip="limits.json",
+        ),
+        "projects": projects,
     }
 
 
@@ -212,6 +254,7 @@ def write_spool_limits(paths: UserPaths, config: Config) -> None:
                 "payload_bytes": spool_payload_bytes(config),
                 "spool_bytes": SPOOL_BYTES,
                 "spool_files": SPOOL_FILES,
+                "pipeline_telemetry": config.pipeline_telemetry,
             }
         ).encode(),
     )
@@ -310,6 +353,21 @@ def enqueue(paths: UserPaths, event: Envelope) -> bool:
             return False
         limits = project.overrides.apply(config.defaults)
         try:
+            if config.pipeline_telemetry:
+                observed_at = datetime.now(UTC).isoformat()
+                event = event.model_copy(
+                    update={
+                        "delivery": event.delivery
+                        | {
+                            "inbox_enqueued_at": observed_at,
+                            "inbox_occupancy": _queue_snapshot(
+                                paths.project_data(project.id) / "inbox",
+                                byte_limit=limits.inbox_bytes,
+                                file_limit=None,
+                            ),
+                        }
+                    }
+                )
             Inbox(paths.project_data(project.id), limits=limits).publish(event)
         except QuotaExceeded:
             _log(
@@ -466,6 +524,21 @@ def _admit(paths: UserPaths, event: Envelope, config: Config) -> bool:
         if project is None:
             return False
         limits = project.overrides.apply(config.defaults)
+        if config.pipeline_telemetry:
+            observed_at = datetime.now(UTC).isoformat()
+            event = event.model_copy(
+                update={
+                    "delivery": event.delivery
+                    | {
+                        "inbox_enqueued_at": observed_at,
+                        "inbox_occupancy": _queue_snapshot(
+                            paths.project_data(project.id) / "inbox",
+                            byte_limit=limits.inbox_bytes,
+                            file_limit=None,
+                        ),
+                    }
+                }
+            )
         Inbox(paths.project_data(project.id), limits=limits).publish(event)
         return True
 
@@ -522,6 +595,9 @@ def _drain_spool(paths: UserPaths, config: Config, *, limit: int = 100) -> bool:
                 raise ValueError("Invalid spool cwd")
             event_id = UUID(str(record["event_id"]))
             received_at = datetime.fromisoformat(record["received_at"])
+            delivery = record.get("delivery", {})
+            if not isinstance(delivery, dict):
+                raise ValueError("Invalid spool delivery telemetry")
         except (OSError, ValueError, KeyError, TypeError):
             resources.count_loss(paths.data, "invalid")
             _log(paths, config, "WARNING", event="spool", decision="discarded", reason="invalid")
@@ -548,6 +624,12 @@ def _drain_spool(paths: UserPaths, config: Config, *, limit: int = 100) -> bool:
                 event_id=event_id,
                 received_at=received_at,
             )
+            if config.pipeline_telemetry:
+                event = event.model_copy(
+                    update={
+                        "delivery": delivery | {"spool_drained_at": datetime.now(UTC).isoformat()}
+                    }
+                )
             warn_unknown_fields(
                 paths,
                 config.defaults,
@@ -647,6 +729,7 @@ def _poll(paths: UserPaths, owner: ExitStack) -> None:
     instance_id = str(uuid4())
     delay = 0.25
     maintenance: dict[str, float] = {}
+    logged_enrichment_failures: set[tuple[str, str]] = set()
     spool_mtime: float | None = None
     while True:
         config: Config | None = None
@@ -687,12 +770,36 @@ def _poll(paths: UserPaths, owner: ExitStack) -> None:
                         if time.monotonic() >= maintenance.get(str(project.id), 0):
                             store.maintain()
                             maintenance[str(project.id)] = time.monotonic() + 60
-                        result = Inbox(root, limits=limits).drain(store)
+                        result = Inbox(root, limits=limits).drain(
+                            store, pipeline_telemetry=config.pipeline_telemetry
+                        )
                         try:
                             from agent_watchdog.transcripts import enrich
 
-                            activity |= bool(enrich(store))
-                        except (OSError, StorageError, ValueError):
+                            enrichment = enrich(store)
+                            activity |= bool(enrichment)
+                            current_failures = {
+                                (str(project.id), code) for code in enrichment.failures
+                            }
+                            for _, code in current_failures - logged_enrichment_failures:
+                                _log(
+                                    paths,
+                                    config,
+                                    "WARNING",
+                                    event="enrichment",
+                                    decision="unavailable",
+                                    error_type=code,
+                                    project_id=project.id,
+                                )
+                            logged_enrichment_failures.difference_update(
+                                {
+                                    item
+                                    for item in logged_enrichment_failures
+                                    if item[0] == str(project.id) and item not in current_failures
+                                }
+                            )
+                            logged_enrichment_failures.update(current_failures)
+                        except (OSError, StorageError, ValueError) as error:
                             if len(errors) < 32:
                                 errors.append(str(project.id))
                             _log(
@@ -701,6 +808,7 @@ def _poll(paths: UserPaths, owner: ExitStack) -> None:
                                 "WARNING",
                                 event="enrichment",
                                 decision="failed",
+                                error_type=error_code(error),
                                 project_id=project.id,
                             )
                         if resources.available(root, limits) < 65536 and len(errors) < 32:

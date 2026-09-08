@@ -85,6 +85,7 @@ struct SpoolLimits {
     payload_bytes: u64,
     spool_bytes: u64,
     spool_files: u64,
+    pipeline_telemetry: bool,
 }
 
 impl SpoolLimits {
@@ -93,6 +94,7 @@ impl SpoolLimits {
             payload_bytes: 1024 * 1024,
             spool_bytes: 64 * 1024 * 1024,
             spool_files: 4096,
+            pipeline_telemetry: true,
         };
         let read = || -> Option<Value> {
             let mut bytes = Vec::new();
@@ -114,8 +116,15 @@ impl SpoolLimits {
             payload_bytes: field("payload_bytes", fallback.payload_bytes),
             spool_bytes: field("spool_bytes", fallback.spool_bytes),
             spool_files: field("spool_files", fallback.spool_files),
+            pipeline_telemetry: value["pipeline_telemetry"]
+                .as_bool()
+                .unwrap_or(fallback.pipeline_telemetry),
         }
     }
+}
+
+fn utc_now() -> String {
+    Utc::now().to_rfc3339_opts(SecondsFormat::Micros, true)
 }
 
 fn identifier<'a>(input: &'a Value, key: &str) -> Option<&'a str> {
@@ -176,6 +185,7 @@ fn observe(paths: &Paths, provider: &str, event_hint: &mut Option<String>) -> Re
         return Ok(());
     }
     let limits = SpoolLimits::read(&paths.data);
+    let adapter_started_at = limits.pipeline_telemetry.then(utc_now);
     let mut raw = Vec::new();
     std::io::stdin()
         .take(
@@ -204,21 +214,34 @@ fn observe(paths: &Paths, provider: &str, event_hint: &mut Option<String>) -> Re
         .as_object_mut()
         .ok_or("invalid input")?
         .remove("cwd");
-    let record = json!({
+    let mut record = json!({
         "schema_version": 1,
         "event_id": Uuid::new_v4(),
-        "received_at": Utc::now().to_rfc3339_opts(SecondsFormat::Micros, true),
+        "received_at": utc_now(),
         "provider": provider,
         "cwd": cwd,
         "input": redact.value(&forwarded),
     });
-    let bytes = serde_json::to_vec(&record)?;
 
     let spool = paths.data.join("spool");
     if disk::linked(&spool) {
         return Err("linked spool directory".into());
     }
     let (files, used) = disk::spool_footprint(&spool)?;
+    if let Some(adapter_started_at) = adapter_started_at {
+        record.as_object_mut().ok_or("invalid record")?.insert(
+            "delivery".to_owned(),
+            json!({
+                "adapter_started_at": adapter_started_at,
+                "spool_enqueued_at": utc_now(),
+                "spool_occupancy": {
+                    "files": files,
+                    "bytes": used,
+                },
+            }),
+        );
+    }
+    let bytes = serde_json::to_vec(&record)?;
     if files.saturating_add(1) > limits.spool_files
         || used.saturating_add(bytes.len() as u64) > limits.spool_bytes
     {

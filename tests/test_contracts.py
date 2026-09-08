@@ -27,6 +27,7 @@ def test_missing_config_uses_defaults_without_creating_files(tmp_path):
     assert config.projects == ()
     assert config.auto_add_projects is False
     assert config.trusted_projects_dir is None
+    assert config.pipeline_telemetry is True
     assert list(tmp_path.iterdir()) == []
     paths = user_paths()
     assert all(path.is_absolute() for path in (paths.config, paths.data, paths.runtime))
@@ -39,6 +40,7 @@ def test_missing_config_uses_defaults_without_creating_files(tmp_path):
         "schema_version = 2",
         "schema_version = true",
         'unknown = "secret-value"',
+        "pipeline_telemetry = 1",
         '[defaults]\ncontent_days = "30"',
         "[defaults]\ncontent_days = 0",
         "[defaults]\nproject_bytes = 10",

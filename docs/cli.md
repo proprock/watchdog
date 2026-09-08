@@ -51,6 +51,18 @@ Each ready project is read through its own short-lived SQLite read-only snapshot
 Concurrent ingestion can therefore change one project between snapshots; the
 cross-project totals are known observations, not a global transaction.
 
+## Pipeline telemetry
+
+```console
+agent-watchdog telemetry --project PROJECT --since 2026-09-08T00:00:00+00:00
+```
+
+`telemetry` reads persisted delivery-stage timestamps and bounded queue samples
+without starting collection or modifying stored observations. It reports coverage,
+throughput and peak rate, stage-delay percentiles, observed queue occupancy, and
+loss counters. If daemon-wide `pipeline_telemetry` is disabled, it returns an
+explicit disabled result rather than treating missing measurements as zero.
+
 ## Doctor
 
 ```console

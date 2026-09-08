@@ -4,6 +4,7 @@ import json
 import sqlite3
 from collections.abc import Iterator
 from contextlib import closing, contextmanager
+from datetime import datetime
 from pathlib import Path
 from typing import Any, TypedDict
 
@@ -238,6 +239,62 @@ def report(
             label = _label(db, provider, session_id)
         result = _apply_label(result, label)
     return {"project_id": str(project.id), "provider": provider, **result}
+
+
+def telemetry(paths: UserPaths, project: Project, *, since: datetime | None) -> dict[str, Any]:
+    """Report content-free pipeline measurements from a read-only event snapshot."""
+    from agent_watchdog.analysis import TELEMETRY_SCHEMA_VERSION, analyze_telemetry
+
+    config = load_config(paths.config)
+    window = {"since": since.isoformat() if since is not None else None}
+    if not config.pipeline_telemetry:
+        return {
+            "project_id": str(project.id),
+            "schema_version": TELEMETRY_SCHEMA_VERSION,
+            "telemetry_disabled": True,
+            "window": window,
+        }
+
+    with database(paths, project) as db:
+        rows = db.execute("SELECT envelope FROM events ORDER BY rowid").fetchall()
+    events = [persisted_envelope(row[0]) for row in rows]
+    if since is not None:
+        events = [event for event in events if event.received_at >= since]
+
+    result = analyze_telemetry(events)
+    adapter_losses: dict[str, int] | None
+    project_losses: dict[str, int] | None
+    try:
+        adapter_losses = resources.losses(paths.data)
+    except (OSError, ValueError):
+        adapter_losses = None
+    try:
+        project_losses = resources.losses(paths.project_data(project.id))
+    except (OSError, ValueError):
+        project_losses = None
+    combined = (
+        {
+            reason: adapter_losses.get(reason, 0) + project_losses.get(reason, 0)
+            for reason in sorted(set(adapter_losses) | set(project_losses))
+        }
+        if adapter_losses is not None and project_losses is not None
+        else None
+    )
+    result["losses"] = {
+        "current": {
+            "adapter": adapter_losses,
+            "project": project_losses,
+            "combined": combined,
+        },
+        "deltas": None,
+        "delta_status": "unavailable_without_historical_samples",
+    }
+    return {
+        "project_id": str(project.id),
+        "telemetry_disabled": False,
+        "window": window,
+        **result,
+    }
 
 
 def export_sessions(

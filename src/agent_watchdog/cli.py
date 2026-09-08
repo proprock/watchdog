@@ -3,6 +3,7 @@ import json
 import sqlite3
 import sys
 import time
+from datetime import datetime
 from pathlib import Path
 from uuid import UUID
 
@@ -43,6 +44,16 @@ def _with_project_alias(result: dict, alias: str) -> dict:
     return {"project": alias, **result}
 
 
+def _since(value: str) -> datetime:
+    try:
+        parsed = datetime.fromisoformat(value)
+    except ValueError as error:
+        raise argparse.ArgumentTypeError("--since must be an ISO-8601 timestamp") from error
+    if parsed.tzinfo is None or parsed.utcoffset() is None:
+        raise argparse.ArgumentTypeError("--since must include a UTC offset")
+    return parsed
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(
         prog="agent-watchdog",
@@ -80,6 +91,11 @@ def main() -> int:
     report.add_argument("--project", help="Project alias; UUID accepted; default resolves cwd")
     report.add_argument("--session", help="Limit the report to one native session")
     report.add_argument("--provider", default="codex")
+    telemetry = commands.add_parser(
+        "telemetry", help="Report read-only delivery-pipeline measurements"
+    )
+    telemetry.add_argument("--project", help="Project alias; UUID accepted; default resolves cwd")
+    telemetry.add_argument("--since", type=_since, help="ISO-8601 inclusive lower bound")
     label = commands.add_parser("label", help="Label one collected session through the core")
     label.add_argument("session_id")
     label.add_argument("--project", help="Project alias; UUID accepted; default resolves cwd")
@@ -174,6 +190,7 @@ def main() -> int:
             "summary",
             "sessions",
             "report",
+            "telemetry",
             "export",
             "label",
             "pin",
@@ -220,6 +237,10 @@ def main() -> int:
                 result = inspection.report(
                     paths, project, session_id=args.session, provider=args.provider
                 )
+                print(json.dumps(_with_project_alias(result, alias)))
+                return 0
+            if args.command == "telemetry":
+                result = inspection.telemetry(paths, project, since=args.since)
                 print(json.dumps(_with_project_alias(result, alias)))
                 return 0
             if args.action == "list":

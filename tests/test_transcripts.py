@@ -4,9 +4,10 @@ from pathlib import Path
 from typing import cast
 from uuid import uuid4
 
+import agent_watchdog.transcripts as transcripts
 from agent_watchdog.events import Envelope
 from agent_watchdog.storage import Store
-from agent_watchdog.transcripts import enrich
+from agent_watchdog.transcripts import FAILURE_CODES, enrich
 
 
 def codex(event: Envelope) -> dict:
@@ -83,8 +84,8 @@ def test_enrichment_emits_deltas_without_cumulative_double_counting(tmp_path):
 
     with Store(tmp_path / "data", project) as store:
         assert store.put(hook(project, session, transcript))
-        assert enrich(store) == 2
-        assert enrich(store) == 0
+        assert enrich(store).accepted == 2
+        assert enrich(store).accepted == 0
         events = [event for event in store.events() if event.kind == "usage"]
 
     assert [usage_payload(event)["delta"]["total_tokens"] for event in events] == [10, 6]
@@ -107,10 +108,10 @@ def test_reader_keeps_partial_tail_and_marks_missing_cached_tokens_unavailable(t
 
     with Store(tmp_path / "data", project) as store:
         store.put(hook(project, session, transcript))
-        assert enrich(store) == 0
+        assert enrich(store).accepted == 0
         with transcript.open("a", encoding="utf-8") as stream:
             stream.write(json.dumps(first)[30:] + "\n")
-        assert enrich(store) == 1
+        assert enrich(store).accepted == 1
         event = next(event for event in store.events() if event.kind == "usage")
 
     assert event.availability["cached_input_tokens"] == "unavailable"
@@ -123,8 +124,8 @@ def test_unsupported_format_records_one_gap_without_rejecting_the_hook(tmp_path)
     transcript.write_text('{"type":"future_format"}\n', encoding="utf-8")
     with Store(tmp_path / "data", project) as store:
         assert store.put(hook(project, "session-1", transcript))
-        assert enrich(store) == 0
-        assert enrich(store) == 0
+        assert enrich(store).accepted == 0
+        assert enrich(store).accepted == 0
         gaps = [event for event in store.events() if event.kind == "observation.gap"]
 
     assert len(gaps) == 1
@@ -139,7 +140,7 @@ def test_session_mismatch_records_a_durable_gap(tmp_path):
     write_rollout(transcript, session, [mismatched])
     with Store(tmp_path / "data", project) as store:
         store.put(hook(project, session, transcript))
-        assert enrich(store) == 0
+        assert enrich(store).accepted == 0
         gaps = [event for event in store.events() if event.kind == "observation.gap"]
 
     assert len(gaps) == 1 and codex(gaps[0])["reason"] == "usage_session_mismatch"
@@ -152,10 +153,10 @@ def test_counter_regression_creates_a_durable_gap(tmp_path):
     write_rollout(transcript, session, [usage(session, "response-1", total=10, output=4)])
     with Store(tmp_path / "data", project) as store:
         store.put(hook(project, session, transcript))
-        assert enrich(store) == 1
+        assert enrich(store).accepted == 1
         with transcript.open("a", encoding="utf-8") as stream:
             stream.write(json.dumps(usage(session, "response-2", total=5, output=2)) + "\n")
-        assert enrich(store) == 1
+        assert enrich(store).accepted == 1
         events = [event for event in store.events() if event.kind == "usage"]
         gaps = [event for event in store.events() if event.kind == "observation.gap"]
 
@@ -169,7 +170,7 @@ def test_unreadable_source_does_not_block_following_hook_or_source_retention(tmp
     missing = tmp_path / "missing.jsonl"
     with Store(tmp_path / "data", project) as store:
         store.put(hook(project, session, missing))
-        assert enrich(store) == 0
+        assert enrich(store).accepted == 0
         # An enrichment failure is isolated from normal event admission.
         assert store.put(
             Envelope(
@@ -192,12 +193,67 @@ def test_truncation_revalidates_the_new_rollout_without_duplicate_usage(tmp_path
     write_rollout(transcript, session, [usage(session, "response-1", total=10, output=4)])
     with Store(tmp_path / "data", project) as store:
         store.put(hook(project, session, transcript))
-        assert enrich(store) == 1
+        assert enrich(store).accepted == 1
         write_rollout(transcript, session, [])
-        assert enrich(store) == 0
+        assert enrich(store).accepted == 0
         with transcript.open("a", encoding="utf-8") as stream:
             stream.write(json.dumps(usage(session, "response-2", total=16, output=6)) + "\n")
-        assert enrich(store) == 1
+        assert enrich(store).accepted == 1
         events = [event for event in store.events() if event.kind == "usage"]
 
     assert [codex(event)["response_id"] for event in events] == ["response-1", "response-2"]
+
+
+def test_source_failure_is_safe_isolated_and_not_retried_until_change(tmp_path, monkeypatch):
+    project = uuid4()
+    bad_session = "bad-session"
+    good_session = "good-session"
+    bad = tmp_path / "bad.jsonl"
+    good = tmp_path / "good.jsonl"
+    write_rollout(bad, bad_session, [usage(bad_session, "response-bad", total=10, output=4)])
+    write_rollout(good, good_session, [usage(good_session, "response-good", total=12, output=5)])
+    original = transcripts._usage_event
+    secret = f"prompt and command output from {bad}"
+
+    def failing_usage_event(store, source, *args, **kwargs):
+        if source["session_id"] == bad_session:
+            raise ValueError(secret)
+        return original(store, source, *args, **kwargs)
+
+    monkeypatch.setattr(transcripts, "_usage_event", failing_usage_event)
+    with Store(tmp_path / "data", project) as store:
+        store.put(hook(project, bad_session, bad))
+        store.put(hook(project, good_session, good))
+
+        first = enrich(store)
+        second = enrich(store)
+        events = store.events()
+        sources = store.transcript_sources()
+
+    assert first.accepted == 1
+    assert first.failures == ("transcript_source_invalid",)
+    assert not second
+    assert second.failures == ()
+    assert set(first.failures) <= FAILURE_CODES
+    assert [event.native_event_id for event in events if event.kind == "usage"] == ["response-good"]
+    gaps = [event for event in events if event.kind == "observation.gap"]
+    assert len(gaps) == 1
+    assert codex(gaps[0])["reason"] == "transcript_source_invalid"
+    bad_source = next(source for source in sources if source["session_id"] == bad_session)
+    assert bad_source["last_error"] == "transcript_source_invalid"
+    assert secret not in repr((gaps, bad_source, first))
+
+
+def test_source_listing_failure_returns_only_an_allowlisted_code():
+    secret = "private transcript path and output"
+
+    class BrokenStore:
+        def transcript_sources(self):
+            raise OSError(secret)
+
+    result = enrich(cast(Store, BrokenStore()))
+
+    assert not result
+    assert result.failures == ("transcript_sources_unavailable",)
+    assert set(result.failures) <= FAILURE_CODES
+    assert secret not in repr(result)
