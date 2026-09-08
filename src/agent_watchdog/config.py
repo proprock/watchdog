@@ -2,6 +2,7 @@
 
 import json
 import tomllib
+from collections.abc import Iterable
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal, Self
@@ -70,6 +71,36 @@ class Project(StrictModel):
         if value is not None and (not value.is_absolute() or ".." in value.parts):
             raise ValueError("Registered paths must be absolute and normalized")
         return value
+
+
+def project_aliases(projects: Iterable[Project]) -> dict[UUID, str]:
+    """Derive stable-in-config-order CLI aliases without changing stored identities."""
+    aliases: dict[UUID, str] = {}
+    used: set[str] = set()
+    for project in projects:
+        base = project.root.name or project.root.drive.removesuffix(":") or "project"
+        alias = base
+        suffix = 2
+        while alias in used:
+            alias = f"{base}-{suffix}"
+            suffix += 1
+        aliases[project.id] = alias
+        used.add(alias)
+    return aliases
+
+
+def project_for_reference(projects: Iterable[Project], reference: str) -> Project | None:
+    """Resolve a CLI alias first, retaining UUID input for compatibility."""
+    registered = tuple(projects)
+    aliases = project_aliases(registered)
+    project = next((item for item in registered if aliases[item.id] == reference), None)
+    if project is not None:
+        return project
+    try:
+        project_id = UUID(reference)
+    except ValueError:
+        return None
+    return next((item for item in registered if item.id == project_id), None)
 
 
 class Config(Versioned):

@@ -6,10 +6,15 @@ from collections.abc import Iterator
 from contextlib import closing, contextmanager
 from pathlib import Path
 from typing import Any, TypedDict
-from uuid import UUID
 
 from agent_watchdog import daemon, resources
-from agent_watchdog.config import Project, UserPaths, load_config
+from agent_watchdog.config import (
+    Project,
+    UserPaths,
+    load_config,
+    project_aliases,
+    project_for_reference,
+)
 from agent_watchdog.events import Envelope
 from agent_watchdog.registry import Registry
 from agent_watchdog.storage import StorageError, persisted_envelope
@@ -60,16 +65,18 @@ def _apply_label(report: dict[str, Any], label: SessionLabel) -> dict[str, Any]:
     return result
 
 
-def project_at(paths: UserPaths, project_id: UUID | None) -> Project:
+def project_at(paths: UserPaths, project_ref: str | None) -> Project:
     config = load_config(paths.config)
-    if project_id is None:
+    if project_ref is None:
         resolution = Registry(config).resolve(Path.cwd())
         if resolution is not None:
-            project_id = resolution.project_id
-    project = next((item for item in config.projects if item.id == project_id), None)
+            project_ref = str(resolution.project_id)
+    project = (
+        project_for_reference(config.projects, project_ref) if project_ref is not None else None
+    )
     if project is None:
         raise StorageError(
-            "Select a registered project with --project UUID or its working directory"
+            "Select a registered project with --project alias or its working directory"
         )
     return project
 
@@ -327,8 +334,59 @@ def export_sessions(
     }
 
 
+def summary(paths: UserPaths) -> dict:
+    """Return known cross-project counts without opening a storage writer."""
+    config = load_config(paths.config)
+    aliases = project_aliases(config.projects)
+    projects = []
+    observed_sessions = 0
+    observed_events = 0
+    complete = True
+    ok = True
+    for project in config.projects:
+        root = paths.project_data(project.id)
+        state: dict[str, str] = {"state": "unavailable"}
+        session_count: int | None = None
+        event_count: int | None = None
+        if (root / "events.sqlite3").is_file():
+            try:
+                with database(paths, project) as db:
+                    event_count = db.execute("SELECT COUNT(*) FROM events").fetchone()[0]
+                    session_count = db.execute(
+                        "SELECT COUNT(*) FROM ("
+                        "SELECT json_extract(envelope, '$.provider'), session_id "
+                        "FROM events WHERE session_id IS NOT NULL GROUP BY 1, 2)"
+                    ).fetchone()[0]
+                    state = {"state": "ready"}
+                    observed_events += event_count
+                    observed_sessions += session_count
+            except (OSError, ValueError, sqlite3.Error) as error:
+                state = {"state": "error", "error": type(error).__name__}
+                complete = False
+                ok = False
+        else:
+            complete = False
+        projects.append(
+            {
+                "project": aliases[project.id],
+                "root": str(project.root),
+                "database": state,
+                "session_count": session_count,
+                "event_count": event_count,
+            }
+        )
+    return {
+        "ok": ok,
+        "complete": complete,
+        "projects": projects,
+        "observed_session_count": observed_sessions,
+        "observed_event_count": observed_events,
+    }
+
+
 def doctor(paths: UserPaths) -> dict:
     config = load_config(paths.config)
+    aliases = project_aliases(config.projects)
     projects = []
     healthy = True
     for project in config.projects:
@@ -356,7 +414,7 @@ def doctor(paths: UserPaths) -> dict:
         healthy &= state["state"] != "error" and exists and (capacity is None or capacity >= 65536)
         projects.append(
             {
-                "id": str(project.id),
+                "project": aliases[project.id],
                 "root_exists": exists,
                 "database": state,
                 "losses": counters,

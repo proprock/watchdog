@@ -7,7 +7,16 @@ from pathlib import Path
 from uuid import UUID
 
 from agent_watchdog import daemon
-from agent_watchdog.config import ConfigError, Limits, UserPaths, load_config, user_paths
+from agent_watchdog.config import (
+    ConfigError,
+    Limits,
+    Project,
+    UserPaths,
+    load_config,
+    project_aliases,
+    project_for_reference,
+    user_paths,
+)
 from agent_watchdog.diagnostics import Level, emit
 from agent_watchdog.hook_install import change
 from agent_watchdog.hooks import observe
@@ -21,6 +30,17 @@ def _log(paths: UserPaths, level: Level, *, event: str, decision: str) -> None:
     except ConfigError:
         limits = Limits()
     emit(paths.data, limits, level, component="cli", event=event, decision=decision)
+
+
+def _project_record(project: Project, aliases: dict[UUID, str]) -> dict:
+    record = project.model_dump(mode="json")
+    record.pop("id")
+    return {"project": aliases[project.id], **record}
+
+
+def _with_project_alias(result: dict, alias: str) -> dict:
+    result.pop("project_id", None)
+    return {"project": alias, **result}
 
 
 def main() -> int:
@@ -48,20 +68,21 @@ def main() -> int:
     actions = projects.add_subparsers(dest="action", required=True)
     actions.add_parser("list")
     actions.add_parser("add").add_argument("path", type=Path)
-    actions.add_parser("remove").add_argument("project_id", type=UUID)
+    actions.add_parser("remove").add_argument("project")
     relocate = actions.add_parser("relocate")
-    relocate.add_argument("project_id", type=UUID)
+    relocate.add_argument("project")
     relocate.add_argument("path", type=Path)
     commands.add_parser("doctor", help="Inspect configuration, storage, and daemon health")
+    commands.add_parser("summary", help="Summarize known observations for registered projects")
     report = commands.add_parser(
         "report", help="Analyze collected observations without control actions"
     )
-    report.add_argument("--project", type=UUID, help="Project UUID; default resolves cwd")
+    report.add_argument("--project", help="Project alias; UUID accepted; default resolves cwd")
     report.add_argument("--session", help="Limit the report to one native session")
     report.add_argument("--provider", default="codex")
     label = commands.add_parser("label", help="Label one collected session through the core")
     label.add_argument("session_id")
-    label.add_argument("--project", type=UUID, help="Project UUID; default resolves cwd")
+    label.add_argument("--project", help="Project alias; UUID accepted; default resolves cwd")
     label.add_argument("--provider", default="codex")
     label.add_argument(
         "--outcome", required=True, choices=("success", "partial", "failed", "abandoned", "unknown")
@@ -69,17 +90,17 @@ def main() -> int:
     label.add_argument("--task-type")
     pin = commands.add_parser("pin", help="Pin or unpin one collected session through the core")
     pin.add_argument("session_id")
-    pin.add_argument("--project", type=UUID, help="Project UUID; default resolves cwd")
+    pin.add_argument("--project", help="Project alias; UUID accepted; default resolves cwd")
     pin.add_argument("--provider", default="codex")
     pin.add_argument("--unpin", action="store_true")
     purge = commands.add_parser("purge", help="Permanently delete Watchdog data for one session")
     purge.add_argument("session_id")
-    purge.add_argument("--project", type=UUID, help="Project UUID; default resolves cwd")
+    purge.add_argument("--project", help="Project alias; UUID accepted; default resolves cwd")
     purge.add_argument("--provider", default="codex")
     export = commands.add_parser(
         "export", help="Write an offline review bundle for selected sessions"
     )
-    export.add_argument("--project", type=UUID, help="Project UUID; default resolves cwd")
+    export.add_argument("--project", help="Project alias; UUID accepted; default resolves cwd")
     export.add_argument("--provider", default="codex")
     export.add_argument("--session", action="append", required=True)
     export.add_argument("--output", type=Path, required=True)
@@ -89,7 +110,7 @@ def main() -> int:
     views = sessions.add_subparsers(dest="action", required=True)
     for action in ("list", "show"):
         view = views.add_parser(action)
-        view.add_argument("--project", type=UUID, help="Project UUID; default resolves cwd")
+        view.add_argument("--project", help="Project alias; UUID accepted; default resolves cwd")
         view.add_argument("--limit", type=int, default=100)
         view.add_argument("--offset", type=int, default=0)
         if action == "show":
@@ -115,11 +136,10 @@ def main() -> int:
     try:
         if args.command == "project":
             if args.action == "list":
+                config = load_config(paths.config)
+                aliases = project_aliases(config.projects)
                 result = {
-                    "projects": [
-                        project.model_dump(mode="json")
-                        for project in load_config(paths.config).projects
-                    ]
+                    "projects": [_project_record(project, aliases) for project in config.projects]
                 }
             else:
                 from agent_watchdog.registry import Registry
@@ -127,39 +147,59 @@ def main() -> int:
                 def mutate(registry: Registry) -> None:
                     nonlocal result
                     if args.action == "add":
-                        result = registry.add(args.path).model_dump(mode="json")
+                        project = registry.add(args.path)
+                        result = _project_record(project, project_aliases(registry.config.projects))
                     elif args.action == "relocate":
-                        result = registry.relocate(args.project_id, args.path).model_dump(
-                            mode="json"
+                        project = project_for_reference(registry.config.projects, args.project)
+                        if project is None:
+                            raise RegistryError("Unknown project alias or UUID")
+                        relocated = registry.relocate(project.id, args.path)
+                        result = _project_record(
+                            relocated, project_aliases(registry.config.projects)
                         )
                     else:
-                        registry.remove(args.project_id)
-                        result = {"removed": str(args.project_id), "data_deleted": False}
+                        project = project_for_reference(registry.config.projects, args.project)
+                        if project is None:
+                            raise RegistryError("Unknown project alias or UUID")
+                        alias = project_aliases(registry.config.projects)[project.id]
+                        registry.remove(project.id)
+                        result = {"removed": alias, "data_deleted": False}
 
                 result = {}
                 daemon.mutate_registry(paths, mutate)
             print(json.dumps(result))
             return 0
-        if args.command in ("doctor", "sessions", "report", "export", "label", "pin", "purge"):
+        if args.command in (
+            "doctor",
+            "summary",
+            "sessions",
+            "report",
+            "export",
+            "label",
+            "pin",
+            "purge",
+        ):
             from agent_watchdog import inspection
 
             if args.command == "doctor":
                 report = inspection.doctor(paths)
                 print(json.dumps(report))
                 return 0 if report["ok"] else 1
+            if args.command == "summary":
+                report = inspection.summary(paths)
+                print(json.dumps(report))
+                return 0 if report["ok"] else 1
             project = inspection.project_at(paths, args.project)
+            alias = project_aliases(load_config(paths.config).projects)[project.id]
             if args.command == "export":
-                print(
-                    json.dumps(
-                        inspection.export_sessions(
-                            paths,
-                            project,
-                            provider=args.provider,
-                            session_ids=args.session,
-                            output=args.output,
-                        )
-                    )
+                result = inspection.export_sessions(
+                    paths,
+                    project,
+                    provider=args.provider,
+                    session_ids=args.session,
+                    output=args.output,
                 )
+                print(json.dumps(_with_project_alias(result, alias)))
                 return 0
             if args.command in ("label", "pin", "purge"):
                 action = {"label": "label", "pin": "pin", "purge": "purge"}[args.command]
@@ -173,16 +213,14 @@ def main() -> int:
                     request |= {"outcome": args.outcome, "task_type": args.task_type}
                 elif args.command == "pin":
                     request["pinned"] = not args.unpin
-                print(json.dumps(daemon.request_control(paths, request)))
+                result = daemon.request_control(paths, request)
+                print(json.dumps(_with_project_alias(result, alias)))
                 return 0
             if args.command == "report":
-                print(
-                    json.dumps(
-                        inspection.report(
-                            paths, project, session_id=args.session, provider=args.provider
-                        )
-                    )
+                result = inspection.report(
+                    paths, project, session_id=args.session, provider=args.provider
                 )
+                print(json.dumps(_with_project_alias(result, alias)))
                 return 0
             if args.action == "list":
                 result = inspection.sessions(paths, project, limit=args.limit, offset=args.offset)
@@ -197,7 +235,7 @@ def main() -> int:
                     limit=args.limit,
                     offset=args.offset,
                 )
-            print(json.dumps(result))
+            print(json.dumps(_with_project_alias(result, alias)))
             return 0
         if args.command == "hook":
             try:

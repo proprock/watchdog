@@ -9,19 +9,47 @@ user-local paths. Read commands do not start collection or migrate databases.
 ```console
 agent-watchdog project add /path/to/repository
 agent-watchdog project list
-agent-watchdog project relocate PROJECT_UUID /new/path
-agent-watchdog project remove PROJECT_UUID
+agent-watchdog project relocate PROJECT /new/path
+agent-watchdog project remove PROJECT
 ```
 
-`add` prints the registered project, including its UUID. Registration is explicit;
-Git worktrees share a project through the common Git directory, while clones stay
-separate. Mutations use the daemon's registry lock. Relocation requires the old
-root to be absent and preserves UUID, overrides, and collected data. Removal only
-unregisters the project; it does not delete its database or uninstall hooks.
+`add` and `list` print a short `project` alias derived from the repository folder
+name. The first exact `repo` keeps that name; later exact collisions become
+`repo-2`, `repo-3`, and so on, in registration order while avoiding every existing
+alias. Case is preserved and significant: `Project` and `project` select different
+projects. Aliases are recomputed after add, removal, or relocation, so query
+`project list` again after a registry change. All project-selection arguments accept
+an alias; UUID input remains accepted for compatibility but is not emitted in normal
+CLI responses.
+
+Registration is explicit; Git worktrees share a project through the common Git
+directory, while clones stay separate. Mutations use the daemon's registry lock.
+Relocation requires the old root to be absent and preserves UUID, overrides, and
+collected data. Removal only unregisters the project; it does not delete its
+database or uninstall hooks. UUIDs remain internal storage/control identifiers and
+appear only in raw retained envelopes and offline export artifacts.
 
 Use global defaults or project `overrides` in config.toml for capture/retention
 settings, as described in [contracts](contracts.md). Hook installation remains an
 explicit [separate operation](hooks.md); registration does not grant native trust.
+
+## Summary
+
+```console
+agent-watchdog summary
+```
+
+Returns a read-only JSON row for every registered project with its alias, root,
+database state, session count, and event count, plus known cross-project totals.
+`session_count` groups distinct non-null provider/session-ID pairs; unassigned
+events remain in `event_count` but do not create a session. The top-level observed
+totals include only ready databases. If a project has no database or an inspection
+error, its counts are null and `complete` is false rather than treating unavailable
+data as zero. Database errors also set `ok` to false and return exit code 1.
+
+Each ready project is read through its own short-lived SQLite read-only snapshot.
+Concurrent ingestion can therefore change one project between snapshots; the
+cross-project totals are known observations, not a global transaction.
 
 ## Doctor
 
@@ -39,9 +67,9 @@ repair files, inspect native trust, or infer event coverage from hook definition
 ## Sessions
 
 ```console
-agent-watchdog sessions list --project PROJECT_UUID
-agent-watchdog sessions show SESSION_ID --project PROJECT_UUID --limit 100 --offset 0
-agent-watchdog sessions show --unassigned --project PROJECT_UUID
+agent-watchdog sessions list --project PROJECT
+agent-watchdog sessions show SESSION_ID --project PROJECT --limit 100 --offset 0
+agent-watchdog sessions show --unassigned --project PROJECT
 ```
 
 Without `--project`, the current directory must resolve to a registered project.
@@ -63,8 +91,8 @@ a single snapshot if concurrent ingestion changes the data.
 ## Shadow report
 
 ```console
-agent-watchdog report --project PROJECT_UUID --session SESSION_ID
-agent-watchdog report --project PROJECT_UUID --provider codex
+agent-watchdog report --project PROJECT --session SESSION_ID
+agent-watchdog report --project PROJECT --provider codex
 ```
 
 `report` reads one provider namespace from a SQLite snapshot and makes no control
@@ -81,11 +109,11 @@ success.
 ## Labels, pins, export, and purge
 
 ```console
-agent-watchdog label SESSION_ID --project PROJECT_UUID --outcome success --task-type bugfix
-agent-watchdog pin SESSION_ID --project PROJECT_UUID
-agent-watchdog pin SESSION_ID --project PROJECT_UUID --unpin
-agent-watchdog export --project PROJECT_UUID --session SESSION_ID --output review-bundle
-agent-watchdog purge SESSION_ID --project PROJECT_UUID
+agent-watchdog label SESSION_ID --project PROJECT --outcome success --task-type bugfix
+agent-watchdog pin SESSION_ID --project PROJECT
+agent-watchdog pin SESSION_ID --project PROJECT --unpin
+agent-watchdog export --project PROJECT --session SESSION_ID --output review-bundle
+agent-watchdog purge SESSION_ID --project PROJECT
 ```
 
 `label`, `pin`, and `purge` submit bounded requests to the running core and wait

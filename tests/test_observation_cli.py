@@ -6,7 +6,7 @@ from uuid import uuid4
 import pytest
 
 from agent_watchdog.cli import main
-from agent_watchdog.config import Config, Project, UserPaths, save_config
+from agent_watchdog.config import Config, Project, UserPaths, load_config, save_config
 from agent_watchdog.daemon import status, stop
 from agent_watchdog.events import Envelope, EventKind
 from agent_watchdog.storage import Store
@@ -23,24 +23,80 @@ def test_project_commands_preserve_collected_data(tmp_path, monkeypatch, capsys)
     root.mkdir()
     code, project = invoke(monkeypatch, capsys, home, "project", "add", str(root))
     assert code == 0
-    project_id = project["id"]
-    data = home / "data" / "projects" / project_id
+    assert project["project"] == "source"
+    assert "id" not in project
+    project_id = load_config(home / "config.toml").projects[0].id
+    data = home / "data" / "projects" / str(project_id)
     data.mkdir(parents=True)
     sentinel = data / "preserve.txt"
     sentinel.write_text("collected")
     code, listed = invoke(monkeypatch, capsys, home, "project", "list")
-    assert code == 0 and listed["projects"][0]["id"] == project_id
+    assert code == 0 and listed["projects"][0]["project"] == "source"
     new_root = tmp_path / "moved"
     root.rename(new_root)
-    code, moved = invoke(
-        monkeypatch, capsys, home, "project", "relocate", project_id, str(new_root)
-    )
-    assert code == 0 and moved["id"] == project_id
+    code, moved = invoke(monkeypatch, capsys, home, "project", "relocate", "source", str(new_root))
+    assert code == 0 and moved["project"] == "moved"
     assert moved["root"] == str(new_root)
-    code, _ = invoke(monkeypatch, capsys, home, "project", "remove", project_id)
+    code, _ = invoke(monkeypatch, capsys, home, "project", "remove", "moved")
     assert code == 0 and sentinel.read_text() == "collected"
     _, listed = invoke(monkeypatch, capsys, home, "project", "list")
     assert listed["projects"] == []
+
+
+def test_project_aliases_are_case_sensitive_and_resolve_duplicates_cwd_and_uuid_input(
+    tmp_path, monkeypatch, capsys
+):
+    home = tmp_path / "state"
+    first = tmp_path / "first" / "Project"
+    second = tmp_path / "second" / "project"
+    third = tmp_path / "third" / "Project"
+    first.mkdir(parents=True)
+    second.mkdir(parents=True)
+    third.mkdir(parents=True)
+    code, added_first = invoke(monkeypatch, capsys, home, "project", "add", str(first))
+    assert code == 0 and added_first["project"] == "Project"
+    code, added_second = invoke(monkeypatch, capsys, home, "project", "add", str(second))
+    assert code == 0 and added_second["project"] == "project"
+    code, added_third = invoke(monkeypatch, capsys, home, "project", "add", str(third))
+    assert code == 0 and added_third["project"] == "Project-2"
+    projects = load_config(home / "config.toml").projects
+    first_project, second_project, third_project = projects
+    for project, session_id in zip(
+        projects, ("first-session", "second-session", "third-session"), strict=True
+    ):
+        with Store(home / "data" / "projects" / str(project.id), project.id) as store:
+            store.put(
+                Envelope(
+                    provider="codex",
+                    project_id=project.id,
+                    session_id=session_id,
+                    kind="turn.end",
+                    source="hook",
+                )
+            )
+    code, listed = invoke(monkeypatch, capsys, home, "sessions", "list", "--project", "Project")
+    assert code == 0 and listed["project"] == "Project"
+    assert listed["sessions"][0]["session_id"] == "first-session"
+    code, listed = invoke(monkeypatch, capsys, home, "sessions", "list", "--project", "project")
+    assert code == 0 and listed["project"] == "project"
+    assert listed["sessions"][0]["session_id"] == "second-session"
+    code, listed = invoke(monkeypatch, capsys, home, "sessions", "list", "--project", "Project-2")
+    assert code == 0 and listed["project"] == "Project-2"
+    assert listed["sessions"][0]["session_id"] == "third-session"
+    code, error = invoke(monkeypatch, capsys, home, "sessions", "list", "--project", "PROJECT")
+    assert code == 1 and error["error"] == "StorageError"
+    code, listed = invoke(
+        monkeypatch, capsys, home, "sessions", "list", "--project", str(second_project.id)
+    )
+    assert code == 0 and listed["project"] == "project"
+    monkeypatch.chdir(first)
+    code, listed = invoke(monkeypatch, capsys, home, "sessions", "list")
+    assert code == 0 and listed["project"] == "Project"
+    code, removed = invoke(monkeypatch, capsys, home, "project", "remove", "Project-2")
+    assert code == 0 and removed["removed"] == "Project-2"
+    assert third_project.id not in {
+        project.id for project in load_config(home / "config.toml").projects
+    }
 
 
 def test_doctor_does_not_initialize_fresh_home(tmp_path, monkeypatch, capsys):
@@ -78,6 +134,7 @@ def test_sessions_separate_identities_and_report_gaps(tmp_path, monkeypatch, cap
         monkeypatch, capsys, tmp_path, "sessions", "list", "--project", str(project.id)
     )
     assert code == 0 and len(result["sessions"]) == 3
+    assert result["project"] == tmp_path.name
     one = next(item for item in result["sessions"] if item["session_id"] == "one")
     assert one["event_count"] == 2 and "session_end_not_observed" in one["gaps"]
     assert one["task_outcome"] == "unknown"
@@ -96,6 +153,64 @@ def test_sessions_separate_identities_and_report_gaps(tmp_path, monkeypatch, cap
         )
     assert code == 0 and len(result["events"]) == 1 and result["has_more"]
     assert result["events"][0]["session_id"] == "one"
+
+
+def test_summary_counts_known_data_and_leaves_missing_database_unknown(
+    tmp_path, monkeypatch, capsys
+):
+    first_root = tmp_path / "first"
+    second_root = tmp_path / "second"
+    first_root.mkdir()
+    second_root.mkdir()
+    first = Project(id=uuid4(), root=first_root)
+    second = Project(id=uuid4(), root=second_root)
+    save_config(tmp_path / "config.toml", Config(projects=(first, second)))
+    data = tmp_path / "data" / "projects" / str(first.id)
+    with Store(data, first.id) as store:
+        for provider, session_id, kind in (
+            ("codex", "one", "session.start"),
+            ("codex", "one", "turn.end"),
+            ("claude", "one", "tool.finish"),
+            ("codex", None, "unknown"),
+        ):
+            store.put(
+                Envelope(
+                    provider=provider,
+                    project_id=first.id,
+                    session_id=session_id,
+                    kind=kind,
+                    source="hook",
+                )
+            )
+    code, result = invoke(monkeypatch, capsys, tmp_path, "summary")
+    assert code == 0
+    assert result["ok"] is True and result["complete"] is False
+    assert result["observed_session_count"] == 2
+    assert result["observed_event_count"] == 4
+    first_summary, second_summary = result["projects"]
+    assert first_summary == {
+        "project": "first",
+        "root": str(first_root),
+        "database": {"state": "ready"},
+        "session_count": 2,
+        "event_count": 4,
+    }
+    assert second_summary["database"] == {"state": "unavailable"}
+    assert second_summary["session_count"] is None and second_summary["event_count"] is None
+
+
+def test_summary_reports_corrupt_database_as_partial_error(tmp_path, monkeypatch, capsys):
+    project = Project(id=uuid4(), root=tmp_path)
+    save_config(tmp_path / "config.toml", Config(projects=(project,)))
+    data = tmp_path / "data" / "projects" / str(project.id)
+    data.mkdir(parents=True)
+    (data / "events.sqlite3").write_bytes(b"not a database")
+    code, result = invoke(monkeypatch, capsys, tmp_path, "summary")
+    assert code == 1
+    assert result["ok"] is False and result["complete"] is False
+    assert result["projects"][0]["database"] == {"state": "error", "error": "DatabaseError"}
+    assert result["projects"][0]["session_count"] is None
+    assert result["observed_event_count"] == 0
 
 
 def test_sessions_hide_usage_gap_after_transcript_enrichment(tmp_path, monkeypatch, capsys):
@@ -160,6 +275,7 @@ def test_report_is_read_only_and_returns_shadow_findings(tmp_path, monkeypatch, 
         "repeated_tool_outcome",
     }
     assert report["session_ids"] == ["one"]
+    assert report["project"] == tmp_path.name
     assert (data / "events.sqlite3").read_bytes() == before
 
 
@@ -195,12 +311,13 @@ def test_label_pin_export_and_purge_are_offline_and_provider_scoped(tmp_path, mo
             "bugfix",
         )
         assert code == 0, label
+        assert label["project"] == tmp_path.name
         assert label["label"] == {"task_outcome": "success", "task_type": "bugfix"}
 
         code, pin = invoke(
             monkeypatch, capsys, tmp_path, "pin", "shared", "--project", str(project.id)
         )
-        assert code == 0 and pin["pinned"] is True, pin
+        assert code == 0 and pin["project"] == tmp_path.name and pin["pinned"] is True, pin
 
         code, shown = invoke(
             monkeypatch,
@@ -230,6 +347,7 @@ def test_label_pin_export_and_purge_are_offline_and_provider_scoped(tmp_path, mo
             str(output),
         )
         assert code == 0
+        assert exported["project"] == tmp_path.name
         assert set(exported["files"]) == {
             "events.jsonl",
             "manifest.json",
@@ -245,7 +363,7 @@ def test_label_pin_export_and_purge_are_offline_and_provider_scoped(tmp_path, mo
         code, purged = invoke(
             monkeypatch, capsys, tmp_path, "purge", "shared", "--project", str(project.id)
         )
-        assert code == 0 and purged["deleted_events"] == 1
+        assert code == 0 and purged["project"] == tmp_path.name and purged["deleted_events"] == 1
         with Store(data, project.id) as store:
             assert [event.provider for event in store.events()] == ["claude"]
     finally:
@@ -272,6 +390,7 @@ def test_doctor_distinguishes_database_failures(tmp_path, monkeypatch, capsys, f
             else:
                 store.connection.execute("UPDATE metadata SET project_id=?", (str(uuid4()),))
     code, report = invoke(monkeypatch, capsys, tmp_path, "doctor")
+    assert report["projects"][0]["project"] == tmp_path.name
     assert report["projects"][0]["database"]["state"] == (
         "unavailable" if fault == "missing" else "error"
     )
