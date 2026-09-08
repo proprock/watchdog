@@ -185,6 +185,18 @@ def test_invalid_spool_log_names_the_error_category(paths):
     )
 
 
+def test_log_detail_opt_in_adds_the_error_string_to_spool_failures(paths):
+    config = Config(defaults=Limits(log_level="DEBUG", log_detail=True))
+    paths.data.joinpath("spool").mkdir(parents=True)
+    (paths.data / "spool" / "broken.json").write_text("not json", encoding="utf-8")
+
+    assert _drain_spool(paths, config) is True
+
+    body = (paths.data / "watchdog.log").read_text(encoding="ascii")
+    assert "reason=invalid error_type=jsondecodeerror" in body
+    assert ' detail="' in body and "Expecting value" in body
+
+
 def test_oversized_spool_record_is_discarded_with_a_size_reason(paths, tmp_path):
     root = tmp_path / "project"
     root.mkdir()

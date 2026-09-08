@@ -49,6 +49,7 @@ def _log(
     event_id: UUID | None = None,
     count: int | None = None,
     bytes: int | None = None,
+    detail: str | None = None,
 ) -> None:
     if config is None:
         try:
@@ -70,6 +71,7 @@ def _log(
         event_id=event_id,
         count=count,
         bytes=bytes,
+        detail=detail,
     )
 
 
@@ -505,6 +507,7 @@ def _drain_controls(paths: UserPaths, config: Config, *, limit: int = 100) -> bo
                 event="control",
                 decision="rejected",
                 error_type=error_code(error),
+                detail=str(error),
             )
         atomic_write(
             paths.data / "acks" / f"{request_id}.json", json.dumps(acknowledgement).encode()
@@ -619,6 +622,7 @@ def _drain_spool(paths: UserPaths, config: Config, *, limit: int = 100) -> bool:
                 decision="discarded",
                 reason="invalid",
                 error_type=error_code(error),
+                detail=str(error),
             )
             _discard(path)
             activity = True
@@ -703,6 +707,7 @@ def _drain_spool(paths: UserPaths, config: Config, *, limit: int = 100) -> bool:
                 decision="discarded",
                 reason="invalid",
                 error_type=error_code(error),
+                detail=str(error),
                 project_id=project.id,
                 event_id=event_id,
             )
@@ -790,6 +795,7 @@ def _poll(paths: UserPaths, owner: ExitStack) -> None:
                         event="configuration",
                         decision="deferred",
                         error_type=error_code(error),
+                        detail=str(error),
                     )
                     pass
             if _drain_spool(paths, config):
@@ -843,6 +849,7 @@ def _poll(paths: UserPaths, owner: ExitStack) -> None:
                                 event="enrichment",
                                 decision="failed",
                                 error_type=error_code(error),
+                                detail=str(error),
                                 project_id=project.id,
                             )
                         if resources.available(root, limits) < 65536 and len(errors) < 32:
@@ -860,6 +867,7 @@ def _poll(paths: UserPaths, owner: ExitStack) -> None:
                         event="project",
                         decision="degraded",
                         error_type=error_code(error),
+                        detail=str(error),
                         project_id=project.id,
                     )
         except ConfigError as error:
@@ -871,6 +879,7 @@ def _poll(paths: UserPaths, owner: ExitStack) -> None:
                 event="configuration",
                 decision="invalid",
                 error_type=error_code(error),
+                detail=str(error),
             )
         atomic_write(
             paths.runtime / "status.json",

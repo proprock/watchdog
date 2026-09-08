@@ -29,6 +29,10 @@ log_files = 5
 log_bytes = 10485760
 # Write INFO, WARNING, and ERROR by default; set DEBUG for hot-path decisions.
 log_level = "INFO"
+# Append a de-identified, truncated detail="..." clause (usually str(error)) to
+# error records. Off by default so the log, exports, and shared bug reports stay
+# content-free; enable it on a local development or debugging instance.
+log_detail = false
 
 # The quota relationship must remain:
 # payload_bytes <= inbox_bytes <= project_bytes

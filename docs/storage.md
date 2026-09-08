@@ -31,6 +31,7 @@ with Store(root, event.project_id, limits=limits) as store:
 | `payload_bytes` | 1 MiB | Bound raw hook input and serialized envelopes |
 | `reserve_bytes` | 1 MiB | Withhold room for cleanup and diagnostics |
 | `log_files`, `log_bytes`, `log_level` | 5, 10 MiB, `INFO` | Global daemon diagnostic log retention and threshold |
+| `log_detail` | `false` | Append a de-identified, truncated `detail="..."` error string to the diagnostic log |
 
 All settings except the daemon-wide log settings support global defaults and project overrides. Admission checks both
 remaining project budget and actual free disk space, withholding the reserve from
@@ -59,9 +60,18 @@ admission, or fail-open behavior.
 configuration, control, drops, and degradation use higher levels. Log records use
 only fixed component/event/decision/reason codes, a shape-bounded `error_type`
 (an exception class name or an internal failure code) and `field` name, nonnegative
-counts and byte sizes, plus Watchdog project/event UUIDs where available. They
-never include prompts, paths, commands, provider/session IDs, payloads, tool
-input/output, exception text, or tracebacks.
+counts and byte sizes, plus Watchdog project/event UUIDs where available. By
+default they never include prompts, paths, commands, provider/session IDs,
+payloads, tool input/output, exception text, or tracebacks.
+
+`log_detail` is global under `[defaults]` and defaults to `false`. When `true`, a
+record produced from a caught exception gains a trailing `detail="..."` clause
+holding `str(error)`: known credential forms are removed, whitespace is collapsed,
+non-printable and non-ASCII characters are replaced, and the result is truncated
+to 200 characters. Filesystem paths and non-credential payload fragments are kept,
+so enable it only on a local development or debugging instance; keep it `false`
+wherever the log may be exported or shared. It changes only the diagnostic log,
+never hook output, admission, or delivery.
 
 Publishers and storage writes/maintenance share `admission.lock`, with a 100 ms
 acquisition timeout. Pending temporary files count; SQLite admission additionally

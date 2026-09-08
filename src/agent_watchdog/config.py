@@ -38,6 +38,7 @@ class Limits(StrictModel):
     log_files: Positive = 5
     log_bytes: Positive = 10 * 1024**2
     log_level: Literal["DEBUG", "INFO", "WARNING", "ERROR"] = "INFO"
+    log_detail: bool = False
 
     @model_validator(mode="after")
     def ordered_quotas(self) -> Self:

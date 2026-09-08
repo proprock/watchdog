@@ -32,6 +32,7 @@ def _log(
     event: str,
     decision: str,
     error_type: str | None = None,
+    detail: str | None = None,
 ) -> None:
     try:
         limits = load_config(paths.config).defaults
@@ -45,6 +46,7 @@ def _log(
         event=event,
         decision=decision,
         error_type=error_type,
+        detail=detail,
     )
 
 
@@ -329,6 +331,7 @@ def main() -> int:
             event="command",
             decision="failed",
             error_type=error_code(error),
+            detail=str(error),
         )
         print(json.dumps({"error": type(error).__name__, "message": str(error)}))
         return 1
@@ -339,6 +342,7 @@ def main() -> int:
             event="command",
             decision="failed",
             error_type=error_code(error),
+            detail=str(error),
         )
         print(json.dumps({"error": type(error).__name__}))
         return 1

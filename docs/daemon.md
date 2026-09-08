@@ -71,9 +71,12 @@ The Python core also keeps a bounded, best-effort diagnostic log at
 `[defaults]` `log_files` and `log_bytes`; `log_level = "INFO"` excludes normal
 hot-path DEBUG records. Entries contain only fixed decision codes, a shape-bounded
 `error_type`/`field`, bounded numeric metadata, and local Watchdog project/event
-UUIDs. They never contain paths, prompts, provider/session IDs, commands, tool
-output, exception messages, or tracebacks; a logging failure never affects daemon
-or hook behavior.
+UUIDs. By default they never contain paths, prompts, provider/session IDs,
+commands, tool output, exception messages, or tracebacks. Setting `[defaults]`
+`log_detail = true` adds a de-identified, 200-character `detail="..."` error
+string (paths kept, credentials stripped) for local debugging; see
+[storage](storage.md#daemon-diagnostic-log). A logging failure never affects
+daemon or hook behavior.
 
 ## Python entry points
 

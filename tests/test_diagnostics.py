@@ -116,6 +116,46 @@ def test_error_type_accepts_internal_codes_but_rejects_free_text(tmp_path):
     assert lines[0].endswith("error_type=usage_counter_reset")
 
 
+def test_log_detail_is_off_by_default_and_stays_content_free(tmp_path):
+    emit(
+        tmp_path,
+        Limits(log_level="DEBUG"),
+        "WARNING",
+        component="daemon",
+        event="spool",
+        decision="discarded",
+        reason="invalid",
+        detail="C:/Users/alice/repo/secret.py: token=sk-proj-" + "a" * 40,
+    )
+    body = (tmp_path / "watchdog.log").read_text(encoding="ascii")
+    assert "detail=" not in body
+
+
+def test_log_detail_appends_a_sanitized_bounded_single_line_clause(tmp_path):
+    secret = "sk-proj-" + "a" * 40
+    raw = f'1 validation error\nBearer {secret}\npath C:\\Users\\alice\\x "q" ' + "z" * 400
+    emit(
+        tmp_path,
+        Limits(log_level="DEBUG", log_detail=True),
+        "WARNING",
+        component="daemon",
+        event="spool",
+        decision="discarded",
+        reason="invalid",
+        error_type="valueerror",
+        detail=raw,
+    )
+    lines = (tmp_path / "watchdog.log").read_text(encoding="ascii").splitlines()
+    assert len(lines) == 1
+    line = lines[0]
+    assert secret not in line and "Bearer" not in line
+    assert "C:\\Users\\alice\\x" in line  # paths are retained on purpose
+    assert '""' not in line
+    detail = line.split(' detail="', 1)[1][:-1]
+    assert len(detail) <= 203 and detail.endswith("...")
+    assert line.index("error_type=valueerror") < line.index('detail="')
+
+
 def test_error_code_preserves_the_exception_class_name(tmp_path):
     class TranscriptUnreadable(Exception):
         pass

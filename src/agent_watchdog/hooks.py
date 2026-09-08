@@ -368,6 +368,7 @@ def observe(paths: UserPaths, stream: BinaryIO, provider: str = "codex") -> None
                 error_type=error_code(error),
                 project_id=project.id,
                 event_id=event.event_id,
+                detail=str(error),
             )
             return
     except Exception as error:
@@ -381,5 +382,6 @@ def observe(paths: UserPaths, stream: BinaryIO, provider: str = "codex") -> None
             event="observe",
             decision="failed",
             error_type=error_code(error),
+            detail=str(error),
         )
         return
