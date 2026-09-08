@@ -44,12 +44,15 @@ Claude desktop uses project-local `.claude/settings.local.json` in a dedicated s
 ## WD-107 telemetry inventory and gaps
 
 The daemon recognizes current hook identifiers and lifecycle/tool fields, plus
-model and alias, reasoning mode/effort, provider/client version, surface,
-context/cache/token counters, timing, retries, interruptions, permission outcome,
-errors, and parent relations. Values are retained only when a provider actually
-supplies them; absence stays `unknown` or `unavailable`, never zero. The current
-fixtures establish only the fields listed above in the payload findings; they do
-not establish that either provider exposes every telemetry signal on every surface.
+model and alias, reasoning mode/effort (`reasoning_effort` and the `effort`
+alias), provider/client version, surface, context/cache/token counters, timing,
+retries, interruptions, permission mode and outcome, errors, and parent
+relations. Transport identity also covers `prompt_id` and `scratchpad_dir`, and
+Claude session state covers `background_tasks`, `session_crons`, and
+`session_title`. Values are retained only when a provider actually supplies them;
+absence stays `unknown` or `unavailable`, never zero. The current fixtures
+establish only the fields listed above in the payload findings; they do not
+establish that either provider exposes every telemetry signal on every surface.
 
 An input field outside this inventory remains in provider metadata and produces a
 WARNING with its safe top-level name, so it can be assessed and added deliberately.

@@ -63,6 +63,48 @@ def test_python_adapter_retains_redacted_unknown_telemetry_and_warns(tmp_path, m
     assert secret not in body
 
 
+def test_current_harness_fields_are_inventoried_not_warned(tmp_path, monkeypatch):
+    paths, project, _ = configured(tmp_path)
+    captured = []
+    monkeypatch.setattr(
+        "agent_watchdog.hooks.daemon.enqueue", lambda _, event: captured.append(event) or True
+    )
+    observe(
+        paths,
+        io.BytesIO(
+            json.dumps(
+                {
+                    "cwd": str(tmp_path),
+                    "hook_event_name": "Stop",
+                    "session_id": "session-1",
+                    "permission_mode": "acceptEdits",
+                    "prompt_id": "prompt-7",
+                    "scratchpad_dir": str(tmp_path / "scratch"),
+                    "effort": "high",
+                    "background_tasks": ["t1"],
+                    "session_crons": [],
+                    "session_title": "demo",
+                    "future_metric": {"value": 7},
+                }
+            ).encode()
+        ),
+        "claude",
+    )
+
+    event = captured[0]
+    payload = event.payload["claude"]
+    assert payload["unknown_fields"] == ["future_metric"]
+    assert payload["metadata"]["permission_mode"] == "acceptEdits"
+    assert payload["metadata"]["prompt_id"] == "prompt-7"
+    assert payload["metadata"]["effort"] == "high"
+    assert event.availability["input.permission_mode"] == "observed"
+    body = (paths.data / "watchdog.log").read_text(encoding="ascii")
+    assert "provider=claude field=future_metric" in body
+    assert "field=permission_mode" not in body
+    assert "field=prompt_id" not in body
+    assert "field=session_crons" not in body
+
+
 def test_unknown_metadata_survives_capture_content_opt_out(tmp_path, monkeypatch):
     paths, _, _ = configured(tmp_path, capture_content=False)
     captured = []
