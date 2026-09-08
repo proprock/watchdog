@@ -11,7 +11,7 @@ Milestones: ROADMAP.md
 # Workflow
 
 - Read `git status --short` and preserve unrelated user changes.
-- Features: use `feature/<name>`, write a failing behavioral test, implement the smallest solution, then refactor. Use a worktree when isolation is needed.
+- Features: use `feature/<name>`, write a failing behavioral test, implement the smallest solution, then refactor. Use a worktree only when isolation is needed (in case of staged changes or modified source files).
 - Debugging: reproduce, form a hypothesis, apply a minimal fix, run a focused test and relevant broader checks. Do not repeat an expensive failed run without changing the conditions.
 - Docs/config: review content and run `git diff --check`; do not write tests that merely assert documentation strings exist.
 - Use Conventional Commits, one subject per commit, and an action list in the commit body. Do not push unless requested.

@@ -1,6 +1,6 @@
 ## Mandatory rules
 
-- Follow `TENETS.md`.
+- Strictly follow `TENETS.md`.
 
 ## Agent delegation and context budget
 
