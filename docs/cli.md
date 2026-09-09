@@ -63,6 +63,25 @@ throughput and peak rate, stage-delay percentiles, observed queue occupancy, and
 loss counters. If daemon-wide `pipeline_telemetry` is disabled, it returns an
 explicit disabled result rather than treating missing measurements as zero.
 
+## Token and process telemetry
+
+```console
+agent-watchdog usage --project PROJECT
+agent-watchdog usage --project PROJECT --since 2026-09-08T00:00:00+00:00 --until 2026-09-09T00:00:00+00:00
+```
+
+`usage` aggregates the schema-v6 `event_facts` projections from a read-only
+snapshot. It reports raw token sums grouped by provider and, under `token_by`, by
+model, reasoning effort, attribution state, conversation, turn, and day; a
+`process` block with per-`tool_name` cost and error rate, tools and tool
+wall-time per turn, permission-mode throughput, permission-prompt count,
+inter-turn latency, and subagent cost by `agent_type`; and a `coverage` block
+with the non-NULL count per projected column, kept separate from the aggregates.
+Each token counter is summed as reported; `total_tokens` stays absent for Claude
+rather than being reconstructed from the parts. `--since`/`--until` bound
+`received_at`. A database older than schema v6 is an explicit error, not an empty
+result.
+
 ## Doctor
 
 ```console

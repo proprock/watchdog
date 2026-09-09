@@ -113,6 +113,12 @@ def main() -> int:
     )
     telemetry.add_argument("--project", help="Project alias; UUID accepted; default resolves cwd")
     telemetry.add_argument("--since", type=_since, help="ISO-8601 inclusive lower bound")
+    usage = commands.add_parser(
+        "usage", help="Compare token use and per-turn process cost (read-only, schema v6)"
+    )
+    usage.add_argument("--project", help="Project alias; UUID accepted; default resolves cwd")
+    usage.add_argument("--since", type=_since, help="ISO-8601 inclusive lower bound")
+    usage.add_argument("--until", type=_since, help="ISO-8601 exclusive upper bound")
     label = commands.add_parser("label", help="Label one collected session through the core")
     label.add_argument("session_id")
     label.add_argument("--project", help="Project alias; UUID accepted; default resolves cwd")
@@ -208,6 +214,7 @@ def main() -> int:
             "sessions",
             "report",
             "telemetry",
+            "usage",
             "export",
             "label",
             "pin",
@@ -258,6 +265,10 @@ def main() -> int:
                 return 0
             if args.command == "telemetry":
                 result = inspection.telemetry(paths, project, since=args.since)
+                print(json.dumps(_with_project_alias(result, alias)))
+                return 0
+            if args.command == "usage":
+                result = inspection.usage(paths, project, since=args.since, until=args.until)
                 print(json.dumps(_with_project_alias(result, alias)))
                 return 0
             if args.action == "list":

@@ -297,6 +297,42 @@ def telemetry(paths: UserPaths, project: Project, *, since: datetime | None) -> 
     }
 
 
+def usage(
+    paths: UserPaths,
+    project: Project,
+    *,
+    since: datetime | None,
+    until: datetime | None,
+) -> dict[str, Any]:
+    """Compare raw token use and per-turn process cost from a v6 read-only snapshot."""
+    from agent_watchdog import facts_query
+
+    since_us = int(since.timestamp() * 1_000_000) if since is not None else None
+    until_us = int(until.timestamp() * 1_000_000) if until is not None else None
+    with database(paths, project) as db:
+        if db.execute("PRAGMA user_version").fetchone()[0] < 6:
+            raise StorageError("Project database predates schema v6; run the daemon to migrate")
+        token_by = {
+            dimension: facts_query.token_usage(
+                db, since_us=since_us, until_us=until_us, group_by=dimension
+            )
+            for dimension in ("model", "effort", "attribution", "conversation", "turn", "day")
+        }
+        return {
+            "project_id": str(project.id),
+            "window": {
+                "since": since.isoformat() if since is not None else None,
+                "until": until.isoformat() if until is not None else None,
+            },
+            "token_usage": facts_query.token_usage(
+                db, since_us=since_us, until_us=until_us, group_by="provider"
+            ),
+            "token_by": token_by,
+            "process": facts_query.process_efficiency(db, since_us=since_us, until_us=until_us),
+            "coverage": facts_query.coverage(db),
+        }
+
+
 def export_sessions(
     paths: UserPaths,
     project: Project,

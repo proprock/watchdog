@@ -406,39 +406,22 @@ def test_v6_delete_removes_the_matching_fact_row(tmp_path, project):
         assert store.connection.execute("SELECT COUNT(*) FROM events").fetchone()[0] == 0
 
 
-@pytest.mark.parametrize(
-    ("query", "index"),
-    [
-        (
-            "SELECT SUM(output_tokens) FROM event_facts "
-            "WHERE kind='usage' AND received_at_us >= 0 AND received_at_us < 9",
-            "event_facts_usage_time",
-        ),
-        (
-            "SELECT SUM(output_tokens) FROM event_facts "
-            "WHERE kind='usage' AND provider='claude' AND model='claude-sonnet-5'",
-            "event_facts_usage_dim",
-        ),
-        (
-            "SELECT tool_name, COUNT(*) FROM event_facts "
-            "WHERE kind='tool.finish' AND provider='claude' GROUP BY tool_name",
-            "event_facts_tool_cost",
-        ),
-        (
-            "SELECT tool_use_id FROM event_facts "
-            "WHERE kind IN ('tool.start','tool.finish') AND provider='claude' "
-            "AND session_id='s' AND turn_id='t'",
-            "event_facts_tool_pair",
-        ),
-    ],
-)
-def test_v6_analysis_queries_use_the_partial_indexes(tmp_path, project, query, index):
+def test_v6_migration_creates_the_five_analysis_indexes(tmp_path, project):
     build_v5(tmp_path, project, [])
     with Store(tmp_path, project) as store:
-        plan = " ".join(
-            str(part)
-            for row in store.connection.execute("EXPLAIN QUERY PLAN " + query)
-            for part in row
-        )
-        assert index in plan, plan
-        assert "json_extract" not in plan
+        indexes = {
+            row[0]
+            for row in store.connection.execute(
+                "SELECT name FROM sqlite_master WHERE type='index' AND tbl_name='event_facts' "
+                "AND name NOT LIKE 'sqlite_autoindex_%'"
+            )
+        }
+    assert indexes == {
+        "event_facts_context",
+        "event_facts_usage_time",
+        "event_facts_usage_dim",
+        "event_facts_tool_pair",
+        "event_facts_tool_cost",
+    }
+    # Query-plan regression that these indexes are actually chosen lives in
+    # tests/test_facts_query.py (WD-112).

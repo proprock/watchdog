@@ -216,6 +216,12 @@ they get no column. Claude subagent `usage` rows carry the subagent `agent_id`
 and the parent `session_id`, so subagent cost joins to the parent conversation.
 Monetary estimates and tariffs are out of scope and deferred.
 
+`agent_watchdog.facts_query` provides the read-only aggregate helpers
+(`token_usage`, `process_efficiency`, `coverage`) over `event_facts`; the
+[`usage` CLI command](cli.md#token-and-process-telemetry) assembles them from a
+read-only snapshot. Every figure is a raw `SUM`/`COUNT`; coverage is reported
+beside the aggregates, never folded in.
+
 ## Retention and pins
 
 The daemon maintains each project on first access and at most once per minute
