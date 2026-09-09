@@ -29,6 +29,7 @@ pipeline_telemetry = true
 [defaults]
 content_days = 30
 metrics_days = 180
+transcript_failure_minutes = 15
 capture_content = true
 reserve_bytes = 1048576
 ```
@@ -39,7 +40,9 @@ to false. When enabled, `trusted_projects_dir` is required and must name an
 existing directory; `~` is expanded and the canonical absolute path is stored.
 Only an unregistered Git checkout whose canonical root is inside that directory
 is added automatically. Non-Git directories and all paths outside it remain
-unregistered. Numeric limits must be positive integers,
+unregistered. Numeric limits must be positive integers except `content_days` and
+`metrics_days`, which may be zero to disable time-based expiry. The
+`transcript_failure_minutes` health window is always positive,
 and `payload_bytes <= inbox_bytes <= project_bytes`; numeric strings and booleans
 are rejected. TOML serialization omits optional values rather than inventing nulls.
 `capture_content` and the daemon-wide `pipeline_telemetry` are strict booleans,

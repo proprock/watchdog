@@ -19,6 +19,10 @@ content_days = 30
 # Retain events, metrics, labels, and replay fingerprints for this many days;
 # set to 0 to disable time-based expiry and retain them until quota pressure.
 metrics_days = 180
+# Keep the daemon degraded for this many minutes after a hook references a
+# transcript source that cannot be enriched. Historical reader gaps stay stored
+# for diagnostics but do not hold the health status after this window.
+transcript_failure_minutes = 15
 # Maximum total size of regular files stored for one project (2 GiB).
 project_bytes = 2147483648
 # Maximum size of pending inbox data and temporary inbox files (64 MiB).

@@ -8,7 +8,7 @@ import sys
 import time
 from collections.abc import Callable, Iterator, Mapping
 from contextlib import ExitStack, contextmanager
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from uuid import UUID, uuid4
 
@@ -876,6 +876,7 @@ def _poll(paths: UserPaths, owner: ExitStack) -> None:
                     return
             continue
         errors = []
+        transcript_failures: dict[str, list[str]] = {}
         activity = False
         try:
             config = load_config(paths.config)
@@ -917,8 +918,16 @@ def _poll(paths: UserPaths, owner: ExitStack) -> None:
                         try:
                             from agent_watchdog.transcripts import enrich, failure_code
 
-                            enrichment = enrich(store)
+                            enrichment = enrich(
+                                store,
+                                active_failure_since=datetime.now(UTC)
+                                - timedelta(minutes=limits.transcript_failure_minutes),
+                            )
                             activity |= bool(enrichment)
+                            if enrichment.active_failures:
+                                transcript_failures[str(project.id)] = list(
+                                    enrichment.active_failures
+                                )
                             degraded = _record_enrichment_failures(
                                 paths,
                                 config,
@@ -944,12 +953,14 @@ def _poll(paths: UserPaths, owner: ExitStack) -> None:
                             if degraded and len(errors) < 32:
                                 errors.append(str(project.id))
                         except (OSError, StorageError, ValueError) as error:
+                            code = failure_code(error)
+                            transcript_failures[str(project.id)] = [code]
                             if (
                                 _record_enrichment_failures(
                                     paths,
                                     config,
                                     project.id,
-                                    (failure_code(error),),
+                                    (code,),
                                     logged_enrichment_failures,
                                     detail=str(error),
                                 )
@@ -995,6 +1006,7 @@ def _poll(paths: UserPaths, owner: ExitStack) -> None:
                     "heartbeat": time.time(),
                     "acknowledged_request": control.get("request_id"),
                     "errors": errors,
+                    "transcript_failures": transcript_failures,
                 }
             ).encode(),
         )

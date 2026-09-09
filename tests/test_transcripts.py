@@ -59,14 +59,20 @@ def usage(session: str, response: str, *, total: int, output: int, cached: int |
     }
 
 
-def hook(project, session: str, transcript: Path) -> Envelope:
+def hook(
+    project,
+    session: str,
+    transcript: Path,
+    *,
+    received_at: datetime = datetime(2026, 9, 7, tzinfo=UTC),
+) -> Envelope:
     return Envelope(
         provider="codex",
         project_id=project,
         session_id=session,
         kind="turn.end",
         source="hook",
-        received_at=datetime(2026, 9, 7, tzinfo=UTC),
+        received_at=received_at,
         payload={"codex": {"transcript_path": str(transcript)}},
     )
 
@@ -248,6 +254,29 @@ def test_source_failure_is_safe_isolated_and_not_retried_until_change(tmp_path, 
     bad_source = next(source for source in sources if source["session_id"] == bad_session)
     assert bad_source["last_error"] == "transcript_source_invalid"
     assert secret not in repr((gaps, bad_source, first))
+
+
+def test_stale_transcript_failure_stays_diagnostic_without_degrading(tmp_path):
+    project = uuid4()
+    session = "session-1"
+    missing = tmp_path / "missing.jsonl"
+    observed_at = datetime(2026, 9, 7, tzinfo=UTC)
+    cutoff = datetime(2026, 9, 7, 0, 15, tzinfo=UTC)
+    with Store(tmp_path / "data", project) as store:
+        store.put(hook(project, session, missing, received_at=observed_at))
+        first = enrich(store, active_failure_since=cutoff)
+        sources = store.transcript_sources()
+
+        store.put(
+            hook(project, session, missing, received_at=datetime(2026, 9, 7, 0, 20, tzinfo=UTC))
+        )
+        refreshed = enrich(store, active_failure_since=cutoff)
+
+    assert first.failures == ("transcript_unreadable",)
+    assert first.active_failures == ()
+    assert sources[0]["last_error"] == "transcript_unreadable"
+    assert refreshed.failures == ()
+    assert refreshed.active_failures == ("transcript_unreadable",)
 
 
 def test_source_listing_failure_returns_only_an_allowlisted_code():

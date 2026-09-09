@@ -23,6 +23,7 @@ def test_missing_config_uses_defaults_without_creating_files(tmp_path):
     config = load_config(tmp_path / "config.toml")
     assert config.defaults.content_days == 30
     assert config.defaults.metrics_days == 180
+    assert config.defaults.transcript_failure_minutes == 15
     assert config.defaults.project_bytes == 2 * 1024**3
     assert config.projects == ()
     assert config.auto_add_projects is False
@@ -43,6 +44,7 @@ def test_missing_config_uses_defaults_without_creating_files(tmp_path):
         "pipeline_telemetry = 1",
         '[defaults]\ncontent_days = "30"',
         "[defaults]\ncontent_days = -1",
+        "[defaults]\ntranscript_failure_minutes = 0",
         "[defaults]\nproject_bytes = 10",
         '[[projects]]\nid = "not-a-uuid"\nroot = "relative"',
     ],
@@ -73,6 +75,18 @@ def test_zero_retention_days_disable_time_based_expiry(tmp_path):
     assert config.defaults.metrics_days == 0
     assert Overrides(content_days=0, metrics_days=0).apply(Limits()) == Limits(
         content_days=0, metrics_days=0
+    )
+
+
+def test_transcript_failure_window_supports_project_overrides(tmp_path):
+    path = tmp_path / "config.toml"
+    path.write_text("[defaults]\ntranscript_failure_minutes = 30\n")
+
+    config = load_config(path)
+
+    assert config.defaults.transcript_failure_minutes == 30
+    assert Overrides(transcript_failure_minutes=1).apply(config.defaults) == Limits(
+        transcript_failure_minutes=1
     )
 
 

@@ -4,13 +4,13 @@ import subprocess
 import sys
 import time
 from concurrent.futures import ThreadPoolExecutor
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from uuid import uuid4
 
 import pytest
 
-from agent_watchdog.config import Config, Limits, UserPaths, load_config, save_config
+from agent_watchdog.config import Config, Limits, Overrides, UserPaths, load_config, save_config
 from agent_watchdog.daemon import (
     _drain_spool,
     _record_enrichment_failures,
@@ -475,7 +475,9 @@ def test_missing_transcript_degrades_the_daemon_until_the_source_recovers(paths,
 
     start(paths)
     wait_for(lambda: str(project.id) in status(paths).get("errors", []))
-    assert status(paths)["state"] == "degraded"
+    report = status(paths)
+    assert report["state"] == "degraded"
+    assert report["transcript_failures"] == {str(project.id): ["transcript_unreadable"]}
     body = (paths.data / "watchdog.log").read_text(encoding="ascii")
     assert (
         "event=enrichment decision=unavailable "
@@ -494,6 +496,38 @@ def test_missing_transcript_degrades_the_daemon_until_the_source_recovers(paths,
         encoding="utf-8",
     )
     wait_for(lambda: status(paths)["state"] == "running")
+
+
+def test_stale_transcript_failure_does_not_degrade_daemon(paths, tmp_path):
+    root = tmp_path / "project"
+    root.mkdir()
+    mutate_registry(paths, lambda registry: registry.add(root))
+    config = load_config(paths.config)
+    project = config.projects[0]
+    updated = config.model_copy(
+        update={
+            "projects": (
+                project.model_copy(update={"overrides": Overrides(transcript_failure_minutes=1)}),
+            )
+        }
+    )
+    save_config(paths.config, updated)
+    record = spool_record(
+        root,
+        hook_event_name="Stop",
+        session_id="session-1",
+        transcript_path=str(tmp_path / "missing.jsonl"),
+    )
+    record["received_at"] = (datetime.now(UTC) - timedelta(minutes=2)).isoformat()
+    write_spool_record(paths, record)
+
+    start(paths)
+    wait_for(lambda: status(paths)["state"] == "running")
+
+    with Store(paths.project_data(project.id), project.id) as store:
+        sources = store.transcript_sources()
+    assert sources[0]["last_error"] == "transcript_unreadable"
+    assert status(paths)["transcript_failures"] == {}
 
 
 def test_inert_enrichment_is_logged_and_degrades_until_it_resolves(paths, tmp_path):

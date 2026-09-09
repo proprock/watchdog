@@ -526,6 +526,22 @@ def _normalize_source(value: object) -> dict[str, object]:
     return source
 
 
+def _source_is_current(source: Mapping[str, object], active_failure_since: datetime | None) -> bool:
+    """Keep an unverifiable source failure visible rather than silently hiding it."""
+    if active_failure_since is None:
+        return True
+    last_seen = source.get("last_seen")
+    if not isinstance(last_seen, str):
+        return True
+    try:
+        observed_at = datetime.fromisoformat(last_seen)
+    except ValueError:
+        return True
+    if observed_at.tzinfo is None:
+        return True
+    return observed_at >= active_failure_since
+
+
 def _process_source(store: "Store", source: dict[str, object]) -> EnrichmentResult:
     path = Path(str(source["path"]))
     try:
@@ -747,7 +763,7 @@ def _unexpected_source_failure(store: "Store", source: dict[str, object]) -> Enr
     )
 
 
-def enrich(store: "Store") -> EnrichmentResult:
+def enrich(store: "Store", *, active_failure_since: datetime | None = None) -> EnrichmentResult:
     """Read bounded usage from known Codex and Claude transcript paths, daemon only."""
     try:
         sources = store.transcript_sources()
@@ -790,9 +806,10 @@ def enrich(store: "Store") -> EnrichmentResult:
         for code in result.failures:
             if code not in failures:
                 failures.append(code)
-        for code in result.active_failures:
-            if code not in active_failures:
-                active_failures.append(code)
+        if _source_is_current(source, active_failure_since):
+            for code in result.active_failures:
+                if code not in active_failures:
+                    active_failures.append(code)
     return EnrichmentResult(
         accepted=accepted,
         inert=inert and accepted == 0,

@@ -80,8 +80,11 @@ daemon or hook behavior.
 
 Transcript-enrichment diagnostics use a fixed reader-specific `error_type`
 allowlist rather than exception class names. Newly active failures are logged once
-per project/code pair; while a reader failure remains active, the project remains
-`degraded`. With the default `log_detail = false` these records contain no
+per project/code pair. A reader failure holds a project `degraded` only while its
+source has been referenced by a hook within `transcript_failure_minutes` (15 by
+default); older reader gaps remain diagnostic history. Status includes the active
+failure codes per project without paths or session identities. With the default
+`log_detail = false` these records contain no
 transcript content or exception text. Enabling `log_detail` applies the same
 bounded, credential-redacted local-detail policy as other caught exceptions.
 

@@ -26,6 +26,7 @@ with Store(root, event.project_id, limits=limits) as store:
 | `capture_content` | true | Capture selected native text fields; false keeps metadata only |
 | `content_days` | 30 | Expire provider payload and artifact references; `0` disables time expiry (quota still applies) |
 | `metrics_days` | 180 | Expire events and replay fingerprints; `0` disables time expiry (quota still applies) |
+| `transcript_failure_minutes` | 15 | Keep a project degraded after a recent transcript-reader failure; historical gaps remain diagnostic |
 | `project_bytes` | 2 GiB | Account for regular files under the project data directory |
 | `inbox_bytes` | 64 MiB | Bound pending deliveries and inbox temporary files |
 | `payload_bytes` | 1 MiB | Bound raw hook input and serialized envelopes |
@@ -73,8 +74,12 @@ so enable it only on a local development or debugging instance; keep it `false`
 wherever the log may be exported or shared. It changes only the diagnostic log,
 never hook output, admission, or delivery.
 
-Transcript-enrichment failures use a fixed reader-specific `error_type` allowlist
-and keep the affected project degraded while active. Their records are
+Transcript-enrichment failures use a fixed reader-specific `error_type` allowlist.
+They keep the affected project degraded only while the source has a hook reference
+within its resolved `transcript_failure_minutes` window; the persisted reader gap
+outlives that health signal and is still retried if the source changes. Status
+exposes only active failure codes per project, never reader paths or session IDs.
+Their records are
 content-free with the default `log_detail = false`; when explicitly enabled, the
 same bounded, credential-redacted detail policy applies. A separate
 `decision=inert reason=usage_seen_unstored` record marks the case where a reader

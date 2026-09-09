@@ -32,6 +32,7 @@ class Limits(StrictModel):
     reserve_bytes: Positive = 1024**2
     content_days: NonNegative = 30
     metrics_days: NonNegative = 180
+    transcript_failure_minutes: Positive = 15
     project_bytes: Positive = 2 * 1024**3
     inbox_bytes: Positive = 64 * 1024**2
     payload_bytes: Positive = 1024**2
@@ -52,6 +53,7 @@ class Overrides(StrictModel):
     reserve_bytes: Positive | None = None
     content_days: NonNegative | None = None
     metrics_days: NonNegative | None = None
+    transcript_failure_minutes: Positive | None = None
     project_bytes: Positive | None = None
     inbox_bytes: Positive | None = None
     payload_bytes: Positive | None = None
