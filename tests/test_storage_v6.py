@@ -115,6 +115,56 @@ def claude_usage(project, *, session, offset, request_id, model, response):
     )
 
 
+def claude_agent_event(
+    project, *, session, kind, offset, agent_id, prompt_id, agent_type="Explore"
+):
+    return Envelope(
+        provider="claude",
+        project_id=project,
+        session_id=session,
+        agent_id=agent_id,
+        kind=kind,
+        source="hook",
+        received_at=BASE + timedelta(seconds=offset),
+        payload={
+            "claude": {
+                "metadata": {
+                    "hook_event_name": "SubagentStop" if kind == "agent.end" else "SubagentStart",
+                    "session_id": session,
+                    "prompt_id": prompt_id,
+                    "agent_id": agent_id,
+                    "agent_type": agent_type,
+                },
+                "content": "omitted",
+            }
+        },
+        availability={},
+    )
+
+
+def claude_subagent_usage(project, *, session, agent_id, offset, request_id, model, response):
+    return Envelope(
+        provider="claude",
+        project_id=project,
+        session_id=session,
+        agent_id=agent_id,
+        kind="usage",
+        source="transcript",
+        native_event_id=request_id,
+        occurred_at=BASE + timedelta(seconds=offset),
+        received_at=BASE + timedelta(seconds=offset),
+        payload={
+            "claude": {
+                "reader": "claude-transcript-v1",
+                "model": model,
+                "request_id": request_id,
+                "usage": {"response": response},
+            }
+        },
+        availability={},
+    )
+
+
 def codex_hook(project, *, session, kind, offset, turn_id, model=None):
     md = {"hook_event_name": "PostToolUse", "session_id": session, "turn_id": turn_id}
     if model is not None:
@@ -384,6 +434,137 @@ def test_v6_inheritance_never_crosses_conversations_or_providers(tmp_path, proje
     assert claude_usage_fact["model_attribution"] == "observed"
     assert claude_usage_fact["reasoning_effort"] == "high"
     assert claude_usage_fact["reasoning_effort_attribution"] == "inherited"
+
+
+def test_v6_subagent_usage_is_correlated_to_the_parent_turn(tmp_path, project):
+    session = "77777777-7777-4777-8777-777777777777"
+    parent_turn = "pp-parent-1"
+    events = [
+        claude_hook(
+            project,
+            session=session,
+            kind="turn.start",
+            offset=0,
+            prompt_id=parent_turn,
+            effort="high",
+        ),
+        claude_agent_event(
+            project,
+            session=session,
+            kind="agent.end",
+            offset=5,
+            agent_id="ag-1",
+            prompt_id=parent_turn,
+        ),
+        claude_subagent_usage(
+            project,
+            session=session,
+            agent_id="ag-1",
+            offset=6,
+            request_id="sub-req-1",
+            model="claude-haiku-4-5",
+            response={"input_tokens": 4, "output_tokens": 90},
+        ),
+        claude_usage(
+            project,
+            session=session,
+            offset=7,
+            request_id="parent-req-1",
+            model="claude-opus-5",
+            response={"input_tokens": 2, "output_tokens": 500},
+        ),
+    ]
+    build_v5(tmp_path, project, events)
+    with Store(tmp_path, project) as store:
+        facts = facts_by_event(store)
+
+    sub = facts[str(events[2].event_id)]
+    assert sub["agent_id"] == "ag-1"
+    assert sub["session_id"] == session
+    assert sub["turn_id"] == parent_turn
+    assert sub["turn_id_source"] == "parent_agent"
+    # The subagent keeps its own observed model, not the parent's.
+    assert sub["model"] == "claude-haiku-4-5"
+    assert sub["model_attribution"] == "observed"
+
+    parent = facts[str(events[3].event_id)]
+    assert parent["turn_id"] is None  # parent usage rows still carry no turn
+    assert parent["model"] == "claude-opus-5"
+    # Parent model resolution must not be polluted by the subagent row.
+    assert parent["model_attribution"] == "observed"
+
+
+def test_v6_subagent_usage_without_a_matching_agent_event_stays_unattributed(tmp_path, project):
+    session = "88888888-8888-4888-8888-888888888888"
+    events = [
+        claude_subagent_usage(
+            project,
+            session=session,
+            agent_id="ghost",
+            offset=1,
+            request_id="r-ghost",
+            model="claude-haiku-4-5",
+            response={"input_tokens": 1, "output_tokens": 1},
+        ),
+    ]
+    build_v5(tmp_path, project, events)
+    with Store(tmp_path, project) as store:
+        sub = facts_by_event(store)[str(events[0].event_id)]
+    assert sub["turn_id"] is None
+    assert sub["turn_id_source"] == "unavailable"
+
+
+def test_v6_subagent_turn_correlation_does_not_cross_agents(tmp_path, project):
+    session = "99999999-9999-4999-8999-999999999999"
+    events = [
+        claude_agent_event(
+            project, session=session, kind="agent.end", offset=1, agent_id="a1", prompt_id="turn-A"
+        ),
+        claude_agent_event(
+            project, session=session, kind="agent.end", offset=2, agent_id="a2", prompt_id="turn-B"
+        ),
+        claude_subagent_usage(
+            project,
+            session=session,
+            agent_id="a2",
+            offset=3,
+            request_id="r2",
+            model="claude-haiku-4-5",
+            response={"input_tokens": 1, "output_tokens": 1},
+        ),
+    ]
+    build_v5(tmp_path, project, events)
+    with Store(tmp_path, project) as store:
+        sub = facts_by_event(store)[str(events[2].event_id)]
+    assert sub["turn_id"] == "turn-B"
+
+
+def test_v6_put_correlates_a_new_subagent_usage_row(tmp_path, project):
+    build_v5(tmp_path, project, [])
+    session = "a0a0a0a0-a0a0-4a0a-8a0a-a0a0a0a0a0a0"
+    with Store(tmp_path, project) as store:
+        agent_end = claude_agent_event(
+            project,
+            session=session,
+            kind="agent.end",
+            offset=1,
+            agent_id="live-1",
+            prompt_id="live-turn",
+        )
+        usage = claude_subagent_usage(
+            project,
+            session=session,
+            agent_id="live-1",
+            offset=2,
+            request_id="live-req",
+            model="claude-haiku-4-5",
+            response={"input_tokens": 1, "output_tokens": 2},
+        )
+        assert store.put(agent_end)
+        assert store.put(usage)
+        sub = facts_by_event(store)[str(usage.event_id)]
+    assert sub["turn_id"] == "live-turn"
+    assert sub["turn_id_source"] == "parent_agent"
 
 
 def test_v6_delete_removes_the_matching_fact_row(tmp_path, project):

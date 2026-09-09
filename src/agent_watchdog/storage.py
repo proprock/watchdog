@@ -248,22 +248,45 @@ class Store:
                 db.execute("DROP TABLE IF EXISTS event_facts")
                 db.execute(facts.CREATE_TABLE)
                 tracker = facts.ConfigTracker()
+                agent_turns: dict[tuple[str, str], str] = {}
                 for rowid, event_id, kind, received_at, document in db.execute(
                     "SELECT rowid, event_id, kind, received_at, envelope FROM events ORDER BY rowid"
                 ).fetchall():
                     envelope = json.loads(document)
+                    session_id = envelope.get("session_id")
+                    agent_id = envelope.get("agent_id")
                     turn_id, _ = facts.turn_of(envelope)
-                    inherited = tracker.resolve(envelope.get("session_id"), turn_id)
+                    inherited = tracker.resolve(session_id, turn_id)
+                    parent_turn = (
+                        agent_turns.get((session_id, agent_id))
+                        if kind == "usage"
+                        and isinstance(session_id, str)
+                        and isinstance(agent_id, str)
+                        and envelope.get("provider") == "claude"
+                        else None
+                    )
                     row = facts.project_event(
-                        event_id, kind, received_at, envelope, inherited=inherited
+                        event_id,
+                        kind,
+                        received_at,
+                        envelope,
+                        inherited=inherited,
+                        parent_turn=parent_turn,
                     )
                     db.execute(
                         "UPDATE events SET provider=? WHERE rowid=?", (row["provider"], rowid)
                     )
                     db.execute(facts.INSERT, [row[name] for name in facts.FACT_COLUMNS])
-                    tracker.observe(
-                        envelope.get("session_id"), row["turn_id"], *facts.observation(row)
-                    )
+                    if (
+                        row["provider"] == "claude"
+                        and kind in ("agent.start", "agent.end")
+                        and isinstance(session_id, str)
+                        and isinstance(agent_id, str)
+                        and row["turn_id"]
+                    ):
+                        agent_turns[(session_id, agent_id)] = row["turn_id"]
+                    if row["agent_id"] is None:
+                        tracker.observe(session_id, row["turn_id"], *facts.observation(row))
                 for statement in facts.CREATE_INDEXES:
                     db.execute(statement)
                 db.execute("PRAGMA user_version=6")
@@ -379,11 +402,21 @@ class Store:
         """Materialize the v6 ``event_facts`` row for a freshly inserted event."""
         envelope = json.loads(document)
         inherited: tuple[str | None, str | None] = (None, None)
+        parent_turn: str | None = None
         if kind == "usage" and rowid is not None:
+            session_id = envelope.get("session_id")
+            agent_id = envelope.get("agent_id")
             turn_id, _ = facts.turn_of(envelope)
-            inherited = self._inherited_config(db, envelope.get("session_id"), turn_id, rowid)
+            inherited = self._inherited_config(db, session_id, turn_id, rowid)
+            if isinstance(agent_id, str) and agent_id and envelope.get("provider") == "claude":
+                parent_turn = self._parent_turn(db, session_id, agent_id, rowid)
         row = facts.project_event(
-            event_id, kind, envelope.get("received_at", ""), envelope, inherited=inherited
+            event_id,
+            kind,
+            envelope.get("received_at", ""),
+            envelope,
+            inherited=inherited,
+            parent_turn=parent_turn,
         )
         db.execute(facts.INSERT, [row[name] for name in facts.FACT_COLUMNS])
 
@@ -398,8 +431,8 @@ class Store:
         def latest(value: str, attribution: str) -> str | None:
             found = db.execute(
                 f"SELECT ef.{value} FROM event_facts ef JOIN events e ON e.event_id = ef.event_id "
-                f"WHERE ef.session_id = ? AND ef.{attribution} = 'observed' "
-                f"AND ef.{value} IS NOT NULL AND e.rowid < ? "
+                f"WHERE ef.session_id = ? AND ef.agent_id IS NULL "
+                f"AND ef.{attribution} = 'observed' AND ef.{value} IS NOT NULL AND e.rowid < ? "
                 f"ORDER BY (ef.turn_id IS ?) DESC, e.rowid DESC LIMIT 1",
                 (session_id, before_rowid, turn_id),
             ).fetchone()
@@ -409,6 +442,22 @@ class Store:
             latest("model", "model_attribution"),
             latest("reasoning_effort", "reasoning_effort_attribution"),
         )
+
+    @staticmethod
+    def _parent_turn(
+        db: sqlite3.Connection, session_id: object, agent_id: str, before_rowid: int
+    ) -> str | None:
+        """The turn a Claude subagent ran under, from its agent.start / agent.end events."""
+        if not isinstance(session_id, str) or not session_id:
+            return None
+        found = db.execute(
+            "SELECT ef.turn_id FROM event_facts ef JOIN events e ON e.event_id = ef.event_id "
+            "WHERE ef.provider = 'claude' AND ef.session_id = ? AND ef.agent_id = ? "
+            "AND ef.kind IN ('agent.start', 'agent.end') AND ef.turn_id IS NOT NULL "
+            "AND e.rowid < ? ORDER BY e.rowid DESC LIMIT 1",
+            (session_id, agent_id, before_rowid),
+        ).fetchone()
+        return found[0] if found else None
 
     @staticmethod
     def _register_transcript_source(db: sqlite3.Connection, event: Envelope) -> None:

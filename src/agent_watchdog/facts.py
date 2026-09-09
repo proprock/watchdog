@@ -211,15 +211,20 @@ def project_event(
     envelope: dict[str, Any],
     *,
     inherited: tuple[str | None, str | None] = (None, None),
+    parent_turn: str | None = None,
 ) -> dict[str, Any]:
     """Build one ``event_facts`` row from a persisted envelope document.
 
     ``inherited`` is the latest earlier observed ``(model, reasoning_effort)`` in
     the same conversation, applied only to ``usage`` rows that lack their own
-    observation.
+    observation. ``parent_turn`` is the turn a Claude subagent ran under (from
+    its ``agent.start`` / ``agent.end`` events), applied only to a subagent
+    ``usage`` row, which otherwise carries no turn of its own.
     """
     is_usage = kind == "usage"
     turn_id, turn_id_source = turn_of(envelope)
+    if is_usage and turn_id is None and parent_turn is not None and _text(envelope.get("agent_id")):
+        turn_id, turn_id_source = parent_turn, "parent_agent"
     model, model_attribution = _attributed(
         observed_model(envelope), inherited[0], is_usage=is_usage
     )

@@ -192,9 +192,13 @@ single-table and partial indexes on `kind` are possible. It then holds:
 The canonical conversation key is `events.session_id`; `conversation_id_source`
 records whether it was taken from the envelope `session_id` or, for a Codex
 usage row, from `payload.codex.thread_id` (equal in observed data). The turn key
-is Claude's `prompt_id` or Codex's `turn_id`. Claude hooks now also promote
-`prompt_id` onto the envelope `turn_id`; this changes the canonical document and
-replay fingerprint for Claude hook events written after the upgrade only.
+is Claude's `prompt_id` (`turn_id_source = 'prompt_id'`) or Codex's `turn_id`
+(`'turn_id'`). Claude hooks now also promote `prompt_id` onto the envelope
+`turn_id`; this changes the canonical document and replay fingerprint for Claude
+hook events written after the upgrade only. A Claude subagent `usage` row has no
+turn of its own, so its `turn_id` is resolved to the parent turn by matching the
+subagent `agent_id` against the parent's `agent.start` / `agent.end` events
+(`turn_id_source = 'parent_agent'`); an absent match stays `'unavailable'`.
 
 `Store._initialize` runs the v5-to-v6 step transactionally after the existing
 ownership and compatibility checks, with a space pre-check like the v1 rebuild.
@@ -212,9 +216,11 @@ inheritance resolution is deterministic, creates the indexes, and advances
 
 Turn wall time, tools per turn, inter-turn latency, permission-stall time, and
 tool error rate are derived at query time from these columns and `received_at`;
-they get no column. Claude subagent `usage` rows carry the subagent `agent_id`
-and the parent `session_id`, so subagent cost joins to the parent conversation.
-Monetary estimates and tariffs are out of scope and deferred.
+they get no column. Claude subagent `usage` rows carry the subagent `agent_id`,
+the parent `session_id`, and the resolved parent `turn_id`, so subagent cost
+joins to the parent conversation and turn. A subagent keeps its own observed
+`model`; model/effort inheritance never crosses between a subagent and its
+parent. Monetary estimates and tariffs are out of scope and deferred.
 
 `agent_watchdog.facts_query` provides the read-only aggregate helpers
 (`token_usage`, `process_efficiency`, `coverage`) over `event_facts`; the
