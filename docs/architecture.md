@@ -50,7 +50,7 @@ Defaults are configurable in user TOML, with overrides by project UUID:
 | Maximum persisted event payload | 1 MiB |
 | Process logs | 5 files of 10 MiB each |
 
-Retention is a disk-budget control, not a privacy control: the data is the user's own, kept locally. Setting a day count to `0` disables time-based expiry for that class; the project quota and degraded-state loss counters still bound growth. WD-116 is pending: it implements the `0` disable path and the reframed defaults.
+Retention is a disk-budget control, not a privacy control: the data is the user's own, kept locally. Setting a day count to `0` disables time-based expiry for that class; the project quota and degraded-state loss counters still bound growth.
 
 Delete expired content first, then old unpinned content, then old unpinned sessions. Pin protects against deletion, not quota accounting: if space cannot be reclaimed, stop accepting content/events and report degraded status with loss counters. Never silently delete pinned data. Reserve space for checkpoint/diagnostics; bound concurrent inbox writes with a short project lock. Account for auxiliary files; SQLite cleanup uses incremental vacuum/checkpoint support. Never delete existing vendor transcripts. See the implemented policy and operational limits in [storage](storage.md).
 

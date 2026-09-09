@@ -265,7 +265,7 @@ Retention is a disk-budget control over the user's own local data, not a privacy
 control. Retention uses received time. By default unpinned provider payload and
 artifact references expire after 30 days and events after 180 days;
 `content_days = 0` / `metrics_days = 0` disable time-based expiry, leaving the
-project quota and degraded-state loss counters as the only bound (WD-116).
+project quota and degraded-state loss counters as the only bound.
 Payload is removed as a unit so unknown provider fields cannot retain text
 past the configured window. Core event identity, kind, times, and availability
 remain.
