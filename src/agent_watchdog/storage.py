@@ -14,7 +14,7 @@ from uuid import UUID, uuid4
 
 from pydantic import ValidationError
 
-from agent_watchdog import privacy, resources
+from agent_watchdog import facts, privacy, resources
 from agent_watchdog.config import Limits
 from agent_watchdog.events import Envelope
 from agent_watchdog.files import atomic_write as atomic_write
@@ -145,7 +145,7 @@ class Store:
     def _initialize(self) -> None:
         db = self.connection
         version = db.execute("PRAGMA user_version").fetchone()[0]
-        if version not in (0, 1, 2, 3, 4, 5):
+        if version not in (0, 1, 2, 3, 4, 5, 6):
             raise StorageError("Unsupported database schema; database left unchanged")
         if version == 0:
             tables = db.execute("SELECT name FROM sqlite_master WHERE name NOT LIKE 'sqlite_%'")
@@ -237,6 +237,36 @@ class Store:
                     "PRIMARY KEY(provider, session_id))"
                 )
                 db.execute("PRAGMA user_version=5")
+        if version < 6:
+            size = (self.root / "events.sqlite3").stat().st_size
+            if resources.available(self.root, self.limits) < max(65536, size // 2):
+                raise QuotaExceeded("Insufficient space for the v6 telemetry migration")
+            with self._transaction():
+                columns = {row[1] for row in db.execute("PRAGMA table_info(events)")}
+                if "provider" not in columns:
+                    db.execute("ALTER TABLE events ADD COLUMN provider TEXT")
+                db.execute("DROP TABLE IF EXISTS event_facts")
+                db.execute(facts.CREATE_TABLE)
+                tracker = facts.ConfigTracker()
+                for rowid, event_id, kind, received_at, document in db.execute(
+                    "SELECT rowid, event_id, kind, received_at, envelope FROM events ORDER BY rowid"
+                ).fetchall():
+                    envelope = json.loads(document)
+                    turn_id, _ = facts.turn_of(envelope)
+                    inherited = tracker.resolve(envelope.get("session_id"), turn_id)
+                    row = facts.project_event(
+                        event_id, kind, received_at, envelope, inherited=inherited
+                    )
+                    db.execute(
+                        "UPDATE events SET provider=? WHERE rowid=?", (row["provider"], rowid)
+                    )
+                    db.execute(facts.INSERT, [row[name] for name in facts.FACT_COLUMNS])
+                    tracker.observe(
+                        envelope.get("session_id"), row["turn_id"], *facts.observation(row)
+                    )
+                for statement in facts.CREATE_INDEXES:
+                    db.execute(statement)
+                db.execute("PRAGMA user_version=6")
         # Existing v1 stores need a one-time rebuild to support physical reclamation.
         if db.execute("PRAGMA auto_vacuum").fetchone()[0] != 2:
             size = (self.root / "events.sqlite3").stat().st_size
@@ -322,17 +352,63 @@ class Store:
                     with path.open("rb") as stream:
                         if stream.read(len(data) + 1) != data:
                             raise StorageError("Existing artifact content is corrupt")
-            db.execute(
-                "INSERT INTO events VALUES (?, ?, ?, ?, ?)",
-                (event_id, event.received_at.isoformat(), event.session_id, event.kind, document),
+            cursor = db.execute(
+                "INSERT INTO events (event_id, received_at, session_id, kind, envelope, provider) "
+                "VALUES (?, ?, ?, ?, ?, ?)",
+                (
+                    event_id,
+                    event.received_at.isoformat(),
+                    event.session_id,
+                    event.kind,
+                    document,
+                    event.provider,
+                ),
             )
             db.executemany(
                 "INSERT INTO artifacts VALUES (?, ?, ?, ?)",
                 [(event_id, name, references[name], len(data)) for name, data in artifacts.items()],
             )
             db.execute("INSERT INTO receipts VALUES (?, ?)", (event_id, fingerprint))
+            self._project_fact(db, event_id, event.kind, document, cursor.lastrowid)
             self._register_transcript_source(db, event)
         return True
+
+    def _project_fact(
+        self, db: sqlite3.Connection, event_id: str, kind: str, document: str, rowid: int | None
+    ) -> None:
+        """Materialize the v6 ``event_facts`` row for a freshly inserted event."""
+        envelope = json.loads(document)
+        inherited: tuple[str | None, str | None] = (None, None)
+        if kind == "usage" and rowid is not None:
+            turn_id, _ = facts.turn_of(envelope)
+            inherited = self._inherited_config(db, envelope.get("session_id"), turn_id, rowid)
+        row = facts.project_event(
+            event_id, kind, envelope.get("received_at", ""), envelope, inherited=inherited
+        )
+        db.execute(facts.INSERT, [row[name] for name in facts.FACT_COLUMNS])
+
+    @staticmethod
+    def _inherited_config(
+        db: sqlite3.Connection, session_id: object, turn_id: str | None, before_rowid: int
+    ) -> tuple[str | None, str | None]:
+        """Latest earlier observed model/effort in the same conversation, same turn first."""
+        if not isinstance(session_id, str) or not session_id:
+            return (None, None)
+
+        def latest(value: str, attribution: str) -> str | None:
+            found = db.execute(
+                f"SELECT ef.{value} FROM event_facts ef JOIN events e ON e.event_id = ef.event_id "
+                f"WHERE ef.session_id = ? AND ef.{attribution} = 'observed' "
+                f"AND ef.{value} IS NOT NULL AND e.rowid < ? "
+                f"ORDER BY (ef.turn_id IS ?) DESC, e.rowid DESC LIMIT 1",
+                (session_id, before_rowid, turn_id),
+            ).fetchone()
+            return found[0] if found else None
+
+        return (
+            latest("model", "model_attribution"),
+            latest("reasoning_effort", "reasoning_effort_attribution"),
+        )
 
     @staticmethod
     def _register_transcript_source(db: sqlite3.Connection, event: Envelope) -> None:
@@ -562,7 +638,7 @@ class Store:
         self.connection.execute("DELETE FROM artifacts WHERE event_id=?", (event_id,))
 
     def _delete(self, event_id: str) -> None:
-        for table in ("artifacts", "receipts", "events"):
+        for table in ("artifacts", "receipts", "event_facts", "events"):
             self.connection.execute(f"DELETE FROM {table} WHERE event_id=?", (event_id,))
 
     def _reclaim(self) -> None:

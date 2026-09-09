@@ -71,6 +71,24 @@ def test_native_events_map_to_expected_kind(setup, sample):
     assert event.turn_id is None
 
 
+def test_claude_prompt_id_is_promoted_to_the_envelope_turn_id(setup):
+    paths, events = setup
+    run(
+        paths,
+        {
+            "cwd": str(paths.config.parent),
+            "hook_event_name": "PostToolUse",
+            "session_id": "session-1",
+            "prompt_id": "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee",
+            "tool_name": "Bash",
+            "tool_use_id": "tool-1",
+        },
+    )
+    event = events[0]
+    assert event.turn_id == "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee"
+    assert event.payload["claude"]["metadata"]["prompt_id"] == event.turn_id
+
+
 def test_unknown_native_name_is_preserved_not_fabricated(setup):
     paths, events = setup
     run(paths, {"cwd": str(paths.config.parent), "hook_event_name": "Frobnicate"})

@@ -90,7 +90,7 @@ def database(paths: UserPaths, project: Project) -> Iterator[sqlite3.Connection]
     with closing(sqlite3.connect(path.as_uri() + "?mode=ro", uri=True, timeout=0.1)) as db:
         db.execute("PRAGMA query_only=ON")
         db.execute("BEGIN")
-        if db.execute("PRAGMA user_version").fetchone()[0] not in (1, 2, 3, 4, 5):
+        if db.execute("PRAGMA user_version").fetchone()[0] not in (1, 2, 3, 4, 5, 6):
             raise StorageError("Unsupported database schema")
         if db.execute("SELECT project_id FROM metadata").fetchall() != [(str(project.id),)]:
             raise StorageError("Database belongs to a different project")

@@ -210,7 +210,10 @@ def build_envelope(
         project_id=resolution.project_id,
         checkout_id=resolution.checkout_id,
         session_id=identifier(payload, "session_id"),
-        turn_id=identifier(payload, "turn_id"),
+        # Claude names the per-turn key ``prompt_id``; promote it so the envelope
+        # turn key is populated for every provider (schema v6 correlation).
+        turn_id=identifier(payload, "turn_id")
+        or (identifier(payload, "prompt_id") if provider == "claude" else None),
         agent_id=identifier(payload, "agent_id"),
         parent_agent_id=identifier(payload, "parent_agent_id"),
         native_event_id=identifier(payload, "native_event_id"),

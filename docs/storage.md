@@ -132,9 +132,10 @@ FULL, foreign keys, and secure deletion of freed cells. Schema v2 adds session p
 and replay fingerprints; schema v3 adds durable Codex transcript source cursors,
 partial tails, file identity, reader errors, and cumulative usage baselines; schema
 v4 adds debounced per-checkout Git diff fingerprints and byte counts; schema v5
-adds provider-scoped session outcome/type labels. Diff text is never stored. The
-core runs the bounded Git read after spool admission; hook paths do not invoke Git
-or snapshot a worktree.
+adds provider-scoped session outcome/type labels; schema v6 adds the
+[queryable telemetry projections](#schema-v6-queryable-telemetry-projections)
+described below. Diff text is never stored. The core runs the bounded Git read
+after spool admission; hook paths do not invoke Git or snapshot a worktree.
 Reader sources expire after 30 days without a hook observation; no vendor file is
 deleted or modified. New databases enable incremental vacuum before creating
 tables; v1 databases need a one-time VACUUM rebuild with a space check. If the
@@ -146,6 +147,74 @@ migration changes. Upgrade preserves existing content.
 `read_artifact(event_id, name)` checks size and SHA-256 and never accepts an
 arbitrary path. Read-only SQLite connections may coexist with the writer.
 The [project/session CLI](cli.md) is available.
+
+## Schema v6: queryable telemetry projections
+
+Schema v6 makes token use and process-efficiency telemetry queryable without
+JSON extraction. `events.envelope` stays the authoritative, redacted document;
+v6 only adds derived, nullable projections and never rewrites a stored envelope.
+
+`events` gains one column, `provider`, so provider-scoped reads and joins do not
+call `json_extract`. All other projections live in a companion table,
+`event_facts`, with one row per event (`event_id` primary key referencing
+`events`). `Store._put` writes the `event_facts` row in the same transaction as
+its event; `_delete` removes it with the event at the metrics horizon;
+`_strip_content` leaves it untouched, so aggregates survive content expiry that
+would otherwise erase the source metadata.
+
+`event_facts` copies the filter keys `provider`, `kind`, `received_at_us`
+(integer epoch microseconds), `session_id`, and `turn_id` so analysis stays
+single-table and partial indexes on `kind` are possible. It then holds:
+
+- Envelope context: `turn_id_source`, `conversation_id_source`, `source`,
+  `surface`, `checkout_id`, `agent_id`, `parent_agent_id`, `native_event_id`,
+  `occurred_at_us`.
+- Configuration: `model`, `model_attribution`, `reasoning_effort`,
+  `reasoning_effort_attribution`. An attribution is `observed` when the value
+  comes straight from provider metadata (or a usage reader's own
+  `message.model` projection), `inherited` when a `usage` row takes the latest
+  earlier observed value from the same conversation (same turn first), and
+  `unavailable` otherwise. Claude reasoning effort is read from the nested
+  `effort.level`; Codex from the flat `reasoning_effort` key. Claude hook rows
+  carry no model, so `model_attribution` is `unavailable` there.
+- Usage deltas (`usage` rows only): `input_tokens`, `cached_input_tokens`,
+  `cache_write_input_tokens`, `output_tokens`, `reasoning_output_tokens`,
+  `total_tokens`. Codex fills all six from the transcript delta. Claude maps
+  `cache_read_input_tokens`/`cache_creation_input_tokens`/`thinking_tokens` onto
+  the cached/cache-write/reasoning columns and leaves `total_tokens` NULL,
+  because Anthropic reports no total; no column is ever a synthetic sum of the
+  others.
+- Process efficiency, from the provider metadata namespace only (never
+  `tool_input`/`tool_response`): `hook_event_name` (with `PostToolUseFailure`
+  marking a tool error), `tool_name`, `tool_use_id`, `tool_duration_ms`
+  (`tool.finish` only), `permission_mode`, `agent_type`, `notification_type`.
+
+The canonical conversation key is `events.session_id`; `conversation_id_source`
+records whether it was taken from the envelope `session_id` or, for a Codex
+usage row, from `payload.codex.thread_id` (equal in observed data). The turn key
+is Claude's `prompt_id` or Codex's `turn_id`. Claude hooks now also promote
+`prompt_id` onto the envelope `turn_id`; this changes the canonical document and
+replay fingerprint for Claude hook events written after the upgrade only.
+
+`Store._initialize` runs the v5-to-v6 step transactionally after the existing
+ownership and compatibility checks, with a space pre-check like the v1 rebuild.
+It adds the column and table, backfills both in `rowid` (insertion) order so the
+inheritance resolution is deterministic, creates the indexes, and advances
+`PRAGMA user_version` only on commit. Indexes:
+
+| index | columns | scope |
+| --- | --- | --- |
+| `event_facts_context` | `provider, session_id, turn_id, received_at_us` | all rows |
+| `event_facts_usage_time` | `received_at_us, provider, model, reasoning_effort` | `kind = 'usage'` |
+| `event_facts_usage_dim` | `provider, model, reasoning_effort, received_at_us` | `kind = 'usage'` |
+| `event_facts_tool_pair` | `provider, session_id, turn_id, tool_use_id` | `kind IN ('tool.start','tool.finish')` |
+| `event_facts_tool_cost` | `provider, tool_name, received_at_us` | `kind = 'tool.finish'` |
+
+Turn wall time, tools per turn, inter-turn latency, permission-stall time, and
+tool error rate are derived at query time from these columns and `received_at`;
+they get no column. Claude subagent `usage` rows carry the subagent `agent_id`
+and the parent `session_id`, so subagent cost joins to the parent conversation.
+Monetary estimates and tariffs are out of scope and deferred.
 
 ## Retention and pins
 
