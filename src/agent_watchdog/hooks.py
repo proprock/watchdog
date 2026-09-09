@@ -152,12 +152,16 @@ def identifier(payload: dict, field: str) -> str | None:
     return value if isinstance(value, str) and value.strip() and len(value) <= 256 else None
 
 
-def transcript_path(payload: dict) -> str | None:
-    value = payload.get("transcript_path")
+def absolute_path(payload: dict, key: str) -> str | None:
+    value = payload.get(key)
     if not isinstance(value, str) or not value.strip() or len(value) > 4096:
         return None
     path = Path(value)
     return str(path) if path.is_absolute() else None
+
+
+def transcript_path(payload: dict) -> str | None:
+    return absolute_path(payload, "transcript_path")
 
 
 def build_envelope(
@@ -193,9 +197,14 @@ def build_envelope(
         "metadata": metadata,
         "unknown_fields": list(unknown_fields(payload, provider)),
     }
-    path = transcript_path(payload) if provider == "codex" else None
-    if path is not None:
-        provider_payload["transcript_path"] = path
+    if provider in ("codex", "claude"):
+        path = transcript_path(payload)
+        if path is not None:
+            provider_payload["transcript_path"] = path
+    if provider == "claude":
+        agent_path = absolute_path(payload, "agent_transcript_path")
+        if agent_path is not None:
+            provider_payload["agent_transcript_path"] = agent_path
     envelope = Envelope(
         provider=provider,
         project_id=resolution.project_id,

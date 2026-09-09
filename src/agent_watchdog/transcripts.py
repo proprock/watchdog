@@ -1,7 +1,16 @@
-"""Version-gated, daemon-only Codex rollout transcript enrichment."""
+"""Version-gated, daemon-only transcript enrichment for Codex and Claude.
+
+Codex uses the ``codex-rollout-v1`` reader (cumulative ``thread_token_usage``
+deltas). Claude uses the ``claude-transcript-v1`` reader: each assistant response
+carries its own ``message.usage`` (not cumulative), repeated on every content
+block of the response, so one ``usage`` event is emitted per distinct
+``requestId``. Both readers share the file-identity, offset, partial-tail,
+rotation and resume machinery below.
+"""
 
 import hashlib
 import json
+from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
@@ -16,6 +25,7 @@ if TYPE_CHECKING:
 
 
 READER = "codex-rollout-v1"
+CLAUDE_READER = "claude-transcript-v1"
 READ_BYTES = 1024**2
 COUNTERS = (
     "input_tokens",
@@ -25,6 +35,20 @@ COUNTERS = (
     "reasoning_output_tokens",
     "total_tokens",
 )
+# Grammar locked to Claude Code 2.1.259 / 2.1.260 (read-only inspection of real
+# local transcripts). ``message.usage`` reports no total; never synthesise one.
+CLAUDE_COUNTERS = (
+    "input_tokens",
+    "cache_read_input_tokens",
+    "cache_creation_input_tokens",
+    "output_tokens",
+    "thinking_tokens",
+)
+CLAUDE_OBSERVED_KEYS = ("input_tokens", "cache_read_input_tokens", "output_tokens")
+# Subagent reader rows pack the parent conversation id and the subagent's own
+# agent id into the ``session_id`` column as ``<parent>#<agent_id>`` so no schema
+# bump is needed before WD-111 owns the v6 migration.
+SUBAGENT_SEPARATOR = "#"
 
 TranscriptFailureCode = Literal[
     "rollout_line_invalid",
@@ -46,6 +70,10 @@ TranscriptFailureCode = Literal[
     "transcript_io_unavailable",
     "transcript_storage_unavailable",
     "transcript_enrichment_invalid",
+    "claude_line_invalid",
+    "claude_record_invalid",
+    "claude_session_mismatch",
+    "claude_usage_invalid",
 ]
 FAILURE_CODES: frozenset[str] = frozenset(
     {
@@ -57,6 +85,10 @@ FAILURE_CODES: frozenset[str] = frozenset(
         "thread_usage_invalid",
         "thread_usage_missing",
         "thread_usage_total_missing",
+        "claude_line_invalid",
+        "claude_record_invalid",
+        "claude_session_mismatch",
+        "claude_usage_invalid",
         "transcript_source_invalid",
         "transcript_sources_unavailable",
         "transcript_path_not_regular",
@@ -107,20 +139,40 @@ def failure_code(error: OSError | StorageError | ValueError) -> TranscriptFailur
     return "transcript_enrichment_invalid"
 
 
-def source_from_hook(event: Envelope) -> TranscriptSource | None:
-    """Return a durable reader source only for a valid Codex hook reference."""
-    if event.provider != "codex" or event.source != "hook" or not event.session_id:
-        return None
-    payload = event.payload.get("codex")
+def _hook_path(payload: object, key: str) -> str | None:
     if not isinstance(payload, dict):
         return None
-    value = payload.get("transcript_path")
+    value = payload.get(key)
     if not isinstance(value, str) or not value or len(value) > 4096:
         return None
     path = Path(value)
-    if not path.is_absolute():
-        return None
-    return TranscriptSource("codex", event.session_id, str(path))
+    return str(path) if path.is_absolute() else None
+
+
+def sources_from_hook(event: Envelope) -> tuple[TranscriptSource, ...]:
+    """Return the durable reader sources a hook envelope registers.
+
+    A Codex or Claude hook with an absolute ``transcript_path`` registers the
+    session transcript. A Claude ``agent.end`` hook with an absolute
+    ``agent_transcript_path`` additionally registers the subagent transcript,
+    keyed by ``<parent session>#<agent id>`` so the emitted usage rows resolve to
+    the parent conversation and the subagent's ``agent_id``.
+    """
+    if event.source != "hook" or not event.session_id:
+        return ()
+    if event.provider not in ("codex", "claude"):
+        return ()
+    payload = event.payload.get(event.provider)
+    sources: list[TranscriptSource] = []
+    session_path = _hook_path(payload, "transcript_path")
+    if session_path is not None:
+        sources.append(TranscriptSource(event.provider, event.session_id, session_path))
+    if event.provider == "claude" and event.kind == "agent.end" and event.agent_id:
+        agent_path = _hook_path(payload, "agent_transcript_path")
+        if agent_path is not None:
+            keyed = f"{event.session_id}{SUBAGENT_SEPARATOR}{event.agent_id}"
+            sources.append(TranscriptSource("claude", keyed, agent_path))
+    return tuple(sources)
 
 
 def _signature(path: Path) -> tuple[int, int, int, int]:
@@ -176,19 +228,22 @@ def _identifier(
 
 
 def _gap(store: "Store", source: dict[str, object], reason: str, signature: str) -> None:
+    provider = str(source.get("provider") or "codex")
+    reader = CLAUDE_READER if provider == "claude" else READER
+    session_id, _ = _split_subagent(source)
     event_id = uuid5(
         NAMESPACE_URL,
-        f"watchdog|{READER}|gap|{store.project_id}|{source['session_id']}|{source['path']}|{reason}|{signature}",
+        f"watchdog|{reader}|gap|{store.project_id}|{source['session_id']}|{source['path']}|{reason}|{signature}",
     )
     event = Envelope(
         event_id=event_id,
-        provider="codex",
+        provider=provider,
         project_id=store.project_id,
-        session_id=str(source["session_id"]),
+        session_id=session_id,
         native_event_id=f"transcript-gap:{event_id.hex}",
         kind="observation.gap",
         source="transcript",
-        payload={"codex": {"reader": READER, "reason": reason}},
+        payload={provider: {"reader": reader, "reason": reason}},
         availability={
             "usage": "unavailable",
             "input_tokens": "unavailable",
@@ -237,14 +292,7 @@ def _usage_event(
     line: bytes,
 ) -> Envelope:
     payload = record["payload"]
-    timestamp = record.get("timestamp")
-    occurred_at = None
-    if isinstance(timestamp, str):
-        try:
-            candidate = datetime.fromisoformat(timestamp.replace("Z", "+00:00"))
-            occurred_at = candidate if candidate.tzinfo is not None else None
-        except ValueError:
-            pass
+    occurred_at = _occurred_at(record.get("timestamp"))
     event_id = uuid5(NAMESPACE_URL, _identifier(source, identity, offset, line))
     return Envelope(
         event_id=event_id,
@@ -267,6 +315,124 @@ def _usage_event(
             }
         },
         availability=_availability(counters),
+    )
+
+
+def _occurred_at(value: object) -> datetime | None:
+    if not isinstance(value, str):
+        return None
+    try:
+        candidate = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    return candidate if candidate.tzinfo is not None else None
+
+
+def _split_subagent(source: Mapping[str, object]) -> tuple[str, str | None]:
+    """Return ``(parent_session_id, agent_id)`` for a Claude reader row."""
+    raw = str(source["session_id"])
+    if source.get("provider") == "claude" and SUBAGENT_SEPARATOR in raw:
+        parent, agent_id = raw.split(SUBAGENT_SEPARATOR, 1)
+        return parent, (agent_id or None)
+    return raw, None
+
+
+@dataclass(frozen=True)
+class _ClaudeResponse:
+    request_id: str
+    counters: dict[str, int | None]
+    model: str | None
+    version: str | None
+    occurred_at: datetime | None
+
+
+def _claude_response(record: object, expected_session: str | None) -> _ClaudeResponse | None:
+    """Interpret one Claude transcript line, or ``None`` to skip it.
+
+    ``expected_session`` is the parent conversation id for a session transcript;
+    for a subagent transcript it is ``None`` until the first usable line binds the
+    child's own ``sessionId`` and later lines are checked for consistency.
+    """
+    if not isinstance(record, dict):
+        raise UnsupportedTranscript("claude_record_invalid")
+    if record.get("type") != "assistant" or record.get("isSidechain") is True:
+        return None
+    message = record.get("message")
+    if not isinstance(message, dict) or not isinstance(message.get("usage"), dict):
+        return None
+    session = record.get("sessionId")
+    if not isinstance(session, str) or not session:
+        raise UnsupportedTranscript("claude_record_invalid")
+    if expected_session is not None and session != expected_session:
+        raise UnsupportedTranscript("claude_session_mismatch")
+    request_id = record.get("requestId")
+    if not isinstance(request_id, str) or not request_id:
+        candidate = message.get("id")
+        request_id = candidate if isinstance(candidate, str) and candidate else None
+    if request_id is None:
+        raise UnsupportedTranscript("claude_record_invalid")
+    counters = _claude_counters(message["usage"])
+    model = message.get("model") if isinstance(message.get("model"), str) else None
+    version = record.get("version") if isinstance(record.get("version"), str) else None
+    return _ClaudeResponse(
+        request_id=request_id,
+        counters=counters,
+        model=model,
+        version=version,
+        occurred_at=_occurred_at(record.get("timestamp")),
+    )
+
+
+def _claude_counters(usage: dict[str, Any]) -> dict[str, int | None]:
+    details = usage.get("output_tokens_details")
+    thinking = details.get("thinking_tokens") if isinstance(details, dict) else None
+    raw = {
+        "input_tokens": usage.get("input_tokens"),
+        "cache_read_input_tokens": usage.get("cache_read_input_tokens"),
+        "cache_creation_input_tokens": usage.get("cache_creation_input_tokens"),
+        "output_tokens": usage.get("output_tokens"),
+        "thinking_tokens": thinking,
+    }
+    result: dict[str, int | None] = {}
+    for name in CLAUDE_COUNTERS:
+        item = raw[name]
+        if item is not None and (type(item) is not int or item < 0):
+            raise UnsupportedTranscript("claude_usage_invalid")
+        result[name] = item
+    return result
+
+
+def _claude_usage_event(
+    store: "Store", source: Mapping[str, object], response: _ClaudeResponse
+) -> Envelope:
+    session_id, agent_id = _split_subagent(source)
+    name = f"{CLAUDE_READER}|{source['path']}|{session_id}|{response.request_id}"
+    availability: dict[str, Availability] = {
+        key: "observed" if response.counters[key] is not None else "unavailable"
+        for key in CLAUDE_OBSERVED_KEYS
+    }
+    availability["model"] = "observed" if response.model is not None else "unavailable"
+    return Envelope(
+        event_id=uuid5(NAMESPACE_URL, name),
+        provider="claude",
+        project_id=store.project_id,
+        session_id=session_id,
+        agent_id=agent_id,
+        turn_id=None,
+        native_event_id=response.request_id,
+        kind="usage",
+        source="transcript",
+        occurred_at=response.occurred_at,
+        payload={
+            "claude": {
+                "reader": CLAUDE_READER,
+                "model": response.model,
+                "cc_version": response.version,
+                "request_id": response.request_id,
+                "usage": {"response": dict(response.counters)},
+            }
+        },
+        availability=availability,
     )
 
 
@@ -322,7 +488,7 @@ def _normalize_source(value: object) -> dict[str, object]:
     session_id = source.get("session_id")
     path_value = source.get("path")
     if (
-        provider != "codex"
+        provider not in ("codex", "claude")
         or not isinstance(session_id, str)
         or not session_id
         or not isinstance(path_value, str)
@@ -409,6 +575,51 @@ def _process_source(store: "Store", source: dict[str, object]) -> EnrichmentResu
         return EnrichmentResult(failures=failures, active_failures=("rollout_line_invalid",))
     line_offset = offset - len(source["tail"] if isinstance(source["tail"], bytes) else b"")
     counters = _load_counters(source["counters"])
+    if source["provider"] == "claude":
+        consumed = _consume_claude(store, source, lines, signature)
+    else:
+        consumed = _consume_codex(
+            store, source, lines, line_offset, (device, inode), signature, reader, counters
+        )
+    store.update_transcript_source(
+        source,
+        reader=consumed.reader,
+        device=device,
+        inode=inode,
+        size=size,
+        mtime=mtime,
+        offset=offset + len(raw),
+        tail=tail,
+        counters=consumed.counters,
+        last_error=consumed.error,
+        error_signature=signature if consumed.error else None,
+    )
+    return EnrichmentResult(
+        accepted=consumed.accepted,
+        failures=tuple(consumed.failures),
+        active_failures=tuple(consumed.failures),
+    )
+
+
+@dataclass
+class _Consumed:
+    accepted: int
+    failures: list[TranscriptFailureCode]
+    reader: str | None
+    counters: dict[str, int | None] | None
+    error: TranscriptFailureCode | None
+
+
+def _consume_codex(
+    store: "Store",
+    source: dict[str, object],
+    lines: list[bytes],
+    line_offset: int,
+    identity: tuple[int, int],
+    signature: str,
+    reader: str | None,
+    counters: dict[str, int | None] | None,
+) -> _Consumed:
     accepted = 0
     error: TranscriptFailureCode | None = None
     failures: list[TranscriptFailureCode] = []
@@ -434,16 +645,7 @@ def _process_source(store: "Store", source: dict[str, object]) -> EnrichmentResu
                 _gap(store, source, "usage_counter_reset", signature)
                 failures.append("usage_counter_reset")
             store.put(
-                _usage_event(
-                    store,
-                    source,
-                    record,
-                    current,
-                    delta,
-                    (device, inode),
-                    current_offset,
-                    line,
-                )
+                _usage_event(store, source, record, current, delta, identity, current_offset, line)
             )
             counters = current
             accepted += 1
@@ -453,24 +655,44 @@ def _process_source(store: "Store", source: dict[str, object]) -> EnrichmentResu
             _gap(store, source, error, signature)
             failures.append(error)
         reader = None
-    store.update_transcript_source(
-        source,
-        reader=reader,
-        device=device,
-        inode=inode,
-        size=size,
-        mtime=mtime,
-        offset=offset + len(raw),
-        tail=tail,
-        counters=counters,
-        last_error=error,
-        error_signature=signature if error else None,
-    )
-    return EnrichmentResult(
-        accepted=accepted,
-        failures=tuple(failures),
-        active_failures=tuple(failures),
-    )
+    return _Consumed(accepted, failures, reader, counters, error)
+
+
+def _consume_claude(
+    store: "Store", source: dict[str, object], lines: list[bytes], signature: str
+) -> _Consumed:
+    parent, agent_id = _split_subagent(source)
+    is_subagent = agent_id is not None
+    bound_session: str | None = None if is_subagent else parent
+    seen: set[str] = set()
+    accepted = 0
+    error: TranscriptFailureCode | None = None
+    failures: list[TranscriptFailureCode] = []
+    try:
+        for line in lines:
+            try:
+                record = json.loads(line)
+            except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+                raise UnsupportedTranscript("claude_line_invalid") from exc
+            response = _claude_response(record, bound_session)
+            if response is None:
+                continue
+            if bound_session is None:
+                bound_session = cast(dict, record)["sessionId"]
+            if response.request_id in seen:
+                continue
+            seen.add(response.request_id)
+            # A response is repeated on every content block; the deterministic
+            # event id makes a repeat that lands in a later read window an
+            # idempotent no-op rather than a second row.
+            if store.put(_claude_usage_event(store, source, response)):
+                accepted += 1
+    except UnsupportedTranscript as exc:
+        error = exc.code
+        if source["last_error"] != error or source["error_signature"] != signature:
+            _gap(store, source, error, signature)
+            failures.append(error)
+    return _Consumed(accepted, failures, CLAUDE_READER, None, error)
 
 
 def _unexpected_source_failure(store: "Store", source: dict[str, object]) -> EnrichmentResult:
@@ -498,7 +720,7 @@ def _unexpected_source_failure(store: "Store", source: dict[str, object]) -> Enr
 
 
 def enrich(store: "Store") -> EnrichmentResult:
-    """Read bounded deltas from known Codex transcript paths in the daemon only."""
+    """Read bounded usage from known Codex and Claude transcript paths, daemon only."""
     try:
         sources = store.transcript_sources()
     except StorageError:

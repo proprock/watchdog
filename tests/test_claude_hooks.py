@@ -147,6 +147,59 @@ def test_redaction_strips_credentials_from_prompt_and_tool_response(make):
     assert api_key not in blob
 
 
+@pytest.mark.parametrize("capture", [True, False])
+def test_failure_telemetry_stays_in_metadata_regardless_of_capture(make, capture):
+    paths, events = make(capture_content=capture)
+    run(
+        paths,
+        {
+            "cwd": str(paths.config.parent),
+            "hook_event_name": "PostToolUseFailure",
+            "tool_use_id": "call-1",
+            "error": "Exit code 1\nboom",
+            "is_interrupt": False,
+            "duration_ms": 12,
+        },
+    )
+    metadata = events[0].payload["claude"]["metadata"]
+    assert metadata["error"] == "Exit code 1\nboom"
+    assert metadata["is_interrupt"] is False
+    assert metadata["duration_ms"] == 12
+
+
+def test_error_text_is_redacted(make):
+    paths, events = make(capture_content=True)
+    api_key = "sk-proj-" + "b" * 40
+    run(
+        paths,
+        {
+            "cwd": str(paths.config.parent),
+            "hook_event_name": "PostToolUseFailure",
+            "error": f"command failed with {api_key}",
+        },
+    )
+    assert api_key not in events[0].model_dump_json()
+
+
+def test_claude_transcript_paths_are_promoted_from_the_payload(make, tmp_path):
+    paths, events = make()
+    session_transcript = tmp_path / "session.jsonl"
+    agent_transcript = tmp_path / "agent.jsonl"
+    run(
+        paths,
+        {
+            "cwd": str(paths.config.parent),
+            "hook_event_name": "SubagentStop",
+            "agent_id": "agent-9",
+            "transcript_path": str(session_transcript),
+            "agent_transcript_path": str(agent_transcript),
+        },
+    )
+    payload = events[0].payload["claude"]
+    assert payload["transcript_path"] == str(session_transcript)
+    assert payload["agent_transcript_path"] == str(agent_transcript)
+
+
 def test_capture_content_false_omits_the_four_content_fields(make):
     paths, events = make(capture_content=False)
     run(

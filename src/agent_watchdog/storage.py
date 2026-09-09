@@ -336,18 +336,16 @@ class Store:
 
     @staticmethod
     def _register_transcript_source(db: sqlite3.Connection, event: Envelope) -> None:
-        """Persist a Codex reader source atomically with its hook envelope."""
-        from agent_watchdog.transcripts import source_from_hook
+        """Persist any reader sources atomically with their hook envelope."""
+        from agent_watchdog.transcripts import sources_from_hook
 
-        source = source_from_hook(event)
-        if source is None:
-            return
-        db.execute(
-            "INSERT INTO transcript_sources (provider, session_id, path, last_seen) "
-            "VALUES (?, ?, ?, ?) "
-            "ON CONFLICT(provider, session_id, path) DO UPDATE SET last_seen=excluded.last_seen",
-            (source.provider, source.session_id, source.path, event.received_at.isoformat()),
-        )
+        for source in sources_from_hook(event):
+            db.execute(
+                "INSERT INTO transcript_sources (provider, session_id, path, last_seen) "
+                "VALUES (?, ?, ?, ?) ON CONFLICT(provider, session_id, path) "
+                "DO UPDATE SET last_seen=excluded.last_seen",
+                (source.provider, source.session_id, source.path, event.received_at.isoformat()),
+            )
 
     def transcript_sources(self) -> list[dict[str, object]]:
         rows = self.connection.execute(
@@ -533,6 +531,16 @@ class Store:
                 "DELETE FROM transcript_sources WHERE provider=? AND session_id=?",
                 (provider, session_id),
             )
+            if provider == "claude":
+                # Also drop "<parent>#<agent_id>" subagent reader rows.
+                db.execute(
+                    "DELETE FROM transcript_sources WHERE provider='claude' "
+                    "AND session_id LIKE ? ESCAPE '\\'",
+                    (
+                        session_id.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+                        + "#%",
+                    ),
+                )
             if not db.execute("SELECT 1 FROM events WHERE session_id=?", (session_id,)).fetchone():
                 db.execute("DELETE FROM pins WHERE session_id=?", (session_id,))
         self._reclaim()
