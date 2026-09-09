@@ -12,7 +12,7 @@ A local external observer for Codex coding sessions, built on top of the stock h
 - Observation comes first: repetitions, errors, validation, duration, tool calls, compaction, available token counts, and output sizes. CLI and Markdown/JSON reports; a cross-project overview comes later.
 - Session labels and export of candidate benchmark tasks. There are no automatic LLM calls or eval runner; sanctioned local analysis is opt-in.
 - Content is retained for 30 days and metrics/labels for 180 days; retention and quotas are configurable. Pinned sessions are not deleted automatically but count toward quotas.
-- Registered projects capture prompt/tool/assistant text by default after removing known credential forms. Set `capture_content = false` globally or in project overrides to collect metadata only. Redaction is a bounded pattern filter, not a guarantee that arbitrary secrets are detected.
+- Registered projects capture prompt/tool/assistant text by default; the local store keeps the raw provider input. Set `capture_content = false` globally or in project overrides to collect metadata only. The credential filter is a bounded pattern matcher applied to exports, not a guarantee that arbitrary secrets are detected; WD-115 moves it off the ingest path.
 - Intervention and optional Codex App Server integration belong to later milestones.
 
 ## Development

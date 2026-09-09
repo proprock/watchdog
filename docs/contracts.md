@@ -100,8 +100,10 @@ assigned at construction; JSON round trips retain both for replay.
 
 Payloads are empty or namespaced by the provider, for example
 `{"codex": {"hook_event_name": "FutureEvent", "metadata": {"model": "..."}}}`.
-The adapter preserves complete redacted provider input; the daemon keeps normalized
+The adapter preserves complete provider input; the daemon keeps normalized
 fields at the namespace root and the remaining top-level input in `metadata`.
+WD-115 makes the credential filter an export-time transform, so the stored
+payload is the raw provider input; pre-WD-115 builds redact it on the ingest path.
 `unknown_fields` records top-level names outside the current provider inventory.
 Unknown provider event names can be retained with kind `unknown`; that is not a
 support claim. Unknown envelope schema versions are rejected and quarantined by
@@ -109,7 +111,8 @@ WD-004 ingestion. Availability uses `observed`, `inferred`, `unknown`, or
 `unavailable`, never an invented zero; `input.<field>` identifies observed or
 omitted provider input. Envelope model serialization alone does not redact content.
 The WD-107 adapter, Inbox.publish, and Store.put persistence boundaries apply
-redaction and size limits.
+size limits; pre-WD-115 they also apply the credential filter, which WD-115 moves
+to the export boundary.
 
 Implementation references: [Pydantic strict validation](https://docs.pydantic.dev/latest/concepts/strict_mode/),
 [platformdirs paths](https://platformdirs.readthedocs.io/en/latest/api.html), and

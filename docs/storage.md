@@ -91,6 +91,14 @@ Shared content-addressed artifacts count once. Pins do not waive the quota.
 
 ## Redaction and content
 
+The local per-project store is not a sharing surface. It keeps the raw provider
+input, subject to `capture_content` and size limits, so a bounded pattern matcher
+never destroys the only local copy of a session. WD-115 makes the credential
+filter an export-time transform: ingest and drain persist raw input, and
+`inspection` applies the filter when it writes an export intended to leave the
+machine. The paragraphs below describe the filter itself and the pre-WD-115
+ingest behavior it replaces.
+
 Hooks capture native `prompt`, `tool_input`, `tool_response`, and
 `last_assistant_message` fields when present. Capture defaults to true for
 registered projects; set `capture_content = false` globally or per project to

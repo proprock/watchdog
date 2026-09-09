@@ -161,11 +161,13 @@ captures the native `prompt`, `tool_input`, `tool_response`, and
 `last_assistant_message` fields under `payload.<provider>.content`, when present.
 Capture defaults to true for registered projects; `capture_content = false` in
 defaults or project overrides omits those fields at drain. Transcript paths and
-arbitrary native fields are not copied. Known credential forms are removed in the
-adapter before the spool write — the first durable write — and the daemon
-re-sanitizes when it builds the canonical envelope; this is not an anonymization
-or complete secret-detection claim. Quotas and persistent diagnostic counters are
-described in [storage](storage.md).
+arbitrary native fields are not copied. Pre-WD-115, known credential forms are
+removed in the adapter before the spool write — the first durable write — and the
+daemon re-sanitizes when it builds the canonical envelope; WD-115 removes both
+steps so the store keeps raw input and the credential filter runs only at
+sanctioned export. Either way this is not an anonymization or complete
+secret-detection claim. Quotas and persistent diagnostic counters are described
+in [storage](storage.md).
 
 CLI versus desktop and backend version remain unknown unless evidence supplies
 them; the adapter does not guess from cwd or the installed CLI version. Tool-call
