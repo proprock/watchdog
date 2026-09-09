@@ -4,6 +4,6 @@ These JSON arrays are **synthetic**, based on the event interfaces reviewed on 2
 
 The shell response examples are deliberately opaque JSON/string values, not assertions about a universal shell output schema. Optional fields may be absent; Codex turn/model fields and Claude permission fields are omitted to exercise incomplete inputs. Future normalization tests (WD-003/006) must preserve unknown values and provenance instead of rejecting these examples or fabricating IDs.
 
-Coverage: session start, prompt, tool start/result/failure, compaction, subagent start/stop, stop; additionally Codex interrupt/session end and Claude notification. No real paths, credentials, prompts, or outputs are included. A fixture child ID does not imply a live subagent was launched.
+Coverage: session start, prompt, tool start/result/failure, compaction, subagent start/stop, stop; additionally Codex interrupt/session end and Claude notification. No real paths, credentials, prompts, or outputs are included here: committed fixtures stay synthetic for repository hygiene and because traces are untrusted content. Real transcripts of your own sessions belong under the git-ignored `tests/local/`, where regression and evaluation suites pick them up and skip when the directory is absent. A fixture child ID does not imply a live subagent was launched.
 
 Live evidence is recorded separately in [the compatibility report](../../../docs/provider-compatibility.md). Do not promote these examples to live fixtures or claim schema validation merely because they parse as JSON.
