@@ -496,6 +496,50 @@ def test_missing_transcript_degrades_the_daemon_until_the_source_recovers(paths,
     wait_for(lambda: status(paths)["state"] == "running")
 
 
+def test_inert_enrichment_is_logged_and_degrades_until_it_resolves(paths, tmp_path):
+    root = tmp_path / "project"
+    root.mkdir()
+    transcript = tmp_path / "session.jsonl"
+    skipped = {
+        "type": "assistant",
+        "sessionId": "session-1",
+        "requestId": "req_child",
+        "isSidechain": True,
+        "timestamp": "2026-09-09T04:58:34.955Z",
+        "version": "2.1.260",
+        "message": {"model": "claude-sonnet-5", "usage": {"input_tokens": 1, "output_tokens": 9}},
+    }
+    transcript.write_text(json.dumps(skipped) + "\n", encoding="utf-8")
+    mutate_registry(paths, lambda registry: registry.add(root))
+    project = load_config(paths.config).projects[0]
+    write_spool_record(
+        paths,
+        spool_record(
+            root,
+            hook_event_name="Stop",
+            session_id="session-1",
+            transcript_path=str(transcript),
+        )
+        | {"provider": "claude"},
+    )
+
+    start(paths)
+    wait_for(lambda: str(project.id) in status(paths).get("errors", []))
+    assert status(paths)["state"] == "degraded"
+    body = (paths.data / "watchdog.log").read_text(encoding="ascii")
+    assert (
+        "event=enrichment decision=inert reason=usage_seen_unstored "
+        f"project_id={project.id}" in body
+    )
+    assert str(transcript) not in body
+    assert body.count("decision=inert") == 1  # debounced
+
+    # An accepted (non-sidechain) line clears the inert state.
+    with transcript.open("a", encoding="utf-8") as stream:
+        stream.write(json.dumps(skipped | {"requestId": "req_real", "isSidechain": False}) + "\n")
+    wait_for(lambda: str(project.id) not in status(paths).get("errors", []))
+
+
 @pytest.mark.parametrize("content", ['{"schema_version": 99}', "{}"])
 def test_corrupt_control_is_never_overwritten(paths, content):
     paths.data.mkdir(parents=True)

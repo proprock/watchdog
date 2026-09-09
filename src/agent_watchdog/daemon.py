@@ -800,6 +800,7 @@ def _poll(paths: UserPaths, owner: ExitStack) -> None:
     delay = 0.25
     maintenance: dict[str, float] = {}
     logged_enrichment_failures: set[tuple[str, str]] = set()
+    logged_inert_enrichment: set[str] = set()
     spool_mtime: float | None = None
     while True:
         config: Config | None = None
@@ -856,16 +857,29 @@ def _poll(paths: UserPaths, owner: ExitStack) -> None:
 
                             enrichment = enrich(store)
                             activity |= bool(enrichment)
-                            if (
-                                _record_enrichment_failures(
-                                    paths,
-                                    config,
-                                    project.id,
-                                    enrichment.active_failures,
-                                    logged_enrichment_failures,
-                                )
-                                and len(errors) < 32
-                            ):
+                            degraded = _record_enrichment_failures(
+                                paths,
+                                config,
+                                project.id,
+                                enrichment.active_failures,
+                                logged_enrichment_failures,
+                            )
+                            if enrichment.inert:
+                                if str(project.id) not in logged_inert_enrichment:
+                                    _log(
+                                        paths,
+                                        config,
+                                        "WARNING",
+                                        event="enrichment",
+                                        decision="inert",
+                                        reason="usage_seen_unstored",
+                                        project_id=project.id,
+                                    )
+                                    logged_inert_enrichment.add(str(project.id))
+                                degraded = True
+                            else:
+                                logged_inert_enrichment.discard(str(project.id))
+                            if degraded and len(errors) < 32:
                                 errors.append(str(project.id))
                         except (OSError, StorageError, ValueError) as error:
                             if (

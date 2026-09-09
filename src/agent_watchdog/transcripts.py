@@ -116,6 +116,9 @@ class EnrichmentResult:
     accepted: int = 0
     failures: tuple[TranscriptFailureCode, ...] = ()
     active_failures: tuple[TranscriptFailureCode, ...] = ()
+    # New usage-bearing lines were read but none were stored, and no failure was
+    # raised: a silent drop the daemon must surface rather than treat as idle.
+    inert: bool = False
 
     def __bool__(self) -> bool:
         """Report activity only when new usage observations were accepted."""
@@ -346,16 +349,34 @@ class _ClaudeResponse:
     occurred_at: datetime | None
 
 
-def _claude_response(record: object, expected_session: str | None) -> _ClaudeResponse | None:
+def _has_usage(record: object) -> bool:
+    """A line that reports token usage, whether or not the reader accepts it."""
+    return (
+        isinstance(record, dict)
+        and record.get("type") == "assistant"
+        and isinstance(record.get("message"), dict)
+        and isinstance(record["message"].get("usage"), dict)
+    )
+
+
+def _claude_response(
+    record: object, expected_session: str | None, *, allow_sidechain: bool = False
+) -> _ClaudeResponse | None:
     """Interpret one Claude transcript line, or ``None`` to skip it.
 
     ``expected_session`` is the parent conversation id for a session transcript;
     for a subagent transcript it is ``None`` until the first usable line binds the
     child's own ``sessionId`` and later lines are checked for consistency.
+
+    ``allow_sidechain`` keeps ``isSidechain`` lines: in a dedicated subagent
+    transcript every line carries that flag and is the subagent's own work, so
+    the skip that de-duplicates it out of the *parent* transcript must not apply.
     """
     if not isinstance(record, dict):
         raise UnsupportedTranscript("claude_record_invalid")
-    if record.get("type") != "assistant" or record.get("isSidechain") is True:
+    if record.get("type") != "assistant":
+        return None
+    if record.get("isSidechain") is True and not allow_sidechain:
         return None
     message = record.get("message")
     if not isinstance(message, dict) or not isinstance(message.get("usage"), dict):
@@ -598,6 +619,7 @@ def _process_source(store: "Store", source: dict[str, object]) -> EnrichmentResu
         accepted=consumed.accepted,
         failures=tuple(consumed.failures),
         active_failures=tuple(consumed.failures),
+        inert=consumed.usage_seen > 0 and consumed.accepted == 0 and consumed.error is None,
     )
 
 
@@ -608,6 +630,7 @@ class _Consumed:
     reader: str | None
     counters: dict[str, int | None] | None
     error: TranscriptFailureCode | None
+    usage_seen: int = 0
 
 
 def _consume_codex(
@@ -621,6 +644,7 @@ def _consume_codex(
     counters: dict[str, int | None] | None,
 ) -> _Consumed:
     accepted = 0
+    usage_seen = 0
     error: TranscriptFailureCode | None = None
     failures: list[TranscriptFailureCode] = []
     try:
@@ -639,6 +663,7 @@ def _consume_codex(
                 raise UnsupportedTranscript("rollout_record_invalid")
             if record.get("type") != "token_usage_record":
                 continue
+            usage_seen += 1
             payload, current = _usage_record(record, str(source["session_id"]))
             delta, reset = _delta(counters, current)
             if reset:
@@ -655,7 +680,7 @@ def _consume_codex(
             _gap(store, source, error, signature)
             failures.append(error)
         reader = None
-    return _Consumed(accepted, failures, reader, counters, error)
+    return _Consumed(accepted, failures, reader, counters, error, usage_seen=usage_seen)
 
 
 def _consume_claude(
@@ -666,6 +691,7 @@ def _consume_claude(
     bound_session: str | None = None if is_subagent else parent
     seen: set[str] = set()
     accepted = 0
+    usage_seen = 0
     error: TranscriptFailureCode | None = None
     failures: list[TranscriptFailureCode] = []
     try:
@@ -674,7 +700,9 @@ def _consume_claude(
                 record = json.loads(line)
             except (UnicodeDecodeError, json.JSONDecodeError) as exc:
                 raise UnsupportedTranscript("claude_line_invalid") from exc
-            response = _claude_response(record, bound_session)
+            if _has_usage(record):
+                usage_seen += 1
+            response = _claude_response(record, bound_session, allow_sidechain=is_subagent)
             if response is None:
                 continue
             if bound_session is None:
@@ -692,7 +720,7 @@ def _consume_claude(
         if source["last_error"] != error or source["error_signature"] != signature:
             _gap(store, source, error, signature)
             failures.append(error)
-    return _Consumed(accepted, failures, CLAUDE_READER, None, error)
+    return _Consumed(accepted, failures, CLAUDE_READER, None, error, usage_seen=usage_seen)
 
 
 def _unexpected_source_failure(store: "Store", source: dict[str, object]) -> EnrichmentResult:
@@ -732,6 +760,7 @@ def enrich(store: "Store") -> EnrichmentResult:
         )
 
     accepted = 0
+    inert = False
     failures: list[TranscriptFailureCode] = []
     active_failures: list[TranscriptFailureCode] = []
     for value in sources:
@@ -757,6 +786,7 @@ def enrich(store: "Store") -> EnrichmentResult:
         except (OSError, KeyError, TypeError, ValueError):
             result = _unexpected_source_failure(store, source)
         accepted += result.accepted
+        inert = inert or result.inert
         for code in result.failures:
             if code not in failures:
                 failures.append(code)
@@ -765,6 +795,7 @@ def enrich(store: "Store") -> EnrichmentResult:
                 active_failures.append(code)
     return EnrichmentResult(
         accepted=accepted,
+        inert=inert and accepted == 0,
         failures=tuple(failures),
         active_failures=tuple(active_failures),
     )

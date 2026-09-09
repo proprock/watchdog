@@ -76,7 +76,12 @@ never hook output, admission, or delivery.
 Transcript-enrichment failures use a fixed reader-specific `error_type` allowlist
 and keep the affected project degraded while active. Their records are
 content-free with the default `log_detail = false`; when explicitly enabled, the
-same bounded, credential-redacted detail policy applies.
+same bounded, credential-redacted detail policy applies. A separate
+`decision=inert reason=usage_seen_unstored` record marks the case where a reader
+consumed new usage-bearing lines but stored none of them without raising a
+failure; it is debounced per project and holds the project degraded until a
+later pass accepts a usage observation, so a silent enrichment drop is never
+mistaken for an idle poll.
 
 Publishers and storage writes/maintenance share `admission.lock`, with a 100 ms
 acquisition timeout. Pending temporary files count; SQLite admission additionally
@@ -220,7 +225,10 @@ they get no column. Claude subagent `usage` rows carry the subagent `agent_id`,
 the parent `session_id`, and the resolved parent `turn_id`, so subagent cost
 joins to the parent conversation and turn. A subagent keeps its own observed
 `model`; model/effort inheritance never crosses between a subagent and its
-parent. Monetary estimates and tariffs are out of scope and deferred.
+parent. The subagent transcript reader keeps `isSidechain` lines (every line of
+a dedicated subagent transcript carries that flag); the skip only applies to the
+parent session transcript, where those lines are a duplicate of the subagent's
+own log. Monetary estimates and tariffs are out of scope and deferred.
 
 `agent_watchdog.facts_query` provides the read-only aggregate helpers
 (`token_usage`, `process_efficiency`, `coverage`) over `event_facts`; the

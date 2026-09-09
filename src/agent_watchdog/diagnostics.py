@@ -61,6 +61,7 @@ _DECISIONS = {
     "discarded",
     "failed",
     "idle",
+    "inert",
     "interrupted",
     "invalid",
     "paused",
@@ -73,7 +74,15 @@ _DECISIONS = {
     "unavailable",
     "unregistered",
 }
-_REASONS = {"invalid", "linked", "oversized", "quota", "unknown_field", "writer_busy"}
+_REASONS = {
+    "invalid",
+    "linked",
+    "oversized",
+    "quota",
+    "unknown_field",
+    "usage_seen_unstored",
+    "writer_busy",
+}
 _PROVIDERS = {"codex", "claude"}
 _FIELD = re.compile(r"[A-Za-z][A-Za-z0-9_.-]{0,63}")
 # An error category is a short, content-free code: either an exception class name

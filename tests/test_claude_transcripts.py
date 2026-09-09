@@ -325,19 +325,55 @@ def test_subagent_transcript_is_correlated_to_the_parent(tmp_path):
     project = uuid4()
     agent_transcript = tmp_path / "agent.jsonl"
     child_session = "33333333-3333-4333-8333-333333333333"
+    # Every line of a real subagent transcript is marked isSidechain; the reader
+    # must still count them there (unlike in the parent session transcript).
     write_transcript(
         agent_transcript,
-        [assistant(child_session, "req_child", model="claude-haiku-4-5", output_tokens=42)],
+        [
+            assistant(
+                child_session,
+                "req_child",
+                model="claude-haiku-4-5",
+                output_tokens=42,
+                sidechain=True,
+            )
+        ],
     )
     with Store(tmp_path / "data", project) as store:
         assert store.put(subagent_hook(project, SESSION, "agent-7", agent_transcript))
-        assert enrich(store).accepted == 1
+        result = enrich(store)
+        assert (result.accepted, result.inert) == (1, False)
         event = usage_events(store)[0]
 
     assert event.session_id == SESSION
     assert event.agent_id == "agent-7"
     assert claude(event)["model"] == "claude-haiku-4-5"
     assert response(event)["output_tokens"] == 42
+
+
+def test_session_transcript_with_only_a_skipped_sidechain_usage_line_is_inert(tmp_path):
+    project = uuid4()
+    transcript = tmp_path / "session.jsonl"
+    write_transcript(
+        transcript, [assistant(SESSION, "req_child", output_tokens=99, sidechain=True)]
+    )
+    with Store(tmp_path / "data", project) as store:
+        store.put(hook(project, SESSION, transcript))
+        result = enrich(store)
+    assert result.accepted == 0
+    assert result.inert is True
+
+
+def test_ordinary_enrichment_is_not_flagged_inert(tmp_path):
+    project = uuid4()
+    transcript = tmp_path / "session.jsonl"
+    write_transcript(transcript, [assistant(SESSION, "req_A", output_tokens=10)])
+    with Store(tmp_path / "data", project) as store:
+        store.put(hook(project, SESSION, transcript))
+        first = enrich(store)
+        second = enrich(store)
+    assert (first.accepted, first.inert) == (1, False)
+    assert (second.accepted, second.inert) == (0, False)
 
 
 def test_enrich_never_writes_hook_output(tmp_path):
