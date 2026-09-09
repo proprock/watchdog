@@ -37,6 +37,11 @@ log_detail = false
 # The quota relationship must remain:
 # payload_bytes <= inbox_bytes <= project_bytes
 
+# Optional default location of the list-price tariff file for `agent-watchdog
+# usage` (see pricing.example.toml). Absolute path only; --tariffs overrides it.
+# [pricing]
+# tariffs = "C:/path/to/pricing.toml"
+
 # To enable automatic registration, set an existing trusted directory and enable it:
 # auto_add_projects = true
 # trusted_projects_dir = "C:/path/to/trusted/projects"

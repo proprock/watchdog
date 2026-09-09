@@ -7,7 +7,12 @@ pass a read-only connection to a v6 database.
 """
 
 import sqlite3
-from typing import Any
+from datetime import UTC, datetime
+from decimal import Decimal
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from agent_watchdog.pricing import Tariffs
 
 _COUNTERS = (
     "input_tokens",
@@ -18,18 +23,26 @@ _COUNTERS = (
     "total_tokens",
 )
 
-# group_by -> (SELECT list with aliases, GROUP BY / ORDER BY expression)
+# group_by -> (SELECT list with aliases, GROUP BY / ORDER BY expression, result key names)
 _HOUR = "strftime('%Y-%m-%dT%H', received_at_us / 1000000, 'unixepoch')"
 _DAY = "strftime('%Y-%m-%d', received_at_us / 1000000, 'unixepoch')"
-_GROUPS: dict[str, tuple[str, str]] = {
-    "provider": ("provider AS provider", "provider"),
-    "model": ("model AS model", "model"),
-    "effort": ("reasoning_effort AS reasoning_effort", "reasoning_effort"),
-    "attribution": ("model_attribution AS model_attribution", "model_attribution"),
-    "conversation": ("session_id AS session_id", "session_id"),
-    "turn": ("session_id AS session_id, turn_id AS turn_id", "session_id, turn_id"),
-    "hour": (f"{_HOUR} AS bucket", "bucket"),
-    "day": (f"{_DAY} AS bucket", "bucket"),
+_GROUPS: dict[str, tuple[str, str, tuple[str, ...]]] = {
+    "provider": ("provider AS provider", "provider", ("provider",)),
+    "model": ("model AS model", "model", ("model",)),
+    "effort": ("reasoning_effort AS reasoning_effort", "reasoning_effort", ("reasoning_effort",)),
+    "attribution": (
+        "model_attribution AS model_attribution",
+        "model_attribution",
+        ("model_attribution",),
+    ),
+    "conversation": ("session_id AS session_id", "session_id", ("session_id",)),
+    "turn": (
+        "session_id AS session_id, turn_id AS turn_id",
+        "session_id, turn_id",
+        ("session_id", "turn_id"),
+    ),
+    "hour": (f"{_HOUR} AS bucket", "bucket", ("bucket",)),
+    "day": (f"{_DAY} AS bucket", "bucket", ("bucket",)),
 }
 
 
@@ -72,7 +85,7 @@ def token_usage(
     """Sum each raw token counter over ``kind='usage'`` rows, grouped one way."""
     if group_by not in _GROUPS:
         raise ValueError(f"Unsupported group_by: {group_by}")
-    select_keys, group_expr = _GROUPS[group_by]
+    select_keys, group_expr, _ = _GROUPS[group_by]
     where, params = _window(since_us, until_us)
     sums = ", ".join(f"SUM({name}) AS {name}" for name in _COUNTERS)
     coverage = ", ".join(f"SUM({name} IS NOT NULL) AS {name}_rows" for name in _COUNTERS)
@@ -83,6 +96,99 @@ def token_usage(
         f"GROUP BY {group_expr} ORDER BY {group_expr}",
         tuple(params),
     )
+
+
+def cost(
+    db: sqlite3.Connection,
+    tariffs: "Tariffs",
+    *,
+    since_us: int | None = None,
+    until_us: int | None = None,
+    group_by: str = "provider",
+) -> list[dict[str, Any]]:
+    """Price each ``kind='usage'`` row from its own model and timestamp, then group.
+
+    List-price estimate, never billed spend. Raw counters are untouched; this is
+    recomputed on every call. Reasoning and ``total_tokens`` are never priced.
+    """
+    from agent_watchdog import pricing
+
+    if group_by not in _GROUPS:
+        raise ValueError(f"Unsupported group_by: {group_by}")
+    select_keys, _, keys = _GROUPS[group_by]
+    where, params = _window(since_us, until_us)
+    fields = tuple(pricing.RATE_FIELDS)
+    counters = ", ".join(pricing.RATE_FIELDS.values())
+    rows = _rows(
+        db,
+        f"SELECT {select_keys}, model, received_at_us, {counters} "
+        f"FROM event_facts WHERE kind = 'usage'{where} ORDER BY received_at_us, rowid",
+        tuple(params),
+    )
+
+    groups: dict[tuple[Any, ...], dict[str, Any]] = {}
+    for row in rows:
+        acc = groups.setdefault(
+            tuple(row[name] for name in keys),
+            {
+                **{name: row[name] for name in keys},
+                "_cost": Decimal(0),
+                "unpriced_tokens": 0,
+                "unpriced_reasons": {},
+                "_dates": set(),
+                "by_field": {field: {"tokens": 0, "_cost": Decimal(0)} for field in fields},
+            },
+        )
+        at = (
+            datetime.fromtimestamp(row["received_at_us"] / 1_000_000, tz=UTC)
+            if isinstance(row["received_at_us"], int)
+            else None
+        )
+        rate = tariffs.rate(row["model"], at)
+        if rate is None:
+            acc["unpriced_tokens"] += sum(
+                row[counter]
+                for counter in pricing.RATE_FIELDS.values()
+                if isinstance(row[counter], int)
+            )
+            reason = "before_earliest_tariff" if at is not None else "timestamp_unavailable"
+            acc["unpriced_reasons"][reason] = acc["unpriced_reasons"].get(reason, 0) + 1
+            continue
+        line_cost, provenance = pricing.estimate(row, rate)
+        acc["_cost"] += line_cost
+        acc["_dates"].add(provenance["tariff_date"])
+        acc["unpriced_tokens"] += provenance["unpriced_tokens"]
+        by_field = provenance["by_field"]
+        assert isinstance(by_field, dict)
+        for field, field_cost in by_field.items():
+            acc["by_field"][field]["tokens"] += row[pricing.RATE_FIELDS[field]] or 0
+            acc["by_field"][field]["_cost"] += field_cost
+        reason = provenance.get("unpriced_reason")
+        if isinstance(reason, str):
+            acc["unpriced_reasons"][reason] = acc["unpriced_reasons"].get(reason, 0) + 1
+
+    result: list[dict[str, Any]] = []
+    for acc in groups.values():
+        fields_out = {
+            field: {
+                "tokens": int(data["tokens"]),
+                "cost": str(data["_cost"].quantize(pricing.QUANTUM)),
+            }
+            for field, data in acc["by_field"].items()
+        }
+        result.append(
+            {
+                **{name: acc[name] for name in keys},
+                "currency": tariffs.currency,
+                "cost_estimate": str(acc["_cost"].quantize(pricing.QUANTUM)),
+                "priced_tokens": sum(int(data["tokens"]) for data in acc["by_field"].values()),
+                "unpriced_tokens": acc["unpriced_tokens"],
+                "unpriced_reasons": dict(sorted(acc["unpriced_reasons"].items())),
+                "tariff_dates": sorted(acc["_dates"]),
+                "by_field": fields_out,
+            }
+        )
+    return result
 
 
 def _tool_cost(db: sqlite3.Connection, where: str, params: list[Any]) -> list[dict[str, Any]]:

@@ -303,12 +303,19 @@ def usage(
     *,
     since: datetime | None,
     until: datetime | None,
+    tariffs: Path | None = None,
 ) -> dict[str, Any]:
-    """Compare raw token use and per-turn process cost from a v6 read-only snapshot."""
-    from agent_watchdog import facts_query
+    """Compare raw token use and per-turn process cost from a v6 read-only snapshot.
+
+    With ``tariffs`` (a list-price file), a ``pricing`` block is added: a
+    list-price estimate recomputed from the raw counters, never billed spend and
+    never persisted. Absent it, the output is unchanged.
+    """
+    from agent_watchdog import facts_query, pricing
 
     since_us = int(since.timestamp() * 1_000_000) if since is not None else None
     until_us = int(until.timestamp() * 1_000_000) if until is not None else None
+    loaded = pricing.Tariffs.load(tariffs) if tariffs is not None else None
     with database(paths, project) as db:
         if db.execute("PRAGMA user_version").fetchone()[0] < 6:
             raise StorageError("Project database predates schema v6; run the daemon to migrate")
@@ -318,7 +325,7 @@ def usage(
             )
             for dimension in ("model", "effort", "attribution", "conversation", "turn", "day")
         }
-        return {
+        result: dict[str, Any] = {
             "project_id": str(project.id),
             "window": {
                 "since": since.isoformat() if since is not None else None,
@@ -331,6 +338,23 @@ def usage(
             "process": facts_query.process_efficiency(db, since_us=since_us, until_us=until_us),
             "coverage": facts_query.coverage(db),
         }
+        if loaded is not None:
+            result["pricing"] = {
+                "tariffs_path": loaded.path,
+                "currency": loaded.currency,
+                "estimate": True,
+                "caveat": (
+                    "list-price estimate, not billed spend; subscription and enterprise "
+                    "pricing differ, and cache_write blends Anthropic's 5m/1h tiers"
+                ),
+                "by": {
+                    dimension: facts_query.cost(
+                        db, loaded, since_us=since_us, until_us=until_us, group_by=dimension
+                    )
+                    for dimension in ("provider", "model", "day")
+                },
+            }
+        return result
 
 
 def export_sessions(

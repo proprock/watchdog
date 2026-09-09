@@ -1,0 +1,44 @@
+# Example list-price tariff file for `agent-watchdog usage --tariffs`.
+#
+# This produces a LIST-PRICE ESTIMATE, not billed spend. Subscription and
+# enterprise pricing differ; the estimate is never persisted and is recomputed
+# from the raw v6 token counters on every run, so editing this file re-prices
+# history with no migration.
+#
+# Rates are USD per 1,000,000 tokens, given as quoted decimal strings (parsed
+# with Decimal, so "0.125" is exact). Fill in your own numbers from the
+# provider's public pricing page.
+#
+# A section name is an ISO date (UTC): its table is the COMPLETE set of rates
+# effective from that date until the next section. A model absent from the
+# applicable section is reported as `unpriced` (reason `model_not_in_tariff`),
+# never priced at zero. Usage before the earliest section is `unpriced`
+# (reason `before_earliest_tariff`).
+#
+# Four billable classes, matched to the v6 event_facts counters:
+#   input        -> input_tokens              (uncached prompt)
+#   output       -> output_tokens             (INCLUDES reasoning/thinking; priced once)
+#   cache_read   -> cached_input_tokens       (cache hit)
+#   cache_write  -> cache_write_input_tokens  (cache creation)
+# reasoning_output_tokens and total_tokens are never priced (subset / overlapping sum).
+#
+# cache_write note: v6 collapses Anthropic's 5-minute and 1-hour cache-creation
+# tiers (billed ~1.25x and ~2.0x input) into one counter, so a single
+# cache_write rate is a blend. Set it to the tier you actually use (default: the
+# 5-minute rate). OpenAI/Codex has no cache-write charge -> set "0".
+
+currency = "USD"
+
+["2026-01-01"]
+"claude-sonnet-5"  = { input = "3.00",  output = "15.00", cache_read = "0.30",  cache_write = "3.75" }
+"claude-opus-5"    = { input = "5.00",  output = "25.00", cache_read = "0.50",  cache_write = "6.25" }
+"claude-haiku-4-5" = { input = "1.00",  output = "5.00",  cache_read = "0.10",  cache_write = "1.25" }
+"gpt-5.6-terra"    = { input = "1.25",  output = "10.00", cache_read = "0.125", cache_write = "0" }
+"gpt-5.6-luna"     = { input = "0.25",  output = "2.00",  cache_read = "0.025", cache_write = "0" }
+
+["2026-09-09"]
+"claude-sonnet-5"  = { input = "2.00",  output = "10.00", cache_read = "0.20",  cache_write = "2.50" }
+"claude-opus-5"    = { input = "5.00",  output = "25.00", cache_read = "0.50",  cache_write = "6.25" }
+"claude-haiku-4-5" = { input = "1.00",  output = "5.00",  cache_read = "0.10",  cache_write = "1.25" }
+"gpt-5.6-terra"    = { input = "1.25",  output = "10.00", cache_read = "0.125", cache_write = "0" }
+"gpt-5.6-luna"     = { input = "0.25",  output = "2.00",  cache_read = "0.025", cache_write = "0" }

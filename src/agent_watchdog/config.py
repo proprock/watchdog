@@ -104,11 +104,28 @@ def project_for_reference(projects: Iterable[Project], reference: str) -> Projec
     return next((item for item in registered if item.id == project_id), None)
 
 
+class Pricing(StrictModel):
+    """Optional default location of the list-price tariff file for `usage`."""
+
+    tariffs: Path | None = None
+
+    @field_validator("tariffs")
+    @classmethod
+    def absolute_tariffs(cls, value: Path | None) -> Path | None:
+        if value is None:
+            return None
+        expanded = value.expanduser()
+        if not expanded.is_absolute():
+            raise ValueError("Tariff path must be absolute")
+        return expanded
+
+
 class Config(Versioned):
     defaults: Limits = Field(default_factory=Limits)
     projects: tuple[Project, ...] = ()
     auto_add_projects: bool = False
     pipeline_telemetry: bool = True
+    pricing: Pricing = Field(default_factory=Pricing)
     trusted_projects_dir: Path | None = None
 
     @field_validator("trusted_projects_dir")

@@ -82,6 +82,19 @@ rather than being reconstructed from the parts. `--since`/`--until` bound
 `received_at`. A database older than schema v6 is an explicit error, not an empty
 result.
 
+With `--tariffs PATH` (or `[pricing] tariffs` in `config.toml`), `usage` adds a
+`pricing` block: a **list-price estimate, not billed spend**. Each `usage` row is
+priced from its own `model` and timestamp against the latest tariff section
+whose ISO date is at or before it, then grouped by provider, model, and day. The
+raw token blocks are untouched; the estimate is recomputed on every call, so
+editing the tariff file re-prices history. Provenance is explicit: per-group
+`cost_estimate` (a decimal string), a `by_field` split
+(`input`/`output`/`cache_read`/`cache_write`), `unpriced_tokens` with
+`unpriced_reasons` (`model_not_in_tariff`, `before_earliest_tariff`,
+`rate_field_missing`), and the `tariff_dates` applied. `reasoning_output_tokens`
+and `total_tokens` are never priced. A missing or malformed tariff file is an
+error. See [`pricing.example.toml`](../pricing.example.toml) for the format.
+
 ## Doctor
 
 ```console

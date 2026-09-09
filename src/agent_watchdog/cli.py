@@ -119,6 +119,11 @@ def main() -> int:
     usage.add_argument("--project", help="Project alias; UUID accepted; default resolves cwd")
     usage.add_argument("--since", type=_since, help="ISO-8601 inclusive lower bound")
     usage.add_argument("--until", type=_since, help="ISO-8601 exclusive upper bound")
+    usage.add_argument(
+        "--tariffs",
+        type=Path,
+        help="List-price tariff file; adds an estimate block. Defaults to [pricing] tariffs",
+    )
     label = commands.add_parser("label", help="Label one collected session through the core")
     label.add_argument("session_id")
     label.add_argument("--project", help="Project alias; UUID accepted; default resolves cwd")
@@ -268,7 +273,10 @@ def main() -> int:
                 print(json.dumps(_with_project_alias(result, alias)))
                 return 0
             if args.command == "usage":
-                result = inspection.usage(paths, project, since=args.since, until=args.until)
+                tariffs = args.tariffs or load_config(paths.config).pricing.tariffs
+                result = inspection.usage(
+                    paths, project, since=args.since, until=args.until, tariffs=tariffs
+                )
                 print(json.dumps(_with_project_alias(result, alias)))
                 return 0
             if args.action == "list":
