@@ -852,8 +852,12 @@ class Store:
 
     def _maintain(self, now: datetime, needed: int) -> None:
         db = self.connection
-        cutoff_content = now - timedelta(days=self.limits.content_days)
-        cutoff_metrics = now - timedelta(days=self.limits.metrics_days)
+        cutoff_content = (
+            now - timedelta(days=self.limits.content_days) if self.limits.content_days else None
+        )
+        cutoff_metrics = (
+            now - timedelta(days=self.limits.metrics_days) if self.limits.metrics_days else None
+        )
         eligible = (
             "SELECT event_id, envelope FROM events WHERE session_id IS NULL OR "
             "session_id NOT IN (SELECT session_id FROM pins) ORDER BY received_at"
@@ -861,13 +865,15 @@ class Store:
         with self._transaction():
             for event_id, document in db.execute(eligible).fetchall():
                 event = persisted_envelope(document)
-                if event.received_at < cutoff_metrics:
+                if cutoff_metrics is not None and event.received_at < cutoff_metrics:
                     self._delete(event_id)
-                elif event.received_at < cutoff_content:
+                elif cutoff_content is not None and event.received_at < cutoff_content:
                     self._strip_content(event_id, document)
-            db.execute(
-                "DELETE FROM transcript_sources WHERE last_seen < ?", (cutoff_content.isoformat(),)
-            )
+            if cutoff_content is not None:
+                db.execute(
+                    "DELETE FROM transcript_sources WHERE last_seen < ?",
+                    (cutoff_content.isoformat(),),
+                )
         # Admission lock excludes active publishers; age also protects recent crash recovery.
         for directory in (
             self.root,

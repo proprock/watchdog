@@ -6,6 +6,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 NonEmpty = Annotated[str, Field(min_length=1, pattern=r"\S")]
 Positive = Annotated[int, Field(gt=0)]
+NonNegative = Annotated[int, Field(ge=0)]
 
 
 class StrictModel(BaseModel):

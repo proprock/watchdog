@@ -13,9 +13,11 @@ pipeline_telemetry = true
 capture_content = true
 # Keep this many bytes available for cleanup and diagnostic work per project.
 reserve_bytes = 1048576
-# Retain provider payloads and their artifact references for this many days.
+# Retain provider payloads and their artifact references for this many days; set
+# to 0 to disable time-based expiry and retain them until quota pressure.
 content_days = 30
-# Retain events, metrics, labels, and replay fingerprints for this many days.
+# Retain events, metrics, labels, and replay fingerprints for this many days;
+# set to 0 to disable time-based expiry and retain them until quota pressure.
 metrics_days = 180
 # Maximum total size of regular files stored for one project (2 GiB).
 project_bytes = 2147483648

@@ -13,7 +13,7 @@ from platformdirs import PlatformDirs
 from pydantic import Field, ValidationError, field_validator, model_validator
 
 from agent_watchdog.files import atomic_write
-from agent_watchdog.models import Positive, StrictModel, Versioned
+from agent_watchdog.models import NonNegative, Positive, StrictModel, Versioned
 
 
 class ConfigError(ValueError):
@@ -30,8 +30,8 @@ def same_path(left: Path, right: Path) -> bool:
 class Limits(StrictModel):
     capture_content: bool = True
     reserve_bytes: Positive = 1024**2
-    content_days: Positive = 30
-    metrics_days: Positive = 180
+    content_days: NonNegative = 30
+    metrics_days: NonNegative = 180
     project_bytes: Positive = 2 * 1024**3
     inbox_bytes: Positive = 64 * 1024**2
     payload_bytes: Positive = 1024**2
@@ -50,8 +50,8 @@ class Limits(StrictModel):
 class Overrides(StrictModel):
     capture_content: bool | None = None
     reserve_bytes: Positive | None = None
-    content_days: Positive | None = None
-    metrics_days: Positive | None = None
+    content_days: NonNegative | None = None
+    metrics_days: NonNegative | None = None
     project_bytes: Positive | None = None
     inbox_bytes: Positive | None = None
     payload_bytes: Positive | None = None

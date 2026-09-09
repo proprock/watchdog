@@ -42,7 +42,7 @@ def test_missing_config_uses_defaults_without_creating_files(tmp_path):
         'unknown = "secret-value"',
         "pipeline_telemetry = 1",
         '[defaults]\ncontent_days = "30"',
-        "[defaults]\ncontent_days = 0",
+        "[defaults]\ncontent_days = -1",
         "[defaults]\nproject_bytes = 10",
         '[[projects]]\nid = "not-a-uuid"\nroot = "relative"',
     ],
@@ -61,6 +61,19 @@ def test_default_config_round_trip(tmp_path):
     config = Config()
     save_config(path, config)
     assert load_config(path) == config
+
+
+def test_zero_retention_days_disable_time_based_expiry(tmp_path):
+    path = tmp_path / "config.toml"
+    path.write_text("[defaults]\ncontent_days = 0\nmetrics_days = 0\n")
+
+    config = load_config(path)
+
+    assert config.defaults.content_days == 0
+    assert config.defaults.metrics_days == 0
+    assert Overrides(content_days=0, metrics_days=0).apply(Limits()) == Limits(
+        content_days=0, metrics_days=0
+    )
 
 
 def test_repository_config_example_matches_default_configuration():

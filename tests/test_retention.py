@@ -44,6 +44,43 @@ def test_expiry_preserves_pins_and_replay_identity(tmp_path):
         assert len(store.events()) == 1
 
 
+def test_zero_retention_days_keep_old_unpinned_content_and_metrics(tmp_path):
+    project = uuid4()
+    item = event(project, 200)
+    limits = Limits(content_days=0, metrics_days=0)
+
+    with Store(tmp_path, project, limits=limits) as store:
+        store.put(item, artifacts={"stdout": b"text"})
+        store.maintain()
+
+        assert store.events() == [item]
+        assert store.read_artifact(item.event_id, "stdout") == b"text"
+
+
+def test_zero_retention_days_leave_quota_eviction_and_pins_unchanged(tmp_path):
+    project = uuid4()
+    pinned = event(project, 200, "pinned")
+    evicted = event(project, 200, "evicted")
+    with Store(tmp_path, project) as store:
+        store.put(pinned, artifacts={"stdout": b"x" * 4096})
+        store.put(evicted, artifacts={"stdout": b"x" * 4096})
+        store.pin("pinned")
+
+    limits = Limits(
+        content_days=0,
+        metrics_days=0,
+        project_bytes=100_000,
+        reserve_bytes=10_000,
+        inbox_bytes=10_000,
+        payload_bytes=6000,
+    )
+    with Store(tmp_path, project, limits=limits) as store:
+        store.maintain()
+
+        assert store.events() == [pinned]
+        assert store.read_artifact(pinned.event_id, "stdout") == b"x" * 4096
+
+
 def test_concurrent_publish_obeys_inbox_quota(tmp_path):
     limits = Limits(payload_bytes=6000, inbox_bytes=12000)
     inbox = Inbox(tmp_path, limits=limits)
