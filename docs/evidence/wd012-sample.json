@@ -1,0 +1,687 @@
+{
+  "checkout_findings": [
+    {
+      "attribution": "uncertain",
+      "checkout_id": "9f4edabb-c34e-5c24-a0da-24755024f12d",
+      "count": 3,
+      "evidence_ids": [
+        "766fa274-413f-44e9-9e08-40ade2b6180b",
+        "c6fcb1a8-908f-4659-8ae2-07361b8e1b18",
+        "30c6852b-64fe-4d02-9260-ca7caf5d35a7"
+      ],
+      "explanation": "Observed A-to-B-to-A Git diff fingerprints; concurrent edits are not attributable.",
+      "fingerprint": "697dae2919ff3de812e00e24d5df7e3f2911c8725f7c8ed7cd0603caa9fb2a88",
+      "rule": "diff_oscillation",
+      "rule_version": "wd-010.v1"
+    },
+    {
+      "attribution": "uncertain",
+      "checkout_id": "9f4edabb-c34e-5c24-a0da-24755024f12d",
+      "count": 3,
+      "evidence_ids": [
+        "9fa6cc2f-af10-4a59-875d-04c17aa15f78",
+        "1b7fc560-ac3d-4aa7-8668-60ba8701206e",
+        "e3b8b64a-75ed-4d73-8081-87bbb5c2746b"
+      ],
+      "explanation": "Observed A-to-B-to-A Git diff fingerprints; concurrent edits are not attributable.",
+      "fingerprint": "acb53cf00972c03cdd83e8716a1198434acc47558f011168221260948bae1efe",
+      "rule": "diff_oscillation",
+      "rule_version": "wd-010.v1"
+    },
+    {
+      "attribution": "uncertain",
+      "checkout_id": "9f4edabb-c34e-5c24-a0da-24755024f12d",
+      "count": 3,
+      "evidence_ids": [
+        "a3f4c5f2-f407-4497-9f88-783e251f1a18",
+        "db236b9b-01c0-431c-bcda-4e2dd3c185f1",
+        "571b7ffa-3aed-43a1-a6fe-fa27ca3a4905"
+      ],
+      "explanation": "Observed A-to-B-to-A Git diff fingerprints; concurrent edits are not attributable.",
+      "fingerprint": "b1192da44783074a354bb7a12378add046a5c9fe9c26c55cfa5beb0d9fb0e390",
+      "rule": "diff_oscillation",
+      "rule_version": "wd-010.v1"
+    },
+    {
+      "attribution": "uncertain",
+      "checkout_id": "9f4edabb-c34e-5c24-a0da-24755024f12d",
+      "count": 3,
+      "evidence_ids": [
+        "7d4a2535-313e-4b9f-8c35-95992e1a26cc",
+        "54e38c25-a3ab-4e7f-9d6b-62f030622562",
+        "59e9c85f-103a-400d-8ff1-7f6505aaac8a"
+      ],
+      "explanation": "Observed A-to-B-to-A Git diff fingerprints; concurrent edits are not attributable.",
+      "fingerprint": "b2872f805010635c6c58c8691d571960840d0bbf9991d4037d11107d9d4885ed",
+      "rule": "diff_oscillation",
+      "rule_version": "wd-010.v1"
+    },
+    {
+      "attribution": "uncertain",
+      "checkout_id": "9f4edabb-c34e-5c24-a0da-24755024f12d",
+      "count": 3,
+      "evidence_ids": [
+        "710fe7ab-b96e-4404-84dd-0e5d4be1c96e",
+        "4ef230fb-1358-4fe1-a52b-ae423d923e02",
+        "540985a2-80f0-40c9-8048-b97d54dcd0a3"
+      ],
+      "explanation": "Observed A-to-B-to-A Git diff fingerprints; concurrent edits are not attributable.",
+      "fingerprint": "c023433857c0f824d39e1f6dcb2f1c4c4ca0e6231297c78c21e2c0f372bf54e5",
+      "rule": "diff_oscillation",
+      "rule_version": "wd-010.v1"
+    },
+    {
+      "attribution": "uncertain",
+      "checkout_id": "9f4edabb-c34e-5c24-a0da-24755024f12d",
+      "count": 3,
+      "evidence_ids": [
+        "31a09c0d-1428-45ce-86f1-7d1d4f1082d2",
+        "7f69fe84-e3de-4f80-94e1-c8db5328becc",
+        "0ff08e8c-6633-4d47-b24f-2b83038185e7"
+      ],
+      "explanation": "Observed A-to-B-to-A Git diff fingerprints; concurrent edits are not attributable.",
+      "fingerprint": "c47cf949fdb8e900e36d7da886d2f70c98a2462520c213d4a3e13d4323687cfb",
+      "rule": "diff_oscillation",
+      "rule_version": "wd-010.v1"
+    },
+    {
+      "attribution": "uncertain",
+      "checkout_id": "9f4edabb-c34e-5c24-a0da-24755024f12d",
+      "count": 3,
+      "evidence_ids": [
+        "97eadc6f-fdcd-403b-814d-5347b231fcdd",
+        "2f2b9355-b41e-43f5-b45b-ab64e158df38",
+        "4fe4ec3a-00e6-4e1b-9a01-129393e97f11"
+      ],
+      "explanation": "Observed A-to-B-to-A Git diff fingerprints; concurrent edits are not attributable.",
+      "fingerprint": "d1005138640f6369a692c3720479d3bb78ac56772b6463969ab572264e227dc7",
+      "rule": "diff_oscillation",
+      "rule_version": "wd-010.v1"
+    },
+    {
+      "attribution": "uncertain",
+      "checkout_id": "9f4edabb-c34e-5c24-a0da-24755024f12d",
+      "count": 3,
+      "evidence_ids": [
+        "43c3b499-ac1b-44c6-b7e2-6148e22c49eb",
+        "c55c7190-482f-4bc6-9c1a-8611cac81fe4",
+        "7d4a2535-313e-4b9f-8c35-95992e1a26cc"
+      ],
+      "explanation": "Observed A-to-B-to-A Git diff fingerprints; concurrent edits are not attributable.",
+      "fingerprint": "df15607730159beee101aa7e4692987256b9e5178495e138245641f43f76139e",
+      "rule": "diff_oscillation",
+      "rule_version": "wd-010.v1"
+    }
+  ],
+  "format_version": "wd-012.sample.v1",
+  "generated_at": "2026-09-09T20:26:12.372587+00:00",
+  "project_id": "130179bd-aefa-4160-8d04-247118c095eb",
+  "rule_version": "wd-010.v1",
+  "schema_version": 7,
+  "selection": {
+    "considered": 48,
+    "eligible": 24,
+    "min_events": 20,
+    "provider": null,
+    "seed": 12,
+    "settle_hours": 2.0,
+    "since": null,
+    "skipped": {
+      "below_min_events": 20,
+      "not_settled": 4
+    },
+    "strata": {
+      "with_finding": 4,
+      "without_finding_available": 20,
+      "without_finding_drawn": 20
+    },
+    "target": 40,
+    "until": null
+  },
+  "sessions": [
+    {
+      "checkout_ids": [
+        "9f4edabb-c34e-5c24-a0da-24755024f12d"
+      ],
+      "closed": true,
+      "compactions": 0,
+      "event_count": 183,
+      "findings": [],
+      "first_received_at": "2026-09-07T20:35:37.536056+00:00",
+      "gaps": 0,
+      "last_received_at": "2026-09-07T23:59:47.408934+00:00",
+      "provider": "codex",
+      "session_id": "01a07d94-c681-7693-a877-cebec978bf3a",
+      "tool_failures": 4,
+      "tools": 49,
+      "turns": 6,
+      "waiting": 0
+    },
+    {
+      "checkout_ids": [
+        "9f4edabb-c34e-5c24-a0da-24755024f12d"
+      ],
+      "closed": true,
+      "compactions": 0,
+      "event_count": 233,
+      "findings": [],
+      "first_received_at": "2026-09-07T21:18:15.308914+00:00",
+      "gaps": 0,
+      "last_received_at": "2026-09-07T23:56:59.800595+00:00",
+      "provider": "codex",
+      "session_id": "01a07dbc-329e-7c31-9557-cfe097b14b8d",
+      "tool_failures": 0,
+      "tools": 76,
+      "turns": 2,
+      "waiting": 0
+    },
+    {
+      "checkout_ids": [
+        "9f4edabb-c34e-5c24-a0da-24755024f12d"
+      ],
+      "closed": false,
+      "compactions": 0,
+      "event_count": 240,
+      "findings": [],
+      "first_received_at": "2026-09-07T22:36:54.759014+00:00",
+      "gaps": 0,
+      "last_received_at": "2026-09-07T23:31:27.088936+00:00",
+      "provider": "codex",
+      "session_id": "01a07e04-373d-70a1-acc8-290c81a23d33",
+      "tool_failures": 3,
+      "tools": 70,
+      "turns": 2,
+      "waiting": 0
+    },
+    {
+      "checkout_ids": [
+        "9f4edabb-c34e-5c24-a0da-24755024f12d"
+      ],
+      "closed": true,
+      "compactions": 0,
+      "event_count": 224,
+      "findings": [],
+      "first_received_at": "2026-09-07T23:17:47.042074+00:00",
+      "gaps": 2,
+      "last_received_at": "2026-09-08T19:58:04.389067+00:00",
+      "provider": "codex",
+      "session_id": "01a07e28-900f-7b23-bc55-2f2571ce1bb7",
+      "tool_failures": 1,
+      "tools": 58,
+      "turns": 8,
+      "waiting": 0
+    },
+    {
+      "checkout_ids": [
+        "9f4edabb-c34e-5c24-a0da-24755024f12d"
+      ],
+      "closed": true,
+      "compactions": 0,
+      "event_count": 100,
+      "findings": [],
+      "first_received_at": "2026-09-07T23:30:06.334039+00:00",
+      "gaps": 0,
+      "last_received_at": "2026-09-07T23:30:08.229899+00:00",
+      "provider": "codex",
+      "session_id": "01a07d17-48be-71c3-981f-ae1db5e7bf99",
+      "tool_failures": 0,
+      "tools": 0,
+      "turns": 0,
+      "waiting": 0
+    },
+    {
+      "checkout_ids": [
+        "9f4edabb-c34e-5c24-a0da-24755024f12d"
+      ],
+      "closed": true,
+      "compactions": 0,
+      "event_count": 92,
+      "findings": [],
+      "first_received_at": "2026-09-07T23:50:19.177141+00:00",
+      "gaps": 0,
+      "last_received_at": "2026-09-07T23:50:22.540754+00:00",
+      "provider": "codex",
+      "session_id": "01a07d4a-630a-7033-8543-67a236ffa8ff",
+      "tool_failures": 0,
+      "tools": 0,
+      "turns": 0,
+      "waiting": 0
+    },
+    {
+      "checkout_ids": [
+        "9f4edabb-c34e-5c24-a0da-24755024f12d"
+      ],
+      "closed": true,
+      "compactions": 0,
+      "event_count": 256,
+      "findings": [],
+      "first_received_at": "2026-09-08T05:04:50.458125+00:00",
+      "gaps": 0,
+      "last_received_at": "2026-09-08T19:58:02.834834+00:00",
+      "provider": "codex",
+      "session_id": "01a07f67-46a2-76d2-a495-20f1d2fa142a",
+      "tool_failures": 0,
+      "tools": 86,
+      "turns": 2,
+      "waiting": 0
+    },
+    {
+      "checkout_ids": [
+        "9f4edabb-c34e-5c24-a0da-24755024f12d"
+      ],
+      "closed": true,
+      "compactions": 0,
+      "event_count": 81,
+      "findings": [],
+      "first_received_at": "2026-09-08T05:19:25.113544+00:00",
+      "gaps": 0,
+      "last_received_at": "2026-09-08T19:58:01.008630+00:00",
+      "provider": "codex",
+      "session_id": "01a07f73-550e-7213-ad08-f2090014c1fc",
+      "tool_failures": 4,
+      "tools": 27,
+      "turns": 1,
+      "waiting": 0
+    },
+    {
+      "checkout_ids": [
+        "9f4edabb-c34e-5c24-a0da-24755024f12d"
+      ],
+      "closed": false,
+      "compactions": 1,
+      "event_count": 399,
+      "findings": [],
+      "first_received_at": "2026-09-08T05:55:32.512943+00:00",
+      "gaps": 1,
+      "last_received_at": "2026-09-08T19:58:08.653692+00:00",
+      "provider": "codex",
+      "session_id": "01a07f91-bce6-7fe0-abe5-8ed2470049a4",
+      "tool_failures": 8,
+      "tools": 135,
+      "turns": 15,
+      "waiting": 0
+    },
+    {
+      "checkout_ids": [
+        "9f4edabb-c34e-5c24-a0da-24755024f12d"
+      ],
+      "closed": true,
+      "compactions": 0,
+      "event_count": 56,
+      "findings": [],
+      "first_received_at": "2026-09-08T06:08:35.386604+00:00",
+      "gaps": 0,
+      "last_received_at": "2026-09-08T19:58:01.239796+00:00",
+      "provider": "codex",
+      "session_id": "01a07f8f-8592-7580-adeb-2312d3cf86de",
+      "tool_failures": 0,
+      "tools": 7,
+      "turns": 0,
+      "waiting": 0
+    },
+    {
+      "checkout_ids": [
+        "9f4edabb-c34e-5c24-a0da-24755024f12d"
+      ],
+      "closed": true,
+      "compactions": 0,
+      "event_count": 76,
+      "findings": [],
+      "first_received_at": "2026-09-08T06:19:39.544508+00:00",
+      "gaps": 1,
+      "last_received_at": "2026-09-08T19:58:03.372850+00:00",
+      "provider": "codex",
+      "session_id": "01a07faa-fa6e-7fa1-9e26-63e718d30732",
+      "tool_failures": 0,
+      "tools": 25,
+      "turns": 3,
+      "waiting": 0
+    },
+    {
+      "checkout_ids": [
+        "9f4edabb-c34e-5c24-a0da-24755024f12d"
+      ],
+      "closed": false,
+      "compactions": 1,
+      "event_count": 364,
+      "findings": [
+        {
+          "attribution": "observed",
+          "count": 3,
+          "evidence_ids": [
+            "ae035faf-1aea-4217-aae4-8304c9beb67f",
+            "f3d35599-c614-4481-8895-e7affd56ffbf",
+            "071a2681-f64a-4892-906d-82bb6a479648"
+          ],
+          "explanation": "Observed the same tool input and outcome at least three times.",
+          "fingerprint": "44351b3994c818735867adcb16dda2c20ed8f0379b5a1441f97610e5a1b0faf5",
+          "rule": "repeated_tool_outcome",
+          "rule_version": "wd-010.v1"
+        }
+      ],
+      "first_received_at": "2026-09-08T06:26:50.977777+00:00",
+      "gaps": 0,
+      "last_received_at": "2026-09-08T19:58:05.999617+00:00",
+      "provider": "codex",
+      "session_id": "01a07faf-ecd8-7aa1-97af-48e706727e40",
+      "tool_failures": 3,
+      "tools": 120,
+      "turns": 10,
+      "waiting": 0
+    },
+    {
+      "checkout_ids": [
+        "9f4edabb-c34e-5c24-a0da-24755024f12d"
+      ],
+      "closed": false,
+      "compactions": 0,
+      "event_count": 113,
+      "findings": [],
+      "first_received_at": "2026-09-08T18:02:15.079978+00:00",
+      "gaps": 0,
+      "last_received_at": "2026-09-08T19:58:01.498528+00:00",
+      "provider": "codex",
+      "session_id": "01a0822f-0745-7761-afff-51c448d60714",
+      "tool_failures": 0,
+      "tools": 33,
+      "turns": 6,
+      "waiting": 0
+    },
+    {
+      "checkout_ids": [
+        "9f4edabb-c34e-5c24-a0da-24755024f12d"
+      ],
+      "closed": false,
+      "compactions": 0,
+      "event_count": 178,
+      "findings": [],
+      "first_received_at": "2026-09-08T18:10:05.997301+00:00",
+      "gaps": 0,
+      "last_received_at": "2026-09-08T19:58:04.901055+00:00",
+      "provider": "codex",
+      "session_id": "01a08236-2423-7570-909d-9967f4913195",
+      "tool_failures": 2,
+      "tools": 66,
+      "turns": 5,
+      "waiting": 0
+    },
+    {
+      "checkout_ids": [
+        "9f4edabb-c34e-5c24-a0da-24755024f12d"
+      ],
+      "closed": false,
+      "compactions": 1,
+      "event_count": 841,
+      "findings": [
+        {
+          "attribution": "observed",
+          "count": 5,
+          "evidence_ids": [
+            "146644f6-21d4-444d-a94d-cfa24cc3812d",
+            "07f5845f-787b-488b-be3f-6c61e7c3c72c",
+            "bb4fe345-249a-4899-b24c-c253ab2f8a9e",
+            "a4cb5c51-0256-44d5-a92f-0c65e6d24293",
+            "2ea67d4d-2f98-45cc-ac7b-de0c54c6fc43"
+          ],
+          "explanation": "Observed the same tool input and outcome at least three times.",
+          "fingerprint": "8184a3581c5ed527a806ae2814d653b45558bae734e288f0369d78c2e65eb63a",
+          "rule": "repeated_tool_outcome",
+          "rule_version": "wd-010.v1"
+        },
+        {
+          "attribution": "observed",
+          "count": 3,
+          "evidence_ids": [
+            "77628034-de42-48df-93d7-8a1744c42e72",
+            "887fbdae-af50-47b7-92ef-0b942c629021",
+            "75651f71-715f-439e-8aa4-9f2f30e95e77"
+          ],
+          "explanation": "Observed the same tool input and outcome at least three times.",
+          "fingerprint": "0f0d672b6f186eeef2393a11aa792a49242f4f1103da17870fdf971bf8330b3a",
+          "rule": "repeated_tool_outcome",
+          "rule_version": "wd-010.v1"
+        },
+        {
+          "attribution": "observed",
+          "count": 4,
+          "evidence_ids": [
+            "bc2a36bf-d3e3-45d5-a9fc-446329d4dfc2",
+            "faa6e5b8-e4cf-49fb-b46c-84ffa0cf2e60",
+            "9d597fdc-66a7-463e-b18a-3b55dc1e743e",
+            "fcbaa61c-0d03-4def-a114-357fe91619d8"
+          ],
+          "explanation": "Observed the same tool input and outcome at least three times.",
+          "fingerprint": "7b4e10f73f49725c57b00aa1e24bdb65f643f6fd92f7ffac1629d7f76ad9df55",
+          "rule": "repeated_tool_outcome",
+          "rule_version": "wd-010.v1"
+        },
+        {
+          "attribution": "observed",
+          "count": 3,
+          "evidence_ids": [
+            "df2d126e-de78-4db4-ab66-fe731976916b",
+            "228e95a4-4528-46c2-8aa7-3e03de6f9929",
+            "e3bedc00-49e4-4153-a27b-84916207bcdf"
+          ],
+          "explanation": "Observed the same tool input and outcome at least three times.",
+          "fingerprint": "a65a59e63c519ffe6478528b4b0e3dd51dcce8b533d3cf65ec09f9bce8cef200",
+          "rule": "repeated_tool_outcome",
+          "rule_version": "wd-010.v1"
+        }
+      ],
+      "first_received_at": "2026-09-08T18:38:59.674966+00:00",
+      "gaps": 3,
+      "last_received_at": "2026-09-08T20:04:17.405016+00:00",
+      "provider": "codex",
+      "session_id": "01a0824c-df30-74d2-b88a-47f2a22f2229",
+      "tool_failures": 1,
+      "tools": 241,
+      "turns": 6,
+      "waiting": 0
+    },
+    {
+      "checkout_ids": [
+        "9f4edabb-c34e-5c24-a0da-24755024f12d"
+      ],
+      "closed": false,
+      "compactions": 0,
+      "event_count": 164,
+      "findings": [],
+      "first_received_at": "2026-09-08T18:47:28.104369+00:00",
+      "gaps": 0,
+      "last_received_at": "2026-09-08T19:58:03.541746+00:00",
+      "provider": "codex",
+      "session_id": "01a08255-497c-7540-a2f4-ceeca3b7e876",
+      "tool_failures": 0,
+      "tools": 60,
+      "turns": 0,
+      "waiting": 0
+    },
+    {
+      "checkout_ids": [
+        "9f4edabb-c34e-5c24-a0da-24755024f12d"
+      ],
+      "closed": true,
+      "compactions": 0,
+      "event_count": 82,
+      "findings": [],
+      "first_received_at": "2026-09-08T20:07:52.928402+00:00",
+      "gaps": 0,
+      "last_received_at": "2026-09-08T21:49:47.285952+00:00",
+      "provider": "claude",
+      "session_id": "6c812d9d-a85a-46a5-b0e6-bda373f790c8",
+      "tool_failures": 5,
+      "tools": 30,
+      "turns": 2,
+      "waiting": 12
+    },
+    {
+      "checkout_ids": [
+        "9f4edabb-c34e-5c24-a0da-24755024f12d"
+      ],
+      "closed": true,
+      "compactions": 0,
+      "event_count": 106,
+      "findings": [],
+      "first_received_at": "2026-09-08T20:22:45.215600+00:00",
+      "gaps": 0,
+      "last_received_at": "2026-09-08T21:49:47.132758+00:00",
+      "provider": "claude",
+      "session_id": "8a5e5928-119f-4749-8cba-a32547428ef9",
+      "tool_failures": 6,
+      "tools": 47,
+      "turns": 4,
+      "waiting": 0
+    },
+    {
+      "checkout_ids": [
+        "9f4edabb-c34e-5c24-a0da-24755024f12d"
+      ],
+      "closed": false,
+      "compactions": 0,
+      "event_count": 42,
+      "findings": [],
+      "first_received_at": "2026-09-08T20:39:53.284397+00:00",
+      "gaps": 0,
+      "last_received_at": "2026-09-08T20:44:35.242408+00:00",
+      "provider": "codex",
+      "session_id": "01a082be-a3a1-7812-beb3-af9e42131bc4",
+      "tool_failures": 0,
+      "tools": 9,
+      "turns": 5,
+      "waiting": 0
+    },
+    {
+      "checkout_ids": [
+        "9f4edabb-c34e-5c24-a0da-24755024f12d"
+      ],
+      "closed": true,
+      "compactions": 0,
+      "event_count": 380,
+      "findings": [],
+      "first_received_at": "2026-09-08T20:52:47.385776+00:00",
+      "gaps": 0,
+      "last_received_at": "2026-09-08T21:49:47.145604+00:00",
+      "provider": "claude",
+      "session_id": "fea7a7d1-d6ee-43ca-b327-ef5ee33185a5",
+      "tool_failures": 3,
+      "tools": 181,
+      "turns": 7,
+      "waiting": 1
+    },
+    {
+      "checkout_ids": [
+        "9f4edabb-c34e-5c24-a0da-24755024f12d"
+      ],
+      "closed": false,
+      "compactions": 0,
+      "event_count": 225,
+      "findings": [
+        {
+          "attribution": "observed",
+          "count": 3,
+          "evidence_ids": [
+            "9ba96841-5a58-4a18-afcd-60f2d4e51948",
+            "a5b37fd3-4b5c-405a-803e-0d3b37b37d2a",
+            "16989cf1-8e49-4d7a-9369-ea9acd4d754a"
+          ],
+          "explanation": "Observed the same tool input and outcome at least three times.",
+          "fingerprint": "da7cd8c7d8b4dff369a2f28bbdf8631aac6d654d7b0a7b22cd35dbf577c5e907",
+          "rule": "repeated_tool_outcome",
+          "rule_version": "wd-010.v1"
+        }
+      ],
+      "first_received_at": "2026-09-09T04:58:08.574058+00:00",
+      "gaps": 0,
+      "last_received_at": "2026-09-09T05:57:30.872662+00:00",
+      "provider": "claude",
+      "session_id": "4573c081-6eb5-46b6-913c-e8c8992bd3aa",
+      "tool_failures": 24,
+      "tools": 102,
+      "turns": 6,
+      "waiting": 2
+    },
+    {
+      "checkout_ids": [
+        "9f4edabb-c34e-5c24-a0da-24755024f12d"
+      ],
+      "closed": true,
+      "compactions": 0,
+      "event_count": 85,
+      "findings": [],
+      "first_received_at": "2026-09-09T05:29:46.767579+00:00",
+      "gaps": 0,
+      "last_received_at": "2026-09-09T13:09:10.604290+00:00",
+      "provider": "claude",
+      "session_id": "275cfd15-a824-4eb8-ad18-b6b809e90c14",
+      "tool_failures": 3,
+      "tools": 26,
+      "turns": 1,
+      "waiting": 5
+    },
+    {
+      "checkout_ids": [
+        "9f4edabb-c34e-5c24-a0da-24755024f12d"
+      ],
+      "closed": true,
+      "compactions": 0,
+      "event_count": 365,
+      "findings": [
+        {
+          "attribution": "observed",
+          "count": 3,
+          "evidence_ids": [
+            "06d4b4dd-3348-4aab-bf73-f5d33ba1548b",
+            "f7df0c1a-4fbd-46fe-98d8-68e164f89121",
+            "af6a8a48-f4a5-4d20-ae37-72179212b635"
+          ],
+          "explanation": "Observed the same tool input and outcome at least three times.",
+          "fingerprint": "4b9dc1a5b44c6f8f01047b99bbe08768ebce691ac4fb24987c74a069ecdc5821",
+          "rule": "repeated_tool_outcome",
+          "rule_version": "wd-010.v1"
+        },
+        {
+          "attribution": "observed",
+          "count": 4,
+          "evidence_ids": [
+            "730b8290-9402-4a94-89cd-8b5c0bbf9977",
+            "9a8ab7a4-4d7d-48cd-9dd2-80ab2cd8909a",
+            "3b2b467a-0c0b-4624-82e3-666e136b5ca6",
+            "ac85307a-73a3-40d0-a48f-93b855a7fdfd"
+          ],
+          "explanation": "Observed the same tool input and outcome at least three times.",
+          "fingerprint": "ce92f3c4eba863f47f49ebad5bc27ecf0973e0cbd4ca0f3cc017fd4b1144b919",
+          "rule": "repeated_tool_outcome",
+          "rule_version": "wd-010.v1"
+        }
+      ],
+      "first_received_at": "2026-09-09T05:35:09.350508+00:00",
+      "gaps": 0,
+      "last_received_at": "2026-09-09T19:50:36.388951+00:00",
+      "provider": "codex",
+      "session_id": "01a084a9-7398-7293-ad52-fb6ff081f6b7",
+      "tool_failures": 4,
+      "tools": 87,
+      "turns": 5,
+      "waiting": 0
+    },
+    {
+      "checkout_ids": [
+        "9f4edabb-c34e-5c24-a0da-24755024f12d"
+      ],
+      "closed": false,
+      "compactions": 0,
+      "event_count": 511,
+      "findings": [],
+      "first_received_at": "2026-09-09T06:37:30.136222+00:00",
+      "gaps": 1,
+      "last_received_at": "2026-09-09T11:31:44.690864+00:00",
+      "provider": "claude",
+      "session_id": "42cd82e9-ce54-4f10-816f-93907fb085b8",
+      "tool_failures": 26,
+      "tools": 187,
+      "turns": 4,
+      "waiting": 3
+    }
+  ]
+}

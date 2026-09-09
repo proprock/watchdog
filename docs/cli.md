@@ -223,11 +223,15 @@ skip counts, and stores each session's findings with their fingerprints, because
 an open session can grow a finding group and change its identity. It contains no
 prompt or output text.
 
-`annotate` walks the frozen cohort. Each session shows its counts, findings, and
-current labels; `o`, `t`, `p`, and `r` set outcome, task type, progress state,
-and a reviewer note from a numbered menu, and a digit records a verdict for the
-numbered finding. `d` prints the full report for the session and `c` reviews the
-checkout-scoped findings once rather than once per session. Every answer is sent
+`annotate` walks the frozen cohort. Each session shows its counts, its first and
+last prompt, the last assistant message, the tool inputs it repeated, its
+findings, and its current labels, because counts alone do not show whether a
+session was stuck. Content comes from the store and is shown only on screen.
+`o`, `t`, `p`, and `r` set outcome, task type, progress state, and a reviewer
+note from a numbered menu, and a digit records a verdict for the numbered
+finding. `d` prints the full report for the session, `x` prints the observed
+vendor transcript path without opening it, and `c` reviews the checkout-scoped
+findings once rather than once per session. Every answer is sent
 to the running core and the acknowledgement is printed; a rejected write is
 reported and nothing advances. Rerunning resumes from what the store already
 holds.

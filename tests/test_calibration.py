@@ -11,7 +11,7 @@ import pytest
 from agent_watchdog.config import UserPaths, load_config
 from agent_watchdog.daemon import _drain_controls, mutate_registry
 from agent_watchdog.events import Envelope
-from agent_watchdog.storage import Store
+from agent_watchdog.storage import StorageError, Store
 
 FINGERPRINT_LENGTH = 64
 
@@ -379,10 +379,72 @@ def test_the_reviewer_navigates_and_stops_without_writing(
     assert "findings (session-scoped)" in printed
 
 
-def test_a_failed_acknowledgement_is_reported_to_the_reviewer(calibrate, capture, capsys):
+def test_the_card_shows_captured_work_not_only_counts(
+    calibrate, capture, tmp_path, monkeypatch, capsys
+):
+    paths, _, _ = capture
+    sample_path = tmp_path / "sample.json"
+    sample = calibrate.build_sample(paths, sample_args(calibrate, paths, sample_path))
+    calibrate.write_sample(sample, sample_path)
+    position = next(
+        index
+        for index, record in enumerate(sample["sessions"], start=1)
+        if record["session_id"] == "noisy"
+    )
+    answers = iter(["j", str(position), "q"])
+    monkeypatch.setattr("builtins.input", lambda *_: next(answers))
+    args = calibrate.build_parser().parse_args(
+        [
+            "annotate",
+            "--home",
+            str(paths.config.parent),
+            "--project",
+            "checkout",
+            "--sample",
+            str(sample_path),
+        ]
+    )
+
+    assert calibrate.annotate(paths, args) == 0
+
+    printed = capsys.readouterr().out
+    assert "repeated x3" in printed
+    assert "uv run pytest" in printed
+    assert "repeated_tool_outcome" in printed
+
+
+def test_content_is_flattened_to_one_readable_line(calibrate):
+    assert calibrate.one_line("  many\n  spaced\tlines ") == "many spaced lines"
+    assert calibrate.one_line("x" * 400).endswith("...")
+    assert len(calibrate.one_line("x" * 400)) == 300
+    # Reviewed text is the reviewer's own, in any language; it must survive intact.
+    assert calibrate.one_line("проверка") == "проверка"
+    assert calibrate.one_line({"command": "uv run pytest"}) == '{"command": "uv run pytest"}'
+
+
+@pytest.mark.parametrize(
+    "outcome",
+    [
+        pytest.param(StorageError("Unknown session in the selected provider"), id="raised"),
+        pytest.param({"ok": False, "message": "Invalid control request"}, id="rejected"),
+    ],
+)
+def test_a_failed_acknowledgement_is_reported_to_the_reviewer(
+    calibrate, capture, monkeypatch, capsys, outcome
+):
     paths, _, _ = capture
 
-    recorded = calibrate.submit(paths, {"action": "verdict", "project_id": "not-a-uuid"})
+    def control(*_args, **_kwargs):
+        if isinstance(outcome, Exception):
+            raise outcome
+        return outcome
+
+    # Never reach the real control path here: request_control starts a daemon.
+    monkeypatch.setattr(calibrate.daemon, "request_control", control)
+
+    recorded = calibrate.submit(paths, {"action": "verdict"})
 
     assert recorded is False
-    assert "NOT recorded" in capsys.readouterr().out
+    printed = capsys.readouterr().out
+    assert "NOT recorded" in printed
+    assert ("Unknown session" in printed) or ("Invalid control request" in printed)

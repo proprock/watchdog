@@ -237,7 +237,7 @@ def _provider(event: Envelope) -> Mapping[str, Any]:
     return value if isinstance(value, dict) else {}
 
 
-def _captured(provider: Mapping[str, Any]) -> Mapping[str, Any]:
+def captured_content(provider: Mapping[str, Any]) -> Mapping[str, Any]:
     """Return content when retained, with direct fixtures accepted for analysis."""
     content = provider.get("content")
     if isinstance(content, dict):
@@ -457,7 +457,7 @@ def analyze(
             continue
         if event.kind != "tool.finish":
             continue
-        captured = _captured(provider)
+        captured = captured_content(provider)
         command = captured.get("tool_input")
         response = captured.get("tool_response")
         if response is None:

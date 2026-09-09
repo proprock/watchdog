@@ -37,6 +37,65 @@ freezes a reproducible cohort (`sample`), reviews it against the collected store
 definition is auditable; annotations are written through the existing control
 inbox, never by the reviewing process itself.
 
+## WD-012 annotation tooling (2026-09-09, Windows)
+
+Storage schema v7 adds the manual annotation fields: `session_labels`
+`progress_state` and `reviewer_note`, plus `finding_verdicts` and
+`checkout_finding_verdicts`. Findings now carry a SHA-256 `fingerprint` over
+their sorted evidence identifiers, so a verdict survives recomputation and stops
+applying when the evidence set changes; `REPORT_SCHEMA_VERSION` is 2. The CLI
+gains `label --progress/--note` and a `verdict` command, both routed through the
+existing control inbox; the CLI still opens no write connection.
+`scripts/calibrate.py` provides `sample`, `annotate`, and `report`.
+
+Offline verification: 407 pytest tests passed in three bounded groups (82
+storage/analysis, 74 daemon/CLI/query, 251 remaining), covering the v6-to-v7
+upgrade, label-field preservation, verdict validation and purge, the two new
+control actions and their rejection path, fingerprint stability, seeded sample
+reproducibility, CSV/JSON agreement, reviewer navigation without writes, and the
+report math. Ruff lint and format, ty, `uv build`, `cargo fmt --check`,
+`cargo clippy --locked -- -D warnings`, the locked release build, and
+`git diff --check` passed. No provider was invoked.
+
+One test initially reached the real control path, and `daemon.request_control`
+starts a daemon, so each run left a detached daemon in its temporary home. The
+leaked processes were identified by their `C:	mp` config path, stopped, and the
+test now stubs the control call; the live instance was never a target. A separate
+run of the daemon/CLI group showed one timeout in the pre-existing
+`label`/`pin`/`export`/`purge` test when the host was loaded: its control
+acknowledgement has a ten-second budget. It passed alone and on a repeat of the
+group; it is recorded here as an observed flake under load, not a silent pass.
+
+Live capture, same day: the owned daemon was stopped, `events.sqlite3` was copied
+to a backup outside the checkout, the adapter binary and wheel were replaced, and
+the daemon was restarted. The store upgraded from `user_version` 6 to 7 with both
+verdict tables present and 7639 events preserved. Daemon status remains
+`degraded` for the pre-existing transcript-enrichment failures
+(`transcript_unreadable`, `session_meta_mismatch`, `rollout_line_invalid`) with
+all loss counters at zero; that state predates this change. A `verdict` request
+for a nonexistent session was acknowledged as `Unknown session in the selected
+provider`, which shows the action reaches the storage layer without writing a row
+into the dataset.
+
+`sample` froze a 24-session cohort in [wd012-sample.json](evidence/wd012-sample.json)
+from 48 considered sessions (20 below the 20-event floor, 4 not settled): 4 with
+a session-scoped finding and 20 drawn under seed 12 from the 20 with none. The 8
+`diff_oscillation` findings are listed once at checkout scope instead of the 384
+per-session instances the rule produces across this single-checkout capture.
+
+Measured on that live data, per-hook cost is p50 5.3 ms and p95 15.0 ms in the
+hook, and p50 842.4 ms / p95 2084.3 ms end to end, over 3033 of 7648 events;
+transcript-sourced events carry no delivery trace, so the remaining 4615 are not
+measured rather than fast.
+
+**No manual review has been performed yet.** `repeated_tool_outcome` is observed
+8 times and `diff_oscillation` 8 times, both unreviewed; `identical_error` and
+`repeated_test_failure` have zero observations in this window. Every precision is
+`null` with its reason distinguished ("no observation" from "observed but not
+reviewed"), never zero and never 100%. [wd012-calibration.json](evidence/wd012-calibration.json)
+still holds the first pass and is not replaced until the review produces real
+counts. WD-012 stays open.
+
 ## WD-011 labels, pins, and manual export
 
 2026-09-07, Windows. WD-011 adds storage schema v5 with a provider-scoped

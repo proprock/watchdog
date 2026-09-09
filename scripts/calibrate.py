@@ -18,12 +18,13 @@ import random
 import statistics
 import sys
 from collections import Counter
+from collections.abc import Mapping
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
 from agent_watchdog import daemon, inspection
-from agent_watchdog.analysis import RULE_VERSION, RULES, analyze
+from agent_watchdog.analysis import RULE_VERSION, RULES, analyze, captured_content
 from agent_watchdog.config import UserPaths, user_paths
 from agent_watchdog.storage import FINDING_VERDICTS, PROGRESS_STATES, persisted_envelope
 
@@ -249,8 +250,62 @@ def choose(
     return None
 
 
+def one_line(value: object, width: int = 300) -> str:
+    """Flatten stored content to one printable line the console can render."""
+    if isinstance(value, str):
+        text = value
+    elif value is None:
+        text = ""
+    else:
+        text = json.dumps(value, ensure_ascii=False, sort_keys=True)
+    text = " ".join(text.split())
+    if len(text) > width:
+        text = text[: width - 3] + "..."
+    return text
+
+
+def content_of(event) -> Mapping[str, Any]:
+    """Return the captured content mapping the rules read, or an empty one."""
+    payload = event.payload.get(event.provider)
+    return captured_content(payload) if isinstance(payload, dict) else {}
+
+
+def session_context(paths: UserPaths, project, provider: str, session_id: str) -> dict:
+    """Read what a reviewer needs to judge the session: its work, not its counts."""
+    prompts: list[str] = []
+    last_message = ""
+    commands: Counter[str] = Counter()
+    transcript = ""
+    with inspection.database(paths, project) as db:
+        rows = db.execute(
+            "SELECT envelope FROM events WHERE session_id=? "
+            "AND json_extract(envelope, '$.provider')=? ORDER BY rowid",
+            (session_id, provider),
+        ).fetchall()
+    for (document,) in rows:
+        event = persisted_envelope(document)
+        payload = event.payload.get(provider)
+        if isinstance(payload, dict) and isinstance(payload.get("transcript_path"), str):
+            transcript = payload["transcript_path"]
+        content = content_of(event)
+        if event.kind == "turn.start" and content.get("prompt"):
+            prompts.append(one_line(content["prompt"]))
+        elif event.kind == "turn.end" and content.get("last_assistant_message"):
+            last_message = one_line(content["last_assistant_message"])
+        elif event.kind == "tool.start" and content.get("tool_input"):
+            commands[one_line(content["tool_input"], width=120)] += 1
+    return {
+        "first_prompt": prompts[0] if prompts else "",
+        "last_prompt": prompts[-1] if len(prompts) > 1 else "",
+        "last_message": last_message,
+        "repeated": [pair for pair in commands.most_common(3) if pair[1] > 1],
+        "transcript_path": transcript,
+    }
+
+
 def render(record: dict, position: int, total: int, state: dict) -> None:
     label = state["label"]
+    context = state["context"]
     reviewed = label.get("task_outcome", "unknown") != "unknown"
     print()
     print("=" * 78)
@@ -263,15 +318,22 @@ def render(record: dict, position: int, total: int, state: dict) -> None:
         f"checkout {', '.join(record['checkout_ids']) or 'unknown'}"
     )
     print(
-        f"{record['turns']} turns · {record['tools']} tools "
-        f"({record['tool_failures']} failed) · {record['event_count']} events · "
-        f"waiting {record['waiting']} · gaps {record['gaps']} · "
+        f"{record['turns']} turns | {record['tools']} tools "
+        f"({record['tool_failures']} failed) | {record['event_count']} events | "
+        f"waiting {record['waiting']} | gaps {record['gaps']} | "
         f"{'closed' if record['closed'] else 'no session.end observed'}"
     )
     print()
+    print(f"first prompt  > {context['first_prompt'] or '(not captured)'}")
+    if context["last_prompt"]:
+        print(f"last prompt   > {context['last_prompt']}")
+    print(f"last message  < {context['last_message'] or '(not captured)'}")
+    for command, count in context["repeated"]:
+        print(f"repeated x{count}  {command}")
+    print()
     print("findings (session-scoped)")
     if not record["findings"]:
-        print("  none — a stuck or slow label here counts as a false negative")
+        print("  none - a stuck or slow label here counts as a false negative")
     for index, finding in enumerate(record["findings"], start=1):
         recorded = state["verdicts"].get(finding["fingerprint"], "-")
         print(
@@ -284,6 +346,8 @@ def render(record: dict, position: int, total: int, state: dict) -> None:
         f"type={label.get('task_type') or '-'}  "
         f"progress={label.get('progress_state') or '-'}"
     )
+    if label.get("reviewer_note"):
+        print(f"note    {one_line(label['reviewer_note'])}")
 
 
 def load_state(paths: UserPaths, project, provider: str, session_id: str) -> dict:
@@ -293,7 +357,8 @@ def load_state(paths: UserPaths, project, provider: str, session_id: str) -> dic
             row["fingerprint"]: row["verdict"]
             for row in inspection.session_verdicts(db, provider, session_id)
         }
-    return {"label": label, "verdicts": verdicts}
+    context = session_context(paths, project, provider, session_id)
+    return {"label": label, "verdicts": verdicts, "context": context}
 
 
 def submit(paths: UserPaths, request: dict) -> bool:
@@ -360,7 +425,7 @@ def annotate_checkout_findings(paths: UserPaths, project_id: str, findings: list
             f"checkout {finding['checkout_id']}"
         )
         print(f"evidence: {', '.join(finding['evidence_ids'])}")
-        print(f"attribution: {finding['attribution']} — {finding['explanation']}")
+        print(f"attribution: {finding['attribution']} - {finding['explanation']}")
         verdict = choose("Finding verdict", FINDING_VERDICTS, VERDICT_HINTS, None)
         if verdict is None:
             continue
@@ -382,7 +447,7 @@ def annotate_checkout_findings(paths: UserPaths, project_id: str, findings: list
 
 HELP = (
     "[o]utcome [t]ype [p]rogress [r]emark [1-9] verdict "
-    "[d]etail [c]heckout findings [n]ext [b]ack [j]ump [q]uit"
+    "[d]etail e[x]ternal transcript [c]heckout findings [n]ext [b]ack [j]ump [q]uit"
 )
 
 
@@ -424,6 +489,9 @@ def annotate(paths: UserPaths, args: argparse.Namespace) -> int:
                 paths, project, session_id=record["session_id"], provider=record["provider"]
             )
             print(json.dumps(report, indent=2, sort_keys=True))
+        elif command in ("x", "transcript"):
+            # Printed only. Watchdog never opens or modifies a vendor transcript.
+            print(state["context"]["transcript_path"] or "No transcript path was observed.")
         elif command in ("c", "checkout"):
             annotate_checkout_findings(paths, str(project.id), sample["checkout_findings"])
         elif command in ("o", "outcome"):
@@ -753,6 +821,12 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def main(argv: list[str] | None = None) -> int:
+    # Reviewed prompts and messages are the reviewer's own text in any language;
+    # a legacy console code page would replace them with question marks.
+    for stream in (sys.stdout, sys.stderr):
+        reconfigure = getattr(stream, "reconfigure", None)
+        if reconfigure is not None:
+            reconfigure(encoding="utf-8", errors="replace")
     args = build_parser().parse_args(argv)
     paths = paths_from(args)
     if args.command == "sample":
