@@ -44,11 +44,13 @@ Defaults are configurable in user TOML, with overrides by project UUID:
 
 | Setting | Value |
 |---|---:|
-| Content / aggregates and labels | 30 / 180 days |
+| Content / aggregates and labels | 30 / 180 days (`0` disables time expiry) |
 | Total project quota, including WAL/inbox/artifacts | 2 GiB |
 | Inbox within the total quota | 64 MiB |
 | Maximum persisted event payload | 1 MiB |
 | Process logs | 5 files of 10 MiB each |
+
+Retention is a disk-budget control, not a privacy control: the data is the user's own, kept locally. Setting a day count to `0` disables time-based expiry for that class; the project quota and degraded-state loss counters still bound growth. WD-116 is pending: it implements the `0` disable path and the reframed defaults.
 
 Delete expired content first, then old unpinned content, then old unpinned sessions. Pin protects against deletion, not quota accounting: if space cannot be reclaimed, stop accepting content/events and report degraded status with loss counters. Never silently delete pinned data. Reserve space for checkpoint/diagnostics; bound concurrent inbox writes with a short project lock. Account for auxiliary files; SQLite cleanup uses incremental vacuum/checkpoint support. Never delete existing vendor transcripts. See the implemented policy and operational limits in [storage](storage.md).
 
@@ -68,7 +70,7 @@ Hooks are the primary source. Transcript enrichment (`codex-rollout-v1` and, fro
 - Compute debounced Git diff fingerprints per checkout in the core; concurrent agents/user edits make attribution uncertain. A->B->A is a signal, not proof of a stall. Snapshots must not modify the index or worktree.
 - No universal no-progress score based on missing events. Distinguish observed, inferred, and unknown for every finding; waiting for a user/tool or incomplete data is not a stall. Exit code 0 does not automatically reset signals.
 - CLI reports show timeline, coverage/gaps, active time separately from wall time, repetitions, available usage/compaction, and labels. Without evidence of interval start/end, active time is unknown.
-- Export selected sessions as a Markdown summary, JSONL events, a manifest with versions/completeness/redaction, and a prompt template for manual LLM analysis. Export is the redaction boundary: the credential filter is applied here, over the raw stored input (WD-115). No automatic transmission. Clearly mark trace content as untrusted data and require human content review before external sharing.
+- Export selected sessions as a Markdown summary, JSONL events, a manifest with versions/completeness/redaction, and a prompt template for manual LLM analysis. Export is the redaction boundary: the credential filter is applied here, over the raw stored input (WD-115). No automatic transmission. Clearly mark trace content as untrusted data; a content review before external sharing is recommended, not an enforced gate.
 
 ## Later extensions
 

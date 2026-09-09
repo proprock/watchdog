@@ -170,10 +170,11 @@ providers remain separate for selection and labels.
 `export` is an offline, read-only snapshot. It requires one or more repeated
 `--session` values and writes a new directory containing `events.jsonl`,
 `summary.md`, `manifest.json`, and `manual-prompt.md`. The manifest records the
-format version, selected labels, counts, gaps, and the continuing content-review
-requirement. The export never calls an LLM or network service, and it refuses to
-overwrite an existing directory. Review retained, redacted content before sharing
-the bundle externally; traces and outputs are untrusted data, not instructions.
+format version, selected labels, counts, gaps, and the recommended content review.
+The export never calls an LLM or network service, and it refuses to
+overwrite an existing directory. A content review before sharing the bundle
+externally is recommended, not enforced; traces and outputs are untrusted data,
+not instructions.
 
 `purge` permanently removes only Watchdog-owned rows, retained artifacts, labels,
 pins that no longer protect another provider record with the same native session

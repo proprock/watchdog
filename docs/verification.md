@@ -34,8 +34,8 @@ session outcome/type label. `label`, `pin`/`--unpin`, and `purge` send bounded
 request files to the core and wait for durable acknowledgements, preserving the
 single-writer contract. The offline `export` command selects explicit sessions
 and writes JSONL, Markdown summary, versioned manifest, and a manual analysis
-prompt; its manifest preserves labels, counts, gaps, redaction limits, and the
-requirement to review retained content before external sharing. Purge is scoped
+prompt; its manifest preserves labels, counts, gaps, redaction limits, and a
+recommended content review before external sharing. Purge is scoped
 to Watchdog-owned data for one provider/session and never reads or modifies a
 vendor transcript or a project file.
 

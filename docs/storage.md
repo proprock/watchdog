@@ -24,8 +24,8 @@ with Store(root, event.project_id, limits=limits) as store:
 | Setting | Default | Meaning |
 | --- | --- | --- |
 | `capture_content` | true | Capture selected native text fields; false keeps metadata only |
-| `content_days` | 30 | Expire provider payload and artifact references |
-| `metrics_days` | 180 | Expire events and replay fingerprints |
+| `content_days` | 30 | Expire provider payload and artifact references; `0` disables time expiry (quota still applies) |
+| `metrics_days` | 180 | Expire events and replay fingerprints; `0` disables time expiry (quota still applies) |
 | `project_bytes` | 2 GiB | Account for regular files under the project data directory |
 | `inbox_bytes` | 64 MiB | Bound pending deliveries and inbox temporary files |
 | `payload_bytes` | 1 MiB | Bound raw hook input and serialized envelopes |
@@ -260,10 +260,14 @@ differ.
 
 The daemon maintains each project on first access and at most once per minute
 thereafter; storage admission also requests cleanup under quota pressure.
-Retention uses received time. Unpinned provider payload and artifact references
-expire after 30 days; events expire after 180 days. Payload is removed as a unit
-so unknown provider fields cannot retain text indefinitely. Core event identity,
-kind, times, and availability remain.
+Retention is a disk-budget control over the user's own local data, not a privacy
+control. Retention uses received time. By default unpinned provider payload and
+artifact references expire after 30 days and events after 180 days;
+`content_days = 0` / `metrics_days = 0` disable time-based expiry, leaving the
+project quota and degraded-state loss counters as the only bound (WD-116).
+Payload is removed as a unit so unknown provider fields cannot retain text
+past the configured window. Core event identity, kind, times, and availability
+remain.
 
 Under pressure, cleanup removes oldest unpinned content, then oldest unpinned
 sessions. Null-session events form one unpinned group. Pins protect the entire
