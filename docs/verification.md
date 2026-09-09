@@ -24,8 +24,18 @@ per-hook overhead are **not evaluable** for this sample; they are recorded as
 evidence and do not measure these real sessions. WD-012 remains open until a
 registered Watchdog capture provides 20--50 sessions with report findings and
 timing data. The next pass must label outcomes through the existing CLI, retain
-each finding's `correct`/`false_positive`/`unknown` review, report the denominator
-for precision, and preserve the same no-automatic-harness-change boundary.
+each finding's `true_positive`/`false_positive`/`uncertain` review, report the
+denominator for precision, and preserve the same no-automatic-harness-change
+boundary. That verdict vocabulary supersedes the `correct`/`false_positive`/
+`unknown` wording used above for the first pass; `uncertain` here is the
+correctness of the finding and is unrelated to a finding's `attribution` field.
+
+The tooling for that pass is `scripts/calibrate.py` with storage schema v7. It
+freezes a reproducible cohort (`sample`), reviews it against the collected store
+(`annotate`), and emits `wd-012.calibration.v2` evidence plus a markdown report
+(`report`). Sampling records its seed, strata, and skip counts so the dataset
+definition is auditable; annotations are written through the existing control
+inbox, never by the reviewing process itself.
 
 ## WD-011 labels, pins, and manual export
 

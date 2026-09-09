@@ -132,6 +132,29 @@ def main() -> int:
         "--outcome", required=True, choices=("success", "partial", "failed", "abandoned", "unknown")
     )
     label.add_argument("--task-type")
+    label.add_argument(
+        "--progress",
+        choices=("progress", "slow", "stuck", "externally_blocked"),
+        help="Manual progress judgement; omitting it keeps a previously recorded state",
+    )
+    label.add_argument("--note", help="Reviewer note; omitting it keeps a previous note")
+    verdict = commands.add_parser(
+        "verdict", help="Record a manual correctness verdict for one shadow finding"
+    )
+    verdict.add_argument("--project", help="Project alias; UUID accepted; default resolves cwd")
+    verdict.add_argument("--provider", default="codex")
+    scope = verdict.add_mutually_exclusive_group(required=True)
+    scope.add_argument("--session", help="Session-scoped finding")
+    scope.add_argument("--checkout", help="Checkout-scoped finding such as a diff oscillation")
+    verdict.add_argument("--rule", required=True)
+    verdict.add_argument("--rule-version", required=True)
+    verdict.add_argument(
+        "--fingerprint", required=True, help="Finding fingerprint reported by `report`"
+    )
+    verdict.add_argument(
+        "--verdict", required=True, choices=("true_positive", "false_positive", "uncertain")
+    )
+    verdict.add_argument("--note")
     pin = commands.add_parser("pin", help="Pin or unpin one collected session through the core")
     pin.add_argument("session_id")
     pin.add_argument("--project", help="Project alias; UUID accepted; default resolves cwd")
@@ -222,6 +245,7 @@ def main() -> int:
             "usage",
             "export",
             "label",
+            "verdict",
             "pin",
             "purge",
         ):
@@ -247,16 +271,37 @@ def main() -> int:
                 )
                 print(json.dumps(_with_project_alias(result, alias)))
                 return 0
-            if args.command in ("label", "pin", "purge"):
-                action = {"label": "label", "pin": "pin", "purge": "purge"}[args.command]
+            if args.command == "verdict":
                 request = {
-                    "action": action,
+                    "action": "checkout_verdict" if args.checkout else "verdict",
+                    "project_id": str(project.id),
+                    "rule": args.rule,
+                    "rule_version": args.rule_version,
+                    "fingerprint": args.fingerprint,
+                    "verdict": args.verdict,
+                    "note": args.note,
+                }
+                if args.checkout:
+                    request["checkout_id"] = args.checkout
+                else:
+                    request |= {"provider": args.provider, "session_id": args.session}
+                result = daemon.request_control(paths, request)
+                print(json.dumps(_with_project_alias(result, alias)))
+                return 0
+            if args.command in ("label", "pin", "purge"):
+                request = {
+                    "action": args.command,
                     "project_id": str(project.id),
                     "provider": args.provider,
                     "session_id": args.session_id,
                 }
                 if args.command == "label":
-                    request |= {"outcome": args.outcome, "task_type": args.task_type}
+                    request |= {
+                        "outcome": args.outcome,
+                        "task_type": args.task_type,
+                        "progress_state": args.progress,
+                        "reviewer_note": args.note,
+                    }
                 elif args.command == "pin":
                     request["pinned"] = not args.unpin
                 result = daemon.request_control(paths, request)

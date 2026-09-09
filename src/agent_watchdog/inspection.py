@@ -24,6 +24,8 @@ from agent_watchdog.storage import StorageError, persisted_envelope
 class SessionLabel(TypedDict):
     task_outcome: str
     task_type: str | None
+    progress_state: str | None
+    reviewer_note: str | None
 
 
 class ExportRecord(TypedDict):
@@ -35,8 +37,13 @@ class ExportRecord(TypedDict):
     report: dict[str, Any]
 
 
-def _label(db: sqlite3.Connection, provider: str, session_id: str | None) -> SessionLabel:
-    default: SessionLabel = {"task_outcome": "unknown", "task_type": None}
+def session_label(db: sqlite3.Connection, provider: str, session_id: str | None) -> SessionLabel:
+    default: SessionLabel = {
+        "task_outcome": "unknown",
+        "task_type": None,
+        "progress_state": None,
+        "reviewer_note": None,
+    }
     if (
         session_id is None
         or not db.execute(
@@ -44,11 +51,76 @@ def _label(db: sqlite3.Connection, provider: str, session_id: str | None) -> Ses
         ).fetchone()
     ):
         return default
+    columns = {row[1] for row in db.execute("PRAGMA table_info(session_labels)")}
+    annotated = "progress_state" in columns and "reviewer_note" in columns
+    selection = (
+        "task_outcome, task_type, progress_state, reviewer_note"
+        if annotated
+        else "task_outcome, task_type, NULL, NULL"
+    )
     row = db.execute(
-        "SELECT task_outcome, task_type FROM session_labels WHERE provider=? AND session_id=?",
+        f"SELECT {selection} FROM session_labels WHERE provider=? AND session_id=?",
         (provider, session_id),
     ).fetchone()
-    return default if row is None else {"task_outcome": row[0], "task_type": row[1]}
+    if row is None:
+        return default
+    return {
+        "task_outcome": row[0],
+        "task_type": row[1],
+        "progress_state": row[2],
+        "reviewer_note": row[3],
+    }
+
+
+def session_verdicts(db: sqlite3.Connection, provider: str, session_id: str | None) -> list[dict]:
+    """Return manual finding verdicts recorded for one session, newest key order."""
+    if (
+        session_id is None
+        or not db.execute(
+            "SELECT 1 FROM sqlite_master WHERE type='table' AND name='finding_verdicts'"
+        ).fetchone()
+    ):
+        return []
+    return [
+        {
+            "rule": rule,
+            "rule_version": rule_version,
+            "fingerprint": fingerprint,
+            "verdict": verdict,
+            "note": note,
+            "reviewed_at": reviewed_at,
+        }
+        for rule, rule_version, fingerprint, verdict, note, reviewed_at in db.execute(
+            "SELECT rule, rule_version, evidence_fingerprint, verdict, note, reviewed_at "
+            "FROM finding_verdicts WHERE provider=? AND session_id=? "
+            "ORDER BY rule, evidence_fingerprint",
+            (provider, session_id),
+        )
+    ]
+
+
+def checkout_verdicts(db: sqlite3.Connection) -> list[dict]:
+    """Return manual verdicts for checkout-scoped findings such as diff oscillations."""
+    if not db.execute(
+        "SELECT 1 FROM sqlite_master WHERE type='table' AND name='checkout_finding_verdicts'"
+    ).fetchone():
+        return []
+    return [
+        {
+            "checkout_id": checkout_id,
+            "rule": rule,
+            "rule_version": rule_version,
+            "fingerprint": fingerprint,
+            "verdict": verdict,
+            "note": note,
+            "reviewed_at": reviewed_at,
+        }
+        for checkout_id, rule, rule_version, fingerprint, verdict, note, reviewed_at in db.execute(
+            "SELECT checkout_id, rule, rule_version, evidence_fingerprint, verdict, note, "
+            "reviewed_at FROM checkout_finding_verdicts ORDER BY checkout_id, rule, "
+            "evidence_fingerprint"
+        )
+    ]
 
 
 def _pinned(db: sqlite3.Connection, session_id: str | None) -> bool:
@@ -90,7 +162,7 @@ def database(paths: UserPaths, project: Project) -> Iterator[sqlite3.Connection]
     with closing(sqlite3.connect(path.as_uri() + "?mode=ro", uri=True, timeout=0.1)) as db:
         db.execute("PRAGMA query_only=ON")
         db.execute("BEGIN")
-        if db.execute("PRAGMA user_version").fetchone()[0] not in (1, 2, 3, 4, 5, 6):
+        if db.execute("PRAGMA user_version").fetchone()[0] not in (1, 2, 3, 4, 5, 6, 7):
             raise StorageError("Unsupported database schema")
         if db.execute("SELECT project_id FROM metadata").fetchall() != [(str(project.id),)]:
             raise StorageError("Database belongs to a different project")
@@ -114,7 +186,7 @@ def sessions(paths: UserPaths, project: Project, *, limit: int, offset: int) -> 
             (limit + 1, offset),
         ).fetchall()
         labels = {
-            (provider, session_id): _label(db, provider, session_id)
+            (provider, session_id): session_label(db, provider, session_id)
             for provider, session_id, *_ in rows
         }
         pins = {session_id: _pinned(db, session_id) for _, session_id, *_ in rows}
@@ -172,7 +244,7 @@ def show(
             (session_id, provider, limit + 1, offset),
         ).fetchall()
         events = [persisted_envelope(row[0]).model_dump(mode="json") for row in rows[:limit]]
-        label = _label(db, provider, session_id)
+        label = session_label(db, provider, session_id)
         pinned = _pinned(db, session_id)
     return {
         "project_id": str(project.id),
@@ -234,10 +306,12 @@ def report(
                     )
                 ]
     result = analyze((persisted_envelope(row[0]) for row in rows), snapshots=snapshots)
-    if session_id is not None:
-        with database(paths, project) as db:
-            label = _label(db, provider, session_id)
-        result = _apply_label(result, label)
+    with database(paths, project) as db:
+        # Manual verdicts recorded by a calibration review; absent until WD-012 runs.
+        result["verdicts"] = session_verdicts(db, provider, session_id)
+        result["checkout_verdicts"] = checkout_verdicts(db)
+        if session_id is not None:
+            result = _apply_label(result, session_label(db, provider, session_id))
     return {"project_id": str(project.id), "provider": provider, **result}
 
 
@@ -388,7 +462,7 @@ def export_sessions(
             if not rows:
                 raise StorageError("Unknown session in the selected project/provider")
             events = [persisted_envelope(row[0]) for row in rows]
-            label = _label(db, provider, session_id)
+            label = session_label(db, provider, session_id)
             report = _apply_label(analyze(events), label)
             gaps = report["gaps"]
             if not isinstance(gaps, list) or not all(isinstance(gap, str) for gap in gaps):

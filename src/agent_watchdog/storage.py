@@ -19,6 +19,10 @@ from agent_watchdog.config import Limits
 from agent_watchdog.events import Envelope
 from agent_watchdog.files import atomic_write as atomic_write
 
+# Manual annotation vocabularies (schema v7, WD-012 calibration).
+PROGRESS_STATES = ("progress", "slow", "stuck", "externally_blocked")
+FINDING_VERDICTS = ("true_positive", "false_positive", "uncertain")
+
 
 class StorageError(ValueError):
     """Unsupported storage or an invalid storage operation."""
@@ -34,6 +38,24 @@ class RejectedEvent(StorageError):
 
 class QuotaExceeded(StorageError):
     """No room for another write; retained input may be retried after cleanup."""
+
+
+def _check_verdict(rule: str, rule_version: str, fingerprint: str, verdict: str) -> None:
+    if not rule.strip() or not rule_version.strip():
+        raise StorageError("A rule and rule version are required")
+    if len(fingerprint) != 64 or any(char not in "0123456789abcdef" for char in fingerprint):
+        raise StorageError("An evidence fingerprint must be 64 lowercase hexadecimal characters")
+    if verdict not in FINDING_VERDICTS:
+        raise StorageError("Invalid finding verdict")
+
+
+def _check_note(note: str | None) -> str | None:
+    if note is None:
+        return None
+    note = note.strip()
+    if not note or len(note) > 2000:
+        raise StorageError("Reviewer note must contain 1..2000 characters")
+    return note
 
 
 @contextmanager
@@ -145,7 +167,7 @@ class Store:
     def _initialize(self) -> None:
         db = self.connection
         version = db.execute("PRAGMA user_version").fetchone()[0]
-        if version not in (0, 1, 2, 3, 4, 5, 6):
+        if version not in (0, 1, 2, 3, 4, 5, 6, 7):
             raise StorageError("Unsupported database schema; database left unchanged")
         if version == 0:
             tables = db.execute("SELECT name FROM sqlite_master WHERE name NOT LIKE 'sqlite_%'")
@@ -290,6 +312,30 @@ class Store:
                 for statement in facts.CREATE_INDEXES:
                     db.execute(statement)
                 db.execute("PRAGMA user_version=6")
+        if version < 7:
+            with self._transaction():
+                columns = {row[1] for row in db.execute("PRAGMA table_info(session_labels)")}
+                if "progress_state" not in columns:
+                    db.execute("ALTER TABLE session_labels ADD COLUMN progress_state TEXT")
+                if "reviewer_note" not in columns:
+                    db.execute("ALTER TABLE session_labels ADD COLUMN reviewer_note TEXT")
+                db.execute(
+                    "CREATE TABLE IF NOT EXISTS finding_verdicts ("
+                    "provider TEXT NOT NULL, session_id TEXT NOT NULL, "
+                    "rule TEXT NOT NULL, rule_version TEXT NOT NULL, "
+                    "evidence_fingerprint TEXT NOT NULL, verdict TEXT NOT NULL, "
+                    "note TEXT, reviewed_at TEXT NOT NULL, "
+                    "PRIMARY KEY(provider, session_id, rule, rule_version, evidence_fingerprint))"
+                )
+                # A checkout is shared by both providers, so a diff finding has no provider.
+                db.execute(
+                    "CREATE TABLE IF NOT EXISTS checkout_finding_verdicts ("
+                    "checkout_id TEXT NOT NULL, rule TEXT NOT NULL, rule_version TEXT NOT NULL, "
+                    "evidence_fingerprint TEXT NOT NULL, verdict TEXT NOT NULL, "
+                    "note TEXT, reviewed_at TEXT NOT NULL, "
+                    "PRIMARY KEY(checkout_id, rule, rule_version, evidence_fingerprint))"
+                )
+                db.execute("PRAGMA user_version=7")
         # Existing v1 stores need a one-time rebuild to support physical reclamation.
         if db.execute("PRAGMA auto_vacuum").fetchone()[0] != 2:
             size = (self.root / "events.sqlite3").stat().st_size
@@ -592,7 +638,22 @@ class Store:
             else:
                 db.execute("DELETE FROM pins WHERE session_id=?", (session_id,))
 
-    def label(self, provider: str, session_id: str, *, outcome: str, task_type: str | None) -> dict:
+    def label(
+        self,
+        provider: str,
+        session_id: str,
+        *,
+        outcome: str,
+        task_type: str | None,
+        progress_state: str | None = None,
+        reviewer_note: str | None = None,
+    ) -> dict:
+        """Record a manual session label.
+
+        ``progress_state`` and ``reviewer_note`` are annotation fields added in
+        schema v7.  Passing ``None`` keeps whatever a previous review stored, so
+        correcting an outcome never silently discards a progress judgement.
+        """
         if provider not in {"codex", "claude"} or not session_id.strip():
             raise StorageError("A supported provider and session identity are required")
         if outcome not in {"success", "partial", "failed", "abandoned", "unknown"}:
@@ -601,6 +662,12 @@ class Store:
             task_type = task_type.strip()
             if not task_type or len(task_type) > 128:
                 raise StorageError("Task type must contain 1..128 characters")
+        if progress_state is not None and progress_state not in PROGRESS_STATES:
+            raise StorageError("Invalid progress state")
+        if reviewer_note is not None:
+            reviewer_note = reviewer_note.strip()
+            if not reviewer_note or len(reviewer_note) > 2000:
+                raise StorageError("Reviewer note must contain 1..2000 characters")
         with resources.admission(self.root), self._transaction() as db:
             if not db.execute(
                 "SELECT 1 FROM events WHERE session_id=? "
@@ -609,12 +676,92 @@ class Store:
             ).fetchone():
                 raise StorageError("Unknown session in the selected provider")
             db.execute(
-                "INSERT INTO session_labels VALUES (?, ?, ?, ?) "
+                "INSERT INTO session_labels VALUES (?, ?, ?, ?, ?, ?) "
                 "ON CONFLICT(provider, session_id) DO UPDATE SET "
-                "task_outcome=excluded.task_outcome, task_type=excluded.task_type",
-                (provider, session_id, outcome, task_type),
+                "task_outcome=excluded.task_outcome, task_type=excluded.task_type, "
+                "progress_state=COALESCE(excluded.progress_state, session_labels.progress_state), "
+                "reviewer_note=COALESCE(excluded.reviewer_note, session_labels.reviewer_note)",
+                (provider, session_id, outcome, task_type, progress_state, reviewer_note),
             )
-        return {"task_outcome": outcome, "task_type": task_type}
+            stored = db.execute(
+                "SELECT task_outcome, task_type, progress_state, reviewer_note "
+                "FROM session_labels WHERE provider=? AND session_id=?",
+                (provider, session_id),
+            ).fetchone()
+        return {
+            "task_outcome": stored[0],
+            "task_type": stored[1],
+            "progress_state": stored[2],
+            "reviewer_note": stored[3],
+        }
+
+    def finding_verdict(
+        self,
+        provider: str,
+        session_id: str,
+        *,
+        rule: str,
+        rule_version: str,
+        fingerprint: str,
+        verdict: str,
+        note: str | None,
+    ) -> dict:
+        """Record a manual correctness verdict for one session-scoped finding."""
+        if provider not in {"codex", "claude"} or not session_id.strip():
+            raise StorageError("A supported provider and session identity are required")
+        _check_verdict(rule, rule_version, fingerprint, verdict)
+        note = _check_note(note)
+        reviewed_at = datetime.now(UTC).isoformat()
+        with resources.admission(self.root), self._transaction() as db:
+            if not db.execute(
+                "SELECT 1 FROM events WHERE session_id=? "
+                "AND json_extract(envelope, '$.provider')=?",
+                (session_id, provider),
+            ).fetchone():
+                raise StorageError("Unknown session in the selected provider")
+            db.execute(
+                "INSERT INTO finding_verdicts VALUES (?, ?, ?, ?, ?, ?, ?, ?) "
+                "ON CONFLICT(provider, session_id, rule, rule_version, evidence_fingerprint) "
+                "DO UPDATE SET verdict=excluded.verdict, note=excluded.note, "
+                "reviewed_at=excluded.reviewed_at",
+                (
+                    provider,
+                    session_id,
+                    rule,
+                    rule_version,
+                    fingerprint,
+                    verdict,
+                    note,
+                    reviewed_at,
+                ),
+            )
+        return {"verdict": verdict, "note": note, "reviewed_at": reviewed_at}
+
+    def checkout_finding_verdict(
+        self,
+        checkout_id: str,
+        *,
+        rule: str,
+        rule_version: str,
+        fingerprint: str,
+        verdict: str,
+        note: str | None,
+    ) -> dict:
+        """Record a verdict for a checkout-scoped finding such as a diff oscillation."""
+        if not checkout_id.strip():
+            raise StorageError("A checkout identity is required")
+        _check_verdict(rule, rule_version, fingerprint, verdict)
+        note = _check_note(note)
+        reviewed_at = datetime.now(UTC).isoformat()
+        with resources.admission(self.root), self._transaction() as db:
+            db.execute(
+                "INSERT INTO checkout_finding_verdicts VALUES (?, ?, ?, ?, ?, ?, ?) "
+                "ON CONFLICT(checkout_id, rule, rule_version, evidence_fingerprint) "
+                "DO UPDATE SET verdict=excluded.verdict, note=excluded.note, "
+                "reviewed_at=excluded.reviewed_at",
+                (checkout_id, rule, rule_version, fingerprint, verdict, note, reviewed_at),
+            )
+        return {"verdict": verdict, "note": note, "reviewed_at": reviewed_at}
 
     def pin_provider_session(self, provider: str, session_id: str, *, pinned: bool) -> None:
         if provider not in {"codex", "claude"} or not session_id.strip():
@@ -650,6 +797,10 @@ class Store:
                 self._delete(event_id)
             db.execute(
                 "DELETE FROM session_labels WHERE provider=? AND session_id=?",
+                (provider, session_id),
+            )
+            db.execute(
+                "DELETE FROM finding_verdicts WHERE provider=? AND session_id=?",
                 (provider, session_id),
             )
             db.execute(

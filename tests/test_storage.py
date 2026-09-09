@@ -164,7 +164,7 @@ def test_only_one_writer_and_wrong_project_cannot_reopen(tmp_path, event):
         assert store.events() == []
 
 
-@pytest.mark.parametrize("version", [7, 99])
+@pytest.mark.parametrize("version", [8, 99])
 def test_newer_database_is_not_changed(tmp_path, event, version):
     path = tmp_path / "events.sqlite3"
     with sqlite3.connect(path) as db:
@@ -302,7 +302,7 @@ def test_interrupted_initial_migration_rolls_back_and_can_restart(tmp_path, even
     finally:
         connection.close()
     with Store(tmp_path, event.project_id) as store:
-        assert store.connection.execute("PRAGMA user_version").fetchone()[0] == 6
+        assert store.connection.execute("PRAGMA user_version").fetchone()[0] == 7
         assert store.put(event)
 
 
@@ -317,7 +317,7 @@ def test_v1_and_v2_databases_migrate_transcript_reader_state(tmp_path, event, ve
             store.connection.execute("DROP TABLE pins")
         store.connection.execute(f"PRAGMA user_version={version}")
     with Store(tmp_path, event.project_id) as store:
-        assert store.connection.execute("PRAGMA user_version").fetchone()[0] == 6
+        assert store.connection.execute("PRAGMA user_version").fetchone()[0] == 7
         assert store.transcript_sources() == []
 
 

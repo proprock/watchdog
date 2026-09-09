@@ -6,7 +6,7 @@ import sqlite3
 import subprocess
 import sys
 import time
-from collections.abc import Callable, Iterator
+from collections.abc import Callable, Iterator, Mapping
 from contextlib import ExitStack, contextmanager
 from datetime import UTC, datetime
 from pathlib import Path
@@ -484,25 +484,61 @@ def _drain_controls(paths: UserPaths, config: Config, *, limit: int = 100) -> bo
                 raise ValueError("Invalid control request")
             request_id = str(UUID(str(request["request_id"])))
             project = projects[str(UUID(str(request["project_id"])))]
-            action, provider, session_id = (
-                request["action"],
-                request["provider"],
-                request["session_id"],
-            )
-            if action not in {"label", "pin", "purge"} or provider not in {"codex", "claude"}:
+            action = request["action"]
+            if action not in {"label", "pin", "purge", "verdict", "checkout_verdict"}:
                 raise ValueError("Invalid control request")
-            if not isinstance(session_id, str) or not session_id.strip():
-                raise ValueError("Invalid control request")
+            if action == "checkout_verdict":
+                # A checkout is shared by both providers, so this action carries no session.
+                checkout_id, provider, session_id = _checkout_target(request), "", ""
+            else:
+                checkout_id = ""
+                provider, session_id = _session_target(request)
             with Store(paths.project_data(project.id), project.id) as store:
-                if action == "label":
+                if action == "checkout_verdict":
+                    rule, rule_version, fingerprint, verdict, note = _verdict_fields(request)
+                    result = {
+                        "verdict": store.checkout_finding_verdict(
+                            checkout_id,
+                            rule=rule,
+                            rule_version=rule_version,
+                            fingerprint=fingerprint,
+                            verdict=verdict,
+                            note=note,
+                        )
+                    }
+                elif action == "label":
                     outcome, task_type = request["outcome"], request.get("task_type")
+                    progress_state = request.get("progress_state")
+                    reviewer_note = request.get("reviewer_note")
                     if not isinstance(outcome, str) or not (
                         task_type is None or isinstance(task_type, str)
                     ):
                         raise ValueError("Invalid control request")
+                    if not (progress_state is None or isinstance(progress_state, str)) or not (
+                        reviewer_note is None or isinstance(reviewer_note, str)
+                    ):
+                        raise ValueError("Invalid control request")
                     result = {
                         "label": store.label(
-                            provider, session_id, outcome=outcome, task_type=task_type
+                            provider,
+                            session_id,
+                            outcome=outcome,
+                            task_type=task_type,
+                            progress_state=progress_state,
+                            reviewer_note=reviewer_note,
+                        )
+                    }
+                elif action == "verdict":
+                    rule, rule_version, fingerprint, verdict, note = _verdict_fields(request)
+                    result = {
+                        "verdict": store.finding_verdict(
+                            provider,
+                            session_id,
+                            rule=rule,
+                            rule_version=rule_version,
+                            fingerprint=fingerprint,
+                            verdict=verdict,
+                            note=note,
                         )
                     }
                 elif action == "pin":
@@ -553,6 +589,33 @@ def _drain_controls(paths: UserPaths, config: Config, *, limit: int = 100) -> bo
         _discard(path)
         activity = True
     return activity
+
+
+def _session_target(request: Mapping[str, object]) -> tuple[str, str]:
+    provider, session_id = request["provider"], request["session_id"]
+    if provider not in {"codex", "claude"}:
+        raise ValueError("Invalid control request")
+    if not isinstance(session_id, str) or not session_id.strip():
+        raise ValueError("Invalid control request")
+    return str(provider), session_id
+
+
+def _checkout_target(request: Mapping[str, object]) -> str:
+    checkout_id = request.get("checkout_id")
+    if not isinstance(checkout_id, str) or not checkout_id.strip():
+        raise ValueError("Invalid control request")
+    return checkout_id
+
+
+def _verdict_fields(request: Mapping[str, object]) -> tuple[str, str, str, str, str | None]:
+    rule, rule_version = request.get("rule"), request.get("rule_version")
+    fingerprint, verdict = request.get("fingerprint"), request.get("verdict")
+    note = request.get("note")
+    if not all(isinstance(field, str) for field in (rule, rule_version, fingerprint, verdict)):
+        raise ValueError("Invalid control request")
+    if not (note is None or isinstance(note, str)):
+        raise ValueError("Invalid control request")
+    return str(rule), str(rule_version), str(fingerprint), str(verdict), note
 
 
 def _admit(paths: UserPaths, event: Envelope, config: Config) -> bool:

@@ -251,7 +251,7 @@ def test_v5_to_v6_migration_shape_and_envelope_preservation(tmp_path, project):
 
     with Store(tmp_path, project) as store:
         db = store.connection
-        assert db.execute("PRAGMA user_version").fetchone()[0] == 6
+        assert db.execute("PRAGMA user_version").fetchone()[0] == 7
 
         columns = {row[1] for row in db.execute("PRAGMA table_info(events)")}
         assert "provider" in columns
@@ -332,7 +332,7 @@ def test_v6_migration_is_idempotent_across_reopen(tmp_path, project):
     with Store(tmp_path, project) as store:
         first = facts_by_event(store)
     with Store(tmp_path, project) as store:
-        assert store.connection.execute("PRAGMA user_version").fetchone()[0] == 6
+        assert store.connection.execute("PRAGMA user_version").fetchone()[0] == 7
         assert facts_by_event(store) == first
 
     codex_usage_fact = first[str(events[1].event_id)]

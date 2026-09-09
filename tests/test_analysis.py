@@ -7,6 +7,7 @@ from agent_watchdog.analysis import (
     REPORT_SCHEMA_VERSION,
     analyze,
     diff_oscillations,
+    finding_fingerprint,
     git_diff_fingerprint,
 )
 from agent_watchdog.events import Envelope
@@ -101,6 +102,7 @@ def test_diff_oscillation_is_a_signal_with_uncertain_attribution():
             "rule_version": "wd-010.v1",
             "evidence_ids": ["a", "b", "c"],
             "count": 3,
+            "fingerprint": finding_fingerprint("diff_oscillation", "wd-010.v1", ["a", "b", "c"]),
             "attribution": "uncertain",
             "explanation": (
                 "Observed A-to-B-to-A Git diff fingerprints; concurrent edits are not attributable."
@@ -163,3 +165,31 @@ def test_report_pairs_tool_boundaries_for_observed_durations():
         "total_seconds": 2.0,
         "max_seconds": 2.0,
     }
+
+
+def test_a_finding_carries_a_stable_fingerprint_over_its_evidence():
+    first = diff_oscillations(
+        [
+            {"snapshot_id": "a", "checkout_id": "c", "fingerprint": "one"},
+            {"snapshot_id": "b", "checkout_id": "c", "fingerprint": "two"},
+            {"snapshot_id": "c", "checkout_id": "c", "fingerprint": "one"},
+        ]
+    )
+    repeated = diff_oscillations(
+        [
+            {"snapshot_id": "a", "checkout_id": "c", "fingerprint": "one"},
+            {"snapshot_id": "b", "checkout_id": "c", "fingerprint": "two"},
+            {"snapshot_id": "c", "checkout_id": "c", "fingerprint": "one"},
+        ]
+    )
+    wider = diff_oscillations(
+        [
+            {"snapshot_id": "a", "checkout_id": "c", "fingerprint": "one"},
+            {"snapshot_id": "b", "checkout_id": "c", "fingerprint": "two"},
+            {"snapshot_id": "d", "checkout_id": "c", "fingerprint": "one"},
+        ]
+    )
+
+    assert len(first[0]["fingerprint"]) == 64
+    assert first[0]["fingerprint"] == repeated[0]["fingerprint"]
+    assert first[0]["fingerprint"] != wider[0]["fingerprint"]

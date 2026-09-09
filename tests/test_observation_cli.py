@@ -320,7 +320,12 @@ def test_label_pin_export_and_purge_are_offline_and_provider_scoped(tmp_path, mo
         )
         assert code == 0, label
         assert label["project"] == tmp_path.name
-        assert label["label"] == {"task_outcome": "success", "task_type": "bugfix"}
+        assert label["label"] == {
+            "task_outcome": "success",
+            "task_type": "bugfix",
+            "progress_state": None,
+            "reviewer_note": None,
+        }
 
         code, pin = invoke(
             monkeypatch, capsys, tmp_path, "pin", "shared", "--project", str(project.id)
@@ -338,7 +343,12 @@ def test_label_pin_export_and_purge_are_offline_and_provider_scoped(tmp_path, mo
             str(project.id),
         )
         assert code == 0, shown
-        assert shown["label"] == {"task_outcome": "success", "task_type": "bugfix"}
+        assert shown["label"] == {
+            "task_outcome": "success",
+            "task_type": "bugfix",
+            "progress_state": None,
+            "reviewer_note": None,
+        }
         assert shown["pinned"] is True
 
         output = tmp_path / "export"

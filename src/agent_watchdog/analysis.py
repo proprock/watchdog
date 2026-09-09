@@ -13,8 +13,16 @@ from typing import Any
 from agent_watchdog._proc import run as _run
 from agent_watchdog.events import Envelope
 
-REPORT_SCHEMA_VERSION = 1
+REPORT_SCHEMA_VERSION = 2
 RULE_VERSION = "wd-010.v1"
+# Every rule `analyze` can emit. A calibration report must list a rule that
+# never fired as unmeasured rather than omitting it.
+RULES = (
+    "repeated_tool_outcome",
+    "identical_error",
+    "repeated_test_failure",
+    "diff_oscillation",
+)
 REPETITION_THRESHOLD = 3
 TELEMETRY_SCHEMA_VERSION = 1
 _DELIVERY_TIMESTAMPS = (
@@ -279,6 +287,18 @@ def _test_failures(command: object, response: object) -> tuple[str, ...]:
     return tuple(sorted(pytest | junit))
 
 
+def finding_fingerprint(rule: str, rule_version: str, evidence_ids: Iterable[str]) -> str:
+    """Identify a finding by its rule and evidence.
+
+    Findings are recomputed on every read and carry no stored identity, so a
+    manual verdict needs a key that survives re-analysis.  The evidence set is
+    that key: if it grows, the finding is a different observation and its
+    fingerprint changes rather than silently inheriting an old verdict.
+    """
+    material = "\n".join((rule, rule_version, *sorted(evidence_ids)))
+    return hashlib.sha256(material.encode("utf-8")).hexdigest()
+
+
 def _finding(
     rule: str, evidence_ids: list[str], explanation: str, *, attribution: str = "observed"
 ) -> dict[str, Any]:
@@ -287,6 +307,7 @@ def _finding(
         "rule_version": RULE_VERSION,
         "evidence_ids": evidence_ids,
         "count": len(evidence_ids),
+        "fingerprint": finding_fingerprint(rule, RULE_VERSION, evidence_ids),
         "attribution": attribution,
         "explanation": explanation,
     }

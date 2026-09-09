@@ -147,7 +147,8 @@ partial tails, file identity, reader errors, and cumulative usage baselines; sch
 v4 adds debounced per-checkout Git diff fingerprints and byte counts; schema v5
 adds provider-scoped session outcome/type labels; schema v6 adds the
 [queryable telemetry projections](#schema-v6-queryable-telemetry-projections)
-described below. Diff text is never stored. The core runs the bounded Git read
+described below; schema v7 adds the
+[manual annotation fields](#schema-v7-manual-annotations) used by calibration. Diff text is never stored. The core runs the bounded Git read
 after spool admission; hook paths do not invoke Git or snapshot a worktree.
 Reader sources expire after 30 days without a hook observation; no vendor file is
 deleted or modified. New databases enable incremental vacuum before creating
@@ -306,12 +307,45 @@ full inbox still triggers a missing daemon's restart so cleanup can resume. Hook
 keep returning the no-op response. Historical loss counts alone do not keep a
 recovered daemon degraded.
 
+## Schema v7: manual annotations
+
+Schema v7 stores the manual judgements a calibration review produces. It adds
+nothing to the observation path: no rule reads these rows, and their absence is
+the normal state.
+
+`session_labels` gains two nullable columns, `progress_state` and
+`reviewer_note`. `progress_state` holds one of `progress`, `slow`, `stuck`, or
+`externally_blocked` and is a separate field from `task_outcome`, because a
+session can reach `success` after being stuck and an abandoned session can have
+been progressing when it stopped. Writing a label with either field omitted
+keeps the stored value, so recording an outcome cannot silently discard a
+progress judgement.
+
+Two tables hold per-finding verdicts (`true_positive`, `false_positive`, or
+`uncertain`). Findings are recomputed on read and have no stored identity, so a
+verdict is keyed by rule, rule version, and the SHA-256 `fingerprint` over the
+finding's sorted evidence identifiers. If the evidence set grows, the finding is
+a different observation and its fingerprint changes rather than inheriting an
+old verdict.
+
+- `finding_verdicts(provider, session_id, rule, rule_version,
+  evidence_fingerprint, verdict, note, reviewed_at)` for rules whose evidence is
+  a session's own events.
+- `checkout_finding_verdicts(checkout_id, rule, rule_version,
+  evidence_fingerprint, verdict, note, reviewed_at)` for `diff_oscillation`,
+  whose evidence is a checkout's diff history. A checkout is shared by both
+  providers, so that verdict carries no provider and no session.
+
+`purge` deletes a session's verdict rows with its label. Checkout verdicts
+survive a session purge because they do not belong to a session.
+
 ## Verification
 
 Offline pytest covers concurrent quotas and loss counting, pin saturation,
 content/metric expiry, replay after expiry, shared artifacts, stale temporary and
 orphan cleanup, physical SQLite shrink, WAL/auxiliary accounting, v1 upgrade,
-known-secret removal, and simulated disk-full publication. Existing process-crash
+the v6-to-v7 annotation upgrade, known-secret removal, and simulated disk-full
+publication. Existing process-crash
 tests cover migration, commit, and acknowledgement. See [verification](verification.md)
 for actual runs. Other-OS host validation remains WD-019.
 

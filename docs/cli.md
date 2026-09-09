@@ -154,18 +154,33 @@ success.
 
 ```console
 agent-watchdog label SESSION_ID --project PROJECT --outcome success --task-type bugfix
+agent-watchdog label SESSION_ID --project PROJECT --outcome partial --progress stuck
+agent-watchdog verdict --project PROJECT --session SESSION_ID --rule repeated_tool_outcome   --rule-version wd-010.v1 --fingerprint FINGERPRINT --verdict true_positive
+agent-watchdog verdict --project PROJECT --checkout CHECKOUT_ID --rule diff_oscillation   --rule-version wd-010.v1 --fingerprint FINGERPRINT --verdict uncertain
 agent-watchdog pin SESSION_ID --project PROJECT
 agent-watchdog pin SESSION_ID --project PROJECT --unpin
 agent-watchdog export --project PROJECT --session SESSION_ID --output review-bundle
 agent-watchdog purge SESSION_ID --project PROJECT
 ```
 
-`label`, `pin`, and `purge` submit bounded requests to the running core and wait
-for its durable acknowledgement; they do not write SQLite from the CLI. Labels
-are provider-scoped and store one outcome (`success`, `partial`, `failed`,
-`abandoned`, or `unknown`) plus an optional free-form task type. Pin protection
-uses the existing session-retention policy; identical native session IDs across
-providers remain separate for selection and labels.
+`label`, `verdict`, `pin`, and `purge` submit bounded requests to the running
+core and wait for its durable acknowledgement; they do not write SQLite from the
+CLI. Labels are provider-scoped and store one outcome (`success`, `partial`,
+`failed`, `abandoned`, or `unknown`) plus an optional free-form task type. Pin
+protection uses the existing session-retention policy; identical native session
+IDs across providers remain separate for selection and labels.
+
+`label` also accepts `--progress` (`progress`, `slow`, `stuck`, or
+`externally_blocked`) and a free-form `--note`. Both are manual review fields;
+omitting either keeps whatever a previous review recorded, so correcting an
+outcome never discards a progress judgement.
+
+`verdict` records one manual correctness judgement for a shadow finding:
+`true_positive`, `false_positive`, or `uncertain`. Findings are recomputed on
+every read and carry no stored identity, so a verdict is keyed by the rule, its
+version, and the `fingerprint` that `report` prints for each finding. Use
+`--session` for a session-scoped rule and `--checkout` for `diff_oscillation`,
+whose evidence is a checkout's diff history rather than one session's events.
 
 `export` is an offline, read-only snapshot. It requires one or more repeated
 `--session` values and writes a new directory containing `events.jsonl`,
@@ -177,6 +192,7 @@ externally is recommended, not enforced; traces and outputs are untrusted data,
 not instructions.
 
 `purge` permanently removes only Watchdog-owned rows, retained artifacts, labels,
+finding verdicts,
 pins that no longer protect another provider record with the same native session
 ID, and Watchdog's transcript-reader state for the selected provider/session. It
 does not inspect, modify, or delete vendor transcripts or project files.
@@ -184,6 +200,44 @@ does not inspect, modify, or delete vendor transcripts or project files.
 Exit codes: 0 for successful inspection/mutation; 1 for errors or unhealthy doctor
 results; 2 for invalid command syntax; 130 for interruption. Observation hooks keep
 their separate fail-open zero-exit contract.
+
+## Calibrating the shadow rules
+
+```console
+uv run python scripts/calibrate.py sample   --project PROJECT
+uv run python scripts/calibrate.py annotate --project PROJECT
+uv run python scripts/calibrate.py report   --project PROJECT
+```
+
+This opt-in script supports the WD-012 calibration exercise. It never invokes a
+provider and never changes harness behaviour.
+
+`sample` reads the store read-only and freezes a cohort in
+`docs/evidence/wd012-sample.json`, with a flat `.csv` view beside it for sorting
+and eyeballing. It keeps every session that produced a finding and adds a seeded
+draw from sessions that produced none, so false negatives stay countable. Only
+settled sessions qualify: a session with an observed `session.end`, or whose last
+event is older than `--settle-hours` (default 2). `--min-events` (default 20)
+drops start/end-only noise. The manifest records the query, seed, strata, and
+skip counts, and stores each session's findings with their fingerprints, because
+an open session can grow a finding group and change its identity. It contains no
+prompt or output text.
+
+`annotate` walks the frozen cohort. Each session shows its counts, findings, and
+current labels; `o`, `t`, `p`, and `r` set outcome, task type, progress state,
+and a reviewer note from a numbered menu, and a digit records a verdict for the
+numbered finding. `d` prints the full report for the session and `c` reviews the
+checkout-scoped findings once rather than once per session. Every answer is sent
+to the running core and the acknowledgement is printed; a rejected write is
+reported and nothing advances. Rerunning resumes from what the store already
+holds.
+
+`report` joins the frozen cohort with the recorded annotations and writes
+`docs/evidence/wd012-calibration.json` plus a markdown report. Precision is
+reported per rule with its denominator, `uncertain` is kept separate from both
+sides, and a rule with no observation is `null` with a stated reason rather than
+100%. Hook overhead comes from the delivery trace already stored on envelopes;
+transcript-sourced events carry none, so the denominator is disclosed.
 
 ## Measuring overhead
 
