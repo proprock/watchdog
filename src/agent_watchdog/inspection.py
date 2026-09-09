@@ -441,6 +441,7 @@ def export_sessions(
 ) -> dict:
     """Write an offline, user-selected bundle without changing collected data."""
     from agent_watchdog.analysis import analyze
+    from agent_watchdog.privacy import sanitize
     from agent_watchdog.storage import atomic_write
 
     if provider not in {"codex", "claude"}:
@@ -461,7 +462,7 @@ def export_sessions(
             ).fetchall()
             if not rows:
                 raise StorageError("Unknown session in the selected project/provider")
-            events = [persisted_envelope(row[0]) for row in rows]
+            events = [sanitize(persisted_envelope(row[0])) for row in rows]
             label = session_label(db, provider, session_id)
             report = _apply_label(analyze(events), label)
             gaps = report["gaps"]
@@ -484,9 +485,7 @@ def export_sessions(
         "project_id": str(project.id),
         "provider": provider,
         "review_required": True,
-        "redaction": (
-            "captured content was redacted before Watchdog persistence; review remains required"
-        ),
+        "redaction": "credential filter was applied at export; review remains required",
         "sessions": [
             {key: record[key] for key in ("session_id", "label", "event_count", "gaps")}
             for record in records

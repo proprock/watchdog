@@ -19,7 +19,7 @@ def configured(tmp_path, *, capture_content=True):
     return paths, project, config
 
 
-def test_python_adapter_retains_redacted_unknown_telemetry_and_warns(tmp_path, monkeypatch):
+def test_python_adapter_retains_raw_unknown_telemetry_and_warns(tmp_path, monkeypatch):
     paths, project, _ = configured(tmp_path)
     captured = []
     monkeypatch.setattr(
@@ -51,8 +51,8 @@ def test_python_adapter_retains_redacted_unknown_telemetry_and_warns(tmp_path, m
     assert payload["metadata"]["model"] == "gpt-test"
     assert payload["metadata"]["reasoning_effort"] == "high"
     assert payload["metadata"]["input_tokens"] == 123
-    assert payload["metadata"]["future_metric"] == {"password": "[REDACTED]", "value": 7}
-    assert payload["metadata"]["api_key"] == "[REDACTED]"
+    assert payload["metadata"]["future_metric"] == {"password": secret, "value": 7}
+    assert payload["metadata"]["api_key"] == secret
     assert payload["unknown_fields"] == ["api_key", "future_metric"]
     assert event.availability["input.future_metric"] == "observed"
     body = (paths.data / "watchdog.log").read_text(encoding="ascii")

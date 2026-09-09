@@ -14,7 +14,7 @@ from uuid import UUID, uuid4
 
 from pydantic import ValidationError
 
-from agent_watchdog import facts, privacy, resources
+from agent_watchdog import facts, resources
 from agent_watchdog.config import Limits
 from agent_watchdog.events import Envelope
 from agent_watchdog.files import atomic_write as atomic_write
@@ -86,8 +86,7 @@ def writer_lock(path: Path) -> Iterator[None]:
 
 
 def canonical(event: Envelope) -> str:
-    validated = privacy.sanitize(event)
-    document = validated.model_dump(mode="json")
+    document = event.model_dump(mode="json")
     # Pre-telemetry envelopes did not have this optional field.  Omitting an
     # empty value keeps their canonical replay document and receipt fingerprint
     # byte-for-byte compatible after model validation fills the default.
@@ -366,7 +365,6 @@ class Store:
             return self._put(event, artifacts=artifacts)
 
     def _put(self, event: Envelope, *, artifacts: Mapping[str, bytes] | None = None) -> bool:
-        event = privacy.sanitize(event)
         document = canonical(event)
         if len(document.encode()) > self.limits.payload_bytes:
             raise RejectedEvent("Envelope exceeds payload limit")
@@ -381,14 +379,8 @@ class Store:
         if sum(len(data) for data in artifacts.values()) > self.artifact_bytes:
             raise StorageError("Artifact limit exceeded")
         try:
-            sanitized = {
-                privacy.text(name): privacy.artifact(data) for name, data in artifacts.items()
-            }
-            if len(sanitized) != len(artifacts):
-                raise StorageError("Artifact names collide after redaction")
-            artifacts = sanitized
-            if sum(map(len, artifacts.values())) > self.artifact_bytes:
-                raise StorageError("Redacted artifact limit exceeded")
+            for data in artifacts.values():
+                data.decode("utf-8")
         except UnicodeDecodeError as error:
             raise StorageError("Only UTF-8 text artifacts are supported") from error
         references = {name: hashlib.sha256(data).hexdigest() for name, data in artifacts.items()}

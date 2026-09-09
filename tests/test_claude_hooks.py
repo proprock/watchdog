@@ -148,7 +148,7 @@ def test_claude_hook_emits_no_stdout(make, monkeypatch, capsys, tmp_path, scenar
     assert output.out == "" and output.err == ""
 
 
-def test_redaction_strips_credentials_from_prompt_and_tool_response(make):
+def test_hook_retains_raw_credentials_until_export(make):
     paths, events = make(capture_content=True)
     api_key = "sk-proj-" + "a" * 40
     run(
@@ -161,8 +161,8 @@ def test_redaction_strips_credentials_from_prompt_and_tool_response(make):
         },
     )
     blob = events[0].model_dump_json()
-    assert "private-value" not in blob
-    assert api_key not in blob
+    assert "private-value" in blob
+    assert api_key in blob
 
 
 @pytest.mark.parametrize("capture", [True, False])
@@ -185,7 +185,7 @@ def test_failure_telemetry_stays_in_metadata_regardless_of_capture(make, capture
     assert metadata["duration_ms"] == 12
 
 
-def test_error_text_is_redacted(make):
+def test_error_text_is_retained_until_export(make):
     paths, events = make(capture_content=True)
     api_key = "sk-proj-" + "b" * 40
     run(
@@ -196,7 +196,7 @@ def test_error_text_is_redacted(make):
             "error": f"command failed with {api_key}",
         },
     )
-    assert api_key not in events[0].model_dump_json()
+    assert api_key in events[0].model_dump_json()
 
 
 def test_claude_transcript_paths_are_promoted_from_the_payload(make, tmp_path):

@@ -58,7 +58,7 @@ def redact(value: JsonValue) -> JsonValue:
 
 
 def sanitize(event: Envelope) -> Envelope:
-    # Redact free-form identifiers as well as the provider payload.
+    """Apply the credential filter to an envelope selected for export."""
     value = event.model_dump(mode="json")
     for key in (
         "provider",
@@ -74,13 +74,3 @@ def sanitize(event: Envelope) -> Envelope:
     value["payload"] = redact(value["payload"])
     value["availability"] = {text(key): item for key, item in value["availability"].items()}
     return Envelope.model_validate_json(json.dumps(value))
-
-
-def artifact(data: bytes) -> bytes:
-    # Binary artifacts cannot be inspected reliably; this collector stores text only.
-    decoded = data.decode("utf-8")
-    try:
-        value = json.loads(decoded)
-    except ValueError:
-        return text(decoded).encode("utf-8")
-    return json.dumps(redact(value), ensure_ascii=False).encode("utf-8")

@@ -657,12 +657,11 @@ def _discard(path: Path) -> None:
 def _drain_spool(paths: UserPaths, config: Config, *, limit: int = 100) -> bool:
     """Resolve, build, and admit native adapter spool records.
 
-    The adapter writes redacted-but-unresolved records; checkout resolution,
+    The adapter writes raw unresolved records; checkout resolution,
     envelope construction, and per-project quota all happen here. Returns whether
     any record was processed.
     """
     from agent_watchdog.hooks import EVENTS, build_envelope, warn_unknown_fields
-    from agent_watchdog.privacy import sanitize
 
     spool = paths.data / "spool"
     if not spool.is_dir():
@@ -764,7 +763,7 @@ def _drain_spool(paths: UserPaths, config: Config, *, limit: int = 100) -> bool:
                 project_id=project.id,
                 event_id=event_id,
             )
-            admitted = _admit(paths, sanitize(event), config)
+            admitted = _admit(paths, event, config)
         except QuotaExceeded:
             _log(
                 paths,

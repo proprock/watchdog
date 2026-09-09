@@ -112,13 +112,13 @@ def test_native_spools_then_daemon_resolves_and_admits(rust_adapter, native_setu
     assert len(spooled) == 1
     record = json.loads(spooled[0].read_bytes())
     assert record["cwd"] == str(project.root) and record["provider"] == "codex"
-    assert b"private-value" not in spooled[0].read_bytes()
+    assert b"private-value" in spooled[0].read_bytes()
     assert not inbox_files(paths, project)
 
     drain_spool(paths)
     assert not spool_files(paths)
     incoming = inbox_files(paths, project)
-    assert len(incoming) == 1 and b"private-value" not in incoming[0].read_bytes()
+    assert len(incoming) == 1 and b"private-value" in incoming[0].read_bytes()
     envelope = Envelope.model_validate_json(incoming[0].read_bytes())
     assert str(envelope.event_id) == record["event_id"]
     assert envelope.session_id == "native" and envelope.kind == "turn.start"
@@ -305,7 +305,7 @@ def test_native_matches_python_event_contract(rust_adapter, native_setup, monkey
     metadata = provider_payload["metadata"]
     assert isinstance(metadata, dict)
     assert metadata["model"] == "gpt-test" and metadata["input_tokens"] == 123
-    assert metadata["future_metric"] == {"password": "[REDACTED]", "value": 7}
+    assert metadata["future_metric"] == {"password": "private-value", "value": 7}
     assert provider_payload["unknown_fields"] == ["future_metric"]
 
 

@@ -77,7 +77,7 @@ def test_spool_record_is_resolved_built_and_admitted(paths, tmp_path):
     assert envelope.kind == "turn.start" and envelope.session_id == "s1"
     resolved = Registry(config).resolve(root)
     assert resolved is not None and envelope.checkout_id == resolved.checkout_id
-    assert b"private-value" not in incoming[0].read_bytes()
+    assert b"private-value" in incoming[0].read_bytes()
     assert "explain code" in envelope.model_dump_json()
 
 

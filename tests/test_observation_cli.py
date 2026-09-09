@@ -129,6 +129,11 @@ def test_sessions_separate_identities_and_report_gaps(tmp_path, monkeypatch, cap
             (None, "unknown"),
         ]
         for session, kind in samples:
+            payload = (
+                {"codex": {"content": {"prompt": "password=private-value"}}}
+                if session == "one" and kind == "session.start"
+                else {}
+            )
             store.put(
                 Envelope(
                     provider="codex",
@@ -136,6 +141,7 @@ def test_sessions_separate_identities_and_report_gaps(tmp_path, monkeypatch, cap
                     session_id=session,
                     kind=kind,
                     source="hook",
+                    payload=payload,
                 )
             )
     code, result = invoke(
@@ -157,10 +163,11 @@ def test_sessions_separate_identities_and_report_gaps(tmp_path, monkeypatch, cap
             "--project",
             str(project.id),
             "--limit",
-            "1",
+            "10",
         )
-    assert code == 0 and len(result["events"]) == 1 and result["has_more"]
-    assert result["events"][0]["session_id"] == "one"
+    assert code == 0 and len(result["events"]) == 2 and not result["has_more"]
+    assert all(item["session_id"] == "one" for item in result["events"])
+    assert "private-value" in json.dumps(result["events"])
 
 
 def test_summary_counts_known_data_and_leaves_missing_database_unknown(

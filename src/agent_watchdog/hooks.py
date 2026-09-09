@@ -10,7 +10,6 @@ from agent_watchdog import daemon, resources
 from agent_watchdog.config import Limits, UserPaths, load_config
 from agent_watchdog.diagnostics import emit, error_code
 from agent_watchdog.events import Envelope, EventKind
-from agent_watchdog.privacy import redact, sanitize
 from agent_watchdog.registry import Registry, Resolution
 
 EVENTS: dict[str, dict[str, EventKind]] = {
@@ -313,7 +312,7 @@ def observe(paths: UserPaths, stream: BinaryIO, provider: str = "codex") -> None
                 field="cwd",
             )
             return
-        input_payload = redact({key: value for key, value in payload.items() if key != "cwd"})
+        input_payload = {key: value for key, value in payload.items() if key != "cwd"}
         if not isinstance(input_payload, dict):
             raise ValueError("Invalid hook input")
         resolution = Registry(config).resolve(Path(cwd), timeout=0.25)
@@ -358,7 +357,7 @@ def observe(paths: UserPaths, stream: BinaryIO, provider: str = "codex") -> None
         )
         # Admission records project-level rejection counts itself.
         try:
-            admitted = daemon.enqueue(paths, sanitize(event))
+            admitted = daemon.enqueue(paths, event)
             emit(
                 paths.data,
                 config.defaults,

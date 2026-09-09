@@ -1,5 +1,4 @@
 mod disk;
-mod privacy;
 
 use chrono::{SecondsFormat, Utc};
 use serde_json::{Value, json};
@@ -208,7 +207,6 @@ fn observe(paths: &Paths, provider: &str, event_hint: &mut Option<String>) -> Re
         return Err("relative cwd".into());
     }
 
-    let redact = privacy::Redactor::new()?;
     let mut forwarded = input;
     forwarded
         .as_object_mut()
@@ -220,7 +218,7 @@ fn observe(paths: &Paths, provider: &str, event_hint: &mut Option<String>) -> Re
         "received_at": utc_now(),
         "provider": provider,
         "cwd": cwd,
-        "input": redact.value(&forwarded),
+        "input": forwarded,
     });
 
     let spool = paths.data.join("spool");
