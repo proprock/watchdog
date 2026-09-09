@@ -4,10 +4,12 @@ from pathlib import Path
 from typing import cast
 from uuid import uuid4
 
+import pytest
+
 import agent_watchdog.transcripts as transcripts
 from agent_watchdog.events import Envelope
-from agent_watchdog.storage import Store
-from agent_watchdog.transcripts import FAILURE_CODES, enrich
+from agent_watchdog.storage import StorageError, Store
+from agent_watchdog.transcripts import FAILURE_CODES, enrich, failure_code
 
 
 def codex(event: Envelope) -> dict:
@@ -156,12 +158,14 @@ def test_counter_regression_creates_a_durable_gap(tmp_path):
         assert enrich(store).accepted == 1
         with transcript.open("a", encoding="utf-8") as stream:
             stream.write(json.dumps(usage(session, "response-2", total=5, output=2)) + "\n")
-        assert enrich(store).accepted == 1
+        result = enrich(store)
+        assert result.accepted == 1
         events = [event for event in store.events() if event.kind == "usage"]
         gaps = [event for event in store.events() if event.kind == "observation.gap"]
 
     assert usage_payload(events[-1])["delta"]["total_tokens"] is None
     assert len(gaps) == 1 and codex(gaps[0])["reason"] == "usage_counter_reset"
+    assert result.active_failures == ("usage_counter_reset",)
 
 
 def test_unreadable_source_does_not_block_following_hook_or_source_retention(tmp_path):
@@ -232,8 +236,10 @@ def test_source_failure_is_safe_isolated_and_not_retried_until_change(tmp_path, 
 
     assert first.accepted == 1
     assert first.failures == ("transcript_source_invalid",)
+    assert first.active_failures == ("transcript_source_invalid",)
     assert not second
     assert second.failures == ()
+    assert second.active_failures == ("transcript_source_invalid",)
     assert set(first.failures) <= FAILURE_CODES
     assert [event.native_event_id for event in events if event.kind == "usage"] == ["response-good"]
     gaps = [event for event in events if event.kind == "observation.gap"]
@@ -255,5 +261,19 @@ def test_source_listing_failure_returns_only_an_allowlisted_code():
 
     assert not result
     assert result.failures == ("transcript_sources_unavailable",)
+    assert result.active_failures == ("transcript_sources_unavailable",)
     assert set(result.failures) <= FAILURE_CODES
     assert secret not in repr(result)
+
+
+@pytest.mark.parametrize(
+    ("error", "expected"),
+    [
+        (OSError("private transcript path"), "transcript_io_unavailable"),
+        (StorageError("private database detail"), "transcript_storage_unavailable"),
+        (ValueError("private raw record"), "transcript_enrichment_invalid"),
+    ],
+)
+def test_daemon_enrichment_exception_codes_are_fixed(error, expected):
+    assert failure_code(error) == expected
+    assert expected in FAILURE_CODES

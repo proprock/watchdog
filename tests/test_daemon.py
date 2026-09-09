@@ -13,6 +13,7 @@ import pytest
 from agent_watchdog.config import Config, Limits, UserPaths, load_config, save_config
 from agent_watchdog.daemon import (
     _drain_spool,
+    _record_enrichment_failures,
     enqueue,
     launch,
     mutate_registry,
@@ -25,6 +26,7 @@ from agent_watchdog.events import Envelope
 from agent_watchdog.registry import Registry
 from agent_watchdog.resources import losses
 from agent_watchdog.storage import Inbox, Store, WriterBusy, writer_lock
+from agent_watchdog.transcripts import FAILURE_CODES
 
 
 def spool_record(cwd, **input_fields):
@@ -397,6 +399,100 @@ def test_bad_project_is_degraded_and_recovers(paths, tmp_path):
     wait_for(lambda: str(project.id) in status(paths).get("errors", []))
     assert status(paths)["state"] == "degraded"
     database.unlink()
+    wait_for(lambda: status(paths)["state"] == "running")
+
+
+def test_enrichment_failure_logs_are_allowlisted_debounced_and_content_free(paths):
+    project_id = uuid4()
+    config = Config(defaults=Limits(log_level="DEBUG"))
+    logged: set[tuple[str, str]] = set()
+    secret = "C:/private/rollout.jsonl prompt=private-value tool output"
+
+    assert _record_enrichment_failures(
+        paths,
+        config,
+        project_id,
+        tuple(sorted(FAILURE_CODES)),
+        logged,
+        detail=secret,
+    )
+    assert _record_enrichment_failures(
+        paths,
+        config,
+        project_id,
+        tuple(sorted(FAILURE_CODES)),
+        logged,
+        detail=secret,
+    )
+
+    lines = (paths.data / "watchdog.log").read_text(encoding="ascii").splitlines()
+    assert len(lines) == len(FAILURE_CODES)
+    assert {line.split("error_type=", 1)[1].split()[0] for line in lines} == FAILURE_CODES
+    assert all("component=daemon event=enrichment decision=unavailable" in line for line in lines)
+    assert all(f"project_id={project_id}" in line for line in lines)
+    assert secret not in "\n".join(lines) and "detail=" not in "\n".join(lines)
+
+    assert not _record_enrichment_failures(paths, config, project_id, (), logged)
+    assert not logged
+
+
+def test_enrichment_log_detail_uses_the_global_opt_in_contract(paths):
+    config = Config(defaults=Limits(log_level="DEBUG", log_detail=True))
+    project_id = uuid4()
+    logged: set[tuple[str, str]] = set()
+    secret = "sk-proj-" + "a" * 40
+    detail = f"C:/private/rollout.jsonl Bearer {secret} " + "x" * 400
+
+    assert _record_enrichment_failures(
+        paths,
+        config,
+        project_id,
+        ("transcript_storage_unavailable",),
+        logged,
+        detail=detail,
+    )
+
+    line = (paths.data / "watchdog.log").read_text(encoding="ascii").strip()
+    assert "error_type=transcript_storage_unavailable" in line
+    assert secret not in line and ' detail="' in line and "C:/private/rollout.jsonl" in line
+
+
+def test_missing_transcript_degrades_the_daemon_until_the_source_recovers(paths, tmp_path):
+    root = tmp_path / "project"
+    root.mkdir()
+    missing = tmp_path / "private-rollout.jsonl"
+    mutate_registry(paths, lambda registry: registry.add(root))
+    project = load_config(paths.config).projects[0]
+    write_spool_record(
+        paths,
+        spool_record(
+            root,
+            hook_event_name="Stop",
+            session_id="session-1",
+            transcript_path=str(missing),
+        ),
+    )
+
+    start(paths)
+    wait_for(lambda: str(project.id) in status(paths).get("errors", []))
+    assert status(paths)["state"] == "degraded"
+    body = (paths.data / "watchdog.log").read_text(encoding="ascii")
+    assert (
+        "event=enrichment decision=unavailable "
+        f"error_type=transcript_unreadable project_id={project.id}" in body
+    )
+    assert str(missing) not in body
+
+    missing.write_text(
+        json.dumps(
+            {
+                "type": "session_meta",
+                "payload": {"id": "session-1", "cli_version": "0.153.4"},
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
     wait_for(lambda: status(paths)["state"] == "running")
 
 

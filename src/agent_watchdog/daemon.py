@@ -95,6 +95,44 @@ def _capture_diff_snapshot(
         return
 
 
+def _record_enrichment_failures(
+    paths: UserPaths,
+    config: Config,
+    project_id: UUID,
+    failures: tuple[str, ...],
+    logged_failures: set[tuple[str, str]],
+    *,
+    detail: str | None = None,
+) -> bool:
+    """Log newly active reader failures and report whether the project is degraded."""
+    from agent_watchdog.transcripts import FAILURE_CODES
+
+    current_failures = {
+        (str(project_id), code if code in FAILURE_CODES else "transcript_enrichment_invalid")
+        for code in failures
+    }
+    for _, code in current_failures - logged_failures:
+        _log(
+            paths,
+            config,
+            "WARNING",
+            event="enrichment",
+            decision="unavailable",
+            error_type=code,
+            project_id=project_id,
+            detail=detail,
+        )
+    logged_failures.difference_update(
+        {
+            item
+            for item in logged_failures
+            if item[0] == str(project_id) and item not in current_failures
+        }
+    )
+    logged_failures.update(current_failures)
+    return bool(current_failures)
+
+
 @contextmanager
 def control_lock(paths: UserPaths, timeout: float = 5) -> Iterator[None]:
     paths.data.mkdir(parents=True, exist_ok=True)
@@ -814,44 +852,34 @@ def _poll(paths: UserPaths, owner: ExitStack) -> None:
                             store, pipeline_telemetry=config.pipeline_telemetry
                         )
                         try:
-                            from agent_watchdog.transcripts import enrich
+                            from agent_watchdog.transcripts import enrich, failure_code
 
                             enrichment = enrich(store)
                             activity |= bool(enrichment)
-                            current_failures = {
-                                (str(project.id), code) for code in enrichment.failures
-                            }
-                            for _, code in current_failures - logged_enrichment_failures:
-                                _log(
+                            if (
+                                _record_enrichment_failures(
                                     paths,
                                     config,
-                                    "WARNING",
-                                    event="enrichment",
-                                    decision="unavailable",
-                                    error_type=code,
-                                    project_id=project.id,
+                                    project.id,
+                                    enrichment.active_failures,
+                                    logged_enrichment_failures,
                                 )
-                            logged_enrichment_failures.difference_update(
-                                {
-                                    item
-                                    for item in logged_enrichment_failures
-                                    if item[0] == str(project.id) and item not in current_failures
-                                }
-                            )
-                            logged_enrichment_failures.update(current_failures)
-                        except (OSError, StorageError, ValueError) as error:
-                            if len(errors) < 32:
+                                and len(errors) < 32
+                            ):
                                 errors.append(str(project.id))
-                            _log(
-                                paths,
-                                config,
-                                "WARNING",
-                                event="enrichment",
-                                decision="failed",
-                                error_type=error_code(error),
-                                detail=str(error),
-                                project_id=project.id,
-                            )
+                        except (OSError, StorageError, ValueError) as error:
+                            if (
+                                _record_enrichment_failures(
+                                    paths,
+                                    config,
+                                    project.id,
+                                    (failure_code(error),),
+                                    logged_enrichment_failures,
+                                    detail=str(error),
+                                )
+                                and len(errors) < 32
+                            ):
+                                errors.append(str(project.id))
                         if resources.available(root, limits) < 65536 and len(errors) < 32:
                             errors.append(str(project.id))
                     activity |= bool(

@@ -73,6 +73,11 @@ so enable it only on a local development or debugging instance; keep it `false`
 wherever the log may be exported or shared. It changes only the diagnostic log,
 never hook output, admission, or delivery.
 
+Transcript-enrichment failures use a fixed reader-specific `error_type` allowlist
+and keep the affected project degraded while active. Their records are
+content-free with the default `log_detail = false`; when explicitly enabled, the
+same bounded, credential-redacted detail policy applies.
+
 Publishers and storage writes/maintenance share `admission.lock`, with a 100 ms
 acquisition timeout. Pending temporary files count; SQLite admission additionally
 budgets database/WAL growth and transaction overhead. Database, WAL, SHM,

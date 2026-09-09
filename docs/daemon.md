@@ -78,6 +78,13 @@ string (paths kept, credentials stripped) for local debugging; see
 [storage](storage.md#daemon-diagnostic-log). A logging failure never affects
 daemon or hook behavior.
 
+Transcript-enrichment diagnostics use a fixed reader-specific `error_type`
+allowlist rather than exception class names. Newly active failures are logged once
+per project/code pair; while a reader failure remains active, the project remains
+`degraded`. With the default `log_detail = false` these records contain no
+transcript content or exception text. Enabling `log_detail` applies the same
+bounded, credential-redacted local-detail policy as other caught exceptions.
+
 ## Python entry points
 
 `mutate_registry(paths, callback)` loads the current registry under the control

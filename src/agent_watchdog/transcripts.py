@@ -5,7 +5,7 @@ import json
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Literal
+from typing import TYPE_CHECKING, Any, Literal, cast
 from uuid import NAMESPACE_URL, uuid5
 
 from agent_watchdog.events import Availability, Envelope
@@ -43,6 +43,9 @@ TranscriptFailureCode = Literal[
     "usage_response_missing",
     "usage_session_mismatch",
     "usage_counter_reset",
+    "transcript_io_unavailable",
+    "transcript_storage_unavailable",
+    "transcript_enrichment_invalid",
 ]
 FAILURE_CODES: frozenset[str] = frozenset(
     {
@@ -62,6 +65,9 @@ FAILURE_CODES: frozenset[str] = frozenset(
         "usage_response_missing",
         "usage_session_mismatch",
         "usage_counter_reset",
+        "transcript_io_unavailable",
+        "transcript_storage_unavailable",
+        "transcript_enrichment_invalid",
     }
 )
 
@@ -77,6 +83,7 @@ class TranscriptSource:
 class EnrichmentResult:
     accepted: int = 0
     failures: tuple[TranscriptFailureCode, ...] = ()
+    active_failures: tuple[TranscriptFailureCode, ...] = ()
 
     def __bool__(self) -> bool:
         """Report activity only when new usage observations were accepted."""
@@ -89,6 +96,15 @@ class UnsupportedTranscript(ValueError):
             code = "transcript_source_invalid"
         self.code = code
         super().__init__(code)
+
+
+def failure_code(error: OSError | StorageError | ValueError) -> TranscriptFailureCode:
+    """Classify a contained daemon-side enrichment exception without its text."""
+    if isinstance(error, StorageError):
+        return "transcript_storage_unavailable"
+    if isinstance(error, OSError):
+        return "transcript_io_unavailable"
+    return "transcript_enrichment_invalid"
 
 
 def source_from_hook(event: Envelope) -> TranscriptSource | None:
@@ -330,15 +346,18 @@ def _process_source(store: "Store", source: dict[str, object]) -> EnrichmentResu
     except OSError:
         changed = _update_failure(store, source, "transcript_unreadable", "unreadable")
         failures = ("transcript_unreadable",) if changed else ()
-        return EnrichmentResult(failures=failures)
+        return EnrichmentResult(failures=failures, active_failures=("transcript_unreadable",))
     except UnsupportedTranscript as error:
         changed = _update_failure(store, source, error.code, "invalid")
         failures = (error.code,) if changed else ()
-        return EnrichmentResult(failures=failures)
+        return EnrichmentResult(failures=failures, active_failures=(error.code,))
 
     signature = f"{device}:{inode}:{size}:{mtime}"
     if source["last_error"] and source["error_signature"] == signature:
-        return EnrichmentResult()
+        code = source["last_error"]
+        if isinstance(code, str) and code in FAILURE_CODES:
+            return EnrichmentResult(active_failures=(cast(TranscriptFailureCode, code),))
+        return EnrichmentResult(active_failures=("transcript_source_invalid",))
     stored_offset = source["offset"]
     offset = stored_offset if type(stored_offset) is int and stored_offset >= 0 else 0
     tail = source["tail"] if isinstance(source["tail"], bytes) else b""
@@ -366,7 +385,7 @@ def _process_source(store: "Store", source: dict[str, object]) -> EnrichmentResu
             mtime=mtime,
         )
         failures = ("transcript_unreadable",) if changed else ()
-        return EnrichmentResult(failures=failures)
+        return EnrichmentResult(failures=failures, active_failures=("transcript_unreadable",))
     if not raw:
         return EnrichmentResult()
     content = tail + raw
@@ -387,7 +406,7 @@ def _process_source(store: "Store", source: dict[str, object]) -> EnrichmentResu
             mtime=mtime,
         )
         failures = ("rollout_line_invalid",) if changed else ()
-        return EnrichmentResult(failures=failures)
+        return EnrichmentResult(failures=failures, active_failures=("rollout_line_invalid",))
     line_offset = offset - len(source["tail"] if isinstance(source["tail"], bytes) else b"")
     counters = _load_counters(source["counters"])
     accepted = 0
@@ -447,7 +466,11 @@ def _process_source(store: "Store", source: dict[str, object]) -> EnrichmentResu
         last_error=error,
         error_signature=signature if error else None,
     )
-    return EnrichmentResult(accepted=accepted, failures=tuple(failures))
+    return EnrichmentResult(
+        accepted=accepted,
+        failures=tuple(failures),
+        active_failures=tuple(failures),
+    )
 
 
 def _unexpected_source_failure(store: "Store", source: dict[str, object]) -> EnrichmentResult:
@@ -468,7 +491,10 @@ def _unexpected_source_failure(store: "Store", source: dict[str, object]) -> Enr
         mtime=mtime,
     )
     failures = ("transcript_source_invalid",) if changed else ()
-    return EnrichmentResult(failures=failures)
+    return EnrichmentResult(
+        failures=failures,
+        active_failures=("transcript_source_invalid",),
+    )
 
 
 def enrich(store: "Store") -> EnrichmentResult:
@@ -478,15 +504,20 @@ def enrich(store: "Store") -> EnrichmentResult:
     except StorageError:
         raise
     except (OSError, KeyError, TypeError, ValueError):
-        return EnrichmentResult(failures=("transcript_sources_unavailable",))
+        return EnrichmentResult(
+            failures=("transcript_sources_unavailable",),
+            active_failures=("transcript_sources_unavailable",),
+        )
 
     accepted = 0
     failures: list[TranscriptFailureCode] = []
+    active_failures: list[TranscriptFailureCode] = []
     for value in sources:
         try:
             source = _normalize_source(value)
         except UnsupportedTranscript as error:
             failures.append(error.code)
+            active_failures.append(error.code)
             continue
         try:
             result = _process_source(store, source)
@@ -495,7 +526,10 @@ def enrich(store: "Store") -> EnrichmentResult:
             # older receipt after a provider format change.  This affects only
             # this enrichment source; hook ingestion and other sources remain
             # available. Do not surface its message or transcript details.
-            result = EnrichmentResult(failures=("transcript_source_invalid",))
+            result = EnrichmentResult(
+                failures=("transcript_source_invalid",),
+                active_failures=("transcript_source_invalid",),
+            )
         except StorageError:
             raise
         except (OSError, KeyError, TypeError, ValueError):
@@ -504,4 +538,11 @@ def enrich(store: "Store") -> EnrichmentResult:
         for code in result.failures:
             if code not in failures:
                 failures.append(code)
-    return EnrichmentResult(accepted=accepted, failures=tuple(failures))
+        for code in result.active_failures:
+            if code not in active_failures:
+                active_failures.append(code)
+    return EnrichmentResult(
+        accepted=accepted,
+        failures=tuple(failures),
+        active_failures=tuple(active_failures),
+    )
