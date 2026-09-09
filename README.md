@@ -10,7 +10,7 @@ A local external observer for Codex coding sessions, built on top of the stock h
 - The first hook starts an independent core that runs until logout or an explicit stop; a subsequent hook restarts it after a crash. MCP is not required.
 - Collection is enabled for selected repositories. Worktrees share a database; separate clones have separate databases. Data lives outside working copies.
 - Observation comes first: repetitions, errors, validation, duration, tool calls, compaction, available token counts, and output sizes. CLI and Markdown/JSON reports; a cross-project overview comes later.
-- Session labels and export of candidate benchmark tasks. Users perform LLM analysis manually outside the product; there are no automatic LLM calls or eval runner.
+- Session labels and export of candidate benchmark tasks. There are no automatic LLM calls or eval runner; sanctioned local analysis is opt-in.
 - Content is retained for 30 days and metrics/labels for 180 days; retention and quotas are configurable. Pinned sessions are not deleted automatically but count toward quotas.
 - Registered projects capture prompt/tool/assistant text by default after removing known credential forms. Set `capture_content = false` globally or in project overrides to collect metadata only. Redaction is a bounded pattern filter, not a guarantee that arbitrary secrets are detected.
 - Intervention and optional Codex App Server integration belong to later milestones.

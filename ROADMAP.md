@@ -61,7 +61,7 @@ WD-101 closes practical offline test boundaries identified by the audit, and WD-
 
 **Outcome:** optional bounded semantic analysis and read-only second opinions for Codex coding sessions, followed by a human gate only on a demonstrably supported control path.
 
-- Make a separate LLM execution decision before implementation: M0-M3 do not enable external model calls. Require project opt-in, budget, timeout, exclusion of the product's own analytical sessions, and provenance.
+- Make a separate LLM execution decision before implementation: M0-M3 enable no automatic model calls; explicit opt-in local analysis is permitted. Require project opt-in, budget, timeout, exclusion of the product's own analytical sessions, and provenance.
 - Use a compact facts/failed-attempts/evidence bundle and structured `progress|uncertain|stuck|blocked` output. Do not treat a summary as objective verification.
 - Escalation ladder: advisory -> replan request -> read-only second opinion -> question for the user. Do not apply every step to every signal.
 - Distinguish model-mediated questions from actual pause/resume. Never automatically grant approvals. Actions are limited by the current adapter's capabilities.
