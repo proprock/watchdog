@@ -34,9 +34,15 @@ uv build
 
 The package is `agent_watchdog` and the command is `agent-watchdog`, avoiding a collision with the `watchdog` filesystem monitoring library. Package publication is not currently planned.
 
-The native adapter builds to `native/target/release/agent-watchdog-hook` (`.exe` on Windows).
-Copy it to a stable location and select it during [hook installation](docs/hooks.md).
-It is a separate host-specific binary; the Python wheel contains the portable core and fallback adapter.
+The native adapter is a separate host-specific binary; the Python wheel contains the
+portable core and fallback adapter. Tagged releases publish checked ZIP archives for
+Windows x86_64, Linux x86_64, macOS x86_64, and macOS arm64. Their stable names are
+`agent-watchdog-hook-v<VERSION>-<RUST-TARGET>.zip`; each archive carries a manifest
+and the release includes `SHA256SUMS.txt`. Pass a downloaded archive to the hook
+installer with `--adapter-artifact`; it verifies the checksum and host target and
+copies the binary to a stable local location without requiring Rust. Building from
+source still produces `native/target/release/agent-watchdog-hook` (`.exe` on Windows),
+which can be selected directly during [hook installation](docs/hooks.md).
 
 To enable observation, follow [registration and hook installation](docs/hooks.md).
 Installation defaults to dry-run and never changes native trust. Review hooks in

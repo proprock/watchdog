@@ -11,6 +11,7 @@ from uuid import uuid4
 from agent_watchdog.config import UserPaths
 from agent_watchdog.files import atomic_write
 from agent_watchdog.hooks import EVENTS
+from agent_watchdog.native_artifacts import install_artifact
 from agent_watchdog.storage import writer_lock
 
 
@@ -118,16 +119,26 @@ def change(
     install: bool,
     apply: bool,
     adapter_executable: Path | None = None,
+    adapter_artifact: Path | None = None,
     provider: str = "codex",
 ) -> dict:
     if provider not in TARGETS:
         raise ValueError("Unknown hook provider")
-    if adapter_executable is not None:
-        if not install or not adapter_executable.is_absolute() or not adapter_executable.is_file():
-            raise ValueError("Choose an existing absolute adapter executable for installation")
     target = target.absolute()
     if target.name not in TARGETS[provider]:
         raise ValueError(f"Choose an explicit {' or '.join(TARGETS[provider])} file for {provider}")
+    if adapter_executable is not None and adapter_artifact is not None:
+        raise ValueError("Choose either a native adapter executable or artifact")
+    if adapter_artifact is not None:
+        if not install:
+            raise ValueError("A native adapter artifact is only valid for installation")
+        adapter_executable = install_artifact(
+            adapter_artifact, paths.data / "native-adapters", install=apply
+        )
+    preview_artifact = adapter_artifact is not None and not apply
+    if adapter_executable is not None and not preview_artifact:
+        if not install or not adapter_executable.is_absolute() or not adapter_executable.is_file():
+            raise ValueError("Choose an existing absolute adapter executable for installation")
     if not apply:
         return _change(
             target,

@@ -26,11 +26,19 @@ from agent_watchdog.storage import Inbox, Store, writer_lock
 @pytest.fixture
 def rust_adapter():
     suffix = ".exe" if os.name == "nt" else ""
+    installed = os.environ.get("WATCHDOG_NATIVE_ADAPTER")
     binary = (
-        Path(__file__).parents[1] / "native" / "target" / "release" / f"agent-watchdog-hook{suffix}"
+        Path(installed)
+        if installed
+        else Path(__file__).parents[1]
+        / "native"
+        / "target"
+        / "release"
+        / f"agent-watchdog-hook{suffix}"
     )
     assert binary.is_file(), (
-        "Build the Rust adapter with cargo build --release --manifest-path native/Cargo.toml"
+        "Set WATCHDOG_NATIVE_ADAPTER to an installed adapter or build it with "
+        "cargo build --release --manifest-path native/Cargo.toml"
     )
     return binary
 

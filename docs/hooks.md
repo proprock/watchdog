@@ -47,14 +47,25 @@ agent-watchdog hooks uninstall codex --file /absolute/project/.codex/hooks.json
 agent-watchdog hooks uninstall codex --file /absolute/project/.codex/hooks.json --apply
 ```
 
-For the Rust adapter, add `--adapter-executable /absolute/bin/agent-watchdog-hook`
-to both install commands (`.exe` on Windows). Build it using the commands in
-[README](../README.md), then copy it to a stable location. The generated command
-also records the current Python executable, used only to start a missing core.
-Omitting this option selects the Python fallback. Switching adapters requires
-uninstalling the recorded installation first, reinstalling, and reviewing the new
-definitions through Codex. Uninstall uses the ownership record and works even if
-the native binary has been removed; omit `--adapter-executable` when uninstalling.
+For a release-built Rust adapter, download the ZIP matching the current host and
+verify its entry in `SHA256SUMS.txt`. Add
+`--adapter-artifact /absolute/download/agent-watchdog-hook-v<VERSION>-<RUST-TARGET>.zip`
+to both install commands. The installer validates the archive's manifest, checksum,
+filename, and current OS/architecture, then copies its binary below the Watchdog data
+directory before writing the hook. It invokes no Rust toolchain; an unsupported host
+or another target's archive is rejected with an explicit diagnostic. The declared
+targets are `x86_64-pc-windows-msvc`, `x86_64-unknown-linux-gnu`,
+`x86_64-apple-darwin`, and `aarch64-apple-darwin`.
+
+For a locally built adapter, instead add
+`--adapter-executable /absolute/bin/agent-watchdog-hook` (`.exe` on Windows) to both
+install commands. The generated command also records the current Python executable,
+used only to start a missing core. Omitting both options selects the Python fallback.
+Switching adapters requires uninstalling the recorded installation first, reinstalling,
+and reviewing the new definitions through Codex. Uninstall uses the ownership record
+and works even if the native binary has been removed; omit both adapter options when
+uninstalling. Release checksums are published, but this project has no artifact-signing
+identity or signing policy yet, so a checksum is not a signature.
 
 The native adapter shares the existing loss counters and atomic-write / lock
 primitives, and durably spools each event as JSON under `<data>/spool/`. The
