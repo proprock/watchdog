@@ -11,7 +11,7 @@ Milestones: ROADMAP.md
 # Workflow
 
 - Read `git status --short` and preserve unrelated user changes.
-- Features: use `feature/<name>`, write a failing behavioral test, implement the smallest solution, then refactor. Use a worktree only when isolation is needed (in case of staged changes or modified source files).
+- Features: work in the current checkout by default. When a new task branch is needed, name it `feature/<name>`; write a failing behavioral test, implement the smallest solution, then refactor.
 - Debugging: reproduce, form a hypothesis, apply a minimal fix, run a focused test and relevant broader checks. Do not repeat an expensive failed run without changing the conditions.
 - Docs/config: review content and run `git diff --check`; do not write tests that merely assert documentation strings exist.
 - Local pytest selection for code changes follows the impact-guided workflow below. The full suite remains mandatory in CI and is the local fallback when the graph cannot support a safe selection.
@@ -38,6 +38,13 @@ Milestones: ROADMAP.md
 - Before index_repository: list_projects, index_status, and a smoke search_graph. Index only when needed; do not retry a failure without changing the conditions.
 - Strings/config/docs and fallback after insufficient semantic results: use rg. Do not index an empty foundation merely for formality.
 - Serena and codebase-memory are development tools, not runtime dependencies. Do not commit machine-specific paths or secrets.
+
+# Worktree policy
+
+- Default: work in the current checkout. Do not create, switch to, or modify a Git worktree unless the user explicitly requests one.
+- A worktree may be created without an explicit request only when all of these conditions hold: the task requires an isolated branch; the current checkout has tracked staged changes or modified source files that make switching branches unsafe; and the agent states the concrete conflict plus the exact proposed worktree path before creating it.
+- Untracked files alone do not justify a worktree. A separate task branch alone does not justify a worktree.
+- Before creating a worktree outside that exception, ask the user for approval. When a worktree is used, report its absolute path and branch immediately. Do not close a task with uncommitted worktree changes without explicitly telling the user where they remain.
 
 # Impact-guided local pytest
 
