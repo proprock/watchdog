@@ -26,6 +26,12 @@ Dedicated macOS/Linux host access and live compatibility verification are deferr
 
 A cross-platform core does not imply that every vendor desktop exists on every OS. Mark unsupported/not tested explicitly. For each available combination, record the OS, provider/harness version, hook configuration, and sanitized results for start, prompt, successful/failed tool, compact, subagent, and stop/interrupt. Do not count a missing event as supported.
 
+Every future isolated provider probe must also publish the
+[versioned result record](evidence/probe-result-record-v1.md). It separates
+provider dispatch, adapter start/failure, missing callbacks, retries, persisted
+losses, end-to-end delivery, and cleanup; synthetic or direct-adapter evidence
+does not establish a provider result.
+
 Installation: `hooks install <provider>` edits only its own entries in the user hook configuration, with backup and a dry-run diff. Installation is idempotent; uninstall removes only its own unchanged entries. Existing hooks are preserved. The project registry filters collection. Do not bypass native trust/reload/approval procedures.
 
 Document coverage per event instead of promising identical capabilities across versions. Verify capabilities using fixtures and live smoke tests, not version numbers alone. Report hosted tools and unknown payloads as gaps. Observation must not require App Server, MCP, or an API connection.

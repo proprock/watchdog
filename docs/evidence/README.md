@@ -1,5 +1,11 @@
 # Verification evidence
 
+Future isolated provider probes use the versioned
+[result-record v1](probe-result-record-v1.md). It keeps synthetic workloads,
+direct local-adapter runs, and live-provider observations separate, and records
+dispatch, callback gaps, retries, losses, delivery, provenance, and cleanup.
+The record is a reporting requirement, not authorization for a live probe.
+
 `wd024-windows-baseline.json` preserves the original direct Rust measurement.
 `wd024-windows-direct-recheck.json`, `wd024-windows-powershell.json`, and
 `wd024-windows-pwsh.json` compare direct and shell launches of the installed Rust
