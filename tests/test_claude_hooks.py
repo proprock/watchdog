@@ -55,12 +55,10 @@ def run(paths, payload, provider="claude"):
     observe(paths, io.BytesIO(json.dumps(payload).encode()), provider)
 
 
-def test_fixture_covers_all_twelve_claude_events():
-    assert {sample["hook_event_name"] for sample in FIXTURE} == set(KINDS)
-
-
 @pytest.mark.parametrize("sample", FIXTURE, ids=lambda sample: sample["hook_event_name"])
 def test_native_events_map_to_expected_kind(setup, sample):
+    """Evidence class: offline behavioral mapping contract."""
+    assert {item["hook_event_name"] for item in FIXTURE} == set(KINDS)
     paths, events = setup
     run(paths, sample | {"cwd": str(paths.config.parent)})
     assert len(events) == 1

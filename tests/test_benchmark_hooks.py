@@ -1,5 +1,8 @@
 import importlib.util
 import json
+import shutil
+import subprocess
+import sys
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -71,3 +74,34 @@ def test_benchmark_cli_accepts_claude_provider_and_bash_shell(benchmark, monkeyp
         benchmark.main()
     assert "at least 20 samples" in capsys.readouterr().err
     assert set(benchmark.SHELLS) == {"direct", "bash", "cmd.exe", "powershell.exe", "pwsh.exe"}
+
+
+def _available_shells():
+    return ["direct", *(shell for shell in SHELLS if shutil.which(shell))]
+
+
+SHELLS = ("bash", "cmd.exe", "powershell.exe", "pwsh.exe")
+
+
+@pytest.mark.parametrize("shell", _available_shells())
+def test_hook_invocation_round_trips_harmless_arguments(benchmark, shell):
+    """Evidence class: offline subprocess shell contract."""
+    values = ["plain", "two words", "dollar$", "ampersand&", "apostrophe'"]
+    if shell == "bash":
+        arguments = ["printf", "%s\\x1f", *values]
+    else:
+        arguments = [
+            sys.executable,
+            "-c",
+            "import sys; print('\\x1f'.join(sys.argv[1:]))",
+            *values,
+        ]
+    invocation = benchmark.hook_invocation(shell, arguments)
+    result = subprocess.run(
+        invocation,
+        capture_output=True,
+        text=True,
+        timeout=10,
+    )
+    assert result.returncode == 0, result.stderr
+    assert result.stdout.strip().split("\x1f") == values
