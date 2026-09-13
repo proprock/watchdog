@@ -119,6 +119,16 @@ viewer, but only an existing `.jsonl`/`.json`/`.log`/`.md`/`.txt` path, because
 the path itself comes from an untrusted trace. The review resumes at the first
 unlabelled session.
 
+The card no longer repeats a miscounted failure. `summarize` counted a tool
+failure whenever the string `PostToolUseFailure` appeared anywhere in the stored
+payload, so a session whose own pytest output names that hook was recorded as
+having failed: the first card of [wd012-sample.json](evidence/wd012-sample.json)
+claims 4 failed tool calls while none of its 53 stored results is a failure. The
+count now follows the provider's own signal, and the card shows the observed
+result mix and flags a frozen count that disagrees with it. The frozen cohort is
+not regenerated, so its `tool_failures` column keeps the old value; the review
+reads the card, and the calibration report never consumed that column.
+
 Recording an answer no longer discards the previous one. Each keystroke sent
 only the field it set, and the store replaces `task_outcome` and `task_type` with
 whatever the request carries, so pressing `o` after `t` cleared the task type.

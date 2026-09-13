@@ -229,7 +229,11 @@ assistant message, the tool inputs it repeated, the last few timeline rows, its
 findings, and its current labels, because counts alone do not show whether a
 session was stuck. A `content` line reports how much was stored per kind
 (`prompts 6/6 | replies 5/6, 1 not stored`), so an empty answer from the agent
-stays distinct from an answer Watchdog never captured. Content comes from the
+stays distinct from an answer Watchdog never captured, and a `results` line
+counts how the tool calls ended, including calls whose result was never
+observed. A failure is what the provider signalled, never the string
+`PostToolUseFailure` appearing in captured output; where the frozen sample's
+count disagrees with the observed one, the card says so. Content comes from the
 store and is shown only on screen.
 
 The findings on the card are the frozen sample's, and verdicts attach to those

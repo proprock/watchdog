@@ -788,3 +788,55 @@ def test_the_review_keeps_earlier_answers_when_the_next_key_is_pressed(
     assert label["task_outcome"] == "success"
     assert label["task_type"] == "feature"
     assert label["progress_state"] == "stuck"
+
+
+def test_captured_output_naming_a_failure_hook_is_not_counted_as_one(calibrate):
+    """Tool output is data: a session that prints the hook name did not fail."""
+    project_id, start = uuid4(), datetime.now(UTC)
+    events = [
+        event(
+            project_id,
+            "session",
+            "tool.finish",
+            start,
+            payload={
+                "hook_event_name": "PostToolUse",
+                "tool_name": "Bash",
+                "content": {
+                    "tool_input": {"command": "uv run pytest"},
+                    "tool_response": "tests/test_hooks.py::test_a_PostToolUseFailure_is_observed",
+                },
+            },
+        ),
+        event(
+            project_id,
+            "session",
+            "tool.finish",
+            start + timedelta(seconds=1),
+            payload={
+                "hook_event_name": "PostToolUseFailure",
+                "tool_name": "Bash",
+                "content": {"tool_input": {"command": "cargo build"}, "tool_response": "denied"},
+            },
+        ),
+        event(
+            project_id,
+            "session",
+            "tool.finish",
+            start + timedelta(seconds=2),
+            payload={
+                "hook_event_name": "PostToolUse",
+                "tool_name": "Bash",
+                "content": {"tool_input": {"command": "ls"}, "tool_response": {"exit_code": 1}},
+            },
+        ),
+    ]
+
+    assert calibrate.summarize(events)["tool_failures"] == 2
+
+
+def test_the_card_reports_how_the_tool_calls_ended(calibrate):
+    rows = calibrate.build_timeline(turn_and_tool(uuid4(), "session", datetime.now(UTC)))
+
+    assert calibrate.result_line(rows, 1) == "FAILED 1"
+    assert "the frozen sample recorded 4 failed" in calibrate.result_line(rows, 4)

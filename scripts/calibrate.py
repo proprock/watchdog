@@ -102,11 +102,7 @@ def snapshots_for(db, checkouts: set[str]) -> list[dict]:
 def summarize(events: list) -> dict[str, Any]:
     kinds = Counter(event.kind for event in events)
     checkouts = sorted({str(event.checkout_id) for event in events if event.checkout_id})
-    failures = sum(
-        1
-        for event in events
-        if event.kind == "tool.finish" and "PostToolUseFailure" in json.dumps(event.payload)
-    )
+    failures = sum(1 for event in events if event.kind == "tool.finish" and observed_failure(event))
     return {
         "event_count": len(events),
         "turns": kinds["turn.start"],
@@ -120,6 +116,19 @@ def summarize(events: list) -> dict[str, Any]:
         "closed": bool(kinds["session.end"]),
         "checkout_ids": checkouts,
     }
+
+
+def observed_failure(event) -> bool:
+    """Report a failure the provider signalled, not the word appearing in output.
+
+    Captured tool output is data: a session whose own test output names
+    `PostToolUseFailure` must not be counted as having failed.
+    """
+    payload = provider_payload(event)
+    if payload.get("hook_event_name") == "PostToolUseFailure":
+        return True
+    content = content_of(event)
+    return "tool_response" in content and tool_outcome(content["tool_response"]) == "failure"
 
 
 def split_findings(findings: list[dict]) -> tuple[list[dict], list[dict]]:
@@ -570,6 +579,19 @@ def session_context(paths: UserPaths, project, provider: str, session_id: str) -
     }
 
 
+RESULT_STATES = ("ok", "FAILED", "result unclear", "result not stored", "no result observed")
+
+
+def result_line(rows: list[dict], frozen_failures: int) -> str:
+    """Summarise how the session's tool calls ended, and flag a frozen count that disagrees."""
+    observed = Counter(row["state"] for row in rows if row["marker"] == "$")
+    parts = [f"{state} {observed[state]}" for state in RESULT_STATES if observed[state]]
+    line = " | ".join(parts) or "no tool calls observed"
+    if frozen_failures != observed["FAILED"]:
+        line += f"   (the frozen sample recorded {frozen_failures} failed)"
+    return line
+
+
 def drift_line(frozen: list[dict], live: list[dict]) -> str:
     """State how a live re-analysis differs from the frozen cohort, or that it does not."""
     frozen_prints = {finding["fingerprint"] for finding in frozen}
@@ -604,11 +626,12 @@ def render(record: dict, position: int, total: int, state: dict, sample: Mapping
         f"checkout {', '.join(record['checkout_ids']) or 'unknown'}"
     )
     print(
-        f"{record['turns']} turns | {record['tools']} tools "
-        f"({record['tool_failures']} failed) | {record['event_count']} events | "
+        f"{record['turns']} turns | {record['tools']} tools | "
+        f"{record['event_count']} events | "
         f"waiting {record['waiting']} | gaps {record['gaps']} | "
         f"{'closed' if record['closed'] else 'no session.end observed'}"
     )
+    print(f"results {result_line(context['timeline'], record['tool_failures'])}")
     print(f"content {capture_line(context['capture'])}")
     if not capture_is_complete(context["capture"]):
         print("        not stored means Watchdog holds no text, not that the agent was silent")
