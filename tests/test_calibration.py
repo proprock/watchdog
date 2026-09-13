@@ -668,3 +668,27 @@ def test_a_tool_result_that_was_not_stored_falls_back_to_the_provider_error(cali
 
     assert row["state"] == "result not stored"
     assert "error the harness killed the command" in row["note"]
+
+
+def test_usage_events_stay_out_of_the_timeline(calibrate):
+    project_id, start = uuid4(), datetime.now(UTC)
+    events = [
+        event(
+            project_id,
+            "session",
+            "turn.start",
+            start,
+            payload={"content": {"prompt": "keep going"}},
+        ),
+        event(
+            project_id,
+            "session",
+            "usage",
+            start + timedelta(seconds=1),
+            payload={"usage": {"delta": {"input_tokens": 12}}},
+        ),
+    ]
+
+    rows = calibrate.build_timeline(events)
+
+    assert [row["label"] for row in rows] == ["prompt"]

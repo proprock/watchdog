@@ -349,6 +349,8 @@ def result_note(event, content: Mapping[str, Any], metadata: Mapping[str, Any]) 
 
 
 TOOL_INPUT_KEYS = ("command", "cmd", "script", "file_path", "path", "pattern", "query", "prompt")
+# Token counters carry no work a reviewer can judge; the report still counts them.
+TIMELINE_SKIP_KINDS = ("usage",)
 
 
 def tool_input_text(content: Mapping[str, Any], width: int = 160) -> tuple[str, str]:
@@ -395,6 +397,8 @@ def build_timeline(events: list) -> list[dict]:
     rows: list[dict] = []
     pending: dict[str, dict] = {}
     for event in events:
+        if event.kind in TIMELINE_SKIP_KINDS:
+            continue
         content = content_of(event)
         payload = provider_payload(event)
         metadata = metadata_of(event)
