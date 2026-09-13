@@ -223,18 +223,34 @@ skip counts, and stores each session's findings with their fingerprints, because
 an open session can grow a finding group and change its identity. It contains no
 prompt or output text.
 
-`annotate` walks the frozen cohort. Each session shows its counts, its first and
-last prompt, the last assistant message, the tool inputs it repeated, its
+`annotate` walks the frozen cohort and resumes at the first session that carries
+no label. Each card shows its counts, its first and last prompt, the last
+assistant message, the tool inputs it repeated, the last few timeline rows, its
 findings, and its current labels, because counts alone do not show whether a
-session was stuck. Content comes from the store and is shown only on screen.
+session was stuck. A `content` line reports how much was stored per kind
+(`prompts 6/6 | replies 5/6, 1 not stored`), so an empty answer from the agent
+stays distinct from an answer Watchdog never captured. Content comes from the
+store and is shown only on screen.
+
+The findings on the card are the frozen sample's, and verdicts attach to those
+fingerprints. The card also re-analyses the session and says whether a live
+re-analysis would now produce a different set, because a report run today can
+count findings the frozen cohort does not contain.
+
 `o`, `t`, `p`, and `r` set outcome, task type, progress state, and a reviewer
 note from a numbered menu, and a digit records a verdict for the numbered
-finding. `d` prints the full report for the session, `x` prints the observed
-vendor transcript path without opening it, and `c` reviews the checkout-scoped
-findings once rather than once per session. Every answer is sent
-to the running core and the acknowledgement is printed; a rejected write is
-reported and nothing advances. Rerunning resumes from what the store already
-holds.
+finding, after printing that finding's evidence as readable timeline rows rather
+than event identifiers. `l` prints the turn/tool timeline, where a tool start and
+its finish collapse into one row with the command, outcome, exit code, duration,
+and error (`l 50` or `l all` widen it). `d` prints the live re-analysis in
+readable form and labels it live; `dj` still prints the raw report JSON. `x`
+prints the observed vendor transcript path, the full record behind the triage,
+and offers to open it with the system viewer: the path comes from an untrusted
+trace, so only an existing `.jsonl`, `.json`, `.log`, `.md`, or `.txt` file is
+handed over and Watchdog never writes to it. `c` reviews the checkout-scoped
+findings once rather than once per session. Every answer is sent to the running
+core and the acknowledgement is printed; a rejected write is reported and
+nothing advances. Rerunning resumes from what the store already holds.
 
 `report` joins the frozen cohort with the recorded annotations and writes
 `docs/evidence/wd012-calibration.json` plus a markdown report. Precision is

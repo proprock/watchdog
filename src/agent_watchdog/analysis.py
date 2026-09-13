@@ -256,7 +256,7 @@ def _strings(value: object) -> Iterable[str]:
             yield from _strings(item)
 
 
-def _exit_code(value: object) -> int | None:
+def exit_code(value: object) -> int | None:
     if not isinstance(value, dict):
         return None
     for key in ("exit_code", "exitCode"):
@@ -266,8 +266,9 @@ def _exit_code(value: object) -> int | None:
     return None
 
 
-def _outcome(response: object) -> str:
-    code = _exit_code(response)
+def tool_outcome(response: object) -> str:
+    """Judge one tool result; a review renders the same judgement it reads."""
+    code = exit_code(response)
     if code is not None:
         return "success" if code == 0 else "failure"
     if isinstance(response, dict) and response.get("isError") is True:
@@ -465,14 +466,14 @@ def analyze(
             continue
         output_available += 1
         output_bytes += len(_canonical(response).encode("utf-8"))
-        outcome = _outcome(response)
+        outcome = tool_outcome(response)
         outcomes[outcome] += 1
         tool = provider.get("tool_name")
         signature = _fingerprint({"tool": tool, "input": command, "outcome": outcome})
         repeated[signature].append(str(event.event_id))
         if outcome != "failure":
             continue
-        error_signature = _fingerprint({"code": _exit_code(response), "response": response})
+        error_signature = _fingerprint({"code": exit_code(response), "response": response})
         errors[error_signature].append(str(event.event_id))
         tests = _test_failures(command, response)
         if tests:

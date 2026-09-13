@@ -96,6 +96,44 @@ reviewed"), never zero and never 100%. [wd012-calibration.json](evidence/wd012-c
 still holds the first pass and is not replaced until the review produces real
 counts. WD-012 stays open.
 
+## WD-012 review card (2026-09-13, Windows)
+
+The `annotate` card was the bottleneck for the manual pass, not the storage. It
+showed only the first/last prompt, a truncated last message, and up to three
+repeated tool inputs, so the causal chain between them was invisible; `d` printed
+the whole report JSON including hundreds of event UUIDs; a finding offered its
+evidence as identifiers; and nothing on screen said whether a missing message
+meant silence or a missing capture.
+
+The card now reads as work. `build_timeline` collapses each tool start and finish
+into one row with the command, outcome, exit code, duration, and error text, and
+`l` widens that tail (`l 50`, `l all`). A `content` line counts prompts, replies,
+and tool results as stored, empty, or not stored, so an empty answer stays
+distinct from an absent capture. A finding prints its evidence as those timeline
+rows. `d` prints the live re-analysis in readable form and says it is live; `dj`
+keeps the raw JSON. `x` offers to open the vendor transcript with the system
+viewer, but only an existing `.jsonl`/`.json`/`.log`/`.md`/`.txt` path, because
+the path itself comes from an untrusted trace. The review resumes at the first
+unlabelled session.
+
+The card also states the frozen/live boundary it previously left implicit: the
+listed findings are the sample's, verdicts attach to their fingerprints, and a
+line reports whether a live re-analysis would now add or drop any. The reviewer
+reported nine checkout-scoped findings from a live report against the eight
+frozen in [wd012-sample.json](evidence/wd012-sample.json); that count is not
+measured here, and it is exactly the divergence the indicator now names.
+
+Offline verification: the full suite passed, 439 tests in 101 s with a base-temp
+directory outside the checkout, after the locked release build of the native
+adapter. Ruff lint, Ruff format, and ty passed. New behavioural tests cover the
+collapsed tool row, an unfinished call, the provider-error fallback when a result
+was not stored, the stored/empty/not-stored counts, the frozen-versus-live drift
+line, evidence rendered as rows rather than identifiers, a live detail view that
+prints no event identifier, resuming at the first unlabelled session, and the
+refusal to launch a non-transcript path named by a trace. No provider was
+invoked, no hook was installed, and no manual review was performed; WD-012 stays
+open.
+
 ## WD-011 labels, pins, and manual export
 
 2026-09-07, Windows. WD-011 adds storage schema v5 with a provider-scoped
