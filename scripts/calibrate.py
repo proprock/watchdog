@@ -785,16 +785,28 @@ def submit(paths: UserPaths, request: dict) -> bool:
     return True
 
 
-def label_request(project_id: str, record: dict, **fields) -> dict:
+def label_request(
+    project_id: str, record: dict, label: Mapping[str, Any], **changes: str | None
+) -> dict:
+    """Resend the whole label with one field changed.
+
+    The store replaces `task_outcome` and `task_type` with whatever the request
+    carries, so a request that named only the field being set would clear the
+    answers recorded by the previous keystroke.
+    """
+    fields: dict[str, str | None] = {
+        "outcome": label.get("task_outcome") or "unknown",
+        "task_type": label.get("task_type"),
+        "progress_state": label.get("progress_state"),
+        "reviewer_note": label.get("reviewer_note"),
+    }
+    fields.update(changes)
     return {
         "action": "label",
         "project_id": project_id,
         "provider": record["provider"],
         "session_id": record["session_id"],
-        "outcome": fields.pop("outcome"),
-        "task_type": fields.pop("task_type", None),
-        "progress_state": fields.pop("progress_state", None),
-        "reviewer_note": fields.pop("reviewer_note", None),
+        **fields,
     }
 
 
@@ -936,18 +948,15 @@ def annotate(paths: UserPaths, args: argparse.Namespace) -> int:
         elif command in ("o", "outcome"):
             outcome = choose("Task outcome", TASK_OUTCOMES, {}, state["label"]["task_outcome"])
             if outcome is not None:
-                submit(paths, label_request(str(project.id), record, outcome=outcome))
+                submit(
+                    paths, label_request(str(project.id), record, state["label"], outcome=outcome)
+                )
         elif command in ("t", "type"):
             task_type = input("  task type (free text) > ").strip()
             if task_type:
                 submit(
                     paths,
-                    label_request(
-                        str(project.id),
-                        record,
-                        outcome=state["label"]["task_outcome"],
-                        task_type=task_type,
-                    ),
+                    label_request(str(project.id), record, state["label"], task_type=task_type),
                 )
         elif command in ("p", "progress"):
             progress = choose(
@@ -956,24 +965,14 @@ def annotate(paths: UserPaths, args: argparse.Namespace) -> int:
             if progress is not None:
                 submit(
                     paths,
-                    label_request(
-                        str(project.id),
-                        record,
-                        outcome=state["label"]["task_outcome"],
-                        progress_state=progress,
-                    ),
+                    label_request(str(project.id), record, state["label"], progress_state=progress),
                 )
         elif command in ("r", "remark"):
             note = input("  reviewer note > ").strip()
             if note:
                 submit(
                     paths,
-                    label_request(
-                        str(project.id),
-                        record,
-                        outcome=state["label"]["task_outcome"],
-                        reviewer_note=note,
-                    ),
+                    label_request(str(project.id), record, state["label"], reviewer_note=note),
                 )
         elif command.isdigit() and 1 <= int(command) <= len(record["findings"]):
             annotate_finding(

@@ -739,3 +739,52 @@ def test_a_failing_result_shows_its_error_text(calibrate):
     assert row["state"] == "FAILED"
     assert "exit 1" in row["note"]
     assert "ModuleNotFoundError: widgets" in row["note"]
+
+
+def test_the_review_keeps_earlier_answers_when_the_next_key_is_pressed(
+    calibrate, capture, tmp_path, monkeypatch
+):
+    """One keystroke sets one field; it must not silently clear the others."""
+    paths, config, project = capture
+    sample_path = tmp_path / "sample.json"
+    sample = calibrate.build_sample(paths, sample_args(calibrate, paths, sample_path))
+    calibrate.write_sample(sample, sample_path)
+    position = next(
+        index
+        for index, record in enumerate(sample["sessions"], start=1)
+        if record["session_id"] == "noisy"
+    )
+    answers = iter(["j", str(position), "t", "feature", "o", "1", "p", "3", "q"])
+    monkeypatch.setattr("builtins.input", lambda *_: next(answers))
+
+    def drain(_paths, request):
+        # Apply the control inbox directly: request_control would start a daemon.
+        request_id = str(uuid4())
+        directory = paths.data / "requests"
+        directory.mkdir(parents=True, exist_ok=True)
+        (directory / f"{request_id}.json").write_text(
+            json.dumps({"schema_version": 1, "request_id": request_id, **request}),
+            encoding="utf-8",
+        )
+        assert _drain_controls(paths, config) is True
+        return {"ok": True}
+
+    monkeypatch.setattr(calibrate.daemon, "request_control", drain)
+    args = calibrate.build_parser().parse_args(
+        [
+            "annotate",
+            "--home",
+            str(paths.config.parent),
+            "--project",
+            "checkout",
+            "--sample",
+            str(sample_path),
+        ]
+    )
+
+    assert calibrate.annotate(paths, args) == 0
+
+    label = calibrate.load_state(paths, project, "codex", "noisy")["label"]
+    assert label["task_outcome"] == "success"
+    assert label["task_type"] == "feature"
+    assert label["progress_state"] == "stuck"

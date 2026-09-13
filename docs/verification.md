@@ -119,6 +119,12 @@ viewer, but only an existing `.jsonl`/`.json`/`.log`/`.md`/`.txt` path, because
 the path itself comes from an untrusted trace. The review resumes at the first
 unlabelled session.
 
+Recording an answer no longer discards the previous one. Each keystroke sent
+only the field it set, and the store replaces `task_outcome` and `task_type` with
+whatever the request carries, so pressing `o` after `t` cleared the task type.
+The review now resends the whole label with one field changed; a scripted
+`t`/`o`/`p` sequence covers it.
+
 The card also states the frozen/live boundary it previously left implicit: the
 listed findings are the sample's, verdicts attach to their fingerprints, and a
 line reports whether a live re-analysis would now add or drop any. The reviewer
