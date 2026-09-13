@@ -106,8 +106,11 @@ evidence as identifiers; and nothing on screen said whether a missing message
 meant silence or a missing capture.
 
 The card now reads as work. `build_timeline` collapses each tool start and finish
-into one row with the command, outcome, exit code, duration, and error text, and
-`l` widens that tail (`l 50`, `l all`). A `content` line counts prompts, replies,
+into one row with the command, outcome, exit code, duration, and the text the
+tool returned, and `l` widens that tail (`l 50`, `l all`). Token-counter `usage`
+events are excluded. Where a provider reports no exit code the rules classify the
+result as unknown, so the row prints what came back instead of a guessed outcome;
+a present but empty output field reads as `no output`. A `content` line counts prompts, replies,
 and tool results as stored, empty, or not stored, so an empty answer stays
 distinct from an absent capture. A finding prints its evidence as those timeline
 rows. `d` prints the live re-analysis in readable form and says it is live; `dj`

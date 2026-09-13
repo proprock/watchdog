@@ -692,3 +692,50 @@ def test_usage_events_stay_out_of_the_timeline(calibrate):
     rows = calibrate.build_timeline(events)
 
     assert [row["label"] for row in rows] == ["prompt"]
+
+
+def tool_finish(project_id, response, **payload):
+    return event(
+        project_id,
+        "session",
+        "tool.finish",
+        datetime.now(UTC),
+        payload={
+            "tool_name": "Bash",
+            "content": {"tool_input": {"command": "ls"}, "tool_response": response},
+            **payload,
+        },
+    )
+
+
+def test_a_result_without_an_exit_code_still_shows_what_came_back(calibrate):
+    """A provider that reports no exit code leaves the text as the only evidence."""
+    response = {"stdout": "3 files changed", "stderr": "", "interrupted": False}
+
+    row = calibrate.build_timeline([tool_finish(uuid4(), response)])[0]
+
+    assert row["state"] == "result unclear"
+    assert "3 files changed" in row["note"]
+
+
+def test_a_present_but_empty_output_is_not_reported_as_missing(calibrate):
+    row = calibrate.build_timeline([tool_finish(uuid4(), {"stdout": "", "stderr": ""})])[0]
+
+    assert row["note"] == "no output"
+
+
+def test_an_exit_code_alone_adds_no_excerpt(calibrate):
+    row = calibrate.build_timeline([tool_finish(uuid4(), {"exit_code": 2})])[0]
+
+    assert row["state"] == "FAILED"
+    assert row["note"] == "exit 2"
+
+
+def test_a_failing_result_shows_its_error_text(calibrate):
+    response = {"stdout": "", "stderr": "ModuleNotFoundError: widgets", "exit_code": 1}
+
+    row = calibrate.build_timeline([tool_finish(uuid4(), response)])[0]
+
+    assert row["state"] == "FAILED"
+    assert "exit 1" in row["note"]
+    assert "ModuleNotFoundError: widgets" in row["note"]

@@ -242,8 +242,11 @@ note from a numbered menu, and a digit records a verdict for the numbered
 finding, after printing that finding's evidence as readable timeline rows rather
 than event identifiers. `l` prints the turn/tool timeline, where a tool start and
 its finish collapse into one row with the command, outcome, exit code, duration,
-and error (`l 50` or `l all` widen it); `usage` events are left out because token
-counters show no work to judge. `d` prints the live re-analysis in
+and the text the tool returned (`l 50` or `l all` widen it); `usage` events are
+left out because token counters show no work to judge. A provider that reports no
+exit code leaves the outcome unclassified, so the row shows the returned text
+rather than a guessed outcome, and an output field that is present but empty
+reads as `no output`. `d` prints the live re-analysis in
 readable form and labels it live; `dj` still prints the raw report JSON. `x`
 prints the observed vendor transcript path, the full record behind the triage,
 and offers to open it with the system viewer: the path comes from an untrusted

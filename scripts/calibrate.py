@@ -340,12 +340,42 @@ def result_note(event, content: Mapping[str, Any], metadata: Mapping[str, Any]) 
     spent = duration_note(metadata, "tool_duration_ms", "duration_ms")
     if spent:
         parts.append(spent)
-    if outcome == "FAILED" and "tool_response" in content:
-        parts.append(one_line(response, width=160))
+    if "tool_response" in content and outcome in ("FAILED", "result unclear"):
+        # A provider that reports no exit code leaves the result text as the
+        # only thing a reviewer can read; say what came back, not just that the
+        # rule could not classify it.
+        excerpt = tool_response_text(response)
+        if excerpt:
+            parts.append(excerpt)
     elif metadata.get("error"):
         # Without a stored result the provider's own error text is all there is.
         parts.append(f"error {one_line(metadata['error'], width=120)}")
     return outcome, "  ".join(parts)
+
+
+TOOL_RESULT_KEYS = ("stdout", "output", "content", "text", "result", "message", "stderr", "error")
+
+
+def tool_response_text(response: object, width: int = 160) -> str:
+    """Show what a tool returned, not the envelope it returned it in.
+
+    An empty but present output field is reported as such: no output observed is
+    a different fact from no output field at all.
+    """
+    if isinstance(response, list):
+        for item in response:
+            text = tool_response_text(item, width=width)
+            if text:
+                return text
+        return ""
+    if isinstance(response, dict):
+        present = [key for key in TOOL_RESULT_KEYS if key in response]
+        for key in present:
+            if response[key]:
+                return one_line(response[key], width=width)
+        # Nothing readable beyond the exit code the caller already prints.
+        return "no output" if present else ""
+    return one_line(response, width=width)
 
 
 TOOL_INPUT_KEYS = ("command", "cmd", "script", "file_path", "path", "pattern", "query", "prompt")
