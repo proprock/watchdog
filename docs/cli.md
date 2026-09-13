@@ -256,6 +256,10 @@ findings once rather than once per session. Every answer is sent to the running
 core and the acknowledgement is printed; a rejected write is reported and
 nothing advances. Rerunning resumes from what the store already holds.
 
+The labelling rules themselves - what each progress state, outcome, and verdict
+means, and what a reviewer refuses to decide - are recorded in
+[wd012-protocol.md](evidence/wd012-protocol.md).
+
 `report` joins the frozen cohort with the recorded annotations and writes
 `docs/evidence/wd012-calibration.json` plus a markdown report. Precision is
 reported per rule with its denominator, `uncertain` is kept separate from both

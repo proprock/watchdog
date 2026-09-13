@@ -6,6 +6,12 @@ direct local-adapter runs, and live-provider observations separate, and records
 dispatch, callback gaps, retries, losses, delivery, provenance, and cleanup.
 The record is a reporting requirement, not authorization for a live probe.
 
+`wd012-protocol.md` states the labelling rules for the WD-012 review: what each
+progress state, outcome, and finding verdict means, how one card is reviewed, and
+which judgements are refused when the retained evidence is insufficient. It
+governs the labels in `wd012-calibration.json`; `wd012-sample.json` and its `.csv`
+view hold the frozen cohort those labels apply to.
+
 `wd024-windows-baseline.json` preserves the original direct Rust measurement.
 `wd024-windows-direct-recheck.json`, `wd024-windows-powershell.json`, and
 `wd024-windows-pwsh.json` compare direct and shell launches of the installed Rust
