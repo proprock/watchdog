@@ -80,22 +80,22 @@
       }
     ]
   },
-  "format_version": "wd-012.calibration.v2",
-  "generated_at": "2026-09-14T21:32:50.339849+00:00",
+  "format_version": "wd-012.calibration.v3",
+  "generated_at": "2026-09-14T21:42:44.718844+00:00",
   "hook_overhead": {
     "end_to_end_ms": {
       "max": 48131.1,
-      "p50": 809.3,
-      "p95": 2106.1
+      "p50": 810.9,
+      "p95": 2106.2
     },
-    "events": 10665,
-    "events_with_delivery": 4800,
-    "events_without_delivery": 5865,
+    "events": 10839,
+    "events_with_delivery": 4915,
+    "events_without_delivery": 5924,
     "in_hook_ms": {
       "max": 88.9,
       "mean": 5.6,
       "p50": 5.1,
-      "p95": 13.8
+      "p95": 13.7
     },
     "note": "Transcript-sourced events carry no delivery trace, so the denominator is smaller than the event count. Null is not zero."
   },
@@ -104,6 +104,12 @@
     "Checkout-scoped findings are excluded from per-session precision.",
     "One operator labelled their own sessions; the judgement is not independent.",
     "The session count is a calibration target, not proof of representativeness."
+  ],
+  "recommendations": [
+    "identical_error: not recommended (n=0) \u2014 no observation in this dataset.",
+    "repeated_test_failure: not recommended (n=0) \u2014 no observation in this dataset.",
+    "repeated_tool_outcome: not recommended \u2014 25.00% precision (n=8) is below the 90% gate.",
+    "No rule cleared the 90% gate in this dataset; M3 selects no rule for delivery yet."
   ],
   "session_scoped_rules": {
     "identical_error": {

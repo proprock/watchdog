@@ -1,6 +1,6 @@
 # WD-012 calibration report
 
-Generated 2026-09-14T21:32:50.339849+00:00 from `wd012-sample.json` (sha256 `8ee766b4c7eb1a78f2eac9ff853c7d15d0c962ffbf06c92c8ff0b13a21f77d73`).
+Generated 2026-09-14T21:42:44.718844+00:00 from `wd012-sample.json` (sha256 `8ee766b4c7eb1a78f2eac9ff853c7d15d0c962ffbf06c92c8ff0b13a21f77d73`).
 
 ## Dataset
 
@@ -29,9 +29,16 @@ Generated 2026-09-14T21:32:50.339849+00:00 from `wd012-sample.json` (sha256 `8ee
 
 ## Hook overhead
 
-- In-hook p50/p95: 5.1 / 13.8 ms
-- End-to-end p50/p95: 809.3 / 2106.1 ms
-- Measured on 4800 of 10665 events. Transcript-sourced events carry no delivery trace, so the denominator is smaller than the event count. Null is not zero.
+- In-hook p50/p95: 5.1 / 13.7 ms
+- End-to-end p50/p95: 810.9 / 2106.2 ms
+- Measured on 4915 of 10839 events. Transcript-sourced events carry no delivery trace, so the denominator is smaller than the event count. Null is not zero.
+
+## Recommendations
+
+- identical_error: not recommended (n=0) — no observation in this dataset.
+- repeated_test_failure: not recommended (n=0) — no observation in this dataset.
+- repeated_tool_outcome: not recommended — 25.00% precision (n=8) is below the 90% gate.
+- No rule cleared the 90% gate in this dataset; M3 selects no rule for delivery yet.
 
 ## Limitations
 

@@ -32,7 +32,7 @@ correctness of the finding and is unrelated to a finding's `attribution` field.
 
 The tooling for that pass is `scripts/calibrate.py` with storage schema v7. It
 freezes a reproducible cohort (`sample`), reviews it against the collected store
-(`annotate`), and emits `wd-012.calibration.v2` evidence plus a markdown report
+(`annotate`), and emits `wd-012.calibration.v3` evidence plus a markdown report
 (`report`). Sampling records its seed, strata, and skip counts so the dataset
 definition is auditable; annotations are written through the existing control
 inbox, never by the reviewing process itself.

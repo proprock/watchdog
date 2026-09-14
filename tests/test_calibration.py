@@ -349,6 +349,63 @@ def test_the_markdown_report_states_unmeasured_rules(calibrate, capture, tmp_pat
     assert report["dataset"]["sample_sha256"] in markdown
 
 
+def test_a_rule_below_the_precision_gate_is_not_recommended(calibrate, capture, tmp_path):
+    paths, config, project = capture
+    sample_path = tmp_path / "sample.json"
+    sample = calibrate.build_sample(paths, sample_args(calibrate, paths, sample_path))
+    calibrate.write_sample(sample, sample_path)
+    noisy = next(record for record in sample["sessions"] if record["session_id"] == "noisy")
+    repeated = next(
+        finding for finding in noisy["findings"] if finding["rule"] == "repeated_tool_outcome"
+    )
+    record_verdict(paths, config, project, "noisy", repeated, "false_positive")
+
+    report = calibrate.build_report(paths, report_args(calibrate, paths, sample_path, tmp_path))
+
+    lines = report["recommendations"]
+    assert any(
+        line.startswith("repeated_tool_outcome: not recommended") and "0.00%" in line
+        for line in lines
+    )
+    assert any("no rule cleared" in line.lower() for line in lines)
+    assert "repeated_tool_outcome: not recommended" in calibrate.render_markdown(report)
+
+
+def test_a_rule_at_the_precision_gate_is_recommended(calibrate, capture, tmp_path):
+    paths, config, project = capture
+    sample_path = tmp_path / "sample.json"
+    sample = calibrate.build_sample(paths, sample_args(calibrate, paths, sample_path))
+    calibrate.write_sample(sample, sample_path)
+    noisy = next(record for record in sample["sessions"] if record["session_id"] == "noisy")
+    repeated = next(
+        finding for finding in noisy["findings"] if finding["rule"] == "repeated_tool_outcome"
+    )
+    record_verdict(paths, config, project, "noisy", repeated, "true_positive")
+
+    report = calibrate.build_report(paths, report_args(calibrate, paths, sample_path, tmp_path))
+
+    lines = report["recommendations"]
+    assert any(
+        line.startswith("repeated_tool_outcome: recommended") and "n=1" in line for line in lines
+    )
+    assert "repeated_tool_outcome: recommended" in calibrate.render_markdown(report)
+
+
+def test_an_unobserved_rule_is_not_recommended(calibrate, capture, tmp_path):
+    paths, _, _ = capture
+    sample_path = tmp_path / "sample.json"
+    sample = calibrate.build_sample(paths, sample_args(calibrate, paths, sample_path))
+    calibrate.write_sample(sample, sample_path)
+
+    report = calibrate.build_report(paths, report_args(calibrate, paths, sample_path, tmp_path))
+
+    lines = report["recommendations"]
+    assert any(
+        line.startswith("repeated_test_failure: not recommended") and "n=0" in line
+        for line in lines
+    )
+
+
 def test_the_reviewer_navigates_and_stops_without_writing(
     calibrate, capture, tmp_path, monkeypatch, capsys
 ):

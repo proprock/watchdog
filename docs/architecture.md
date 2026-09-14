@@ -75,3 +75,29 @@ Hooks are the primary source. Transcript enrichment (`codex-rollout-v1` and, fro
 ## Later extensions
 
 Keep intervention separate from observations: proposal, evidence, required capability, expiry, and delivery receipt. M0-M2 do not implement placeholders for it. Begin with shadow calibration, then opt-in guidance at a native safe boundary. Stop continuation is not a hard pause. Do not assume App Server can attach to arbitrary desktop sessions: investigate session ownership/attach separately first.
+
+## M3 guidance policy (WD-013)
+
+This section is the M3 decision gate: it fixes the delivery mechanism and applies the WD-012 calibration to select rules. It is a design decision, not an implementation; M3 is only built once a rule actually clears the gate below.
+
+**Mechanism, for whenever a rule qualifies:**
+
+- Observe remains the default for every project; guidance requires explicit per-project opt-in, separate from the existing `content_capture` opt-out. A global kill switch stops delivery immediately regardless of per-project opt-in, with no residual nudge in flight.
+- A delivery record is distinct from an observation: it carries the source finding's evidence IDs, the capability it required, an expiry, and a cooldown. At most one nudge per blocker fires until new evidence appears for it; a blocker that keeps re-observing the same evidence does not re-notify.
+- Record `proposed`, `delivered`, and `response_observed` as three separate facts. Delivery is not acceptance: a nudge the user ignores, argues with, or contradicts is not itself evidence the finding was wrong, and a nudge followed by a change is not proof the finding was right. Advice-acceptance measurement is a separate, later analysis, never folded into precision.
+- Provider-specific safe delivery only: a nudge is injected solely at a boundary a provider adapter can support without altering control flow (see the CLI/hook contracts); an unsupported provider/surface combination stays observe-only.
+
+**Rule selection, applying the gate to [wd012-calibration.md](evidence/wd012-calibration.md):**
+
+The M2 release gate is at least 90% session-scoped precision on a declared, disclosed-sample-size dataset (ROADMAP M3). Generated from the 24-session frozen cohort (`scripts/calibrate.py report`, `wd-012.calibration.v3`):
+
+| rule | observed | precision | gate result |
+| --- | --- | --- | --- |
+| `repeated_tool_outcome` | 8 | 25.00% (2 TP / 6 FP) | fails; well below 90% at a reviewed sample of 8, not a borderline small-sample case |
+| `identical_error` | 0 | null | fails; zero observations in this cohort is no evidence, not a pass |
+| `repeated_test_failure` | 0 | null | fails; zero observations in this cohort is no evidence, not a pass |
+| `diff_oscillation` | 8 | unreviewed (checkout-scoped) | not eligible for session-scoped delivery; WD-118 must land attribution before this rule can even be scored per session |
+
+**Decision:** no `wd-010.v1` rule is selected for M3 delivery. The mechanism above is specified so a future qualifying rule has a fixed target to implement against, but no code path delivers guidance today; all four rules stay observe-only, matching the M0-M2 boundary already in place. The 4 recorded false negatives (slow sessions with no session-scoped finding) mean even a precision fix would leave recall gaps; do not read a future precision pass as sufficient on its own.
+
+**Re-opening this gate:** a rule is promoted only by a fresh `scripts/calibrate.py report` run showing it at or above 90% precision with its sample size, not by arguing around the numbers above. Re-run after WD-118 changes `diff_oscillation` attribution, after any rule-logic fix, or once the live cohort has grown past the current 24 sessions.

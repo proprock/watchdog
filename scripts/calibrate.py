@@ -38,10 +38,13 @@ from agent_watchdog.config import UserPaths, user_paths
 from agent_watchdog.storage import FINDING_VERDICTS, PROGRESS_STATES, persisted_envelope
 
 SAMPLE_FORMAT = "wd-012.sample.v1"
-CALIBRATION_FORMAT = "wd-012.calibration.v2"
+CALIBRATION_FORMAT = "wd-012.calibration.v3"
 TASK_OUTCOMES = ("success", "partial", "failed", "abandoned", "unknown")
 # A diff oscillation is evidence over a checkout's diff history, not a session's.
 CHECKOUT_SCOPED_RULES = ("diff_oscillation",)
+# WD-013 M3 release gate: a session-scoped rule needs at least this precision to be
+# recommended for delivery. A small sample clears or fails the number, not the gate itself.
+PRECISION_GATE = 0.90
 
 PROGRESS_HINTS = {
     "progress": "kept moving toward the task",
@@ -1079,6 +1082,40 @@ def rule_precision(rules: tuple[str, ...], observed: Counter, verdicts: Counter)
     return result
 
 
+def recommend(
+    session_stats: Mapping[str, Mapping[str, Any]], gate: float = PRECISION_GATE
+) -> list[str]:
+    """WD-013 M3 delivery recommendation per session-scoped rule, gated on precision."""
+    lines: list[str] = []
+    cleared = 0
+    for rule in sorted(session_stats):
+        stats = session_stats[rule]
+        if not stats["observed"]:
+            lines.append(f"{rule}: not recommended (n=0) — no observation in this dataset.")
+        elif stats["precision"] is None:
+            lines.append(
+                f"{rule}: not recommended — observed {stats['observed']} time(s) but never "
+                "reviewed; precision is unmeasured."
+            )
+        elif stats["precision"] >= gate:
+            cleared += 1
+            lines.append(
+                f"{rule}: recommended for M3 delivery — {stats['precision']:.2%} precision "
+                f"(n={stats['precision_denominator']}); disclose this sample size before enabling."
+            )
+        else:
+            lines.append(
+                f"{rule}: not recommended — {stats['precision']:.2%} precision "
+                f"(n={stats['precision_denominator']}) is below the {gate:.0%} gate."
+            )
+    if not cleared:
+        lines.append(
+            f"No rule cleared the {gate:.0%} gate in this dataset; M3 selects no rule for "
+            "delivery yet."
+        )
+    return lines
+
+
 def build_report(paths: UserPaths, args: argparse.Namespace) -> dict:
     sample_path = Path(args.sample)
     sample = json.loads(sample_path.read_text(encoding="utf-8"))
@@ -1174,6 +1211,7 @@ def build_report(paths: UserPaths, args: argparse.Namespace) -> dict:
         },
         "unreviewed_sessions": unreviewed,
         "hook_overhead": overhead(paths, project),
+        "recommendations": recommend(session_stats),
         "limitations": [
             f"Rules with no observation in this dataset: {', '.join(unmeasured) or 'none'}.",
             "Checkout-scoped findings are excluded from per-session precision.",
@@ -1227,6 +1265,12 @@ def render_markdown(report: dict) -> str:
         f"- Measured on {report['hook_overhead']['events_with_delivery']} of "
         f"{report['hook_overhead']['events']} events. "
         f"{report['hook_overhead']['note']}",
+        "",
+        "## Recommendations",
+        "",
+    ]
+    lines += [f"- {item}" for item in report["recommendations"]]
+    lines += [
         "",
         "## Limitations",
         "",
