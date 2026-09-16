@@ -76,14 +76,19 @@ def test_benchmark_cli_accepts_claude_provider_and_bash_shell(benchmark, monkeyp
     assert set(benchmark.SHELLS) == {"direct", "bash", "cmd.exe", "powershell.exe", "pwsh.exe"}
 
 
-def _bash_is_usable(path: str) -> bool:
+def _bash_is_usable() -> bool:
     """Reject a WSL launcher stub masquerading as `bash` with no distro installed.
 
-    The stub still exits 0 for an empty `-c` body, so require it to actually run one.
+    Windows resolves a bare `"bash"` argv[0] the same way `hook_invocation` launches
+    it: it checks System32 (where the legacy WSL bash.exe stub lives) before it ever
+    consults PATH, so `shutil.which("bash")` can report a working Git Bash while the
+    actual invocation still hits the stub. Probe with the same bare command the real
+    test uses, not the resolved path, and require it to actually run something (the
+    stub still exits 0 for an empty `-c` body).
     """
     try:
         result = subprocess.run(
-            [path, "-c", "printf ok"], capture_output=True, text=True, timeout=5
+            ["bash", "-c", "printf ok"], capture_output=True, text=True, timeout=5
         )
     except (OSError, subprocess.TimeoutExpired):
         return False
@@ -93,10 +98,9 @@ def _bash_is_usable(path: str) -> bool:
 def _available_shells():
     shells = ["direct"]
     for shell in SHELLS:
-        found = shutil.which(shell)
-        if not found:
+        if not shutil.which(shell):
             continue
-        if shell == "bash" and not _bash_is_usable(found):
+        if shell == "bash" and not _bash_is_usable():
             continue
         shells.append(shell)
     return shells
