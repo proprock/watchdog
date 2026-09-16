@@ -340,7 +340,16 @@ def git_diff_fingerprint(checkout: Path) -> tuple[str, int] | None:
 
 
 def diff_oscillations(snapshots: Iterable[Mapping[str, object]]) -> list[dict[str, Any]]:
-    """Return A-to-B-to-A fingerprint signals, never ownership claims."""
+    """Return A-to-B-to-A fingerprint signals, never ownership claims.
+
+    Each finding also carries ``session_ids``: the sessions whose own turn
+    window covered at least one of the three implicated snapshots, per an
+    optional ``session_ids`` field the caller may have already resolved on
+    each snapshot (see ``inspection.snapshots_for_checkouts``). An empty list
+    means no session could be narrowed down, not that none is involved; more
+    than one session means a concurrent editor cannot be excluded either way,
+    so attribution stays "uncertain" regardless.
+    """
     by_checkout: dict[str, list[Mapping[str, object]]] = defaultdict(list)
     for snapshot in snapshots:
         checkout = snapshot.get("checkout_id")
@@ -353,19 +362,27 @@ def diff_oscillations(snapshots: Iterable[Mapping[str, object]]) -> list[dict[st
     for entries in by_checkout.values():
         for first, second, third in zip(entries, entries[1:], entries[2:], strict=False):
             if first["fingerprint"] == third["fingerprint"] != second["fingerprint"]:
-                findings.append(
-                    _finding(
-                        "diff_oscillation",
-                        [
-                            str(first["snapshot_id"]),
-                            str(second["snapshot_id"]),
-                            str(third["snapshot_id"]),
-                        ],
-                        "Observed A-to-B-to-A Git diff fingerprints; "
-                        "concurrent edits are not attributable.",
-                        attribution="uncertain",
-                    )
+                implicated: set[str] = set()
+                for triggering in (first, second, third):
+                    candidates = triggering.get("session_ids")
+                    if isinstance(candidates, list):
+                        implicated.update(
+                            session_id for session_id in candidates if isinstance(session_id, str)
+                        )
+                session_ids = sorted(implicated)
+                finding = _finding(
+                    "diff_oscillation",
+                    [
+                        str(first["snapshot_id"]),
+                        str(second["snapshot_id"]),
+                        str(third["snapshot_id"]),
+                    ],
+                    "Observed A-to-B-to-A Git diff fingerprints; "
+                    "concurrent edits are not attributable.",
+                    attribution="uncertain",
                 )
+                finding["session_ids"] = session_ids
+                findings.append(finding)
     return findings
 
 
@@ -509,7 +526,17 @@ def analyze(
                     "at least three times.",
                 )
             )
-    findings.extend(diff_oscillations(snapshots))
+    target_sessions = set(sessions)
+    for oscillation in diff_oscillations(snapshots):
+        implicated = oscillation["session_ids"]
+        # An empty set means attribution could not be narrowed (no turn boundary
+        # observed for the checkout); keep the old inclusive behavior rather than
+        # manufacturing a false negative. A non-empty set that misses this batch's
+        # sessions means the oscillation belongs to other sessions on the same
+        # checkout, so it is dropped here, not just deduplicated.
+        if implicated and not (set(implicated) & target_sessions):
+            continue
+        findings.append(oscillation)
     findings.sort(key=lambda finding: (str(finding["rule"]), list(finding["evidence_ids"])))
 
     gaps = ["task_outcome_unknown"]

@@ -87,3 +87,16 @@ Labelling changes no harness behaviour, installs no hook, and calls no provider.
 Content read during the review stays on screen: the evidence files in this
 directory keep identifiers, counts, and manual labels, never prompts, assistant
 output, or absolute paths.
+
+## Update: WD-118 attribution (post-dates this pass)
+
+This protocol and the frozen sample it labelled predate WD-118. WD-118 added
+session attribution for `diff_oscillation` (see [storage.md](../storage.md#diff_oscillation-session-attribution-wd-118)):
+a checkout-wide oscillation is now reported only to the session(s) whose own
+turn window covered its capture, instead of to every session that ever
+touched the checkout. It did not change the evidence identifiers a finding
+carries, so the manual verdicts already recorded here against this frozen
+sample remain valid and do not need re-review. It also did not move
+`diff_oscillation` out of `CHECKOUT_SCOPED_RULES`: the checkout-scoped review
+step above still applies until a fresh `scripts/calibrate.py sample`/`report`
+pass against the live store, and a separate decision, re-scores it.

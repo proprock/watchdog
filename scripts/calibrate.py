@@ -89,17 +89,8 @@ def read_sessions(db, since: datetime | None, until: datetime | None) -> dict:
 
 
 def snapshots_for(db, checkouts: set[str]) -> list[dict]:
-    if not checkouts:
-        return []
-    placeholders = ",".join("?" for _ in checkouts)
-    return [
-        {"snapshot_id": snapshot_id, "checkout_id": checkout_id, "fingerprint": fingerprint}
-        for snapshot_id, checkout_id, fingerprint in db.execute(
-            "SELECT snapshot_id, checkout_id, fingerprint FROM diff_snapshots "
-            f"WHERE checkout_id IN ({placeholders}) ORDER BY observed_at, rowid",
-            tuple(checkouts),
-        )
-    ]
+    """Diff snapshots for the checkouts, tagged with sessions active when captured (WD-118)."""
+    return inspection.snapshots_for_checkouts(db, checkouts)
 
 
 def summarize(events: list) -> dict[str, Any]:

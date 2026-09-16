@@ -344,6 +344,42 @@ old verdict.
 `purge` deletes a session's verdict rows with its label. Checkout verdicts
 survive a session purge because they do not belong to a session.
 
+## `diff_oscillation` session attribution (WD-118)
+
+No schema change: `diff_snapshots` still stores only `checkout_id`, not a
+session. The fan-out this fixed was a read-side bug, not a storage gap. A
+checkout is often shared by every session that ever ran in that working copy,
+so grouping oscillations by `checkout_id` alone (as `analysis.diff_oscillations`
+always has) meant every session's `report` echoed the same checkout-wide
+findings, whether or not that session was active when the diff actually
+changed; on the WD-012 live cohort this multiplied 8 distinct oscillations
+into 384 per-session instances across the 48 sessions that had ever touched
+that one checkout.
+
+`inspection.snapshots_for_checkouts` now tags each fetched snapshot with
+`session_ids`: the sessions whose `turn.start`/`turn.end` window (queried
+across every session sharing the checkout, from the existing `events` table)
+covered the snapshot's `observed_at`. `analysis.diff_oscillations` unions the
+three implicated snapshots' `session_ids` onto the finding; `analyze` then
+only keeps the finding for a session in that set. Two effects fall out of
+this without any new stored fact:
+
+- A session with no open turn during any of the three snapshots no longer
+  sees a finding it had nothing to do with.
+- Two or more sessions with overlapping turns keep the finding for both (a
+  concurrent editor within Watchdog's own observation), and the rule's
+  `attribution` field stays `"uncertain"` exactly as it already did — this
+  change narrows *who is told*, not the rule's honesty about *whether it was
+  really that session's edit*.
+
+An oscillation with no session at all attributable (no turn boundary observed
+for the checkout, e.g. events predating turn-boundary hooks) keeps the old
+inclusive behavior and is still shown to every session touching the checkout:
+narrowing on missing evidence would manufacture false precision, not reduce
+it. `checkout_finding_verdicts` is unaffected — the manual review of a
+diff-oscillation finding is still recorded once per checkout, keyed by the
+same evidence fingerprint (the finding's evidence IDs did not change).
+
 ## Verification
 
 Offline pytest covers concurrent quotas and loss counting, pin saturation,

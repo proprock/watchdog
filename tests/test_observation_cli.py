@@ -1,6 +1,7 @@
 import json
 import sys
 import time
+from datetime import UTC, datetime, timedelta
 from uuid import uuid4
 
 import pytest
@@ -292,6 +293,93 @@ def test_report_is_read_only_and_returns_shadow_findings(tmp_path, monkeypatch, 
     assert report["session_ids"] == ["one"]
     assert report["project"] == tmp_path.name
     assert (data / "events.sqlite3").read_bytes() == before
+
+
+def test_diff_oscillation_is_not_reported_for_an_unrelated_session_sharing_a_checkout(
+    tmp_path, monkeypatch, capsys
+):
+    # WD-118: a checkout-wide oscillation must not fan out to every session that
+    # ever touched the checkout; only the session whose turn was open when the
+    # A-to-B-to-A snapshots were captured should see it.
+    project = Project(id=uuid4(), root=tmp_path)
+    save_config(tmp_path / "config.toml", Config(projects=(project,)))
+    data = tmp_path / "data" / "projects" / str(project.id)
+    checkout = uuid4()
+    start = datetime(2026, 9, 16, tzinfo=UTC)
+    with Store(data, project.id) as store:
+        store.put(
+            Envelope(
+                provider="codex",
+                project_id=project.id,
+                checkout_id=checkout,
+                session_id="implicated",
+                kind="turn.start",
+                source="hook",
+                received_at=start,
+            )
+        )
+        store.put(
+            Envelope(
+                provider="codex",
+                project_id=project.id,
+                checkout_id=checkout,
+                session_id="implicated",
+                kind="turn.end",
+                source="hook",
+                received_at=start + timedelta(seconds=10),
+            )
+        )
+        store.put(
+            Envelope(
+                provider="codex",
+                project_id=project.id,
+                checkout_id=checkout,
+                session_id="bystander",
+                kind="turn.start",
+                source="hook",
+                received_at=start + timedelta(hours=1),
+            )
+        )
+        store.put(
+            Envelope(
+                provider="codex",
+                project_id=project.id,
+                checkout_id=checkout,
+                session_id="bystander",
+                kind="turn.end",
+                source="hook",
+                received_at=start + timedelta(hours=1, seconds=10),
+            )
+        )
+        store.record_diff_snapshot(checkout, "1" * 64, 10, observed_at=start + timedelta(seconds=1))
+        store.record_diff_snapshot(checkout, "2" * 64, 10, observed_at=start + timedelta(seconds=2))
+        store.record_diff_snapshot(checkout, "1" * 64, 10, observed_at=start + timedelta(seconds=3))
+
+    code, implicated_report = invoke(
+        monkeypatch,
+        capsys,
+        tmp_path,
+        "report",
+        "--project",
+        str(project.id),
+        "--session",
+        "implicated",
+    )
+    assert code == 0
+    assert {item["rule"] for item in implicated_report["findings"]} == {"diff_oscillation"}
+
+    code, bystander_report = invoke(
+        monkeypatch,
+        capsys,
+        tmp_path,
+        "report",
+        "--project",
+        str(project.id),
+        "--session",
+        "bystander",
+    )
+    assert code == 0
+    assert bystander_report["findings"] == []
 
 
 def test_label_pin_export_and_purge_are_offline_and_provider_scoped(tmp_path, monkeypatch, capsys):

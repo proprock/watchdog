@@ -2,6 +2,7 @@
 
 import json
 import sqlite3
+from collections import defaultdict
 from collections.abc import Iterator
 from contextlib import closing, contextmanager
 from datetime import datetime
@@ -121,6 +122,96 @@ def checkout_verdicts(db: sqlite3.Connection) -> list[dict]:
             "evidence_fingerprint"
         )
     ]
+
+
+def _turn_windows(
+    db: sqlite3.Connection, checkouts: set[str]
+) -> dict[str, list[tuple[str, datetime, datetime | None]]]:
+    """Return, per checkout, the observed turn interval of every session sharing it.
+
+    An unmatched ``turn.start`` stays open-ended (``None`` end) rather than
+    inventing a close; a session with no turn.end yet may still have been
+    active when a later snapshot was captured.
+    """
+    if not checkouts:
+        return {}
+    placeholders = ",".join("?" for _ in checkouts)
+    rows = db.execute(
+        "SELECT json_extract(envelope, '$.checkout_id'), session_id, kind, received_at "
+        f"FROM events WHERE json_extract(envelope, '$.checkout_id') IN ({placeholders}) "
+        "AND kind IN ('turn.start', 'turn.end') AND session_id IS NOT NULL "
+        "ORDER BY received_at, rowid",
+        tuple(checkouts),
+    ).fetchall()
+    open_turns: dict[tuple[str, str], datetime] = {}
+    windows: dict[str, list[tuple[str, datetime, datetime | None]]] = defaultdict(list)
+    for checkout_id, session_id, kind, received_at in rows:
+        moment = datetime.fromisoformat(received_at)
+        key = (checkout_id, session_id)
+        if kind == "turn.start":
+            if key in open_turns:
+                windows[checkout_id].append((session_id, open_turns[key], None))
+            open_turns[key] = moment
+        else:
+            start = open_turns.pop(key, None)
+            if start is not None:
+                windows[checkout_id].append((session_id, start, moment))
+    for (checkout_id, session_id), start in open_turns.items():
+        windows[checkout_id].append((session_id, start, None))
+    return dict(windows)
+
+
+def _active_sessions(
+    checkout_id: object,
+    observed_at: object,
+    windows: dict[str, list[tuple[str, datetime, datetime | None]]],
+) -> list[str]:
+    if not isinstance(checkout_id, str) or not isinstance(observed_at, str):
+        return []
+    try:
+        moment = datetime.fromisoformat(observed_at)
+    except ValueError:
+        return []
+    return sorted(
+        {
+            session_id
+            for session_id, start, end in windows.get(checkout_id, ())
+            if start <= moment and (end is None or moment <= end)
+        }
+    )
+
+
+def snapshots_for_checkouts(db: sqlite3.Connection, checkouts: set[str]) -> list[dict]:
+    """Diff snapshots for the given checkouts, tagged with the sessions active when captured.
+
+    A session counts as active for a snapshot when the snapshot's
+    ``observed_at`` falls inside one of that session's observed turn windows
+    for the checkout (see ``_turn_windows``). ``session_ids`` stays empty when
+    no turn boundary was observed for the checkout at all: attribution could
+    not be narrowed, which is unknown, not "no session".
+    """
+    if not checkouts:
+        return []
+    placeholders = ",".join("?" for _ in checkouts)
+    snapshots = [
+        {
+            "snapshot_id": snapshot_id,
+            "checkout_id": checkout_id,
+            "fingerprint": fingerprint,
+            "observed_at": observed_at,
+        }
+        for snapshot_id, checkout_id, fingerprint, observed_at in db.execute(
+            "SELECT snapshot_id, checkout_id, fingerprint, observed_at FROM diff_snapshots "
+            f"WHERE checkout_id IN ({placeholders}) ORDER BY observed_at, rowid",
+            tuple(checkouts),
+        )
+    ]
+    windows = _turn_windows(db, checkouts)
+    for snapshot in snapshots:
+        snapshot["session_ids"] = _active_sessions(
+            snapshot["checkout_id"], snapshot["observed_at"], windows
+        )
+    return snapshots
 
 
 def _pinned(db: sqlite3.Connection, session_id: str | None) -> bool:
@@ -287,24 +378,11 @@ def report(
         ).fetchone()
         if table is not None:
             checkouts = {
-                event.checkout_id
+                str(event.checkout_id)
                 for event in (persisted_envelope(row[0]) for row in rows)
                 if event.checkout_id is not None
             }
-            if checkouts:
-                placeholders = ",".join("?" for _ in checkouts)
-                snapshots = [
-                    {
-                        "snapshot_id": snapshot_id,
-                        "checkout_id": checkout_id,
-                        "fingerprint": fingerprint,
-                    }
-                    for snapshot_id, checkout_id, fingerprint in db.execute(
-                        "SELECT snapshot_id, checkout_id, fingerprint FROM diff_snapshots "
-                        f"WHERE checkout_id IN ({placeholders}) ORDER BY observed_at, rowid",
-                        tuple(str(checkout) for checkout in checkouts),
-                    )
-                ]
+            snapshots = snapshots_for_checkouts(db, checkouts)
     result = analyze((persisted_envelope(row[0]) for row in rows), snapshots=snapshots)
     with database(paths, project) as db:
         # Manual verdicts recorded by a calibration review; absent until WD-012 runs.

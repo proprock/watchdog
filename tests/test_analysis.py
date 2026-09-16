@@ -107,8 +107,84 @@ def test_diff_oscillation_is_a_signal_with_uncertain_attribution():
             "explanation": (
                 "Observed A-to-B-to-A Git diff fingerprints; concurrent edits are not attributable."
             ),
+            "session_ids": [],
         }
     ]
+
+
+def test_diff_oscillation_attributes_to_the_sessions_active_when_captured():
+    findings = diff_oscillations(
+        [
+            {"snapshot_id": "a", "checkout_id": "c", "fingerprint": "one", "session_ids": ["s1"]},
+            {"snapshot_id": "b", "checkout_id": "c", "fingerprint": "two", "session_ids": ["s2"]},
+            {"snapshot_id": "c", "checkout_id": "c", "fingerprint": "one", "session_ids": ["s1"]},
+        ]
+    )
+
+    assert findings[0]["session_ids"] == ["s1", "s2"]
+    assert findings[0]["attribution"] == "uncertain"
+
+
+def test_analyze_only_surfaces_an_oscillation_for_its_implicated_sessions():
+    project = uuid4()
+    start = datetime(2026, 9, 16, tzinfo=UTC)
+    snapshots = [
+        {"snapshot_id": "a", "checkout_id": "c", "fingerprint": "one", "session_ids": ["s1"]},
+        {"snapshot_id": "b", "checkout_id": "c", "fingerprint": "two", "session_ids": ["s1"]},
+        {"snapshot_id": "c", "checkout_id": "c", "fingerprint": "one", "session_ids": ["s1"]},
+    ]
+    bystander = Envelope(
+        provider="codex",
+        project_id=project,
+        session_id="bystander",
+        kind="turn.start",
+        source="hook",
+        received_at=start,
+    )
+
+    implicated_report = analyze(
+        [
+            Envelope(
+                provider="codex",
+                project_id=project,
+                session_id="s1",
+                kind="turn.start",
+                source="hook",
+                received_at=start,
+            )
+        ],
+        snapshots=snapshots,
+    )
+    bystander_report = analyze([bystander], snapshots=snapshots)
+
+    assert [f["rule"] for f in implicated_report["findings"]] == ["diff_oscillation"]
+    assert bystander_report["findings"] == []
+
+
+def test_analyze_keeps_an_unattributable_oscillation_visible_to_every_session():
+    project = uuid4()
+    start = datetime(2026, 9, 16, tzinfo=UTC)
+    snapshots = [
+        {"snapshot_id": "a", "checkout_id": "c", "fingerprint": "one"},
+        {"snapshot_id": "b", "checkout_id": "c", "fingerprint": "two"},
+        {"snapshot_id": "c", "checkout_id": "c", "fingerprint": "one"},
+    ]
+
+    report = analyze(
+        [
+            Envelope(
+                provider="codex",
+                project_id=project,
+                session_id="anyone",
+                kind="turn.start",
+                source="hook",
+                received_at=start,
+            )
+        ],
+        snapshots=snapshots,
+    )
+
+    assert [f["rule"] for f in report["findings"]] == ["diff_oscillation"]
 
 
 def test_git_diff_fingerprint_uses_the_hidden_process_runner(tmp_path, monkeypatch):
