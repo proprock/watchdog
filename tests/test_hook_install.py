@@ -38,6 +38,23 @@ def test_native_install_preserves_ownership_and_uninstalls_without_binary(tmp_pa
     assert not target.exists()
 
 
+def test_install_requires_a_native_adapter_when_required(tmp_path):
+    """WD-110: production installation (cli.py always passes this) never installs
+    the Python-fallback command shape without an explicit adapter."""
+    paths = UserPaths(tmp_path / "config.toml", tmp_path / "data", tmp_path / "runtime")
+    target = tmp_path / "hooks.json"
+    with pytest.raises(ValueError, match="requires a native adapter"):
+        change(target, paths, install=True, apply=True, require_adapter=True)
+    assert not target.exists()
+    binary = tmp_path / "native adapter"
+    binary.write_bytes(b"fixture")
+    change(target, paths, install=True, apply=True, adapter_executable=binary, require_adapter=True)
+    assert target.exists()
+    binary.unlink()
+    change(target, paths, install=False, apply=True, require_adapter=True)
+    assert not target.exists()
+
+
 @pytest.fixture
 def paths(tmp_path):
     return UserPaths(tmp_path / "config.toml", tmp_path / "data", tmp_path / "runtime")
@@ -98,6 +115,9 @@ def test_bad_config_is_not_changed(paths, tmp_path, content):
 
 
 def test_generated_command_executes_with_shell_metacharacters(tmp_path):
+    """Exercises group()'s Python-fallback command shape directly (a developer/
+    test utility per WD-110); production installs always go through change()
+    with require_adapter=True and never reach this branch."""
     home = tmp_path / "space ' quote $dollar & symbol"
     paths = UserPaths(home / "config.toml", home / "data", home / "runtime")
     handler = group(paths, "test-token")["hooks"][0]
@@ -166,6 +186,8 @@ def test_invalid_ownership_record_is_preserved(paths, tmp_path, content):
 
 @pytest.mark.parametrize("name", ["settings.json", "settings.local.json"])
 def test_claude_install_uses_exec_form_and_round_trips(paths, tmp_path, name):
+    """Asserts the Python-fallback command's exec-form shape (a developer/test
+    utility per WD-110, not something 'hooks install' produces in production)."""
     target = tmp_path / name
     original = json.dumps(REALISTIC_SETTINGS, indent=2).encode() + b"\n"
     target.write_bytes(original)

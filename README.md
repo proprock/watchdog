@@ -34,9 +34,12 @@ uv build
 
 The package is `agent_watchdog` and the command is `agent-watchdog`, avoiding a collision with the `watchdog` filesystem monitoring library. Package publication is not currently planned.
 
-The native adapter is a separate host-specific binary; the Python wheel contains the
-portable core and fallback adapter. Tagged releases publish checked ZIP archives for
-Windows x86_64, Linux x86_64, macOS x86_64, and macOS arm64. Their stable names are
+The native adapter is a separate host-specific binary and the only production hook
+entry point (WD-110); the Python wheel also contains a Python-path CLI command kept
+only as a developer/test utility, never installed by `hooks install`. Tagged releases
+publish checked ZIP archives for Windows x86_64, Linux x86_64, and macOS arm64 (Intel
+macOS is not a supported target: GitHub no longer offers a free Intel-hosted macOS
+runner, and Apple Silicon has replaced Intel Macs). Their stable names are
 `agent-watchdog-hook-v<VERSION>-<RUST-TARGET>.zip`; each archive carries a manifest
 and the release includes `SHA256SUMS.txt`. Pass a downloaded archive to the hook
 installer with `--adapter-artifact`; it verifies the checksum and host target and

@@ -40,34 +40,48 @@ Choose an explicit absolute `hooks.json` path. Use a project-local
 repositories and worktrees. Watchdog still checks the registry for every event.
 Do not install the same observer at both levels: Codex combines hook sources.
 
-```console
-agent-watchdog hooks install codex --file /absolute/project/.codex/hooks.json
-agent-watchdog hooks install codex --file /absolute/project/.codex/hooks.json --apply
-agent-watchdog hooks uninstall codex --file /absolute/project/.codex/hooks.json
-agent-watchdog hooks uninstall codex --file /absolute/project/.codex/hooks.json --apply
-```
+Installation always requires a native adapter (WD-110): omitting both
+`--adapter-executable` and `--adapter-artifact` on `install` is rejected with a
+clear error, never silently installed as the Python fallback described below.
 
 For a release-built Rust adapter, download the ZIP matching the current host and
-verify its entry in `SHA256SUMS.txt`. Add
-`--adapter-artifact /absolute/download/agent-watchdog-hook-v<VERSION>-<RUST-TARGET>.zip`
-to both install commands. The installer validates the archive's manifest, checksum,
-filename, and current OS/architecture, then copies its binary below the Watchdog data
-directory before writing the hook. It invokes no Rust toolchain; an unsupported host
-or another target's archive is rejected with an explicit diagnostic. The declared
-targets are `x86_64-pc-windows-msvc`, `x86_64-unknown-linux-gnu`, and
+verify its entry in `SHA256SUMS.txt`, then pass
+`--adapter-artifact /absolute/download/agent-watchdog-hook-v<VERSION>-<RUST-TARGET>.zip`.
+The installer validates the archive's manifest, checksum, filename, and current
+OS/architecture, then copies its binary below the Watchdog data directory before
+writing the hook. It invokes no Rust toolchain; an unsupported host or another
+target's archive is rejected with an explicit diagnostic. The declared targets
+are `x86_64-pc-windows-msvc`, `x86_64-unknown-linux-gnu`, and
 `aarch64-apple-darwin`. Intel macOS is not a declared target: GitHub no longer
 offers standalone Intel-hosted macOS runners, and Apple Silicon has long
 since replaced Intel Macs.
 
-For a locally built adapter, instead add
-`--adapter-executable /absolute/bin/agent-watchdog-hook` (`.exe` on Windows) to both
-install commands. The generated command also records the current Python executable,
-used only to start a missing core. Omitting both options selects the Python fallback.
-Switching adapters requires uninstalling the recorded installation first, reinstalling,
-and reviewing the new definitions through Codex. Uninstall uses the ownership record
-and works even if the native binary has been removed; omit both adapter options when
-uninstalling. Release checksums are published, but this project has no artifact-signing
+For a locally built adapter, instead pass
+`--adapter-executable /absolute/bin/agent-watchdog-hook` (`.exe` on Windows).
+
+```console
+agent-watchdog hooks install codex --file /absolute/project/.codex/hooks.json --adapter-artifact /absolute/download/agent-watchdog-hook-v<VERSION>-<RUST-TARGET>.zip
+agent-watchdog hooks install codex --file /absolute/project/.codex/hooks.json --adapter-artifact /absolute/download/agent-watchdog-hook-v<VERSION>-<RUST-TARGET>.zip --apply
+agent-watchdog hooks uninstall codex --file /absolute/project/.codex/hooks.json
+agent-watchdog hooks uninstall codex --file /absolute/project/.codex/hooks.json --apply
+```
+
+The generated command also records the current Python executable, used only to
+start a missing core. Switching adapters requires uninstalling the recorded
+installation first, reinstalling, and reviewing the new definitions through
+Codex. Uninstall uses the ownership record and works even if the native binary
+has been removed; omit both adapter options when uninstalling — uninstall
+never requires one, since it only removes the previously recorded group.
+Release checksums are published, but this project has no artifact-signing
 identity or signing policy yet, so a checksum is not a signature.
+
+`agent-watchdog hook codex|claude` (singular, no `--adapter-*` options) reads
+one event from stdin directly through the Python core — `hooks.py::observe` —
+bypassing the spool entirely. It is a developer/test utility only, never what
+`hooks install` produces: production installation always requires a native
+adapter, so an installed hook always invokes the separate `agent-watchdog-hook`
+binary, never this Python entry point. See `## Adapter behavior` below for what
+that binary actually does; do not confuse the two by name alone.
 
 The native adapter shares the existing loss counters and atomic-write / lock
 primitives, and durably spools each event as JSON under `<data>/spool/`. The
@@ -117,8 +131,10 @@ not a transactional configuration manager.
 
 ## Adapter behavior
 
-Since WD-027/107 the native adapter is spool-and-forget. `agent-watchdog hook
-<codex|claude>` reads JSON stdin, removes known credential forms recursively from
+Since WD-027/107 the native adapter (the separate `agent-watchdog-hook` binary
+that `hooks install` always wires up — not the Python CLI's `hook` subcommand
+described above) is spool-and-forget. Invoked with `<codex|claude>` as its own
+positional, it reads JSON stdin, removes known credential forms recursively from
 the complete provider input, and durably writes that input plus raw `cwd`, an
 adapter-stamped `event_id`, and `received_at` under `<data>/spool/`. `cwd` is kept
 only for checkout resolution. The adapter does not maintain a semantic provider

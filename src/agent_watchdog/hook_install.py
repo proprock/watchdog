@@ -64,6 +64,12 @@ def group(
     adapter_executable: Path | None = None,
     provider: str = "codex",
 ) -> dict:
+    """Build the installed hook command.
+
+    With no `adapter_executable`, this is the Python-fallback command shape:
+    a developer/test utility only, never installed in production (`change`
+    refuses it unless a caller explicitly opts in with `require_adapter=False`).
+    """
     arguments = [
         sys.executable,
         "-m",
@@ -121,6 +127,7 @@ def change(
     adapter_executable: Path | None = None,
     adapter_artifact: Path | None = None,
     provider: str = "codex",
+    require_adapter: bool = False,
 ) -> dict:
     if provider not in TARGETS:
         raise ValueError("Unknown hook provider")
@@ -129,6 +136,12 @@ def change(
         raise ValueError(f"Choose an explicit {' or '.join(TARGETS[provider])} file for {provider}")
     if adapter_executable is not None and adapter_artifact is not None:
         raise ValueError("Choose either a native adapter executable or artifact")
+    if install and require_adapter and adapter_executable is None and adapter_artifact is None:
+        raise ValueError(
+            "Hook installation requires a native adapter (--adapter-executable or "
+            "--adapter-artifact); the Python fallback command is a developer/test "
+            "utility, not a production installation target"
+        )
     if adapter_artifact is not None:
         if not install:
             raise ValueError("A native adapter artifact is only valid for installation")

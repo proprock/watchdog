@@ -35,7 +35,11 @@ def wait_for_event(database, timeout=10):
 
 @pytest.mark.parametrize("capture_content", [True, False], ids=("content", "metadata-only"))
 def test_python_hook_daemon_and_report_use_the_isolated_sqlite_store(tmp_path, capture_content):
-    """Evidence class: offline subprocess integration contract."""
+    """Evidence class: offline subprocess integration contract.
+
+    Invokes the CLI's `hook` subcommand directly — the Python-path developer/
+    test utility (WD-110), not what `hooks install` produces in production.
+    """
     home = tmp_path / "home"
     project_root = tmp_path / "project"
     project_root.mkdir()

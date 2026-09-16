@@ -118,6 +118,15 @@ process. This differs from the generalized hook path drawn in
 `docs/hooks.md:94-128`. The native adapter documentation and code agree; the Python
 fallback needs either explicitly separate documentation or a future parity decision.
 
+**Resolved by WD-110 (2026-09-16):** the ambiguity is closed by removing the second
+production path rather than reconciling it with the first. `hooks install` now
+requires a native adapter (`hook_install.change(..., require_adapter=True)` from
+`cli.py`); omitting one is a clear installation error, never a silent fallback
+selection. `hooks.py::observe` and the CLI's `hook` subcommand remain, but only
+as an explicitly non-production developer/test utility — see `docs/architecture.md`
+("Processes and delivery") and `docs/hooks.md` for the current, disambiguated
+wording, and [DONE.md](../DONE.md) for verification evidence.
+
 ### Transcript enrichment
 
 `src/agent_watchdog/transcripts.py::source_from_hook` (40-53) accepts only an absolute
@@ -154,7 +163,7 @@ an LLM. It preserves the content-review warning and treats trace data as untrust
 
 | Finding | Code evidence | Document/claim comparison | Assessment |
 |---|---|---|---|
-| Native and Python adapter paths differ | `native/src/main.rs::observe` spools only; `src/agent_watchdog/hooks.py::observe` resolves and enqueues directly | `docs/architecture.md:10-19` presents both hook commands as spool adapters; `docs/hooks.md:94-128` starts with a native qualification but then describes `agent-watchdog hook` as if the spool path were universal | Documentation ambiguity and operational parity gap; not evidence that either path is broken |
+| Native and Python adapter paths differ | `native/src/main.rs::observe` spools only; `src/agent_watchdog/hooks.py::observe` resolves and enqueues directly | `docs/architecture.md:10-19` presents both hook commands as spool adapters; `docs/hooks.md:94-128` starts with a native qualification but then describes `agent-watchdog hook` as if the spool path were universal | Documentation ambiguity and operational parity gap; not evidence that either path is broken. **Resolved by WD-110 (2026-09-16):** the Python path is no longer a second production path; docs updated to disambiguate the two by name |
 | Artifact storage is not wired to production hook ingestion | Production callers of `Store.put` are inbox draining and transcript enrichment; production search found no `artifacts=` caller. The canonical envelope is inserted into SQLite up to the payload limit | `docs/architecture.md:33` says large raw outputs are stored as separate redacted artifacts; `Store._put` supports that capability | Implemented storage capability, but not current ingestion behavior. This is a context/storage-efficiency mismatch and should not be claimed as automatic offloading |
 | Error identity is exact, not normalized | `analysis.analyze` fingerprints the full canonical failing response and exit code | The research article proposes normalization of timestamps, paths, UUIDs, ports, and addresses; current docs more cautiously say identical or structured error | Deterministic and reproducible, but fragile to incidental output changes; calibrate before broadening normalization |
 | Tool outcome availability is provider-shape dependent | `analysis._outcome` recognizes a nested exit code or `isError: true`; otherwise it returns `unknown` | Live Codex evidence recorded opaque string responses and explicitly avoided a universal exit-code parser (`docs/provider-compatibility.md:34-42`) | The main report tests use structured dictionaries and therefore prove less than live-provider effectiveness |
@@ -216,9 +225,10 @@ checkout. This is evidence about test-environment portability, not a product reg
 1. A real Codex callback traverses native adapter -> spool -> daemon -> SQLite and then
    produces a repeated-error/test finding through `agent-watchdog report` and a complete
    export bundle. WD-010 and WD-011 explicitly ran no live provider probe.
-2. The Python fallback and native adapter process equivalent events through their
+2. ~~The Python fallback and native adapter process equivalent events through their
    different delivery paths and produce equivalent stored envelopes, reports, gaps, and
-   loss diagnostics under failure.
+   loss diagnostics under failure.~~ Moot since WD-110 (2026-09-16): the Python path is
+   no longer a second production delivery path to keep at parity with the native one.
 3. Real opaque Codex and Claude tool responses produce useful outcomes, error identities,
    and comparable test sets, including missing output and `capture_content = false`.
 4. Staged, unstaged, untracked, renamed, and concurrent multi-agent changes exercise a
@@ -261,9 +271,12 @@ checkout. This is evidence about test-environment portability, not a product reg
 
 ### P1 - make practical and manual evidence trustworthy
 
-1. Reconcile documentation with the two real adapter paths. State explicitly that the
+1. ~~Reconcile documentation with the two real adapter paths. State explicitly that the
    native adapter is spool-and-forget and the Python fallback currently resolves and
-   enqueues directly, or create a separately approved parity task.
+   enqueues directly, or create a separately approved parity task.~~ Done via WD-110
+   (2026-09-16): rather than reconciling two production paths, the Python one was
+   removed from production (`hooks install` now requires a native adapter) and the
+   docs updated to name the two by their actual distinct purposes.
 2. Correct the large-output claim: document artifact storage as an available storage
    capability until production ingestion actually offloads large hook content. Do not
    imply that persisted SQLite envelopes are fingerprint-only.
