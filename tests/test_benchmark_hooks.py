@@ -76,8 +76,25 @@ def test_benchmark_cli_accepts_claude_provider_and_bash_shell(benchmark, monkeyp
     assert set(benchmark.SHELLS) == {"direct", "bash", "cmd.exe", "powershell.exe", "pwsh.exe"}
 
 
+def _bash_is_usable(path: str) -> bool:
+    """Reject a WSL launcher stub masquerading as `bash` with no distro installed."""
+    try:
+        result = subprocess.run([path, "-c", "exit 0"], capture_output=True, timeout=5)
+    except (OSError, subprocess.TimeoutExpired):
+        return False
+    return result.returncode == 0
+
+
 def _available_shells():
-    return ["direct", *(shell for shell in SHELLS if shutil.which(shell))]
+    shells = ["direct"]
+    for shell in SHELLS:
+        found = shutil.which(shell)
+        if not found:
+            continue
+        if shell == "bash" and not _bash_is_usable(found):
+            continue
+        shells.append(shell)
+    return shells
 
 
 SHELLS = ("bash", "cmd.exe", "powershell.exe", "pwsh.exe")
