@@ -39,6 +39,14 @@ jobs:
       - run: rustup toolchain install stable --profile minimal
       - run: rustup target add --toolchain stable ${{ matrix.target }}
       - run: cargo +stable build --release --locked --manifest-path native/Cargo.toml --target ${{ matrix.target }}
+      - if: matrix.target == 'x86_64-apple-darwin'
+        name: Ad-hoc sign the cross-compiled binary
+        run: |
+          # A native build gets an ad-hoc signature from the linker automatically;
+          # this cross-compiled binary does not, and fork() from an unsigned
+          # process under Rosetta silently never reaches the child's exec (seen
+          # as ensure_daemon's spawned Python core never becoming "running").
+          codesign --force --sign - native/target/${{ matrix.target }}/release/${{ matrix.executable }}
       - name: Validate release version
         shell: bash
         run: |
