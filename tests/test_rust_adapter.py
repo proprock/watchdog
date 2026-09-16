@@ -442,7 +442,10 @@ def test_copied_native_binary_starts_python_core_and_preserves_worktrees(rust_ad
     save_config(paths.config, registry.config)
 
     def wait(predicate):
-        deadline = time.monotonic() + 15
+        # A generous margin: a cross-compiled binary under Rosetta 2 pays a
+        # one-time JIT-translation cost on first launch that a native build
+        # does not, on top of ordinary CI runner variance.
+        deadline = time.monotonic() + 30
         while not predicate():
             assert time.monotonic() < deadline, "Native-launched core did not settle"
             time.sleep(0.05)
