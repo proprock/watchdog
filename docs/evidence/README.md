@@ -51,3 +51,9 @@ provider input fixtures. Synthetic examples remain under `tests/fixtures/hooks`.
 One direct synthetic Codex no-op invocation had no identities and was excluded
 from the live dataset. See [the report](../provider-compatibility.md) for versions,
 the per-event matrix, reproduction steps, cleanup, and explicit limitations.
+
+[`wd109-release-native.md`](wd109-release-native.md) records the actual
+GitHub Actions runs behind the WD-109 release workflow: four tagged attempts
+(`v0.1.0`-`v0.1.3`) that each published nothing, the bugs each one surfaced,
+and the first green, published run (`v0.1.4`, three targets after
+`x86_64-apple-darwin` was dropped).
