@@ -626,6 +626,8 @@ def test_hook_start_contention_is_bounded(paths):
 
 @pytest.mark.skipif(os.name != "nt", reason="Windows process creation flags are platform-specific")
 def test_daemon_launch_uses_an_invisible_process_group(paths, monkeypatch):
+    if os.name != "nt":
+        pytest.skip("Windows process creation flags are platform-specific")
     save_config(paths.config, Config())
     calls = []
 

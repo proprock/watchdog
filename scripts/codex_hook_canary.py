@@ -11,7 +11,7 @@ import sys
 import tempfile
 import time
 from pathlib import Path
-from typing import TextIO
+from typing import Any, TextIO
 from uuid import uuid4
 
 from agent_watchdog._proc import hidden_creationflags
@@ -76,7 +76,11 @@ class _ProcessEntry32(ctypes.Structure):
 class OwnedProcessJob:
     """Windows job whose closure kills all processes belonging to this probe."""
 
+    _kernel32: Any
+
     def __init__(self, process: subprocess.Popen) -> None:
+        if os.name != "nt":
+            raise RuntimeError("OwnedProcessJob requires Windows")
         kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
         kernel32.CreateJobObjectW.argtypes = [ctypes.c_void_p, ctypes.c_wchar_p]
         kernel32.CreateJobObjectW.restype = ctypes.c_void_p
