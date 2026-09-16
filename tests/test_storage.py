@@ -25,6 +25,16 @@ def test_initial_lock_byte_contention_is_reported_as_busy(tmp_path, monkeypatch)
             pytest.fail("Contended lock was acquired")
 
 
+def test_concurrent_creation_race_at_open_is_reported_as_busy(tmp_path, monkeypatch):
+    def raise_sharing_violation(*args, **kwargs):
+        raise PermissionError("Another contender is creating the same lock file")
+
+    monkeypatch.setattr(Path, "open", raise_sharing_violation)
+    with pytest.raises(WriterBusy):
+        with writer_lock(tmp_path / "writer.lock"):
+            pytest.fail("Contended lock was acquired")
+
+
 @pytest.fixture
 def event():
     return Envelope(provider="codex", project_id=uuid4(), kind="tool.finish", source="hook")

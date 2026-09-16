@@ -62,7 +62,15 @@ def _check_note(note: str | None) -> str | None:
 def writer_lock(path: Path) -> Iterator[None]:
     """Keep the lock file in place; closing its handle releases ownership."""
     # Do not retry a failed initialization write implicitly when closing a buffer.
-    with path.open("a+b", buffering=0) as stream:
+    try:
+        stream = path.open("a+b", buffering=0)
+    except OSError as error:
+        # A concurrent creator (another contender, antivirus scanning the new
+        # file) can win a transient sharing violation at open time; treat it
+        # the same as losing the byte-range lock so control_lock's retry loop
+        # covers it too, instead of surfacing a raw, unretried OSError.
+        raise WriterBusy("Project writer is unavailable") from error
+    with stream:
         if os.name == "nt":
             import msvcrt
 
