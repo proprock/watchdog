@@ -20,12 +20,6 @@ jobs:
           - runner: ubuntu-latest
             target: x86_64-unknown-linux-gnu
             executable: agent-watchdog-hook
-          # x86_64-apple-darwin is cross-compiled on the arm64 runner: GitHub
-          # retired standalone Intel macOS hosted runners (macos-13 is gone;
-          # x64 macOS now only exists as a paid larger-runner tier).
-          - runner: macos-latest
-            target: x86_64-apple-darwin
-            executable: agent-watchdog-hook
           - runner: macos-latest
             target: aarch64-apple-darwin
             executable: agent-watchdog-hook
@@ -39,14 +33,6 @@ jobs:
       - run: rustup toolchain install stable --profile minimal
       - run: rustup target add --toolchain stable ${{ matrix.target }}
       - run: cargo +stable build --release --locked --manifest-path native/Cargo.toml --target ${{ matrix.target }}
-      - if: matrix.target == 'x86_64-apple-darwin'
-        name: Ad-hoc sign the cross-compiled binary
-        run: |
-          # A native build gets an ad-hoc signature from the linker automatically;
-          # this cross-compiled binary does not, and fork() from an unsigned
-          # process under Rosetta silently never reaches the child's exec (seen
-          # as ensure_daemon's spawned Python core never becoming "running").
-          codesign --force --sign - native/target/${{ matrix.target }}/release/${{ matrix.executable }}
       - name: Validate release version
         shell: bash
         run: |
@@ -75,14 +61,6 @@ jobs:
             target: x86_64-unknown-linux-gnu
             system: Linux
             machine: x86_64
-          # A cross-compiled x86_64 artifact runs under Rosetta 2 on this
-          # arm64 runner, so the host's own platform.machine() (arm64)
-          # would otherwise mismatch the artifact under test; pin the
-          # target host explicitly for every leg instead of auto-detecting.
-          - runner: macos-latest
-            target: x86_64-apple-darwin
-            system: Darwin
-            machine: x86_64
           - runner: macos-latest
             target: aarch64-apple-darwin
             system: Darwin
@@ -94,9 +72,6 @@ jobs:
         with:
           python-version: "3.12"
       - run: uv sync --locked
-      - if: matrix.target == 'x86_64-apple-darwin'
-        name: Install Rosetta 2 to run the cross-compiled Intel binary
-        run: softwareupdate --install-rosetta --agree-to-license
       - uses: actions/download-artifact@v4
         with:
           name: native-${{ matrix.target }}

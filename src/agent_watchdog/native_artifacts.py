@@ -9,10 +9,12 @@ import zipfile
 from pathlib import Path
 
 PACKAGE = "agent-watchdog-hook"
+# Intel macOS is deliberately not a declared target: GitHub retired standalone
+# Intel-hosted runners (macos-13), and Apple Silicon is now several
+# generations into replacing Intel Macs entirely.
 _TARGETS = {
     ("Windows", "AMD64"): ("x86_64-pc-windows-msvc", ".exe"),
     ("Linux", "x86_64"): ("x86_64-unknown-linux-gnu", ""),
-    ("Darwin", "x86_64"): ("x86_64-apple-darwin", ""),
     ("Darwin", "arm64"): ("aarch64-apple-darwin", ""),
 }
 

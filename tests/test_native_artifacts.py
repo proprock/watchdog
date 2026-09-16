@@ -110,7 +110,9 @@ def test_cli_selects_matching_release_artifact(tmp_path, monkeypatch, capsys):
 
 @pytest.mark.parametrize(
     ("system", "machine"),
-    [("Linux", "armv7l"), ("Plan9", "x86_64")],
+    # Intel macOS is deliberately undeclared: GitHub retired standalone
+    # Intel-hosted macOS runners, and Apple Silicon has replaced Intel Macs.
+    [("Linux", "armv7l"), ("Plan9", "x86_64"), ("Darwin", "x86_64")],
 )
 def test_unsupported_host_has_an_explicit_diagnostic(system, machine):
     with pytest.raises(ValueError, match="Unsupported native adapter target"):

@@ -54,8 +54,10 @@ to both install commands. The installer validates the archive's manifest, checks
 filename, and current OS/architecture, then copies its binary below the Watchdog data
 directory before writing the hook. It invokes no Rust toolchain; an unsupported host
 or another target's archive is rejected with an explicit diagnostic. The declared
-targets are `x86_64-pc-windows-msvc`, `x86_64-unknown-linux-gnu`,
-`x86_64-apple-darwin`, and `aarch64-apple-darwin`.
+targets are `x86_64-pc-windows-msvc`, `x86_64-unknown-linux-gnu`, and
+`aarch64-apple-darwin`. Intel macOS is not a declared target: GitHub no longer
+offers standalone Intel-hosted macOS runners, and Apple Silicon has long
+since replaced Intel Macs.
 
 For a locally built adapter, instead add
 `--adapter-executable /absolute/bin/agent-watchdog-hook` (`.exe` on Windows) to both
