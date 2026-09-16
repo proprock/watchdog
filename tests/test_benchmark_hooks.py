@@ -77,12 +77,17 @@ def test_benchmark_cli_accepts_claude_provider_and_bash_shell(benchmark, monkeyp
 
 
 def _bash_is_usable(path: str) -> bool:
-    """Reject a WSL launcher stub masquerading as `bash` with no distro installed."""
+    """Reject a WSL launcher stub masquerading as `bash` with no distro installed.
+
+    The stub still exits 0 for an empty `-c` body, so require it to actually run one.
+    """
     try:
-        result = subprocess.run([path, "-c", "exit 0"], capture_output=True, timeout=5)
+        result = subprocess.run(
+            [path, "-c", "printf ok"], capture_output=True, text=True, timeout=5
+        )
     except (OSError, subprocess.TimeoutExpired):
         return False
-    return result.returncode == 0
+    return result.returncode == 0 and result.stdout == "ok"
 
 
 def _available_shells():
