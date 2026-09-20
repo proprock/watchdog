@@ -28,7 +28,7 @@ Milestones: ROADMAP.md
 - Write tests with pytest, using pytest fixtures, parametrization, and plain assertions where appropriate. Keep live provider probes explicit and separate from the offline pytest suite.
 - Checks: CI runs `uv run pytest`, `uv run ruff check .`, `uv run ruff format --check .`, `uv run ty check`, and `uv build`. Local pytest uses the impact-guided workflow below unless it falls back to `uv run pytest`. Commit uv.lock.
 - Before pytest, build the native adapter with `cargo build --release --locked --manifest-path native/Cargo.toml`. Cross-language behavioral tests remain in pytest; they never invoke providers. Run `cargo fmt --manifest-path native/Cargo.toml --check` and `cargo clippy --locked --manifest-path native/Cargo.toml -- -D warnings`. Commit native/Cargo.lock; keep native binaries separate from the portable Python wheel.
-- Agent-runner commands may return after roughly 30–35 seconds while pytest children continue running. Keep runner-launched pytest groups below that window, give each group a fresh external `--basetemp` under a writable temporary root (on this host, `C:\tmp`; never use the checkout), and require the final pytest summary and exit status. Treat partial dot output as inconclusive; run the full suite from a normal terminal when one command cannot fit the runner window.
+- Agent-runner commands may return after roughly 30–35 seconds while pytest children continue running. Keep runner-launched pytest groups below that window, give each group a fresh external `--basetemp` under a writable temporary root that only the user and the sandbox group can modify (on this host, `$env:USERPROFILE\.pytest-tmp`; never `C:\tmp`, which every local account can modify, and never the checkout), and require the final pytest summary and exit status. Treat partial dot output as inconclusive; run the full suite from a normal terminal when one command cannot fit the runner window.
 - Unit/contract tests require neither network access nor live accounts. Keep ty enabled in CI.
 - Use UTF-8 without BOM and LF; isolate platform-specific code.
 
@@ -55,14 +55,14 @@ Use this workflow only for local, non-doc code changes. It reduces feedback time
 3. If the index is not `ready`, or coverage is stale, partial, skipped, or otherwise not validated, run `index_repository` for the returned root with `mode="fast"`, then repeat `index_status` and `check_index_coverage`. If readiness or coverage still cannot be validated, use the full-suite fallback.
 4. Call `detect_changes` with the returned project name, the target branch as `base_branch`, `direction="inbound"`, `scope="impact"`, `format="json"`, `depth=12`, and `limit=500`.
 5. Select the sorted, deduplicated union of direct changed files matching `tests/test_*.py` and `impacted_modules` matching `tests/test_*.py`. Do not select helper scripts, source modules, or unrelated test files.
-6. Run the selected modules in lexical groups of at most five. Build the native adapter first as required above, give each invocation a fresh external `C:\tmp` base-temp directory, require a final pytest summary and exit status, and stop on the first failing group. For example, after replacing `$tests` with the selected paths:
+6. Run the selected modules in lexical groups of at most five. Build the native adapter first as required above, give each invocation a fresh external base-temp directory under that root, require a final pytest summary and exit status, and stop on the first failing group. For example, after replacing `$tests` with the selected paths:
 
    ```powershell
    $tests = @('tests/test_example.py')
    for ($offset = 0; $offset -lt $tests.Count; $offset += 5) {
        $last = [Math]::Min($offset + 4, $tests.Count - 1)
        $group = @($tests[$offset..$last])
-       $baseTemp = Join-Path C:\tmp "watchdog-pytest-$PID-$offset"
+       $baseTemp = Join-Path $env:USERPROFILE ".pytest-tmp\watchdog-pytest-$PID-$offset"
        uv run pytest --basetemp $baseTemp @group
        if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
    }
