@@ -295,6 +295,325 @@ def test_report_is_read_only_and_returns_shadow_findings(tmp_path, monkeypatch, 
     assert (data / "events.sqlite3").read_bytes() == before
 
 
+def _tool_finish(
+    provider: str,
+    project_id,
+    *,
+    session_id: str = "one",
+    agent_id: str | None = None,
+    hook_event_name: str = "PostToolUse",
+    tool_name: str = "exec",
+    content: dict | str = "omitted",
+    metadata: dict | None = None,
+    received_at: datetime | None = None,
+) -> Envelope:
+    return Envelope(
+        provider=provider,
+        project_id=project_id,
+        session_id=session_id,
+        agent_id=agent_id,
+        kind="tool.finish",
+        source="hook",
+        received_at=received_at if received_at is not None else datetime.now(UTC),
+        payload={
+            provider: {
+                "hook_event_name": hook_event_name,
+                "tool_name": tool_name,
+                "content": content,
+                "metadata": metadata or {},
+            }
+        },
+    )
+
+
+def test_errors_lists_claude_provider_signalled_failure_without_captured_content(
+    tmp_path, monkeypatch, capsys
+):
+    project = Project(id=uuid4(), root=tmp_path)
+    save_config(tmp_path / "config.toml", Config(projects=(project,)))
+    data = tmp_path / "data" / "projects" / str(project.id)
+    with Store(data, project.id) as store:
+        store.put(
+            _tool_finish(
+                "claude",
+                project.id,
+                hook_event_name="PostToolUseFailure",
+                tool_name="Bash",
+                content="omitted",
+                metadata={"error": "Exit code 1\nfixture failure", "is_interrupt": False},
+            )
+        )
+    code, result = invoke(
+        monkeypatch, capsys, tmp_path, "analyze", "errors", "--project", str(project.id)
+    )
+    assert code == 0
+    assert len(result["errors"]) == 1
+    row = result["errors"][0]
+    assert row["error"] == "Exit code 1\nfixture failure"
+    assert row["hook_event_name"] == "PostToolUseFailure"
+    assert row["tool_input"] is None
+    assert "tool_response" not in row
+    assert result["unknown_outcome"] == 0
+    assert result["interrupts_excluded"] == 0
+
+
+def test_errors_lists_codex_content_judged_failure_and_is_read_only(tmp_path, monkeypatch, capsys):
+    project = Project(id=uuid4(), root=tmp_path)
+    save_config(tmp_path / "config.toml", Config(projects=(project,)))
+    data = tmp_path / "data" / "projects" / str(project.id)
+    with Store(data, project.id) as store:
+        store.put(
+            _tool_finish(
+                "codex",
+                project.id,
+                content={
+                    "tool_input": {"command": "pytest"},
+                    "tool_response": {"exit_code": 1, "output": "boom"},
+                },
+            )
+        )
+    before = (data / "events.sqlite3").read_bytes()
+    code, result = invoke(
+        monkeypatch,
+        capsys,
+        tmp_path,
+        "analyze",
+        "errors",
+        "--project",
+        str(project.id),
+        "--provider",
+        "codex",
+    )
+    assert code == 0
+    assert (data / "events.sqlite3").read_bytes() == before
+    assert len(result["errors"]) == 1
+    row = result["errors"][0]
+    assert row["exit_code"] == 1
+    assert row["error"] == "boom"
+    assert row["tool_input"] == {"command": "pytest"}
+
+
+def test_errors_excludes_a_successful_tool_finish(tmp_path, monkeypatch, capsys):
+    project = Project(id=uuid4(), root=tmp_path)
+    save_config(tmp_path / "config.toml", Config(projects=(project,)))
+    data = tmp_path / "data" / "projects" / str(project.id)
+    with Store(data, project.id) as store:
+        store.put(
+            _tool_finish(
+                "codex", project.id, content={"tool_input": {}, "tool_response": {"exit_code": 0}}
+            )
+        )
+    code, result = invoke(
+        monkeypatch, capsys, tmp_path, "analyze", "errors", "--project", str(project.id)
+    )
+    assert code == 0
+    assert result["errors"] == []
+    assert result["unknown_outcome"] == 0
+
+
+def test_errors_counts_uncaptured_content_as_unknown_not_an_error(tmp_path, monkeypatch, capsys):
+    project = Project(id=uuid4(), root=tmp_path)
+    save_config(tmp_path / "config.toml", Config(projects=(project,)))
+    data = tmp_path / "data" / "projects" / str(project.id)
+    with Store(data, project.id) as store:
+        store.put(_tool_finish("codex", project.id, content="omitted"))
+    code, result = invoke(
+        monkeypatch, capsys, tmp_path, "analyze", "errors", "--project", str(project.id)
+    )
+    assert code == 0
+    assert result["errors"] == []
+    assert result["unknown_outcome"] == 1
+
+
+def test_errors_excludes_a_user_interrupt(tmp_path, monkeypatch, capsys):
+    project = Project(id=uuid4(), root=tmp_path)
+    save_config(tmp_path / "config.toml", Config(projects=(project,)))
+    data = tmp_path / "data" / "projects" / str(project.id)
+    with Store(data, project.id) as store:
+        store.put(
+            _tool_finish(
+                "claude",
+                project.id,
+                hook_event_name="PostToolUseFailure",
+                content="omitted",
+                metadata={"error": "interrupted", "is_interrupt": True},
+            )
+        )
+    code, result = invoke(
+        monkeypatch, capsys, tmp_path, "analyze", "errors", "--project", str(project.id)
+    )
+    assert code == 0
+    assert result["errors"] == []
+    assert result["interrupts_excluded"] == 1
+
+
+def test_errors_resolves_subagent_type_from_agent_start(tmp_path, monkeypatch, capsys):
+    project = Project(id=uuid4(), root=tmp_path)
+    save_config(tmp_path / "config.toml", Config(projects=(project,)))
+    data = tmp_path / "data" / "projects" / str(project.id)
+    with Store(data, project.id) as store:
+        agent_start = Envelope(
+            provider="claude",
+            project_id=project.id,
+            session_id="one",
+            agent_id="sub-1",
+            kind="agent.start",
+            source="hook",
+            payload={"claude": {"metadata": {"agent_type": "general-purpose"}}},
+        )
+        store.put(agent_start)
+        store.put(
+            _tool_finish(
+                "claude",
+                project.id,
+                agent_id="sub-1",
+                hook_event_name="PostToolUseFailure",
+                metadata={"error": "sub failure"},
+            )
+        )
+        store.put(
+            _tool_finish(
+                "claude",
+                project.id,
+                hook_event_name="PostToolUseFailure",
+                metadata={"error": "top failure"},
+            )
+        )
+    code, result = invoke(
+        monkeypatch, capsys, tmp_path, "analyze", "errors", "--project", str(project.id)
+    )
+    assert code == 0
+    rows = {row["error"]: row for row in result["errors"]}
+    assert rows["sub failure"]["agent_id"] == "sub-1"
+    assert rows["sub failure"]["agent_type"] == "general-purpose"
+    assert rows["top failure"]["agent_id"] is None
+    assert rows["top failure"]["agent_type"] is None
+
+
+def test_errors_filters_by_session_provider_and_time_window(tmp_path, monkeypatch, capsys):
+    project = Project(id=uuid4(), root=tmp_path)
+    save_config(tmp_path / "config.toml", Config(projects=(project,)))
+    data = tmp_path / "data" / "projects" / str(project.id)
+    start = datetime(2026, 9, 20, tzinfo=UTC)
+    with Store(data, project.id) as store:
+        store.put(
+            _tool_finish(
+                "claude",
+                project.id,
+                session_id="one",
+                hook_event_name="PostToolUseFailure",
+                metadata={"error": "early"},
+                received_at=start,
+            )
+        )
+        store.put(
+            _tool_finish(
+                "claude",
+                project.id,
+                session_id="two",
+                hook_event_name="PostToolUseFailure",
+                metadata={"error": "late-other-session"},
+                received_at=start + timedelta(hours=2),
+            )
+        )
+        store.put(
+            _tool_finish(
+                "codex",
+                project.id,
+                session_id="one",
+                content={"tool_input": {}, "tool_response": {"exit_code": 1}},
+                received_at=start + timedelta(hours=1),
+            )
+        )
+    code, result = invoke(
+        monkeypatch,
+        capsys,
+        tmp_path,
+        "analyze",
+        "errors",
+        "--project",
+        str(project.id),
+        "--provider",
+        "claude",
+        "--session",
+        "one",
+        "--since",
+        (start - timedelta(minutes=1)).isoformat(),
+        "--until",
+        (start + timedelta(hours=1)).isoformat(),
+    )
+    assert code == 0
+    assert [row["error"] for row in result["errors"]] == ["early"]
+
+
+def test_errors_requires_provider_with_session(tmp_path, monkeypatch, capsys):
+    project = Project(id=uuid4(), root=tmp_path)
+    save_config(tmp_path / "config.toml", Config(projects=(project,)))
+    code, result = invoke(
+        monkeypatch,
+        capsys,
+        tmp_path,
+        "analyze",
+        "errors",
+        "--project",
+        str(project.id),
+        "--session",
+        "one",
+    )
+    assert code == 1
+    assert result["error"] == "StorageError"
+
+
+def test_errors_paginates_with_limit_and_offset(tmp_path, monkeypatch, capsys):
+    project = Project(id=uuid4(), root=tmp_path)
+    save_config(tmp_path / "config.toml", Config(projects=(project,)))
+    data = tmp_path / "data" / "projects" / str(project.id)
+    start = datetime(2026, 9, 20, tzinfo=UTC)
+    with Store(data, project.id) as store:
+        for index in range(3):
+            store.put(
+                _tool_finish(
+                    "claude",
+                    project.id,
+                    hook_event_name="PostToolUseFailure",
+                    metadata={"error": f"failure-{index}"},
+                    received_at=start + timedelta(seconds=index),
+                )
+            )
+    code, result = invoke(
+        monkeypatch,
+        capsys,
+        tmp_path,
+        "analyze",
+        "errors",
+        "--project",
+        str(project.id),
+        "--limit",
+        "2",
+        "--offset",
+        "0",
+    )
+    assert code == 0
+    assert [row["error"] for row in result["errors"]] == ["failure-0", "failure-1"]
+    assert result["has_more"] is True
+    assert result["total_matched"] == 3
+    code, result = invoke(
+        monkeypatch,
+        capsys,
+        tmp_path,
+        "analyze",
+        "errors",
+        "--project",
+        str(project.id),
+        "--limit",
+        "2",
+        "--offset",
+        "2",
+    )
+    assert [row["error"] for row in result["errors"]] == ["failure-2"]
+    assert result["has_more"] is False
+
+
 def test_diff_oscillation_is_not_reported_for_an_unrelated_session_sharing_a_checkout(
     tmp_path, monkeypatch, capsys
 ):

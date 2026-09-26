@@ -153,6 +153,39 @@ than being silently dropped. Missing lifecycle/usage/output data remains a gap;
 waiting, exit code zero, and session Stop do not establish a stall, progress, or task
 success.
 
+## Analyze
+
+```console
+agent-watchdog analyze errors --project PROJECT
+agent-watchdog analyze errors --project PROJECT --provider claude --session SESSION_ID
+agent-watchdog analyze errors --project PROJECT --since 2026-09-20T00:00:00+00:00
+```
+
+`analyze` is a command group for data-analysis views over collected observations; this
+is its first member. `analyze errors` lists individual failing `tool.finish` events, as
+distinct from `report`'s `identical_error` shadow finding, which only surfaces once the
+same structured failure repeats three or more times — a single or non-repeating failure
+is otherwise invisible. `--provider` scans every provider by default; `--session`
+requires an explicit `--provider` alongside it, since a bare native session ID is not
+unique across providers. `--since`/`--until` bound the same `received_at` timestamps as
+`usage`/`telemetry`. `--limit`/`--offset` page the result the same way `sessions`
+does, with `has_more`.
+
+A failure is identified by either of two independent, already-existing signals, never a
+third definition: the provider's own `PostToolUseFailure` hook event (Claude only,
+retained regardless of `capture_content`) or a failing `tool_response` judged the same
+way `report`'s rules already are (`exit_code`/`isError`; the only signal Codex has, and
+only available with `capture_content` on). A `tool.finish` event with neither signal and
+no captured response is not an error but is not silently zero either: it is counted in
+`unknown_outcome`. A `PostToolUseFailure` caused by a user interrupt is not an agent
+error; it is excluded from the list and counted separately in `interrupts_excluded`.
+
+Each row reports `provider`, `session_id`, `agent_id`/`agent_type` (both `null` for the
+main/coordinator turn; `agent_type` is resolved from the session's own `SubagentStart`
+event), `received_at`, `tool_name`, `tool_input`, `hook_event_name`, `exit_code`, and one
+distilled `error` string (the provider's own error text when available, otherwise a
+short rendering of the captured response) — never the raw `tool_response` structure.
+
 ## Labels, pins, export, and purge
 
 ```console

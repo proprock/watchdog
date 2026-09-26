@@ -509,6 +509,128 @@ def usage(
         return result
 
 
+def _error_text(response: object) -> str | None:
+    """Distill a failing tool_response into one readable string, never the raw structure."""
+    if isinstance(response, str):
+        return response
+    if isinstance(response, dict):
+        output = response.get("output")
+        if isinstance(output, str):
+            return output
+        return json.dumps(response, sort_keys=True)
+    if response is None:
+        return None
+    return json.dumps(response, sort_keys=True)
+
+
+def errors(
+    paths: UserPaths,
+    project: Project,
+    *,
+    provider: str | None,
+    session_id: str | None,
+    since: datetime | None,
+    until: datetime | None,
+    limit: int,
+    offset: int,
+) -> dict[str, Any]:
+    """List individual failing tool.finish events from a read-only snapshot.
+
+    Complements ``report``'s ``identical_error`` shadow finding, which only
+    surfaces once the same structured failure repeats three or more times: a
+    one-off or non-repeating failure is otherwise invisible. A failure is
+    identified by either signal already used elsewhere in this codebase, never
+    a third definition: the provider's own ``PostToolUseFailure`` hook event
+    (always retained, independent of content capture) or a failing
+    ``tool_response`` judged the same way ``analysis.tool_outcome`` already
+    does. A user interrupt is not an agent error and is excluded, counted
+    separately.
+    """
+    from agent_watchdog.analysis import captured_content, exit_code, tool_outcome
+
+    _page(limit, offset)
+    with database(paths, project) as db:
+        condition = "kind IN ('tool.finish', 'agent.start')"
+        parameters: list[object] = []
+        if provider is not None:
+            condition += " AND json_extract(envelope, '$.provider')=?"
+            parameters.append(provider)
+        if session_id is not None:
+            condition += " AND session_id=?"
+            parameters.append(session_id)
+        rows = db.execute(
+            f"SELECT envelope FROM events WHERE {condition} ORDER BY received_at", parameters
+        ).fetchall()
+
+    agent_types: dict[str, str] = {}
+    finishes: list[Envelope] = []
+    for (document,) in rows:
+        event = persisted_envelope(document)
+        if event.kind == "agent.start":
+            payload = event.payload.get(event.provider)
+            metadata = payload.get("metadata") if isinstance(payload, dict) else None
+            agent_type = metadata.get("agent_type") if isinstance(metadata, dict) else None
+            if event.agent_id is not None and isinstance(agent_type, str):
+                agent_types[event.agent_id] = agent_type
+            continue
+        if since is not None and event.received_at < since:
+            continue
+        if until is not None and event.received_at >= until:
+            continue
+        finishes.append(event)
+
+    matched: list[dict[str, Any]] = []
+    unknown_outcome = 0
+    interrupts_excluded = 0
+    for event in finishes:
+        payload = event.payload.get(event.provider)
+        if not isinstance(payload, dict):
+            continue
+        metadata = payload.get("metadata")
+        metadata = metadata if isinstance(metadata, dict) else {}
+        content = captured_content(payload)
+        response = content.get("tool_response")
+        hook_event_name = payload.get("hook_event_name")
+        is_failure = hook_event_name == "PostToolUseFailure" or (
+            response is not None and tool_outcome(response) == "failure"
+        )
+        if not is_failure:
+            if response is None:
+                unknown_outcome += 1
+            continue
+        if metadata.get("is_interrupt") is True:
+            interrupts_excluded += 1
+            continue
+        error_text = metadata.get("error")
+        if not isinstance(error_text, str):
+            error_text = _error_text(response)
+        matched.append(
+            {
+                "provider": event.provider,
+                "session_id": event.session_id,
+                "agent_id": event.agent_id,
+                "agent_type": agent_types.get(event.agent_id) if event.agent_id else None,
+                "received_at": event.received_at.isoformat(),
+                "tool_name": payload.get("tool_name"),
+                "tool_input": content.get("tool_input"),
+                "hook_event_name": hook_event_name,
+                "exit_code": exit_code(response) if response is not None else None,
+                "error": error_text,
+            }
+        )
+    page = matched[offset : offset + limit]
+    return {
+        "project_id": str(project.id),
+        "provider": provider,
+        "session_id": session_id,
+        "errors": page,
+        "has_more": offset + limit < len(matched),
+        "total_matched": len(matched),
+        "unknown_outcome": unknown_outcome,
+        "interrupts_excluded": interrupts_excluded,
+    }
+
+
 def export_sessions(
     paths: UserPaths,
     project: Project,

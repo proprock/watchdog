@@ -137,6 +137,22 @@ def main() -> int:
         type=Path,
         help="List-price tariff file; adds an estimate block. Defaults to [pricing] tariffs",
     )
+    analyze = commands.add_parser(
+        "analyze", help="Analysis subcommands over collected observations (read-only)"
+    )
+    analyze_actions = analyze.add_subparsers(dest="action", required=True)
+    errors_view = analyze_actions.add_parser(
+        "errors", help="List individual failing tool-call events"
+    )
+    errors_view.add_argument("--project", help="Project alias; UUID accepted; default resolves cwd")
+    errors_view.add_argument(
+        "--provider", help="Limit to one provider namespace; default scans every provider"
+    )
+    errors_view.add_argument("--session", help="Limit to one native session (requires --provider)")
+    errors_view.add_argument("--since", type=_since, help="ISO-8601 inclusive lower bound")
+    errors_view.add_argument("--until", type=_since, help="ISO-8601 exclusive upper bound")
+    errors_view.add_argument("--limit", type=int, default=100)
+    errors_view.add_argument("--offset", type=int, default=0)
     label = commands.add_parser("label", help="Label one collected session through the core")
     label.add_argument("session_id")
     label.add_argument("--project", help="Project alias; UUID accepted; default resolves cwd")
@@ -256,6 +272,7 @@ def main() -> int:
             "report",
             "telemetry",
             "usage",
+            "analyze",
             "export",
             "label",
             "verdict",
@@ -335,6 +352,22 @@ def main() -> int:
                 result = inspection.usage(
                     paths, project, since=args.since, until=args.until, tariffs=tariffs
                 )
+                print(json.dumps(_with_project_alias(result, alias)))
+                return 0
+            if args.command == "analyze":
+                if args.action == "errors":
+                    if args.session is not None and args.provider is None:
+                        raise StorageError("Select --provider with --session")
+                    result = inspection.errors(
+                        paths,
+                        project,
+                        provider=args.provider,
+                        session_id=args.session,
+                        since=args.since,
+                        until=args.until,
+                        limit=args.limit,
+                        offset=args.offset,
+                    )
                 print(json.dumps(_with_project_alias(result, alias)))
                 return 0
             if args.action == "list":
