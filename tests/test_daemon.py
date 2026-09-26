@@ -324,6 +324,25 @@ def test_resolve_policy_decision_allows_a_different_family_subagent_spawn(paths,
     )
 
 
+def test_resolve_policy_decision_never_denies_the_lowest_tier(paths, tmp_path):
+    """Denying asks the caller to downgrade the model; a haiku spawn already
+    has nowhere lower to go, so it is never denied even when it matches the
+    coordinator's own (also haiku) model."""
+    root = tmp_path / "project"
+    root.mkdir()
+    mutate_registry(paths, lambda registry: registry.add(root))
+    project = load_config(paths.config).projects[0]
+    _seed_coordinator_usage(
+        paths, project, session_id="session-1", model="claude-haiku-4-5-20251001"
+    )
+    assert (
+        _resolve_policy_decision(
+            paths, cwd=str(root), session_id="session-1", candidate_model="haiku"
+        )
+        == "allow"
+    )
+
+
 def test_resolve_policy_decision_allows_when_cwd_is_unregistered(paths, tmp_path):
     root = tmp_path / "project"
     root.mkdir()

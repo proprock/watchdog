@@ -852,6 +852,15 @@ _POLICY_LINE_BYTES = 4096
 _POLICY_TIMEOUT_SECONDS = 1.0
 
 
+# The rule's deny reason tells the caller to downgrade the subagent's model;
+# denying a spawn that is already at the lowest tier would ask for a
+# downgrade with nowhere to go, contradicting the rule's own advice. Anthropic
+# ranks opus > sonnet > haiku; the Agent tool's fourth alias, "fable", has no
+# established public rank relative to the other three, so it is intentionally
+# left out of this floor rather than guessed.
+_LOWEST_TIER_ALIASES = frozenset({"haiku"})
+
+
 def _resolve_policy_decision(
     paths: UserPaths, *, cwd: str, session_id: str, candidate_model: str
 ) -> str:
@@ -860,8 +869,12 @@ def _resolve_policy_decision(
     Every failure path -- unreadable config, unresolved project, no database,
     no observed coordinator model -- returns ``"allow"``. A false deny is the
     one Watchdog failure that would actually stop the harness, so this never
-    fails closed.
+    fails closed. A candidate already at the lowest known tier is never
+    denied either, for the same reason: there is nothing lower to downgrade
+    to (see ``_LOWEST_TIER_ALIASES``).
     """
+    if candidate_model.strip().lower() in _LOWEST_TIER_ALIASES:
+        return "allow"
     from agent_watchdog.inspection import database
 
     try:
