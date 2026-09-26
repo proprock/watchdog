@@ -1,11 +1,14 @@
 """Version-gated, daemon-only transcript enrichment for Codex and Claude.
 
 Codex uses the ``codex-rollout-v1`` reader (cumulative ``thread_token_usage``
-deltas). Claude uses the ``claude-transcript-v1`` reader: each assistant response
-carries its own ``message.usage`` (not cumulative), repeated on every content
-block of the response, so one ``usage`` event is emitted per distinct
-``requestId``. Both readers share the file-identity, offset, partial-tail,
-rotation and resume machinery below.
+deltas). Claude uses the ``claude-transcript-v1`` reader: each assistant
+response carries its own ``message.usage``, repeated on every content block of
+the response, and can grow across blocks while the response streams (commonly
+seen on subagent responses). One ``usage`` event is emitted per distinct
+``requestId``, holding the response open until a block reports a non-null
+``stop_reason`` so the emitted value is the final one, not the first. Both
+readers share the file-identity, offset, partial-tail, rotation and resume
+machinery below.
 """
 
 import hashlib
@@ -347,6 +350,7 @@ class _ClaudeResponse:
     model: str | None
     version: str | None
     occurred_at: datetime | None
+    stop_reason: str | None
 
 
 def _has_usage(record: object) -> bool:
@@ -395,12 +399,16 @@ def _claude_response(
     counters = _claude_counters(message["usage"])
     model = message.get("model") if isinstance(message.get("model"), str) else None
     version = record.get("version") if isinstance(record.get("version"), str) else None
+    stop_reason = (
+        message.get("stop_reason") if isinstance(message.get("stop_reason"), str) else None
+    )
     return _ClaudeResponse(
         request_id=request_id,
         counters=counters,
         model=model,
         version=version,
         occurred_at=_occurred_at(record.get("timestamp")),
+        stop_reason=stop_reason,
     )
 
 
@@ -589,7 +597,8 @@ def _process_source(store: "Store", source: dict[str, object]) -> EnrichmentResu
         )
         failures = ("transcript_unreadable",) if changed else ()
         return EnrichmentResult(failures=failures, active_failures=("transcript_unreadable",))
-    if not raw:
+    stalled = not raw
+    if stalled and not (source["provider"] == "claude" and tail):
         return EnrichmentResult()
     content = tail + raw
     lines = content.splitlines(keepends=True)
@@ -613,7 +622,7 @@ def _process_source(store: "Store", source: dict[str, object]) -> EnrichmentResu
     line_offset = offset - len(source["tail"] if isinstance(source["tail"], bytes) else b"")
     counters = _load_counters(source["counters"])
     if source["provider"] == "claude":
-        consumed = _consume_claude(store, source, lines, signature)
+        consumed = _consume_claude(store, source, lines, signature, stalled=stalled)
     else:
         consumed = _consume_codex(
             store, source, lines, line_offset, (device, inode), signature, reader, counters
@@ -626,7 +635,8 @@ def _process_source(store: "Store", source: dict[str, object]) -> EnrichmentResu
         size=size,
         mtime=mtime,
         offset=offset + len(raw),
-        tail=tail,
+        # A held-open response's bytes precede any trailing partial line.
+        tail=consumed.held_tail + tail,
         counters=consumed.counters,
         last_error=consumed.error,
         error_signature=signature if consumed.error else None,
@@ -647,6 +657,9 @@ class _Consumed:
     counters: dict[str, int | None] | None
     error: TranscriptFailureCode | None
     usage_seen: int = 0
+    # Raw bytes of an in-progress Claude response's blocks, held back so the
+    # next read window resumes it instead of losing it or emitting early.
+    held_tail: bytes = b""
 
 
 def _consume_codex(
@@ -699,15 +712,41 @@ def _consume_codex(
     return _Consumed(accepted, failures, reader, counters, error, usage_seen=usage_seen)
 
 
+# A held, still-open response is bounded well under the transcript_sources
+# ``tail`` column's 1 MiB cap, leaving headroom for any trailing partial line.
+_MAX_HELD_TAIL = 512 * 1024
+
+
 def _consume_claude(
-    store: "Store", source: dict[str, object], lines: list[bytes], signature: str
+    store: "Store",
+    source: dict[str, object],
+    lines: list[bytes],
+    signature: str,
+    *,
+    stalled: bool,
 ) -> _Consumed:
+    """Emit one usage event per closed Claude response.
+
+    A response's ``message.usage`` can grow across its content blocks (most
+    visibly on subagent responses); the last block, marked by a non-null
+    ``stop_reason``, carries the true final value. A request id is treated as
+    closed either by that signal or by a later, distinct request id following
+    it in this batch -- only the single most-recent (last-seen) request id can
+    still be genuinely in progress. That trailing response is held (its raw
+    bytes carried into the next read window) unless the source has stopped
+    growing (``stalled``) or holding it would exceed the bound above, in which
+    case it is emitted with its last-known value rather than held forever.
+    """
     parent, agent_id = _split_subagent(source)
     is_subagent = agent_id is not None
     bound_session: str | None = None if is_subagent else parent
-    seen: set[str] = set()
+    order: list[str] = []
+    latest: dict[str, _ClaudeResponse] = {}
+    closed: set[str] = set()
+    blocks: dict[str, list[bytes]] = {}
     accepted = 0
     usage_seen = 0
+    held_tail = b""
     error: TranscriptFailureCode | None = None
     failures: list[TranscriptFailureCode] = []
     try:
@@ -723,20 +762,41 @@ def _consume_claude(
                 continue
             if bound_session is None:
                 bound_session = cast(dict, record)["sessionId"]
-            if response.request_id in seen:
+            request_id = response.request_id
+            if request_id not in latest:
+                order.append(request_id)
+                blocks[request_id] = []
+            latest[request_id] = response
+            blocks[request_id].append(line)
+            if response.stop_reason is not None:
+                closed.add(request_id)
+        pending_id = order[-1] if order else None
+        for request_id in order:
+            if request_id == pending_id and request_id not in closed:
+                candidate_tail = b"".join(blocks[request_id])
+                if not stalled and len(candidate_tail) <= _MAX_HELD_TAIL:
+                    held_tail = candidate_tail
+                    usage_seen -= len(blocks[request_id])
+                    continue
+                # Source stopped growing, or the held response is unbounded:
+                # flush its last-known value instead of holding it forever.
+            event = _claude_usage_event(store, source, latest[request_id])
+            if store.has_receipt(event.event_id):
+                # Already stored, most likely under a prior first-block-wins
+                # reader version; do not attempt to overwrite it with a
+                # different value under the same deterministic event id.
                 continue
-            seen.add(response.request_id)
-            # A response is repeated on every content block; the deterministic
-            # event id makes a repeat that lands in a later read window an
-            # idempotent no-op rather than a second row.
-            if store.put(_claude_usage_event(store, source, response)):
+            if store.put(event):
                 accepted += 1
     except UnsupportedTranscript as exc:
         error = exc.code
         if source["last_error"] != error or source["error_signature"] != signature:
             _gap(store, source, error, signature)
             failures.append(error)
-    return _Consumed(accepted, failures, CLAUDE_READER, None, error, usage_seen=usage_seen)
+        held_tail = b""
+    return _Consumed(
+        accepted, failures, CLAUDE_READER, None, error, usage_seen=usage_seen, held_tail=held_tail
+    )
 
 
 def _unexpected_source_failure(store: "Store", source: dict[str, object]) -> EnrichmentResult:

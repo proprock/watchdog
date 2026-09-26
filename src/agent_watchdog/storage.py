@@ -368,6 +368,20 @@ class Store:
             ).encode()
         ).hexdigest()
 
+    def has_receipt(self, event_id: object) -> bool:
+        """Whether an event with this id was already stored, regardless of content.
+
+        Lets a deterministic reader skip a replay outright instead of risking a
+        content-fingerprint conflict against a row stored under an earlier,
+        differently-computed value for the same event id.
+        """
+        return (
+            self.connection.execute(
+                "SELECT 1 FROM receipts WHERE event_id=?", (str(event_id),)
+            ).fetchone()
+            is not None
+        )
+
     def put(self, event: Envelope, *, artifacts: Mapping[str, bytes] | None = None) -> bool:
         with resources.admission(self.root):
             return self._put(event, artifacts=artifacts)

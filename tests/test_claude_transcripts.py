@@ -40,11 +40,12 @@ def assistant(
     version: str = "2.1.260",
     sidechain: bool = False,
     usage: dict | None = None,
+    stop_reason: str | None = "end_turn",
 ) -> dict:
     message: dict = {
         "id": request.replace("req_", "msg_"),
         "role": "assistant",
-        "stop_reason": "end_turn",
+        "stop_reason": stop_reason,
         "usage": usage
         if usage is not None
         else {
@@ -192,6 +193,161 @@ def test_repeated_block_in_a_later_read_window_adds_no_row(tmp_path):
             stream.write(json.dumps(assistant(SESSION, "req_A", block=1)) + "\n")
         assert enrich(store).accepted == 0
         assert len(usage_events(store)) == 1
+
+
+def test_growing_subagent_usage_within_one_window_keeps_the_final_value(tmp_path):
+    project = uuid4()
+    agent_transcript = tmp_path / "agent.jsonl"
+    child_session = "33333333-3333-4333-8333-333333333333"
+    write_transcript(
+        agent_transcript,
+        [
+            assistant(
+                child_session,
+                "req_child",
+                block=0,
+                output_tokens=3,
+                stop_reason=None,
+                sidechain=True,
+            ),
+            assistant(
+                child_session,
+                "req_child",
+                block=1,
+                output_tokens=8,
+                stop_reason=None,
+                sidechain=True,
+            ),
+            assistant(
+                child_session,
+                "req_child",
+                block=2,
+                output_tokens=116,
+                stop_reason="tool_use",
+                sidechain=True,
+            ),
+        ],
+    )
+    with Store(tmp_path / "data", project) as store:
+        assert store.put(subagent_hook(project, SESSION, "agent-7", agent_transcript))
+        result = enrich(store)
+        assert (result.accepted, result.inert) == (1, False)
+        event = usage_events(store)[0]
+
+    assert response(event)["output_tokens"] == 116
+
+
+def test_growing_subagent_usage_split_across_read_windows_holds_until_closed(tmp_path):
+    project = uuid4()
+    agent_transcript = tmp_path / "agent.jsonl"
+    child_session = "33333333-3333-4333-8333-333333333333"
+    write_transcript(
+        agent_transcript,
+        [
+            assistant(
+                child_session,
+                "req_child",
+                block=0,
+                output_tokens=3,
+                stop_reason=None,
+                sidechain=True,
+            )
+        ],
+    )
+    with Store(tmp_path / "data", project) as store:
+        assert store.put(subagent_hook(project, SESSION, "agent-7", agent_transcript))
+        first = enrich(store)
+        assert (first.accepted, first.inert) == (0, False)
+        with agent_transcript.open("a", encoding="utf-8") as stream:
+            stream.write(
+                json.dumps(
+                    assistant(
+                        child_session,
+                        "req_child",
+                        block=1,
+                        output_tokens=116,
+                        stop_reason="tool_use",
+                        sidechain=True,
+                    )
+                )
+                + "\n"
+            )
+        second = enrich(store)
+        assert (second.accepted, second.inert) == (1, False)
+        event = usage_events(store)[0]
+
+    assert response(event)["output_tokens"] == 116
+
+
+def test_unclosed_subagent_response_flushes_once_the_source_stops_growing(tmp_path):
+    project = uuid4()
+    agent_transcript = tmp_path / "agent.jsonl"
+    child_session = "33333333-3333-4333-8333-333333333333"
+    write_transcript(
+        agent_transcript,
+        [
+            assistant(
+                child_session,
+                "req_child",
+                output_tokens=3,
+                stop_reason=None,
+                sidechain=True,
+            )
+        ],
+    )
+    with Store(tmp_path / "data", project) as store:
+        assert store.put(subagent_hook(project, SESSION, "agent-7", agent_transcript))
+        first = enrich(store)
+        assert (first.accepted, first.inert) == (0, False)
+        second = enrich(store)
+        assert (second.accepted, second.inert) == (1, False)
+        event = usage_events(store)[0]
+
+    assert response(event)["output_tokens"] == 3
+
+
+def test_reprocessing_a_first_wins_receipt_is_not_a_conflict(tmp_path):
+    project = uuid4()
+    transcript = tmp_path / "session.jsonl"
+    write_transcript(transcript, [assistant(SESSION, "req_A", output_tokens=3)])
+    with Store(tmp_path / "data", project) as store:
+        store.put(hook(project, SESSION, transcript))
+        first = enrich(store)
+        assert first.accepted == 1
+        assert response(usage_events(store)[0])["output_tokens"] == 3
+
+        # Simulate a re-scan of already-processed bytes, as a file rotation
+        # would trigger, over content that a legacy first-block-wins receipt
+        # (seeded above) would compute a different, larger value for under the
+        # current reader -- this must not raise, not overwrite, and not double
+        # count.
+        source = store.transcript_sources()[0]
+        store.update_transcript_source(
+            source,
+            reader=None,
+            device=None,
+            inode=None,
+            size=None,
+            mtime=None,
+            offset=0,
+            tail=b"",
+            counters=None,
+            last_error=None,
+            error_signature=None,
+        )
+        write_transcript(
+            transcript,
+            [
+                assistant(SESSION, "req_A", block=0, output_tokens=3, stop_reason=None),
+                assistant(SESSION, "req_A", block=1, output_tokens=116, stop_reason="tool_use"),
+            ],
+        )
+        second = enrich(store)
+        assert second.accepted == 0
+        events = usage_events(store)
+
+    assert len(events) == 1
+    assert response(events[0])["output_tokens"] == 3
 
 
 def test_sidechain_lines_in_the_main_transcript_are_skipped(tmp_path):
