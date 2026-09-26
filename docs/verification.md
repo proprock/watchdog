@@ -339,6 +339,99 @@ session) was dropped — the installer emits exec form only, so shell startup is
 never on Claude's path; the synthetic direct-vs-`bash` comparison in
 [evidence](evidence/wd022a-claude-launch.json) attributes the cost.
 
+## WD-022b live verification (trust/reload, capability gaps, process lifecycle)
+
+2026-09-26, Windows 11 Pro, Claude Code CLI and Desktop. Isolated Watchdog
+`--home` under the ignored `.cache/wd022b-live/`, a fresh scratch Git repo
+(`scratch-repo`, never previously opened in any Claude surface), hooks
+installed with `--adapter-executable` and `timeout: 2` into its project-local
+`.claude/settings.local.json`. No global `~/.claude` state touched; hooks
+uninstalled and the isolated daemon stopped (confirmed `alive: false`) after
+collection. This closes ROADMAP.md's WD-022b items 1 (native trust/reload,
+remaining per-event capability gaps) and 3 (WD-005 process-lifecycle protocol
+on Claude CLI/desktop) with real, not synthetic, evidence.
+
+**Untrusted-folder trust flow (item 1).** Opening the never-before-seen
+scratch folder in Claude Code CLI produced the standard, unmodified trust
+prompt ("Is this a project you created or one you trust?") — no mention of
+hooks, no bypass, no Watchdog-specific wording. A second, unrelated prompt
+("Allow external CLAUDE.md file imports?") fired because the scratch repo is
+nested inside this checkout, whose own `CLAUDE.md` imports `TENETS.md`;
+declined, as noise from the test layout, not a Watchdog or hooks concern.
+Opening the same already-trusted folder afterward in Claude Desktop did
+**not** re-prompt for trust: CLI and Desktop share one trust store per
+folder path. Confirms hooks installed via `settings.local.json` neither
+bypass nor alter Claude's own trust gate in any way, on either surface.
+
+**`Notification` observed live for the first time (item 1).** Previously
+unverified since WD-022a (`docs/verification.md`'s WD-022a section: "only
+`Notification` is unobserved live"). Asked Claude to run an unapproved
+command (`git push --force`, no remote configured — inert either way) and
+left the permission prompt unanswered; a `waiting` event with
+`payload.claude.metadata.notification_type = "permission_prompt"` was
+captured (session `6e271666-…`, 2026-09-26T12:31:21Z), though no toast/sound
+was perceived by the user at the terminal. Per Anthropic's hooks
+documentation, `permission_prompt` should fire after roughly six seconds of
+an unanswered prompt; a since-closed upstream issue reports this
+notification never firing on Windows 11 at all, but this direct, positive
+capture is stronger evidence than that report for this build. **12 of 12**
+native Claude events are now confirmed observed live, combined with WD-022a's
+prior 11.
+
+**`PreCompact`/`PostCompact` re-verified against the production adapter on
+Claude CLI (item 1).** Previously only WD-002 probe-script history existed
+for the CLI surface (`docs/provider-compatibility.md`: "not re-exercised in
+the WD-022a CLI pass"). `/compact` in the live CLI session produced exactly
+one `compaction.start`/`compaction.end` pair.
+
+**`SubagentStart`/`SubagentStop` re-verified on both surfaces, with a new
+capability gap (item 1).** A single fan-out subagent request on CLI produced
+9 distinct subagent `agent_id`s: **`SubagentStop` fired for all 9, but
+`SubagentStart` for only 1.** The same pattern reproduced on Desktop (1
+start, 3 end from one composer submission). Adapter loss counters stayed at
+zero throughout on both surfaces, so this is not a Watchdog spool/adapter
+drop — it appears to be a Claude Code dispatch limitation for rapid/
+concurrent subagent starts, on both CLI and Desktop, not yet reported
+upstream. Recorded here as an accepted, documented capability gap rather
+than a claimed capability. Checked whether the 8 "missing" CLI subagents'
+`transcript_unreadable` gaps were a Watchdog reader bug: they were not — of
+9 reported `agent_transcript_path` values
+(`<project>\<session_id>\subagents\agent-<agent_id>.jsonl`, a previously
+unrecorded real layout detail; a companion `.meta.json` file also exists
+alongside each), only the one with `SubagentStart` captured ever had a file
+on disk. Watchdog reported the honest absence rather than fabricating data;
+the ninth subagent's file, once it existed, was read and correctly
+attributed by `agent_id` (4 usage rows, `claude-transcript-v1`).
+
+**WD-005 process-lifecycle protocol applied to Claude CLI (item 3).** The
+isolated daemon (auto-launched by the adapter, pid 9764) was confirmed
+`alive: true` after the actual `claude` CLI process exited (`/exit`). More:
+the session's final `SessionEnd` was still admitted and committed *after*
+the CLI process had already exited — `session_end_not_observed` cleared and
+the event count rose from 84 to 87 between the pre-exit and post-exit
+checks. This is the first real (not `detach_probe.py --claude-init`
+synthetic) confirmation of Claude CLI child/daemon survival; the prior
+WD-018 synthetic probe was inconclusive inside a restricted execution
+environment.
+
+**WD-005 process-lifecycle protocol applied to Claude Desktop (item 3),
+previously untested entirely.** A real composer submission on the same
+isolated setup produced a stored `turn.start` (2 in this session) and a
+`session.end` on archiving the task (Desktop has no "close", only archive,
+matching WD-022a's Stage 4 note). The same daemon instance (pid 9764,
+unchanged since the CLI test) stayed `alive: true` throughout and after the
+archive.
+
+**Not attempted:** a live probe confirming Claude Code's own settings-file
+self-rewrite behavior (WD-022a observed one SHA drift from default-key
+normalization; not re-exercised here) and macOS/Linux hosts (WD-019).
+
+Evidence is this session's live daemon-status/session-report queries against
+the isolated store, described above; no separate sanitized JSON artifact was
+produced for this pass (unlike WD-022a's `evidence/wd022a-windows-claude.json`)
+since the queries themselves are already content-free (counts, kinds,
+timestamps, presence/absence of files) and are reproduced verbatim above.
+
 ## WD-024 Rust adapter (closed with external limitations)
 
 2026-09-06, Windows, CPython 3.12.13, Rust 1.98.1. The interrupted implementation

@@ -127,14 +127,20 @@ and is reserved for storage tests and controlled replay.
 |---|---|---|
 | Codex CLI | `codex exec` launched the isolated daemon through a shell tool, completed its turn, and exited with code 0 | Same daemon instance and advancing heartbeat after CLI exit |
 | Local desktop coding | Existing probe task launched the daemon through a shell tool, completed, and was archived; app task status became `notLoaded` | Same daemon instance kept its heartbeat and committed a new manually published synthetic event after task unload |
+| Claude CLI (WD-022b, 2026-09-26) | A real interactive `claude` session ran a full task (subagent spawns, `/compact`) then exited via `/exit` | Same daemon instance (pid unchanged) stayed `alive: true`; the session's own `SessionEnd` was admitted and committed *after* the CLI process had already exited (event count rose from 84 to 87 between the pre- and post-exit checks) |
+| Claude desktop Code (WD-022b, 2026-09-26) | A real composer submission produced a stored `turn.start`; the task was then archived (no "close" exists) | Same daemon instance (same pid as the CLI check above, one continuous isolated run) stayed `alive: true` through and after the archive |
 
 Both isolated daemons were stopped through their control files and both test
 tasks were archived. An attempted extra CLI event probe hit Git discovery failure
 inside a nested scratch directory and stopped that daemon in cleanup; it does not
 count as post-exit ingestion evidence. The desktop event probe used a separate
-temporary project and passed. No real transcript content was collected.
+temporary project and passed. No real transcript content was collected. The
+WD-022b Claude rows above are real `claude -p`/desktop sessions on a fresh
+scratch repository (full account: [verification.md](verification.md#wd-022b-live-verification-trustreload-capability-gaps-process-lifecycle)),
+not the generic `detach_probe.py --claude-init` synthetic probe (WD-018),
+which was previously inconclusive inside a restricted execution environment.
 
-These checks establish survival of the tested CLI exit and desktop session unload.
+These checks establish survival of the tested CLI exit and desktop session unload, now including Claude alongside Codex.
 The user explicitly accepted desktop session unload as sufficient for WD-005.
 They do not establish survival of closing the entire desktop application, logout,
 or every possible Windows job policy. Launch from native hooks and their trust
