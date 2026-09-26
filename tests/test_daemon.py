@@ -21,6 +21,7 @@ from agent_watchdog.config import (
     save_config,
 )
 from agent_watchdog.daemon import (
+    _ConfigCache,
     _drain_spool,
     _policy_server,
     _record_enrichment_failures,
@@ -275,6 +276,40 @@ def test_spool_redrain_is_idempotent(paths, tmp_path):
     assert result.inserted == 1 and result.duplicates == 1
     with Store(paths.project_data(project.id), project.id) as store:
         assert [str(item.event_id) for item in store.events()] == [record["event_id"]]
+
+
+def test_config_cache_skips_reparsing_an_unchanged_file(paths, monkeypatch, tmp_path):
+    save_config(paths.config, Config())
+    calls = []
+    real_load_config = load_config
+
+    def counting_load_config(path):
+        calls.append(path)
+        return real_load_config(path)
+
+    monkeypatch.setattr("agent_watchdog.daemon.load_config", counting_load_config)
+    cache = _ConfigCache()
+
+    first = cache.load(paths.config)
+    second = cache.load(paths.config)
+    assert second is first
+    assert len(calls) == 1
+
+    save_config(paths.config, Config(pipeline_telemetry=False))
+    third = cache.load(paths.config)
+    assert third is not first
+    assert third.pipeline_telemetry is False
+    assert len(calls) == 2
+
+
+def test_config_cache_keys_by_path_not_just_content(tmp_path):
+    first_path = tmp_path / "one" / "config.toml"
+    second_path = tmp_path / "two" / "config.toml"
+    save_config(first_path, Config(pipeline_telemetry=True))
+    save_config(second_path, Config(pipeline_telemetry=False))
+    cache = _ConfigCache()
+    assert cache.load(first_path).pipeline_telemetry is True
+    assert cache.load(second_path).pipeline_telemetry is False
 
 
 def test_write_spool_limits_uses_largest_project_payload(paths, tmp_path):

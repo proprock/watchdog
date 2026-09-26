@@ -57,6 +57,13 @@ Without overrides, locations come from platformdirs. No login service is install
   daemon Codex observation also depends on). Removed on every exit path, clean
   or not, so a stale file left by an unclean exit is at worst a dead port a
   later process might reuse, caught by the token check.
+- `config.toml` is re-read on every poll tick and every policy-socket request
+  (no explicit reload command exists or is planned; an edit takes effect on
+  the very next tick/request). `agent_watchdog.daemon._ConfigCache` skips the
+  parse/validate cost when the file's mtime and size are unchanged since the
+  last read, keyed by path (so tests using distinct config files never share
+  a stale entry); this only avoids redundant work, it never changes when a
+  real edit is picked up.
 
 Status is `paused`, `running`, `unavailable`, or `degraded`. A held lock with a
 missing/invalid heartbeat, a heartbeat older than ten seconds, or project/config

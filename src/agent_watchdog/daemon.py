@@ -40,6 +40,42 @@ SPOOL_FILES = 4096
 CONTROL_REQUEST_BYTES = 8192
 
 
+class _ConfigCache:
+    """Skip reparsing ``config.toml`` when it has not changed.
+
+    ``load_config`` is called on every poll tick and every policy-socket
+    request; config edits are, in practice, orders of magnitude rarer than
+    either. This never requires an explicit reload -- a real edit is still
+    picked up on the very next call, exactly as calling ``load_config``
+    directly would behave -- it only skips the parse/validate cost when nothing
+    changed, keyed by path so distinct config files (as in tests) never share
+    a stale entry. Thread-safe: the poll loop and the policy-socket handler
+    thread both call this.
+    """
+
+    def __init__(self) -> None:
+        self._lock = threading.Lock()
+        self._cached: dict[str, tuple[float, int, Config]] = {}
+
+    def load(self, path: Path) -> Config:
+        key = str(path)
+        with self._lock:
+            try:
+                info = path.stat()
+            except OSError:
+                self._cached.pop(key, None)
+                return load_config(path)
+            cached = self._cached.get(key)
+            if cached is not None and cached[:2] == (info.st_mtime, info.st_size):
+                return cached[2]
+            config = load_config(path)
+            self._cached[key] = (info.st_mtime, info.st_size, config)
+            return config
+
+
+_config_cache = _ConfigCache()
+
+
 def _log(
     paths: UserPaths,
     config: Config | None,
@@ -882,7 +918,7 @@ def _resolve_policy_decision(
     from agent_watchdog.inspection import database
 
     try:
-        config = load_config(paths.config)
+        config = _config_cache.load(paths.config)
     except ConfigError:
         return "allow"
     try:
@@ -1084,7 +1120,7 @@ def _poll(paths: UserPaths, owner: ExitStack) -> None:
         transcript_failures: dict[str, list[str]] = {}
         activity = False
         try:
-            config = load_config(paths.config)
+            config = _config_cache.load(paths.config)
             try:
                 mtime = paths.config.stat().st_mtime
             except OSError:
