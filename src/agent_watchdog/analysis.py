@@ -337,7 +337,7 @@ def _policy_finding(
 def same_model_subagent_spawn(events: Iterable[Envelope]) -> list[dict[str, Any]]:
     """WD-014's first deterministic policy rule: a Claude subagent resolved to
     the same model as its coordinating conversation, at the moment it started
-    reporting usage.
+    reporting usage. One finding per spawn (``agent_id``), not per usage event.
 
     Structural, not statistical, so it needs no calibration and is exempt from
     the WD-013 precision gate. Its action is unconditional ``log``; the
@@ -345,13 +345,32 @@ def same_model_subagent_spawn(events: Iterable[Envelope]) -> list[dict[str, Any]
     top of this same fact, not implemented here. A subagent whose model is
     unavailable (not yet observed) is never compared -- fail-safe, not a
     false claim.
+
+    Ordered by ``occurred_at`` (the true API response time), not ``received_at``
+    (ingestion time): a subagent transcript is only registered at `agent.end`
+    and enriched afterwards, so its usage rows can be *received* long after a
+    later coordinator model switch even though they *occurred* earlier -- only
+    ``occurred_at`` order compares against the model actually active at the
+    time. Evidence is the matching ``agent.start`` event (the launch fact)
+    plus the first matching subagent usage event; the spawning tool call's own
+    prompt/tool input (on its `PreToolUse`/`tool.start` event) carries no
+    `agent_id` yet at that point and cannot be linked here.
     """
-    ordered = sorted(events, key=lambda event: (event.received_at, str(event.event_id)))
+    ordered = sorted(
+        events, key=lambda event: (event.occurred_at or event.received_at, str(event.event_id))
+    )
     coordinator_model: str | None = None
-    coordinator_event_id: str | None = None
+    agent_starts: dict[str, str] = {}
+    matched_agents: set[str] = set()
     findings: list[dict[str, Any]] = []
     for event in ordered:
-        if event.provider != "claude" or event.kind != "usage":
+        if event.provider != "claude":
+            continue
+        if event.kind == "agent.start":
+            if event.agent_id is not None:
+                agent_starts.setdefault(event.agent_id, str(event.event_id))
+            continue
+        if event.kind != "usage":
             continue
         payload = event.payload.get("claude")
         model = payload.get("model") if isinstance(payload, dict) else None
@@ -359,21 +378,23 @@ def same_model_subagent_spawn(events: Iterable[Envelope]) -> list[dict[str, Any]
             continue
         if event.agent_id is None:
             coordinator_model = model
-            coordinator_event_id = str(event.event_id)
             continue
-        if (
-            coordinator_model is not None
-            and coordinator_event_id is not None
-            and model == coordinator_model
-        ):
-            findings.append(
-                _policy_finding(
-                    "same_model_subagent_spawn",
-                    sorted({str(event.event_id), coordinator_event_id}),
-                    "Subagent resolved to the same model as its coordinating conversation.",
-                    action="log",
-                )
+        agent_id = event.agent_id
+        if agent_id in matched_agents or coordinator_model is None or model != coordinator_model:
+            continue
+        matched_agents.add(agent_id)
+        evidence = {str(event.event_id)}
+        start_id = agent_starts.get(agent_id)
+        if start_id is not None:
+            evidence.add(start_id)
+        findings.append(
+            _policy_finding(
+                "same_model_subagent_spawn",
+                sorted(evidence),
+                f"Subagent resolved to the same model ({model}) as its coordinating conversation.",
+                action="log",
             )
+        )
     return findings
 
 

@@ -35,7 +35,7 @@ def tool(project, moment, *, code, output, command="pytest tests/test_sample.py"
     )
 
 
-def claude_usage(project, moment, *, model, agent_id=None):
+def claude_usage(project, moment, *, model, agent_id=None, occurred_at=None, received_at=None):
     return Envelope(
         provider="claude",
         project_id=project,
@@ -43,8 +43,22 @@ def claude_usage(project, moment, *, model, agent_id=None):
         agent_id=agent_id,
         kind="usage",
         source="transcript",
-        received_at=moment,
+        received_at=received_at if received_at is not None else moment,
+        occurred_at=occurred_at if occurred_at is not None else moment,
         payload={"claude": {"model": model}},
+    )
+
+
+def agent_start(project, moment, *, agent_id):
+    return Envelope(
+        provider="claude",
+        project_id=project,
+        session_id="session-1",
+        agent_id=agent_id,
+        kind="agent.start",
+        source="hook",
+        received_at=moment,
+        payload={"claude": {"agent_type": "general-purpose"}},
     )
 
 
@@ -52,21 +66,43 @@ def test_same_model_subagent_spawn_is_logged():
     project = uuid4()
     start = datetime(2026, 9, 26, tzinfo=UTC)
     coordinator = claude_usage(project, start, model="claude-opus-5-5")
+    spawn = agent_start(project, start + timedelta(seconds=1), agent_id="agent-1")
     subagent = claude_usage(
-        project, start + timedelta(seconds=1), model="claude-opus-5-5", agent_id="agent-1"
+        project, start + timedelta(seconds=2), model="claude-opus-5-5", agent_id="agent-1"
     )
-    findings = same_model_subagent_spawn([coordinator, subagent])
+    findings = same_model_subagent_spawn([coordinator, spawn, subagent])
     assert len(findings) == 1
     finding = findings[0]
     assert finding["rule"] == "same_model_subagent_spawn"
     assert finding["rule_version"] == POLICY_RULE_VERSION
     assert finding["action"] == "log"
-    assert sorted(finding["evidence_ids"]) == sorted(
-        [str(coordinator.event_id), str(subagent.event_id)]
-    )
+    # Evidence is the launch fact (agent.start) plus the matching usage event,
+    # not the unrelated coordinator usage event that happened to establish
+    # the compared model.
+    assert sorted(finding["evidence_ids"]) == sorted([str(spawn.event_id), str(subagent.event_id)])
     assert finding["fingerprint"] == finding_fingerprint(
         "same_model_subagent_spawn", POLICY_RULE_VERSION, finding["evidence_ids"]
     )
+
+
+def test_same_model_subagent_spawn_is_logged_once_per_agent_not_per_usage_event():
+    project = uuid4()
+    start = datetime(2026, 9, 26, tzinfo=UTC)
+    coordinator = claude_usage(project, start, model="claude-opus-5-5")
+    spawn = agent_start(project, start + timedelta(seconds=1), agent_id="agent-1")
+    # A real subagent run can report several usage events (one per API
+    # response); a live 3-way Explore run produced 8 usage rows for 3 spawns.
+    usages = [
+        claude_usage(
+            project,
+            start + timedelta(seconds=2 + offset),
+            model="claude-opus-5-5",
+            agent_id="agent-1",
+        )
+        for offset in range(3)
+    ]
+    findings = same_model_subagent_spawn([coordinator, spawn, *usages])
+    assert len(findings) == 1
 
 
 def test_different_model_subagent_spawn_is_not_logged():
@@ -94,6 +130,42 @@ def test_subagent_with_unresolved_model_is_not_compared():
         payload={"claude": {"model": None}},
     )
     assert same_model_subagent_spawn([coordinator, subagent]) == []
+
+
+def test_comparison_uses_occurred_at_not_ingestion_order():
+    """A subagent transcript is only enriched after ``agent.end``, so its usage
+    row can be *received* well before a later coordinator model switch even
+    though it *occurred* after that switch. Only ``occurred_at`` order compares
+    against the model genuinely active at the time.
+    """
+    project = uuid4()
+    start = datetime(2026, 9, 26, tzinfo=UTC)
+    # Ingested (received) first, but truly occurred last, after the switch.
+    subagent = claude_usage(
+        project,
+        start,
+        occurred_at=start + timedelta(seconds=30),
+        received_at=start,
+        model="claude-haiku-4-5",
+        agent_id="agent-1",
+    )
+    coordinator_before = claude_usage(
+        project,
+        start,
+        occurred_at=start + timedelta(seconds=10),
+        received_at=start + timedelta(seconds=1),
+        model="claude-opus-5-5",
+    )
+    coordinator_switch = claude_usage(
+        project,
+        start,
+        occurred_at=start + timedelta(seconds=20),
+        received_at=start + timedelta(seconds=2),
+        model="claude-haiku-4-5",
+    )
+    findings = same_model_subagent_spawn([subagent, coordinator_before, coordinator_switch])
+    assert len(findings) == 1
+    assert str(subagent.event_id) in findings[0]["evidence_ids"]
 
 
 def test_report_has_reproducible_shadow_findings_without_a_stall_verdict():
