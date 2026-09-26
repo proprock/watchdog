@@ -24,6 +24,11 @@ RULES = (
     "diff_oscillation",
 )
 REPETITION_THRESHOLD = 3
+# The WD-014 deterministic policy-rule class: conditions are structural facts,
+# not statistical judgments, so these are exempt from the WD-013 precision
+# gate and carry their own rule/version namespace and an explicit `action`.
+POLICY_RULE_VERSION = "wd-014.v1"
+POLICY_RULES = ("same_model_subagent_spawn",)
 TELEMETRY_SCHEMA_VERSION = 1
 _DELIVERY_TIMESTAMPS = (
     "adapter_started_at",
@@ -314,6 +319,64 @@ def _finding(
     }
 
 
+def _policy_finding(
+    rule: str, evidence_ids: list[str], explanation: str, *, action: str
+) -> dict[str, Any]:
+    return {
+        "rule": rule,
+        "rule_version": POLICY_RULE_VERSION,
+        "evidence_ids": evidence_ids,
+        "count": len(evidence_ids),
+        "fingerprint": finding_fingerprint(rule, POLICY_RULE_VERSION, evidence_ids),
+        "attribution": "observed",
+        "explanation": explanation,
+        "action": action,
+    }
+
+
+def same_model_subagent_spawn(events: Iterable[Envelope]) -> list[dict[str, Any]]:
+    """WD-014's first deterministic policy rule: a Claude subagent resolved to
+    the same model as its coordinating conversation, at the moment it started
+    reporting usage.
+
+    Structural, not statistical, so it needs no calibration and is exempt from
+    the WD-013 precision gate. Its action is unconditional ``log``; the
+    Claude-``PreToolUse``-only ``intervene`` capability is a separate layer on
+    top of this same fact, not implemented here. A subagent whose model is
+    unavailable (not yet observed) is never compared -- fail-safe, not a
+    false claim.
+    """
+    ordered = sorted(events, key=lambda event: (event.received_at, str(event.event_id)))
+    coordinator_model: str | None = None
+    coordinator_event_id: str | None = None
+    findings: list[dict[str, Any]] = []
+    for event in ordered:
+        if event.provider != "claude" or event.kind != "usage":
+            continue
+        payload = event.payload.get("claude")
+        model = payload.get("model") if isinstance(payload, dict) else None
+        if not isinstance(model, str) or not model:
+            continue
+        if event.agent_id is None:
+            coordinator_model = model
+            coordinator_event_id = str(event.event_id)
+            continue
+        if (
+            coordinator_model is not None
+            and coordinator_event_id is not None
+            and model == coordinator_model
+        ):
+            findings.append(
+                _policy_finding(
+                    "same_model_subagent_spawn",
+                    sorted({str(event.event_id), coordinator_event_id}),
+                    "Subagent resolved to the same model as its coordinating conversation.",
+                    action="log",
+                )
+            )
+    return findings
+
+
 def git_diff_fingerprint(checkout: Path) -> tuple[str, int] | None:
     """Hash an unmodified checkout diff; failures remain unknown, not clean."""
     try:
@@ -537,6 +600,7 @@ def analyze(
         if implicated and not (set(implicated) & target_sessions):
             continue
         findings.append(oscillation)
+    findings.extend(same_model_subagent_spawn(ordered))
     findings.sort(key=lambda finding: (str(finding["rule"]), list(finding["evidence_ids"])))
 
     gaps = ["task_outcome_unknown"]

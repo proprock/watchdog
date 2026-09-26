@@ -4,11 +4,13 @@ from datetime import UTC, datetime, timedelta
 from uuid import uuid4
 
 from agent_watchdog.analysis import (
+    POLICY_RULE_VERSION,
     REPORT_SCHEMA_VERSION,
     analyze,
     diff_oscillations,
     finding_fingerprint,
     git_diff_fingerprint,
+    same_model_subagent_spawn,
 )
 from agent_watchdog.events import Envelope
 
@@ -31,6 +33,67 @@ def tool(project, moment, *, code, output, command="pytest tests/test_sample.py"
             }
         },
     )
+
+
+def claude_usage(project, moment, *, model, agent_id=None):
+    return Envelope(
+        provider="claude",
+        project_id=project,
+        session_id="session-1",
+        agent_id=agent_id,
+        kind="usage",
+        source="transcript",
+        received_at=moment,
+        payload={"claude": {"model": model}},
+    )
+
+
+def test_same_model_subagent_spawn_is_logged():
+    project = uuid4()
+    start = datetime(2026, 9, 26, tzinfo=UTC)
+    coordinator = claude_usage(project, start, model="claude-opus-5-5")
+    subagent = claude_usage(
+        project, start + timedelta(seconds=1), model="claude-opus-5-5", agent_id="agent-1"
+    )
+    findings = same_model_subagent_spawn([coordinator, subagent])
+    assert len(findings) == 1
+    finding = findings[0]
+    assert finding["rule"] == "same_model_subagent_spawn"
+    assert finding["rule_version"] == POLICY_RULE_VERSION
+    assert finding["action"] == "log"
+    assert sorted(finding["evidence_ids"]) == sorted(
+        [str(coordinator.event_id), str(subagent.event_id)]
+    )
+    assert finding["fingerprint"] == finding_fingerprint(
+        "same_model_subagent_spawn", POLICY_RULE_VERSION, finding["evidence_ids"]
+    )
+
+
+def test_different_model_subagent_spawn_is_not_logged():
+    project = uuid4()
+    start = datetime(2026, 9, 26, tzinfo=UTC)
+    coordinator = claude_usage(project, start, model="claude-opus-5-5")
+    subagent = claude_usage(
+        project, start + timedelta(seconds=1), model="claude-haiku-4-5", agent_id="agent-1"
+    )
+    assert same_model_subagent_spawn([coordinator, subagent]) == []
+
+
+def test_subagent_with_unresolved_model_is_not_compared():
+    project = uuid4()
+    start = datetime(2026, 9, 26, tzinfo=UTC)
+    coordinator = claude_usage(project, start, model="claude-opus-5-5")
+    subagent = Envelope(
+        provider="claude",
+        project_id=project,
+        session_id="session-1",
+        agent_id="agent-1",
+        kind="usage",
+        source="transcript",
+        received_at=start + timedelta(seconds=1),
+        payload={"claude": {"model": None}},
+    )
+    assert same_model_subagent_spawn([coordinator, subagent]) == []
 
 
 def test_report_has_reproducible_shadow_findings_without_a_stall_verdict():
