@@ -78,7 +78,7 @@ WD-101 closes practical offline test boundaries identified by the audit, and WD-
 
 **WD-022b.**
 1. Refresh native trust/reload behavior and any per-event capability gaps not covered by WD-022a.
-2. Add versioned Claude transcript enrichment and the wider content-capture surface (`error`, `duration_ms`, `is_interrupt`). Reuse the shared contracts.
+2. Add versioned Claude transcript enrichment and the wider content-capture surface (`error`, `duration_ms`, `is_interrupt`). Reuse the shared contracts. **Content-capture surface: done.** `error`, `duration_ms`, `is_interrupt` are retained as `payload.claude.metadata`, independent of `capture_content` (`docs/hooks.md`); `docs/hooks.md`'s prior "not captured" text was stale, corrected. Versioned transcript enrichment is the separate `claude-transcript-v1` reader, already delivered.
 3. Apply the WD-005 process-lifecycle protocol to Claude CLI and desktop, including child survival after actual harness exit.
 4. Validate simultaneous Codex/Claude sessions and worktrees, isolation, retention, usage accounting (no cumulative double counting), and no-op responses.
 5. Validate advisory/control delivery separately against the M3/M4 policies. Async hook delivery is a separately recorded change, only after the synchronous baseline is fixed and recorded; verify backgrounded-hook durability with the WD-022a evidence standard. Unsupported control capabilities remain disabled.

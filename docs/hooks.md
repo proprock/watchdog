@@ -261,9 +261,11 @@ with `payload.claude.hook_event_name = "unknown"`, preserved, not fabricated.
 **Content capture is deliberately the four Codex-equivalent fields only** —
 `prompt`, `tool_input`, `tool_response`, `last_assistant_message` under
 `payload.claude.content`, subject to `capture_content`. Claude's additional
-`error`, `duration_ms`, and `is_interrupt` fields are **not** captured in
-WD-022a: widening the captured set widens the redaction surface, and it belongs
-to WD-022b along with transcript enrichment.
+`error`, `duration_ms`, and `is_interrupt` fields are retained as
+`payload.claude.metadata`, independent of `capture_content`, the same as every
+other non-content telemetry field — they are scalar/boolean or (for `error`)
+already-surfaced exit diagnostics, not the free-text conversational content
+`capture_content` gates (WD-022b).
 
 The ownership record adds `"provider"` at `schema_version` 1. A Codex manifest
 written before this change has no such key and is read as `"codex"`, so an

@@ -234,6 +234,29 @@ def test_capture_content_false_omits_the_four_content_fields(make):
     assert event.availability["content"] == "unavailable"
 
 
+def test_error_duration_ms_and_is_interrupt_reach_metadata_regardless_of_capture_content(make):
+    """``error``/``duration_ms``/``is_interrupt`` are retained metadata, not content
+    (WD-022b): unlike the four content fields, they are not gated by
+    ``capture_content``."""
+    paths, events = make(capture_content=False)
+    run(
+        paths,
+        {
+            "cwd": str(paths.config.parent),
+            "hook_event_name": "PostToolUseFailure",
+            "error": "Exit code 1\nfixture failure",
+            "duration_ms": 42,
+            "is_interrupt": True,
+        },
+    )
+    metadata = events[0].payload["claude"]["metadata"]
+    assert metadata["error"] == "Exit code 1\nfixture failure"
+    assert metadata["duration_ms"] == 42
+    assert metadata["is_interrupt"] is True
+    # Not treated as content: absent from the (omitted) content field's gate.
+    assert events[0].payload["claude"]["content"] == "omitted"
+
+
 def test_claude_and_codex_envelopes_stay_distinct_in_the_store(make, monkeypatch, tmp_path):
     paths, _ = make()
     project_id = load_config(paths.config).projects[0].id
