@@ -1,5 +1,6 @@
 import json
 import os
+import socket
 import subprocess
 import sys
 import time
@@ -13,7 +14,9 @@ import pytest
 from agent_watchdog.config import Config, Limits, Overrides, UserPaths, load_config, save_config
 from agent_watchdog.daemon import (
     _drain_spool,
+    _policy_server,
     _record_enrichment_failures,
+    _resolve_policy_decision,
     enqueue,
     launch,
     mutate_registry,
@@ -276,6 +279,148 @@ def test_write_spool_limits_uses_largest_project_payload(paths, tmp_path):
     assert published["schema_version"] == 1
     assert published["payload_bytes"] == config.defaults.payload_bytes
     assert published["spool_files"] > 0 and published["spool_bytes"] > 0
+
+
+def _seed_coordinator_usage(paths, project, *, session_id, model):
+    with Store(paths.project_data(project.id), project.id) as store:
+        store.put(
+            Envelope(
+                provider="claude",
+                project_id=project.id,
+                session_id=session_id,
+                kind="usage",
+                source="transcript",
+                received_at=datetime.now(UTC),
+                payload={"claude": {"model": model}},
+            )
+        )
+
+
+def test_resolve_policy_decision_denies_a_same_family_subagent_spawn(paths, tmp_path):
+    root = tmp_path / "project"
+    root.mkdir()
+    mutate_registry(paths, lambda registry: registry.add(root))
+    project = load_config(paths.config).projects[0]
+    _seed_coordinator_usage(paths, project, session_id="session-1", model="claude-opus-5-5")
+    assert (
+        _resolve_policy_decision(
+            paths, cwd=str(root), session_id="session-1", candidate_model="opus"
+        )
+        == "deny"
+    )
+
+
+def test_resolve_policy_decision_allows_a_different_family_subagent_spawn(paths, tmp_path):
+    root = tmp_path / "project"
+    root.mkdir()
+    mutate_registry(paths, lambda registry: registry.add(root))
+    project = load_config(paths.config).projects[0]
+    _seed_coordinator_usage(paths, project, session_id="session-1", model="claude-opus-5-5")
+    assert (
+        _resolve_policy_decision(
+            paths, cwd=str(root), session_id="session-1", candidate_model="haiku"
+        )
+        == "allow"
+    )
+
+
+def test_resolve_policy_decision_allows_when_cwd_is_unregistered(paths, tmp_path):
+    root = tmp_path / "project"
+    root.mkdir()
+    mutate_registry(paths, lambda registry: registry.add(root))
+    other = tmp_path / "elsewhere"
+    other.mkdir()
+    assert (
+        _resolve_policy_decision(
+            paths, cwd=str(other), session_id="session-1", candidate_model="opus"
+        )
+        == "allow"
+    )
+
+
+def test_resolve_policy_decision_allows_when_no_coordinator_usage_observed(paths, tmp_path):
+    root = tmp_path / "project"
+    root.mkdir()
+    mutate_registry(paths, lambda registry: registry.add(root))
+    assert (
+        _resolve_policy_decision(
+            paths, cwd=str(root), session_id="session-1", candidate_model="opus"
+        )
+        == "allow"
+    )
+
+
+def _policy_request(port, **fields):
+    with socket.create_connection(("127.0.0.1", port), timeout=2) as connection:
+        connection.sendall((json.dumps(fields) + "\n").encode("utf-8"))
+        connection.shutdown(socket.SHUT_WR)
+        return connection.recv(4096)
+
+
+def test_policy_server_answers_over_the_loopback_socket(paths, tmp_path):
+    root = tmp_path / "project"
+    root.mkdir()
+    mutate_registry(paths, lambda registry: registry.add(root))
+    project = load_config(paths.config).projects[0]
+    _seed_coordinator_usage(paths, project, session_id="session-1", model="claude-sonnet-5")
+    socket_path = paths.data / "policy" / "socket.json"
+    with _policy_server(paths):
+        discovery = json.loads(socket_path.read_text(encoding="utf-8"))
+        assert discovery["schema_version"] == 1
+        raw = _policy_request(
+            discovery["port"],
+            schema_version=1,
+            token=discovery["token"],
+            cwd=str(root),
+            session_id="session-1",
+            candidate_model="sonnet",
+        )
+        assert json.loads(raw) == {"schema_version": 1, "decision": "deny"}
+    assert not socket_path.exists()
+
+
+def test_policy_server_bind_failure_degrades_without_crashing(paths, monkeypatch):
+    """A sandboxed/job-object socket denial must degrade this optional
+    capability, never take down the shared daemon Codex observation also
+    depends on (ROADMAP.md: "Claude-specific failures do not break Codex")."""
+    import agent_watchdog.daemon as daemon_module
+
+    def raise_os_error(*args, **kwargs):
+        raise OSError("socket denied")
+
+    monkeypatch.setattr(daemon_module, "_PolicyServer", raise_os_error)
+    socket_path = paths.data / "policy" / "socket.json"
+    with _policy_server(paths):
+        assert not socket_path.exists()
+    assert not socket_path.exists()
+
+
+def test_policy_server_publish_failure_shuts_down_the_bound_server(paths, monkeypatch):
+    import agent_watchdog.daemon as daemon_module
+
+    def raise_os_error(*args, **kwargs):
+        raise OSError("disk full")
+
+    monkeypatch.setattr(daemon_module, "atomic_write", raise_os_error)
+    socket_path = paths.data / "policy" / "socket.json"
+    with _policy_server(paths):
+        assert not socket_path.exists()
+    assert not socket_path.exists()
+
+
+def test_policy_server_rejects_a_wrong_token(paths, tmp_path):
+    with _policy_server(paths):
+        socket_path = paths.data / "policy" / "socket.json"
+        discovery = json.loads(socket_path.read_text(encoding="utf-8"))
+        raw = _policy_request(
+            discovery["port"],
+            schema_version=1,
+            token="wrong-token",
+            cwd=str(tmp_path),
+            session_id="session-1",
+            candidate_model="opus",
+        )
+    assert raw == b""
 
 
 def wait_for(predicate, timeout=10):

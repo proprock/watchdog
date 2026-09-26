@@ -2,9 +2,12 @@
 
 import json
 import os
+import secrets
+import socketserver
 import sqlite3
 import subprocess
 import sys
+import threading
 import time
 from collections.abc import Callable, Iterator, Mapping
 from contextlib import ExitStack, contextmanager
@@ -16,6 +19,7 @@ from pydantic import ValidationError
 
 from agent_watchdog import resources
 from agent_watchdog._proc import hidden_creationflags
+from agent_watchdog.analysis import model_family_matches
 from agent_watchdog.config import Config, ConfigError, Limits, UserPaths, load_config, save_config
 from agent_watchdog.diagnostics import Level, emit, error_code
 from agent_watchdog.events import Envelope
@@ -843,11 +847,192 @@ def _drain_spool(paths: UserPaths, config: Config, *, limit: int = 100) -> bool:
     return activity
 
 
+_POLICY_SCHEMA_VERSION = 1
+_POLICY_LINE_BYTES = 4096
+_POLICY_TIMEOUT_SECONDS = 1.0
+
+
+def _resolve_policy_decision(
+    paths: UserPaths, *, cwd: str, session_id: str, candidate_model: str
+) -> str:
+    """Decide the WD-014 same-model-subagent-spawn rule for one PreToolUse call.
+
+    Every failure path -- unreadable config, unresolved project, no database,
+    no observed coordinator model -- returns ``"allow"``. A false deny is the
+    one Watchdog failure that would actually stop the harness, so this never
+    fails closed.
+    """
+    from agent_watchdog.inspection import database
+
+    try:
+        config = load_config(paths.config)
+    except ConfigError:
+        return "allow"
+    try:
+        resolution = Registry(config).resolve(Path(cwd), timeout=0.5)
+    except (OSError, ValueError):
+        return "allow"
+    if resolution is None:
+        return "allow"
+    project = next((item for item in config.projects if item.id == resolution.project_id), None)
+    if project is None:
+        return "allow"
+    try:
+        with database(paths, project) as db:
+            row = db.execute(
+                "SELECT model FROM event_facts WHERE provider='claude' AND kind='usage' "
+                "AND session_id=? AND agent_id IS NULL AND model IS NOT NULL "
+                "ORDER BY COALESCE(occurred_at_us, received_at_us) DESC, event_id DESC LIMIT 1",
+                (session_id,),
+            ).fetchone()
+    except (StorageError, sqlite3.Error, OSError):
+        return "allow"
+    if row is None or not isinstance(row[0], str):
+        return "allow"
+    return "deny" if model_family_matches(candidate_model, row[0]) else "allow"
+
+
+class _PolicyRequestHandler(socketserver.StreamRequestHandler):
+    """Handles exactly one bounded request per connection, then closes it."""
+
+    server: "_PolicyServer"
+
+    def handle(self) -> None:
+        self.connection.settimeout(_POLICY_TIMEOUT_SECONDS)
+        try:
+            line = self.rfile.readline(_POLICY_LINE_BYTES)
+        except OSError:
+            return
+        try:
+            request = json.loads(line)
+        except (UnicodeDecodeError, json.JSONDecodeError):
+            return
+        if not isinstance(request, dict) or request.get("schema_version") != _POLICY_SCHEMA_VERSION:
+            return
+        if not secrets.compare_digest(str(request.get("token", "")), self.server.watchdog_token):
+            return
+        cwd = request.get("cwd")
+        session_id = request.get("session_id")
+        candidate_model = request.get("candidate_model")
+        if not all(
+            isinstance(value, str) and value for value in (cwd, session_id, candidate_model)
+        ):
+            return
+        decision = _resolve_policy_decision(
+            self.server.watchdog_paths,
+            cwd=cwd,
+            session_id=session_id,
+            candidate_model=candidate_model,
+        )
+        try:
+            self.wfile.write(
+                json.dumps(
+                    {"schema_version": _POLICY_SCHEMA_VERSION, "decision": decision}
+                ).encode()
+            )
+        except OSError:
+            return
+
+
+class _PolicyServer(socketserver.ThreadingTCPServer):
+    # Deliberately NOT allow_reuse_address: with an ephemeral port this buys
+    # nothing, and on Windows it would let another process bind the same port
+    # while this one is still listening -- whoever received the connection
+    # could answer "deny", and a false deny is the one Watchdog failure that
+    # would actually stop the harness.
+    daemon_threads = True
+    watchdog_paths: UserPaths
+    watchdog_token: str
+
+
+@contextmanager
+def _policy_server(paths: UserPaths) -> Iterator[None]:
+    """Run the WD-014 ``intervene`` decision socket for one daemon lifetime.
+
+    Loopback-only (binding wider triggers a Windows Firewall prompt for no
+    benefit, since only this machine's own adapter ever calls it) and
+    published, with a per-instance random token, to ``policy/socket.json`` --
+    the same discovery-file pattern as ``spool/limits.json``. A stale file
+    left behind after an unclean exit, or a since-reused port, can only ever
+    fail the token check or connect to an unrelated listener that will not
+    answer this protocol; either way the adapter fails open, never a false
+    deny. Removed on every exit path, clean or not, via the caller's ExitStack.
+
+    A bind or publish failure (a sandboxed/job-object socket denial, a full
+    disk, antivirus interference) degrades to no policy socket at all rather
+    than raising: this optional capability must never take down the shared
+    daemon that Codex observation also depends on -- ``run()`` only recovers
+    from ``WriterBusy``, so any other exception here would stop the daemon
+    entirely, breaking the WD-022b "Claude-specific failures do not break
+    Codex" acceptance criterion.
+    """
+    socket_path = paths.data / "policy" / "socket.json"
+    try:
+        server = _PolicyServer(("127.0.0.1", 0), _PolicyRequestHandler)
+    except OSError as error:
+        _log(
+            paths,
+            None,
+            "WARNING",
+            event="lifecycle",
+            decision="degraded",
+            error_type=error_code(error),
+        )
+        yield
+        return
+    server.watchdog_paths = paths
+    server.watchdog_token = secrets.token_hex(16)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        socket_path.parent.mkdir(parents=True, exist_ok=True)
+        atomic_write(
+            socket_path,
+            json.dumps(
+                {
+                    "schema_version": _POLICY_SCHEMA_VERSION,
+                    "pid": os.getpid(),
+                    "port": server.server_address[1],
+                    "token": server.watchdog_token,
+                }
+            ).encode(),
+        )
+    except OSError as error:
+        _log(
+            paths,
+            None,
+            "WARNING",
+            event="lifecycle",
+            decision="degraded",
+            error_type=error_code(error),
+        )
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=2)
+        try:
+            socket_path.unlink(missing_ok=True)
+        except OSError:
+            pass
+        yield
+        return
+    try:
+        yield
+    finally:
+        try:
+            socket_path.unlink(missing_ok=True)
+        except OSError:
+            pass
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=2)
+
+
 def run(paths: UserPaths) -> int:
     paths.data.mkdir(parents=True, exist_ok=True)
     try:
         with ExitStack() as owner:
             owner.enter_context(writer_lock(paths.data / "daemon.lock"))
+            owner.enter_context(_policy_server(paths))
             _log(paths, None, "INFO", event="lifecycle", decision="started")
             _poll(paths, owner)
     except WriterBusy:

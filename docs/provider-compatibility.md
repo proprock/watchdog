@@ -31,6 +31,14 @@ Codex desktop evidence comes from resuming the same idle scratch session through
 
 Claude desktop uses project-local `.claude/settings.local.json` in a dedicated scratch folder. A bounded no-shell prompt launched one no-tool subagent and completed with DESKTOP_PROBE_DONE. Startup, prompt, Agent tool, subagent lifecycle, Stop, and manual PreCompact/PostCompact summaries were received. The app showed the Sonnet 5 model label; no desktop backend version was established. The folder picker required one manual user action because UI automation reported stale focus; this is a probe tooling issue, not a hook limitation.
 
+## Control capability (WD-022b `intervene`)
+
+| Capability | Codex CLI | Codex desktop | Claude CLI | Claude desktop |
+|---|---|---|---|---|
+| `intervene` (deny a `PreToolUse`-equivalent call) | Not supported: no confirmed blocking capability; degrades to `log` | Not supported: no confirmed blocking capability; degrades to `log` | **Supported**, narrowly: `PreToolUse` on the `Agent` tool, only when the caller explicitly passes `tool_input.model` (an alias: `sonnet`/`opus`/`haiku`/`fable`) | Same mechanism as Claude CLI (same adapter); not separately live-verified |
+
+The only implemented rule is same-model subagent spawn (WD-014): the daemon compares the alias against the coordinating conversation's most recently observed resolved model, at the family level (`agent_watchdog.analysis.model_family_matches`), since the full resolved id is never visible at `PreToolUse` time. A subagent spawned without an explicit `model` override — the common case, resolved later from `.claude/agents/*.md` frontmatter or inherited defaults — has no model visible at this point at all and is never evaluated; this is an accepted, documented recall gap, not a bug. Verified offline end to end (a real adapter binary against a real running daemon over the loopback policy socket, `tests/test_rust_adapter.py::test_native_deny_round_trips_through_a_real_running_daemon`); a live probe against a real Claude Code session — confirming the Agent tool's actual `PreToolUse` payload shape and that Claude Code honors the `hookSpecificOutput`/`permissionDecision` deny response — is separate, opt-in live evidence, unverified until run.
+
 ## Payload and installation findings
 
 - Codex tool samples included session_id, turn_id, tool_use_id, model, permission_mode, tool_input, and tool_response. The observed tool_response was a string, so adapters must not assume a universal JSON result or exit-code property.

@@ -234,10 +234,15 @@ parameterized and is not raised to pass acceptance.
 model context on `SessionStart` and `UserPromptSubmit`. Printing `{}` there would
 inject model context and break the invariant that observation hooks do not
 continue a turn or inject context. The adapter therefore prints **nothing** for
-`claude` on every path — success, unregistered project, malformed JSON, oversized
-payload, pause, and internal failure — and always exits 0. The Rust adapter makes
-the same choice by scanning its raw arguments for the `claude` token, so a
-parse failure is also silent. Codex still receives `{}`.
+`claude` on every observation path — success, unregistered project, malformed
+JSON, oversized payload, pause, and internal failure — and always exits 0. The
+Rust adapter makes the same choice by scanning its raw arguments for the `claude`
+token, so a parse failure is also silent. Codex still receives `{}`. The one
+exception (WD-022b) is the narrow `intervene` capability: a `PreToolUse` call on
+the `Agent` tool that the same-model-subagent-spawn policy rule denies prints the
+Claude deny contract (`{"hookSpecificOutput": {"hookEventName": "PreToolUse",
+"permissionDecision": "deny", "permissionDecisionReason": "..."}}`) instead of
+staying silent — see "M4 LLM/control design" in `docs/architecture.md`.
 
 **Twelve native events map to existing envelope kinds:**
 

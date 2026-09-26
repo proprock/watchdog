@@ -126,6 +126,84 @@ fn utc_now() -> String {
     Utc::now().to_rfc3339_opts(SecondsFormat::Micros, true)
 }
 
+/// Discovery record for the daemon's WD-014 policy socket (loopback-only,
+/// started only while the daemon runs). Absent or unreadable -> no query is
+/// attempted; every `PreToolUse` call proceeds exactly as it does today.
+struct PolicySocket {
+    port: u16,
+    token: String,
+}
+
+impl PolicySocket {
+    fn read(data: &Path) -> Option<Self> {
+        let mut bytes = Vec::new();
+        File::open(data.join("policy").join("socket.json"))
+            .ok()?
+            .take(4096)
+            .read_to_end(&mut bytes)
+            .ok()?;
+        let value: Value = serde_json::from_slice(&bytes).ok()?;
+        if value["schema_version"].as_u64() != Some(1) {
+            return None;
+        }
+        let port = u16::try_from(value["port"].as_u64()?).ok()?;
+        let token = value["token"].as_str()?;
+        if token.is_empty() || token.len() > 128 {
+            return None;
+        }
+        Some(PolicySocket {
+            port,
+            token: token.to_owned(),
+        })
+    }
+}
+
+const POLICY_TIMEOUT: std::time::Duration = std::time::Duration::from_millis(150);
+
+/// Ask the running daemon, synchronously and with a strict bounded timeout,
+/// whether a same-model subagent spawn should be denied. `None` on any
+/// failure (no socket file, refused/timed-out connection, malformed
+/// response) always means "do not deny" -- a false deny is the one Watchdog
+/// failure that would actually stop the harness, so every error path here
+/// fails open, never closed.
+fn ask_policy(data: &Path, cwd: &str, session_id: &str, candidate_model: &str) -> bool {
+    let Some(socket) = PolicySocket::read(data) else {
+        return false;
+    };
+    let address = std::net::SocketAddr::from(([127, 0, 0, 1], socket.port));
+    let Ok(mut stream) = std::net::TcpStream::connect_timeout(&address, POLICY_TIMEOUT) else {
+        return false;
+    };
+    if stream.set_write_timeout(Some(POLICY_TIMEOUT)).is_err()
+        || stream.set_read_timeout(Some(POLICY_TIMEOUT)).is_err()
+    {
+        return false;
+    }
+    let request = json!({
+        "schema_version": 1,
+        "token": socket.token,
+        "cwd": cwd,
+        "session_id": session_id,
+        "candidate_model": candidate_model,
+    });
+    let Ok(mut payload) = serde_json::to_vec(&request) else {
+        return false;
+    };
+    payload.push(b'\n');
+    use std::io::Write;
+    if stream.write_all(&payload).is_err() || stream.shutdown(std::net::Shutdown::Write).is_err() {
+        return false;
+    }
+    let mut response = Vec::new();
+    if stream.take(4096).read_to_end(&mut response).is_err() {
+        return false;
+    }
+    let Ok(value) = serde_json::from_slice::<Value>(&response) else {
+        return false;
+    };
+    value["schema_version"].as_u64() == Some(1) && value["decision"].as_str() == Some("deny")
+}
+
 fn identifier<'a>(input: &'a Value, key: &str) -> Option<&'a str> {
     input[key]
         .as_str()
@@ -179,9 +257,18 @@ fn ensure_daemon(paths: &Paths) -> Result<()> {
 /// The whole hook: redact known secret forms and durably spool the complete
 /// provider input. `cwd` remains a transport field because the daemon needs it
 /// verbatim to resolve the checkout; all semantic projection happens at drain.
-fn observe(paths: &Paths, provider: &str, event_hint: &mut Option<String>) -> Result<()> {
+///
+/// Returns the stdout to print in place of the per-provider default, when the
+/// WD-014 same-model-subagent-spawn policy rule denies this call (Claude
+/// `PreToolUse` only). The event is spooled unconditionally either way -- the
+/// `log` half of the rule's `both` action always fires.
+fn observe(
+    paths: &Paths,
+    provider: &str,
+    event_hint: &mut Option<String>,
+) -> Result<Option<Value>> {
     if paused(paths)? || !paths.config.exists() {
-        return Ok(());
+        return Ok(None);
     }
     let limits = SpoolLimits::read(&paths.data);
     let adapter_started_at = limits.pipeline_telemetry.then(utc_now);
@@ -196,7 +283,7 @@ fn observe(paths: &Paths, provider: &str, event_hint: &mut Option<String>) -> Re
         .read_to_end(&mut raw)?;
     if raw.len() as u64 > limits.payload_bytes {
         disk::loss(&paths.data, PAYLOAD);
-        return Ok(());
+        return Ok(None);
     }
     let input: Value = serde_json::from_slice(&raw)?;
     if let Some(name) = identifier(&input, "hook_event_name") {
@@ -206,6 +293,43 @@ fn observe(paths: &Paths, provider: &str, event_hint: &mut Option<String>) -> Re
     if !Path::new(&cwd).is_absolute() {
         return Err("relative cwd".into());
     }
+
+    // Cheap checks first, so every other hook stays on the unchanged,
+    // zero-cost path: only Claude PreToolUse on the Agent tool, with an
+    // explicit model override in tool_input, ever touches the policy socket.
+    // A subagent spawned without an explicit override (the common case) has
+    // no model visible here at all -- an accepted, documented recall gap, not
+    // a bug.
+    let deny_reason = if provider == "claude"
+        && identifier(&input, "hook_event_name") == Some("PreToolUse")
+        && identifier(&input, "tool_name") == Some("Agent")
+    {
+        match (
+            identifier(&input, "session_id"),
+            input["tool_input"]["model"].as_str(),
+        ) {
+            (Some(session_id), Some(candidate_model))
+                if ask_policy(&paths.data, &cwd, session_id, candidate_model) =>
+            {
+                Some(format!(
+                    "Watchdog: this subagent would run on the same model tier ({candidate_model}) \
+                     as its coordinating conversation. Downgrade the subagent's model."
+                ))
+            }
+            _ => None,
+        }
+    } else {
+        None
+    };
+    let stdout = deny_reason.map(|reason| {
+        json!({
+            "hookSpecificOutput": {
+                "hookEventName": "PreToolUse",
+                "permissionDecision": "deny",
+                "permissionDecisionReason": reason,
+            }
+        })
+    });
 
     let mut forwarded = input;
     forwarded
@@ -244,13 +368,14 @@ fn observe(paths: &Paths, provider: &str, event_hint: &mut Option<String>) -> Re
         || used.saturating_add(bytes.len() as u64) > limits.spool_bytes
     {
         disk::loss(&paths.data, QUOTA);
-        return Ok(());
+        return Ok(stdout);
     }
     if disk::atomic(&spool.join(format!("{}.json", Uuid::new_v4())), &bytes).is_err() {
         disk::loss(&paths.data, IO);
-        return Ok(());
+        return Ok(stdout);
     }
-    ensure_daemon(paths)
+    ensure_daemon(paths)?;
+    Ok(stdout)
 }
 
 /// Map an `observe()` failure to a stable, content-free category for the fault
@@ -287,16 +412,26 @@ fn main() {
         );
         return;
     }
+    let mut deny_stdout: Option<Value> = None;
     if let Ok((paths, provider)) = arguments() {
         let mut event_hint = None;
-        if let Err(error) = observe(&paths, &provider, &mut event_hint) {
-            disk::loss(&paths.data, 2);
-            disk::fault(
-                &paths.data,
-                fault_category(error.as_ref()),
-                event_hint.as_deref().unwrap_or("unknown"),
-            );
+        match observe(&paths, &provider, &mut event_hint) {
+            Ok(value) => deny_stdout = value,
+            Err(error) => {
+                disk::loss(&paths.data, 2);
+                disk::fault(
+                    &paths.data,
+                    fault_category(error.as_ref()),
+                    event_hint.as_deref().unwrap_or("unknown"),
+                );
+            }
         }
+    }
+    if let Some(value) = deny_stdout {
+        // The one case where Claude gets meaningful stdout: a WD-014
+        // same-model-subagent-spawn deny on PreToolUse.
+        println!("{value}");
+        return;
     }
     // Claude adds hook stdout to model context on SessionStart and UserPromptSubmit;
     // stay silent for Claude even when argument parsing failed.

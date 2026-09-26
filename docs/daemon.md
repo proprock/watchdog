@@ -48,6 +48,15 @@ Without overrides, locations come from platformdirs. No login service is install
   acknowledged request ID, and up to 32 project error IDs. Start acknowledgment is
   published by the core; stop completion is the persistent pause plus released
   ownership. Corrupt or future-version control files are not overwritten.
+- `data/policy/socket.json` (WD-022b) publishes the loopback-only port and a
+  per-instance random token for the daemon's WD-014 `intervene` decision
+  socket, the same discovery-file pattern as `spool/limits.json`. A background
+  thread answers exactly one bounded, token-checked request per connection; a
+  bind or publish failure degrades to no policy socket at all (a WARNING, not
+  a daemon crash — this optional capability must never take down the shared
+  daemon Codex observation also depends on). Removed on every exit path, clean
+  or not, so a stale file left by an unclean exit is at worst a dead port a
+  later process might reuse, caught by the token check.
 
 Status is `paused`, `running`, `unavailable`, or `degraded`. A held lock with a
 missing/invalid heartbeat, a heartbeat older than ten seconds, or project/config

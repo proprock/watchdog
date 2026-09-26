@@ -1,8 +1,10 @@
 import io
 import json
 import os
+import socket
 import subprocess
 import sys
+import threading
 from datetime import UTC, datetime
 from pathlib import Path
 from uuid import uuid4
@@ -647,3 +649,260 @@ def test_native_claude_shares_pause_and_payload_limit_paths(rust_adapter, native
     assert not spool_files(paths)
     drain_spool(paths)
     assert not inbox_files(paths, project)
+
+
+class _FakePolicyServer:
+    """Stands in for the daemon's WD-014 policy socket in adapter-only tests."""
+
+    def __init__(self, paths, *, token="0" * 32):
+        self.token = token
+        self._socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        self._socket.bind(("127.0.0.1", 0))
+        self._socket.listen(1)
+        self.port = self._socket.getsockname()[1]
+        policy = paths.data / "policy"
+        policy.mkdir(parents=True, exist_ok=True)
+        (policy / "socket.json").write_text(
+            json.dumps({"schema_version": 1, "pid": 0, "port": self.port, "token": self.token}),
+            encoding="utf-8",
+        )
+
+    def respond(self, decision):
+        """Accept exactly one connection and answer with a decision, then stop."""
+
+        def handle():
+            try:
+                connection, _ = self._socket.accept()
+            except OSError:
+                return
+            with connection:
+                connection.settimeout(1)
+                try:
+                    while not connection.recv(4096).endswith(b"\n"):
+                        pass
+                except OSError:
+                    return
+                connection.sendall(
+                    json.dumps({"schema_version": 1, "decision": decision}).encode("utf-8")
+                )
+
+        threading.Thread(target=handle, daemon=True).start()
+        return self
+
+    def respond_malformed(self):
+        def handle():
+            try:
+                connection, _ = self._socket.accept()
+            except OSError:
+                return
+            with connection:
+                connection.sendall(b"not json")
+
+        threading.Thread(target=handle, daemon=True).start()
+        return self
+
+    def close(self):
+        self._socket.close()
+
+
+def agent_pretooluse(project, *, model):
+    return {
+        "cwd": str(project.root),
+        "session_id": "session-1",
+        "hook_event_name": "PreToolUse",
+        "tool_name": "Agent",
+        "tool_input": {"subagent_type": "general-purpose", "prompt": "p", "model": model},
+    }
+
+
+def test_native_denies_a_same_model_subagent_spawn(rust_adapter, native_setup):
+    paths, project = native_setup
+    server = _FakePolicyServer(paths).respond("deny")
+    try:
+        result = invoke(
+            rust_adapter, paths, agent_pretooluse(project, model="opus"), provider="claude"
+        )
+    finally:
+        server.close()
+    assert result.returncode == 0
+    stdout = json.loads(result.stdout)
+    assert stdout["hookSpecificOutput"]["hookEventName"] == "PreToolUse"
+    assert stdout["hookSpecificOutput"]["permissionDecision"] == "deny"
+    assert isinstance(stdout["hookSpecificOutput"]["permissionDecisionReason"], str)
+    # The log half of `both` always fires, even when denied.
+    assert spool_files(paths)
+
+
+def test_native_allows_a_different_model_subagent_spawn(rust_adapter, native_setup):
+    paths, project = native_setup
+    server = _FakePolicyServer(paths).respond("allow")
+    try:
+        result = invoke(
+            rust_adapter, paths, agent_pretooluse(project, model="haiku"), provider="claude"
+        )
+    finally:
+        server.close()
+    assert result.returncode == 0
+    assert result.stdout == ""
+    assert spool_files(paths)
+
+
+def test_native_fails_open_without_a_policy_socket_file(rust_adapter, native_setup):
+    paths, project = native_setup
+    result = invoke(rust_adapter, paths, agent_pretooluse(project, model="opus"), provider="claude")
+    assert result.returncode == 0
+    assert result.stdout == ""
+    assert spool_files(paths)
+
+
+def test_native_fails_open_on_a_stale_socket_file(rust_adapter, native_setup):
+    """A closed port behind a leftover socket.json must never produce a deny."""
+    paths, project = native_setup
+    dead = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    dead.bind(("127.0.0.1", 0))
+    port = dead.getsockname()[1]
+    dead.close()
+    policy = paths.data / "policy"
+    policy.mkdir(parents=True, exist_ok=True)
+    (policy / "socket.json").write_text(
+        json.dumps({"schema_version": 1, "pid": 0, "port": port, "token": "x" * 32}),
+        encoding="utf-8",
+    )
+    result = invoke(rust_adapter, paths, agent_pretooluse(project, model="opus"), provider="claude")
+    assert result.returncode == 0
+    assert result.stdout == ""
+    assert spool_files(paths)
+
+
+def test_native_fails_open_on_a_malformed_response(rust_adapter, native_setup):
+    paths, project = native_setup
+    server = _FakePolicyServer(paths).respond_malformed()
+    try:
+        result = invoke(
+            rust_adapter, paths, agent_pretooluse(project, model="opus"), provider="claude"
+        )
+    finally:
+        server.close()
+    assert result.returncode == 0
+    assert result.stdout == ""
+    assert spool_files(paths)
+
+
+def test_native_never_queries_without_an_explicit_model_override(rust_adapter, native_setup):
+    """A server that would always deny must never be reached: a subagent spawned
+    without an explicit tool_input.model override has no model visible at
+    PreToolUse time (WD-022b's documented recall gap), so the adapter's cheap
+    gate must exclude it before ever touching the policy socket."""
+    paths, project = native_setup
+    server = _FakePolicyServer(paths).respond("deny")
+    try:
+        payload = {
+            "cwd": str(project.root),
+            "session_id": "session-1",
+            "hook_event_name": "PreToolUse",
+            "tool_name": "Agent",
+            "tool_input": {"subagent_type": "general-purpose", "prompt": "p"},
+        }
+        result = invoke(rust_adapter, paths, payload, provider="claude")
+    finally:
+        server.close()
+    assert result.returncode == 0
+    assert result.stdout == ""
+    assert spool_files(paths)
+
+
+def test_native_deny_round_trips_through_a_real_running_daemon(rust_adapter, tmp_path):
+    """End-to-end: a real daemon (launched by the adapter itself, exactly as in
+    production) answers a real PreToolUse deny query over the loopback policy
+    socket, not a fake stand-in server."""
+    import time
+
+    from agent_watchdog.daemon import status, stop
+    from agent_watchdog.registry import Registry
+
+    root = tmp_path / "project"
+    root.mkdir()
+    registry = Registry()
+    project = registry.add(root)
+    paths = UserPaths(tmp_path / "config.toml", tmp_path / "data", tmp_path / "runtime")
+    save_config(paths.config, registry.config)
+
+    def wait(predicate, timeout=30):
+        deadline = time.monotonic() + timeout
+        while not predicate():
+            assert time.monotonic() < deadline, "Daemon did not settle"
+            time.sleep(0.05)
+
+    with Store(paths.project_data(project.id), project.id) as store:
+        store.put(
+            Envelope(
+                provider="claude",
+                project_id=project.id,
+                session_id="session-1",
+                kind="usage",
+                source="transcript",
+                received_at=datetime.now(UTC),
+                payload={"claude": {"model": "claude-opus-5-5"}},
+            )
+        )
+    try:
+        # Get the daemon running first, exactly as a real hook sequence would.
+        invoke(rust_adapter, paths, {"cwd": str(root), "hook_event_name": "SessionStart"})
+        wait(lambda: status(paths)["state"] == "running")
+        wait(lambda: (paths.data / "policy" / "socket.json").is_file())
+
+        # Deny first: if the daemon's very first policy response were ever slow
+        # enough to overrun the adapter's own read timeout, an "allow" sent
+        # first would fail open and pass this assertion for the wrong reason.
+        # A denied case sent first fails loudly instead of silently passing.
+        denied = invoke(
+            rust_adapter,
+            paths,
+            {
+                "cwd": str(root),
+                "session_id": "session-1",
+                "hook_event_name": "PreToolUse",
+                "tool_name": "Agent",
+                "tool_input": {"subagent_type": "general-purpose", "prompt": "p", "model": "opus"},
+            },
+            provider="claude",
+        )
+        stdout = json.loads(denied.stdout)
+        assert stdout["hookSpecificOutput"]["permissionDecision"] == "deny"
+
+        allowed = invoke(
+            rust_adapter,
+            paths,
+            {
+                "cwd": str(root),
+                "session_id": "session-1",
+                "hook_event_name": "PreToolUse",
+                "tool_name": "Agent",
+                "tool_input": {"subagent_type": "general-purpose", "prompt": "p", "model": "haiku"},
+            },
+            provider="claude",
+        )
+        assert allowed.stdout == ""
+    finally:
+        stop(paths)
+        wait(lambda: not status(paths)["alive"])
+    assert not (paths.data / "policy" / "socket.json").exists()
+
+
+def test_native_never_queries_a_non_agent_tool(rust_adapter, native_setup):
+    paths, project = native_setup
+    server = _FakePolicyServer(paths).respond("deny")
+    try:
+        payload = {
+            "cwd": str(project.root),
+            "session_id": "session-1",
+            "hook_event_name": "PreToolUse",
+            "tool_name": "Bash",
+            "tool_input": {"command": "echo hi", "model": "opus"},
+        }
+        result = invoke(rust_adapter, paths, payload, provider="claude")
+    finally:
+        server.close()
+    assert result.returncode == 0
+    assert result.stdout == ""
+    assert spool_files(paths)

@@ -398,6 +398,19 @@ def same_model_subagent_spawn(events: Iterable[Envelope]) -> list[dict[str, Any]
     return findings
 
 
+def model_family_matches(alias: str, resolved_model: str) -> bool:
+    """Whether a Claude model alias (``sonnet``/``opus``/``haiku``/``fable``) names
+    the same family as a fully resolved model id (e.g. ``claude-opus-5-5``).
+
+    The Agent tool's ``tool_input.model`` is only ever an alias, visible at
+    `PreToolUse` time only when the caller explicitly overrides it; a usage
+    event's own observed model is always a full id. Exact equality would never
+    match, so this compares at the hyphen-delimited family segment instead --
+    the one comparison the `intervene` path (WD-022b) needs.
+    """
+    return alias.strip().lower() in resolved_model.strip().lower().split("-")
+
+
 def git_diff_fingerprint(checkout: Path) -> tuple[str, int] | None:
     """Hash an unmodified checkout diff; failures remain unknown, not clean."""
     try:

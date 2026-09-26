@@ -3,6 +3,8 @@ import subprocess
 from datetime import UTC, datetime, timedelta
 from uuid import uuid4
 
+import pytest
+
 from agent_watchdog.analysis import (
     POLICY_RULE_VERSION,
     REPORT_SCHEMA_VERSION,
@@ -10,6 +12,7 @@ from agent_watchdog.analysis import (
     diff_oscillations,
     finding_fingerprint,
     git_diff_fingerprint,
+    model_family_matches,
     same_model_subagent_spawn,
 )
 from agent_watchdog.events import Envelope
@@ -166,6 +169,22 @@ def test_comparison_uses_occurred_at_not_ingestion_order():
     findings = same_model_subagent_spawn([subagent, coordinator_before, coordinator_switch])
     assert len(findings) == 1
     assert str(subagent.event_id) in findings[0]["evidence_ids"]
+
+
+@pytest.mark.parametrize(
+    ("alias", "resolved_model", "expected"),
+    [
+        ("opus", "claude-opus-5-5", True),
+        ("sonnet", "claude-sonnet-5", True),
+        ("haiku", "claude-haiku-4-5-20251001", True),
+        ("Opus", "claude-opus-5-5", True),
+        ("opus", "claude-sonnet-5", False),
+        ("sonnet", "claude-opus-5-5", False),
+        ("son", "claude-sonnet-5", False),
+    ],
+)
+def test_model_family_matches(alias, resolved_model, expected):
+    assert model_family_matches(alias, resolved_model) is expected
 
 
 def test_report_has_reproducible_shadow_findings_without_a_stall_verdict():
