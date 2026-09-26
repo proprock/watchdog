@@ -78,7 +78,7 @@ def test_same_model_subagent_spawn_is_logged():
     finding = findings[0]
     assert finding["rule"] == "same_model_subagent_spawn"
     assert finding["rule_version"] == POLICY_RULE_VERSION
-    assert finding["action"] == "log"
+    assert finding["action"] == "both"
     # Evidence is the launch fact (agent.start) plus the matching usage event,
     # not the unrelated coordinator usage event that happened to establish
     # the compared model.

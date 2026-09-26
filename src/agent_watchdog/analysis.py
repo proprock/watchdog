@@ -340,11 +340,14 @@ def same_model_subagent_spawn(events: Iterable[Envelope]) -> list[dict[str, Any]
     reporting usage. One finding per spawn (``agent_id``), not per usage event.
 
     Structural, not statistical, so it needs no calibration and is exempt from
-    the WD-013 precision gate. Its action is unconditional ``log``; the
-    Claude-``PreToolUse``-only ``intervene`` capability is a separate layer on
-    top of this same fact, not implemented here. A subagent whose model is
-    unavailable (not yet observed) is never compared -- fail-safe, not a
-    false claim.
+    the WD-013 precision gate. The rule's declared action is ``both``
+    (unconditional ``log`` plus an ``intervene`` attempt); every finding here
+    carries that action, matching the rule's WD-014 declaration, since this
+    function's own job is only the unconditional ``log`` half -- the
+    Claude-``PreToolUse``-only ``intervene`` attempt happens synchronously in
+    the native adapter/daemon and is not itself recorded onto this finding. A
+    subagent whose model is unavailable (not yet observed) is never compared
+    -- fail-safe, not a false claim.
 
     Ordered by ``occurred_at`` (the true API response time), not ``received_at``
     (ingestion time): a subagent transcript is only registered at `agent.end`
@@ -392,7 +395,7 @@ def same_model_subagent_spawn(events: Iterable[Envelope]) -> list[dict[str, Any]
                 "same_model_subagent_spawn",
                 sorted(evidence),
                 f"Subagent resolved to the same model ({model}) as its coordinating conversation.",
-                action="log",
+                action="both",
             )
         )
     return findings
