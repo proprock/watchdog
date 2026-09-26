@@ -39,6 +39,12 @@ log_level = "INFO"
 # error records. Off by default so the log, exports, and shared bug reports stay
 # content-free; enable it on a local development or debugging instance.
 log_detail = false
+# Per-rule kill switch for the WD-014 deterministic policy rules' `intervene`
+# (tool-call-denying) behavior; each rule gets its own flag. This one covers
+# same-model subagent spawn: denying a Claude subagent spawned with the same
+# model as its coordinating conversation. Never affects the rule's own `log`
+# finding, which stays unconditional, or any other policy rule's switch.
+policy_intervene_same_model_subagent_spawn = true
 
 # The quota relationship must remain:
 # payload_bytes <= inbox_bytes <= project_bytes
@@ -60,3 +66,4 @@ log_detail = false
 # Optional per-project overrides go under the project:
 # [projects.overrides]
 # capture_content = false
+# policy_intervene_same_model_subagent_spawn = false

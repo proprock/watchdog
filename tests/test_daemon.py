@@ -11,7 +11,15 @@ from uuid import uuid4
 
 import pytest
 
-from agent_watchdog.config import Config, Limits, Overrides, UserPaths, load_config, save_config
+from agent_watchdog.config import (
+    Config,
+    Limits,
+    Overrides,
+    Project,
+    UserPaths,
+    load_config,
+    save_config,
+)
 from agent_watchdog.daemon import (
     _drain_spool,
     _policy_server,
@@ -307,6 +315,41 @@ def test_resolve_policy_decision_denies_a_same_family_subagent_spawn(paths, tmp_
             paths, cwd=str(root), session_id="session-1", candidate_model="opus"
         )
         == "deny"
+    )
+
+
+def test_resolve_policy_decision_respects_the_global_kill_switch(paths, tmp_path):
+    root = tmp_path / "project"
+    root.mkdir()
+    project = Project(id=uuid4(), root=root)
+    save_config(
+        paths.config,
+        Config(
+            defaults=Limits(policy_intervene_same_model_subagent_spawn=False), projects=(project,)
+        ),
+    )
+    _seed_coordinator_usage(paths, project, session_id="session-1", model="claude-opus-5-5")
+    assert (
+        _resolve_policy_decision(
+            paths, cwd=str(root), session_id="session-1", candidate_model="opus"
+        )
+        == "allow"
+    )
+
+
+def test_resolve_policy_decision_respects_the_per_project_kill_switch(paths, tmp_path):
+    root = tmp_path / "project"
+    root.mkdir()
+    project = Project(
+        id=uuid4(), root=root, overrides=Overrides(policy_intervene_same_model_subagent_spawn=False)
+    )
+    save_config(paths.config, Config(projects=(project,)))
+    _seed_coordinator_usage(paths, project, session_id="session-1", model="claude-opus-5-5")
+    assert (
+        _resolve_policy_decision(
+            paths, cwd=str(root), session_id="session-1", candidate_model="opus"
+        )
+        == "allow"
     )
 
 

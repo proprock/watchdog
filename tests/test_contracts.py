@@ -130,6 +130,21 @@ def test_project_overrides_round_trip_and_do_not_change_other_projects(tmp_path)
         Config(projects=(Project(id=uuid4(), root=tmp_path, overrides=Overrides(inbox_bytes=1)),))
 
 
+def test_policy_intervene_kill_switch_defaults_true_and_is_project_overridable(tmp_path):
+    default_off = Project(id=uuid4(), root=tmp_path / "one")
+    overridden_off = Project(
+        id=uuid4(),
+        root=tmp_path / "two",
+        overrides=Overrides(policy_intervene_same_model_subagent_spawn=False),
+    )
+    config = Config(projects=(default_off, overridden_off))
+    assert config.defaults.policy_intervene_same_model_subagent_spawn is True
+    assert default_off.overrides.apply(config.defaults).policy_intervene_same_model_subagent_spawn
+    assert not overridden_off.overrides.apply(
+        config.defaults
+    ).policy_intervene_same_model_subagent_spawn
+
+
 def test_save_refuses_unsupported_existing_config(tmp_path):
     path = tmp_path / "config.toml"
     path.write_text("schema_version = 2\n")

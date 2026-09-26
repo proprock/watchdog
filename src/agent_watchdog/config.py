@@ -40,6 +40,16 @@ class Limits(StrictModel):
     log_bytes: Positive = 10 * 1024**2
     log_level: Literal["DEBUG", "INFO", "WARNING", "ERROR"] = "INFO"
     log_detail: bool = False
+    # Per-rule `intervene` kill switches for the WD-014 deterministic policy
+    # rules (`agent_watchdog.analysis.POLICY_RULES`). Each rule gets its own
+    # flag, named `policy_intervene_<rule_id>`, so a future second rule adds a
+    # field here rather than sharing one switch with this one. This never
+    # gates the rule's `log` half, which stays unconditional and always safe
+    # per the WD-014 decision text; only the tool-call-blocking behavior is
+    # switchable. Setting it false is a full off switch, not a narrower one:
+    # the daemon never denies for that rule in that project, regardless of
+    # any match.
+    policy_intervene_same_model_subagent_spawn: bool = True
 
     @model_validator(mode="after")
     def ordered_quotas(self) -> Self:
@@ -57,6 +67,7 @@ class Overrides(StrictModel):
     project_bytes: Positive | None = None
     inbox_bytes: Positive | None = None
     payload_bytes: Positive | None = None
+    policy_intervene_same_model_subagent_spawn: bool | None = None
 
     def apply(self, defaults: Limits) -> Limits:
         return Limits.model_validate(defaults.model_dump() | self.model_dump(exclude_none=True))

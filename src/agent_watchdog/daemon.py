@@ -871,7 +871,11 @@ def _resolve_policy_decision(
     one Watchdog failure that would actually stop the harness, so this never
     fails closed. A candidate already at the lowest known tier is never
     denied either, for the same reason: there is nothing lower to downgrade
-    to (see ``_LOWEST_TIER_ALIASES``).
+    to (see ``_LOWEST_TIER_ALIASES``). The resolved project's
+    ``policy_intervene_same_model_subagent_spawn`` (default ``True``,
+    per-project overridable) is this rule's own kill switch -- set false to
+    disable only this rule's `intervene` without pausing the daemon or
+    affecting any other policy rule or the rule's own `log` half.
     """
     if candidate_model.strip().lower() in _LOWEST_TIER_ALIASES:
         return "allow"
@@ -889,6 +893,9 @@ def _resolve_policy_decision(
         return "allow"
     project = next((item for item in config.projects if item.id == resolution.project_id), None)
     if project is None:
+        return "allow"
+    limits = project.overrides.apply(config.defaults)
+    if not limits.policy_intervene_same_model_subagent_spawn:
         return "allow"
     try:
         with database(paths, project) as db:
