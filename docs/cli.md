@@ -259,6 +259,11 @@ skip counts, and stores each session's findings with their fingerprints, because
 an open session can grow a finding group and change its identity. It contains no
 prompt or output text.
 
+For a full-cohort calibration, `sample --all-eligible --output PATH` includes
+every settled session meeting `--min-events`; `--target` and `--seed` are ignored
+for selection in that mode. WD-122 used this mode and checked that the frozen
+WD-012 session IDs were all included before review.
+
 `annotate` walks the frozen cohort and resumes at the first session that carries
 no label. Each card shows its counts, its first and last prompt, the last
 assistant message, the tool inputs it repeated, the last few timeline rows, its

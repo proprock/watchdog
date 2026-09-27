@@ -172,11 +172,16 @@ def build_sample(paths: UserPaths, args: argparse.Namespace) -> dict:
             )
     with_findings = [record for record in records if record["findings"]]
     without = [record for record in records if not record["findings"]]
-    # Every session that fired keeps precision measurable; a seeded draw of the
-    # silent ones keeps false negatives countable without reviewing everything.
-    room = max(0, args.target - len(with_findings))
+    # Every session that fired keeps precision measurable. By default a seeded
+    # draw limits review work; the explicit all-eligible mode includes every
+    # silent session so false negatives can be counted over the full cohort.
     order = sorted(without, key=lambda record: (record["first_received_at"], record["session_id"]))
-    drawn = random.Random(args.seed).sample(order, min(room, len(order)))
+    room = max(0, args.target - len(with_findings))
+    drawn = (
+        order
+        if args.all_eligible
+        else random.Random(args.seed).sample(order, min(room, len(order)))
+    )
     selected = sorted(
         with_findings + drawn,
         key=lambda record: (record["first_received_at"], record["provider"], record["session_id"]),
@@ -195,6 +200,7 @@ def build_sample(paths: UserPaths, args: argparse.Namespace) -> dict:
             "settle_hours": args.settle_hours,
             "target": args.target,
             "seed": args.seed,
+            "all_eligible": args.all_eligible,
             "considered": len(grouped),
             "eligible": len(records),
             "skipped": dict(skipped),
@@ -1088,6 +1094,14 @@ def recommend(
                 f"{rule}: not recommended — observed {stats['observed']} time(s) but never "
                 "reviewed; precision is unmeasured."
             )
+        elif stats["reviewed"] < stats["observed"] or stats["uncertain"]:
+            lines.append(
+                f"{rule}: not recommended — {stats['reviewed']} of {stats['observed']} "
+                "findings reviewed, with "
+                f"{stats['uncertain']} uncertain; reviewed precision "
+                f"{stats['precision']:.2%} (n={stats['precision_denominator']}) cannot "
+                "clear the gate while verdicts are missing or uncertain."
+            )
         elif stats["precision"] >= gate:
             cleared += 1
             lines.append(
@@ -1305,6 +1319,11 @@ def build_parser() -> argparse.ArgumentParser:
     sample.add_argument("--settle-hours", type=float, default=2.0)
     sample.add_argument("--target", type=int, default=40)
     sample.add_argument("--seed", type=int, default=12)
+    sample.add_argument(
+        "--all-eligible",
+        action="store_true",
+        help="Include every settled session that meets --min-events",
+    )
     sample.add_argument("--output", default="docs/evidence/wd012-sample.json")
 
     review = commands.add_parser("annotate", help="Review the frozen cohort interactively")

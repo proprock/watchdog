@@ -1,0 +1,38 @@
+{
+  "target_branch": "feature/wd-119-analyze-errors",
+  "graph_project": "C-Users-tonym-Repos-watchdog",
+  "graph_root": "C:/Users/tonym/Repos/watchdog",
+  "index_status": "ready",
+  "coverage_after_fast_index": {
+    "scripts/calibrate.py": "metadata_changed",
+    "scripts/wd122_report.py": "metadata_changed",
+    "tests/test_calibration.py": "metadata_changed",
+    "tests/test_wd122_report.py": "metadata_changed"
+  },
+  "detect_changes": {
+    "base": "feature/wd-119-analyze-errors",
+    "merge_base": "9e8f0d2a44529bef64a3ef42615f246c6c4238e1",
+    "direction": "inbound",
+    "scope": "impact",
+    "format": "json",
+    "depth": 12,
+    "limit": 500,
+    "changed_total": 16,
+    "changed_returned": 0,
+    "changed_has_more": true,
+    "impacted_total": 81,
+    "impacted_shown": 70,
+    "module_total": 14,
+    "module_returned": 0,
+    "truncated": true,
+    "truncation_reason": "output_budget"
+  },
+  "direct_changed_test_modules": [
+    "tests/test_calibration.py",
+    "tests/test_wd122_report.py"
+  ],
+  "selection": "full-suite fallback",
+  "fallback_reason": "Index coverage remained metadata_changed after a fast index and detect_changes was truncated.",
+  "pytest_command": "uv run pytest --basetemp <USERPROFILE>/.pytest-tmp/watchdog-wd122-full-<PID>",
+  "pytest_result": "516 passed in 98.11s; exit code 0"
+}

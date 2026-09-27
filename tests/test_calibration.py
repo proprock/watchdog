@@ -123,7 +123,8 @@ def sample_args(calibrate, paths, output, **overrides):
         str(output),
     ]
     for name, value in overrides.items():
-        arguments += [f"--{name.replace('_', '-')}", str(value)]
+        option = f"--{name.replace('_', '-')}"
+        arguments += [option] if value is True else [option, str(value)]
     return calibrate.build_parser().parse_args(arguments)
 
 
@@ -157,6 +158,27 @@ def test_the_sample_keeps_every_firing_session_and_draws_the_rest(calibrate, cap
     # Silent sessions are what make a false negative countable.
     assert strata["without_finding_drawn"] == 2
     assert len(sample["sessions"]) == 3
+
+
+def test_all_eligible_includes_every_silent_session_independent_of_target_and_seed(
+    calibrate, capture, tmp_path
+):
+    paths, _, _ = capture
+    args = sample_args(
+        calibrate,
+        paths,
+        tmp_path / "sample.json",
+        all_eligible=True,
+        target=1,
+        seed=999,
+    )
+
+    sample = calibrate.build_sample(paths, args)
+
+    identities = {record["session_id"] for record in sample["sessions"]}
+    assert identities == {"noisy", *(f"quiet-{index}" for index in range(4))}
+    assert sample["selection"]["all_eligible"] is True
+    assert sample["selection"]["strata"]["without_finding_drawn"] == 4
 
 
 def test_the_same_seed_selects_the_same_cohort(calibrate, capture, tmp_path):
@@ -389,6 +411,27 @@ def test_a_rule_at_the_precision_gate_is_recommended(calibrate, capture, tmp_pat
         line.startswith("repeated_tool_outcome: recommended") and "n=1" in line for line in lines
     )
     assert "repeated_tool_outcome: recommended" in calibrate.render_markdown(report)
+
+
+@pytest.mark.parametrize("reviewed,uncertain", [(1, 0), (2, 1)])
+def test_high_reviewed_precision_cannot_pass_with_missing_or_uncertain_verdicts(
+    calibrate, reviewed, uncertain
+):
+    stats = {
+        "observed": 2,
+        "reviewed": reviewed,
+        "true_positive": 1,
+        "false_positive": 0,
+        "uncertain": uncertain,
+        "precision": 1.0,
+        "precision_denominator": 1,
+    }
+
+    recommendations = calibrate.recommend({"repeated_tool_outcome": stats})
+
+    assert recommendations[0].startswith("repeated_tool_outcome: not recommended")
+    assert "cannot clear the gate" in recommendations[0]
+    assert "No rule cleared" in recommendations[-1]
 
 
 def test_an_unobserved_rule_is_not_recommended(calibrate, capture, tmp_path):

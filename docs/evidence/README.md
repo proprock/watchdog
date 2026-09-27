@@ -12,6 +12,14 @@ which judgements are refused when the retained evidence is insufficient. It
 governs the labels in `wd012-calibration.json`; `wd012-sample.json` and its `.csv`
 view hold the frozen cohort those labels apply to.
 
+WD-122 keeps that baseline intact. `wd122-sample.json` and its `.csv` view freeze
+the full eligible live cohort; `wd122-review.json` records source-linked manual
+verdicts and availability counts without captured content. The
+[error analysis](wd122-error-analysis.md) explains the false positives, missed
+slow sessions, and why no finding-rule change was justified. The
+[WD-122 report](wd122-report.md)
+compares the old and expanded samples without promoting a rule to guidance.
+
 `wd024-windows-baseline.json` preserves the original direct Rust measurement.
 `wd024-windows-direct-recheck.json`, `wd024-windows-powershell.json`, and
 `wd024-windows-pwsh.json` compare direct and shell launches of the installed Rust
