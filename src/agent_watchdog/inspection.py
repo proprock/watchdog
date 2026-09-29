@@ -1,13 +1,14 @@
 """Read-only project/session inspection; never open a storage writer."""
 
 import json
+import re
 import sqlite3
 from collections import defaultdict
 from collections.abc import Iterator
 from contextlib import closing, contextmanager
 from datetime import datetime
 from pathlib import Path
-from typing import Any, TypedDict
+from typing import Any, Literal, TypedDict
 
 from agent_watchdog import daemon, resources
 from agent_watchdog.config import (
@@ -523,7 +524,51 @@ def _error_text(response: object) -> str | None:
     return json.dumps(response, sort_keys=True)
 
 
-def errors(
+_EXIT_CODE_TEXT = re.compile(r"\AExit code (-?\d+)\b")
+
+FinishStatus = Literal["failure", "interrupt", "success", "unknown", "unclassified", "expired"]
+
+
+def finish_status(event: Envelope) -> FinishStatus:
+    """Classify one tool.finish from signals already used elsewhere, never a third definition.
+
+    A failure is the provider's own ``PostToolUseFailure`` hook event (retained
+    independent of content capture) or a failing ``tool_response`` judged by
+    ``analysis.tool_outcome``. A user interrupt is not an agent error. Retention
+    strips the whole payload after ``content_days`` and marks content
+    unavailable; that row is ``expired``, not silently absent.
+    """
+    from agent_watchdog.analysis import captured_content, tool_outcome
+
+    payload = event.payload.get(event.provider)
+    if not isinstance(payload, dict):
+        return "expired" if event.availability.get("content") == "unavailable" else "unknown"
+    metadata = payload.get("metadata")
+    response = captured_content(payload).get("tool_response")
+    if payload.get("hook_event_name") == "PostToolUseFailure" or (
+        response is not None and tool_outcome(response) == "failure"
+    ):
+        if isinstance(metadata, dict) and metadata.get("is_interrupt") is True:
+            return "interrupt"
+        return "failure"
+    if response is None:
+        return "unknown"
+    return "success" if tool_outcome(response) == "success" else "unclassified"
+
+
+def failure_exit_code(response: object, error: object) -> int | None:
+    """Prefer a structured exit code; Claude reports one only as leading error text."""
+    from agent_watchdog.analysis import exit_code
+
+    code = exit_code(response)
+    if code is None and isinstance(error, str):
+        match = _EXIT_CODE_TEXT.match(error)
+        if match is not None:
+            code = int(match.group(1))
+    return code
+
+
+def tool_finishes(
     paths: UserPaths,
     project: Project,
     *,
@@ -531,24 +576,8 @@ def errors(
     session_id: str | None,
     since: datetime | None,
     until: datetime | None,
-    limit: int,
-    offset: int,
-) -> dict[str, Any]:
-    """List individual failing tool.finish events from a read-only snapshot.
-
-    Complements ``report``'s ``identical_error`` shadow finding, which only
-    surfaces once the same structured failure repeats three or more times: a
-    one-off or non-repeating failure is otherwise invisible. A failure is
-    identified by either signal already used elsewhere in this codebase, never
-    a third definition: the provider's own ``PostToolUseFailure`` hook event
-    (always retained, independent of content capture) or a failing
-    ``tool_response`` judged the same way ``analysis.tool_outcome`` already
-    does. A user interrupt is not an agent error and is excluded, counted
-    separately.
-    """
-    from agent_watchdog.analysis import captured_content, exit_code, tool_outcome
-
-    _page(limit, offset)
+) -> tuple[dict[str, str], list[Envelope]]:
+    """Return subagent types by agent ID and the window's tool.finish events in received order."""
     with database(paths, project) as db:
         condition = "kind IN ('tool.finish', 'agent.start')"
         parameters: list[object] = []
@@ -578,46 +607,67 @@ def errors(
         if until is not None and event.received_at >= until:
             continue
         finishes.append(event)
+    return agent_types, finishes
 
+
+def error_record(event: Envelope, agent_types: dict[str, str]) -> dict[str, Any]:
+    """Distill one failing tool.finish; never the raw ``tool_response`` structure."""
+    from agent_watchdog.analysis import captured_content
+
+    payload = event.payload.get(event.provider)
+    payload = payload if isinstance(payload, dict) else {}
+    metadata = payload.get("metadata")
+    metadata = metadata if isinstance(metadata, dict) else {}
+    content = captured_content(payload)
+    response = content.get("tool_response")
+    error_text = metadata.get("error")
+    if not isinstance(error_text, str):
+        error_text = _error_text(response)
+    return {
+        "event_id": str(event.event_id),
+        "provider": event.provider,
+        "session_id": event.session_id,
+        "agent_id": event.agent_id,
+        "agent_type": agent_types.get(event.agent_id) if event.agent_id else None,
+        "received_at": event.received_at.isoformat(),
+        "tool_name": payload.get("tool_name"),
+        "tool_input": content.get("tool_input"),
+        "hook_event_name": payload.get("hook_event_name"),
+        "exit_code": failure_exit_code(response, error_text),
+        "error": error_text,
+    }
+
+
+def errors(
+    paths: UserPaths,
+    project: Project,
+    *,
+    provider: str | None,
+    session_id: str | None,
+    since: datetime | None,
+    until: datetime | None,
+    limit: int,
+    offset: int,
+) -> dict[str, Any]:
+    """List individual failing tool.finish events from a read-only snapshot.
+
+    Complements ``report``'s ``identical_error`` shadow finding, which only
+    surfaces once the same structured failure repeats three or more times: a
+    one-off or non-repeating failure is otherwise invisible. See
+    ``finish_status`` for the failure definition.
+    """
+    _page(limit, offset)
+    agent_types, finishes = tool_finishes(
+        paths, project, provider=provider, session_id=session_id, since=since, until=until
+    )
     matched: list[dict[str, Any]] = []
-    unknown_outcome = 0
-    interrupts_excluded = 0
+    counts = {"unknown": 0, "interrupt": 0, "expired": 0}
     for event in finishes:
-        payload = event.payload.get(event.provider)
-        if not isinstance(payload, dict):
-            continue
-        metadata = payload.get("metadata")
-        metadata = metadata if isinstance(metadata, dict) else {}
-        content = captured_content(payload)
-        response = content.get("tool_response")
-        hook_event_name = payload.get("hook_event_name")
-        is_failure = hook_event_name == "PostToolUseFailure" or (
-            response is not None and tool_outcome(response) == "failure"
-        )
-        if not is_failure:
-            if response is None:
-                unknown_outcome += 1
-            continue
-        if metadata.get("is_interrupt") is True:
-            interrupts_excluded += 1
-            continue
-        error_text = metadata.get("error")
-        if not isinstance(error_text, str):
-            error_text = _error_text(response)
-        matched.append(
-            {
-                "provider": event.provider,
-                "session_id": event.session_id,
-                "agent_id": event.agent_id,
-                "agent_type": agent_types.get(event.agent_id) if event.agent_id else None,
-                "received_at": event.received_at.isoformat(),
-                "tool_name": payload.get("tool_name"),
-                "tool_input": content.get("tool_input"),
-                "hook_event_name": hook_event_name,
-                "exit_code": exit_code(response) if response is not None else None,
-                "error": error_text,
-            }
-        )
+        status = finish_status(event)
+        if status == "failure":
+            matched.append(error_record(event, agent_types))
+        elif status in counts:
+            counts[status] += 1
     page = matched[offset : offset + limit]
     return {
         "project_id": str(project.id),
@@ -626,8 +676,9 @@ def errors(
         "errors": page,
         "has_more": offset + limit < len(matched),
         "total_matched": len(matched),
-        "unknown_outcome": unknown_outcome,
-        "interrupts_excluded": interrupts_excluded,
+        "unknown_outcome": counts["unknown"],
+        "interrupts_excluded": counts["interrupt"],
+        "content_expired": counts["expired"],
     }
 
 

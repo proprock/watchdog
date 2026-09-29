@@ -153,6 +153,46 @@ def main() -> int:
     errors_view.add_argument("--until", type=_since, help="ISO-8601 exclusive upper bound")
     errors_view.add_argument("--limit", type=int, default=100)
     errors_view.add_argument("--offset", type=int, default=0)
+    insights_view = commands.add_parser(
+        "insights",
+        help="Ask one isolated `claude -p` call for recommendations over collected evidence",
+    )
+    insights_view.add_argument("mode", choices=("errors",))
+    insights_view.add_argument(
+        "--project", help="Project alias; UUID accepted; default resolves cwd"
+    )
+    insights_view.add_argument(
+        "--provider", help="Limit to one provider namespace; default scans every provider"
+    )
+    insights_view.add_argument(
+        "--session", help="Limit to one native session (requires --provider)"
+    )
+    insights_view.add_argument(
+        "--since", type=_since, help="ISO-8601 inclusive lower bound; default 7 days ago"
+    )
+    insights_view.add_argument("--until", type=_since, help="ISO-8601 exclusive upper bound")
+    insights_view.add_argument("--model", default="sonnet", help="Claude model alias or name")
+    insights_view.add_argument("--effort", choices=("low", "medium", "high", "xhigh", "max"))
+    insights_view.add_argument(
+        "--timeout", type=float, default=300.0, help="Seconds before the call is abandoned"
+    )
+    insights_view.add_argument(
+        "--max-bundle-tokens",
+        type=int,
+        default=120_000,
+        help="Estimated token budget for the evidence bundle; lower-ranked items are cut",
+    )
+    insights_view.add_argument(
+        "--language", default="English", help="Language for summary and recommendation prose"
+    )
+    insights_view.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Print the redacted evidence bundle and send nothing",
+    )
+    insights_view.add_argument(
+        "--output", type=Path, help="Also write a Markdown report; never overwrites"
+    )
     label = commands.add_parser("label", help="Label one collected session through the core")
     label.add_argument("session_id")
     label.add_argument("--project", help="Project alias; UUID accepted; default resolves cwd")
@@ -265,6 +305,33 @@ def main() -> int:
                 daemon.mutate_registry(paths, mutate)
             print(json.dumps(result))
             return 0
+        if args.command == "insights":
+            from agent_watchdog import insights, inspection
+            from agent_watchdog.insights import llm
+
+            config = load_config(paths.config)
+            project = inspection.project_at(paths, args.project)
+            roots = [item.root for item in config.projects]
+            result = insights.run(
+                paths,
+                project,
+                alias=project_aliases(config.projects)[project.id],
+                mode=args.mode,
+                provider=args.provider,
+                session_id=args.session,
+                since=args.since,
+                until=args.until,
+                model=args.model,
+                effort=args.effort,
+                timeout=args.timeout,
+                max_bundle_tokens=args.max_bundle_tokens,
+                language=args.language,
+                dry_run=args.dry_run,
+                output=args.output,
+                runner=lambda request: llm.claude(request, forbidden_roots=roots),
+            )
+            print(json.dumps(result))
+            return 1 if result["status"] == "unavailable" else 0
         if args.command in (
             "doctor",
             "summary",

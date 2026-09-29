@@ -50,6 +50,10 @@ class Limits(StrictModel):
     # the daemon never denies for that rule in that project, regardless of
     # any match.
     policy_intervene_same_model_subagent_spawn: bool = True
+    # Kill switch for `insights`, the only path that sends a project's evidence to a
+    # model. The explicit command is the opt-in; false refuses the call (a dry run,
+    # which sends nothing, still works) for every project or just one.
+    insights_llm_enabled: bool = True
 
     @model_validator(mode="after")
     def ordered_quotas(self) -> Self:
@@ -68,6 +72,7 @@ class Overrides(StrictModel):
     inbox_bytes: Positive | None = None
     payload_bytes: Positive | None = None
     policy_intervene_same_model_subagent_spawn: bool | None = None
+    insights_llm_enabled: bool | None = None
 
     def apply(self, defaults: Limits) -> Limits:
         return Limits.model_validate(defaults.model_dump() | self.model_dump(exclude_none=True))

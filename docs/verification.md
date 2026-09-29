@@ -1,5 +1,37 @@
 # Foundation verification
 
+## WD-123 insights live probe
+
+2026-09-29, Windows, Claude Code CLI 2.1.283. The probe was opt-in and approved as step 0 of WD-123. It used synthetic bundles and ran before the runner code existed, with the same flag set the runner now uses:
+
+```
+claude -p --safe-mode --setting-sources "" --strict-mcp-config --tools "" --no-session-persistence --output-format json --json-schema <schema> --model <m> --system-prompt <rules>
+```
+
+The prompt went on stdin, and the working directory was a fresh temporary directory outside every registered project.
+
+- **Structured output without tools.** `--json-schema` works together with `--tools ""`. The JSON envelope carries `structured_output` (the validated object), the same object as text in `result`, and `is_error`, `subtype`, `usage`, `modelUsage`, `total_cost_usd`, `duration_ms`, `num_turns: 2`, and `session_id`. `modelUsage.<model>` reports `contextWindow`, `maxOutputTokens`, and `costBasis: "list"`.
+- **Auth.** `--safe-mode` kept the subscription login working.
+- **Context windows.** Haiku 4.5 reported 200000 tokens. Sonnet 5 (`--model sonnet`) reported 1000000.
+- **Bytes per token.**
+
+  | Model | Bundle | Result |
+  |---|---|---|
+  | Sonnet 5 | synthetic ASCII JSON, 100227 bytes | 44222 input tokens, 2.27 bytes/token |
+  | Haiku 4.5 | synthetic ASCII JSON, 100227 bytes | 37671 tokens, 2.66 bytes/token |
+  | Haiku 4.5 | synthetic UTF-8 Cyrillic, 148659 bytes | 41512 tokens, 3.58 bytes/token |
+  | Sonnet 5 | real `insights errors` bundle (UUIDs, paths, escaped JSON), 215517 bytes | 112630 input tokens, about 1.98 bytes/token after the fixed prompt overhead |
+
+  A 2 KB prompt cost 2141 tokens, which puts the fixed overhead near 1.4K tokens. The estimator therefore uses 1.9 bytes/token.
+- **No recursion.** `summary` session counts were unchanged across all three live projects before and after every call (84, 29 and 19). A read-only scan of all three project stores found no event carrying a probe `session_id` or the probe directory name. The only matches were this development session's own tool calls, whose text mentioned them.
+
+The same checks then ran against the implemented command: `insights errors --project watchdog --since 2026-08-30T00:00:00+00:00` on the live store.
+
+- **Dry run.** The redacted bundle held 5104 tool finishes, 75 failures in 50 clusters, and was estimated at 97K tokens with no truncation.
+- **Clusters.** They reproduce the WD-119 report's recurring signatures: `uv trampoline failed to spawn` (6), `All checks passed!` (3), bash quoting across shells, the codebase-memory call without `project`, and `File does not exist`.
+- **Live call on Sonnet 5.** It returned `status: ok`, four grounded recommendations (none `ungrounded`) with instruction drafts, and four `log`-only rule candidates, in 148 s. It used 112630 input and 13137 output tokens, a list-price cost of 0.58 USD.
+- **No recursion.** Session counts were again unchanged.
+
 ## WD-012 calibration (in progress)
 
 2026-09-07: the first manual calibration pass reviewed 20 completed root Codex

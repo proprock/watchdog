@@ -180,11 +180,74 @@ no captured response is not an error but is not silently zero either: it is coun
 `unknown_outcome`. A `PostToolUseFailure` caused by a user interrupt is not an agent
 error; it is excluded from the list and counted separately in `interrupts_excluded`.
 
-Each row reports `provider`, `session_id`, `agent_id`/`agent_type` (both `null` for the
-main/coordinator turn; `agent_type` is resolved from the session's own `SubagentStart`
-event), `received_at`, `tool_name`, `tool_input`, `hook_event_name`, `exit_code`, and one
-distilled `error` string (the provider's own error text when available, otherwise a
-short rendering of the captured response) — never the raw `tool_response` structure.
+Each row reports `event_id`, `provider`, `session_id`, `agent_id`/`agent_type` (both
+`null` for the main/coordinator turn; `agent_type` is resolved from the session's own
+`SubagentStart` event), `received_at`, `tool_name`, `tool_input`, `hook_event_name`,
+`exit_code`, and one distilled `error` string (the provider's own error text when
+available, otherwise a short rendering of the captured response) — never the raw
+`tool_response` structure. Claude reports a failed command's exit code only as the
+leading `Exit code N` line of its error text, so `exit_code` is read from there when no
+structured code exists. A row whose payload retention already stripped (after
+`content_days`) cannot be judged; it is counted in `content_expired` rather than
+silently dropped.
+
+## Insights
+
+```console
+agent-watchdog insights errors --project PROJECT --dry-run
+agent-watchdog insights errors --project PROJECT --since 2026-09-01T00:00:00+00:00 --output errors.md
+agent-watchdog insights errors --project PROJECT --provider claude --session SESSION_ID --model opus --language Russian
+```
+
+`insights` is the only command that sends data to a model, and only when you run it.
+It builds a deterministic evidence bundle from a read-only snapshot, sends it to one
+isolated `claude -p` call, validates the structured answer, and prints JSON; `--output`
+also writes a Markdown report and refuses to overwrite an existing file. A model answer
+never changes stored observations, findings, labels, or verdicts.
+
+`errors`, the first mode, clusters failing tool calls (the `analyze errors` definition)
+by tool, exit code, and a normalized key error line, with counts, sessions, agent types,
+up to three samples, and recoveries: the next successful call of the same tool by the
+same agent within five calls, which often shows what fixed the failure. The model
+classifies each cluster's cause (`environment`, `agent_misuse`, `false_positive`,
+`real_failure`, `unknown`) and fix (`instruction`, `settings`, `environment`, `script`,
+`none`), drafts CLAUDE.md or AGENTS.md text where an instruction would help, and may
+propose `rule_candidates`: detection rules for human review, always with action `log`
+and never enabled automatically. A new daemon rule is still reviewed code; a
+statistical one also needs calibration.
+
+- **Grounding.** Every recommendation and rule candidate must cite evidence IDs from
+  the bundle. One that cites nothing, or an ID the bundle does not contain, is kept but
+  marked `ungrounded` with the unknown IDs listed.
+- **Redaction and size.** The bundle leaves the machine, so every excerpt passes the
+  export credential filter. Excerpts over 16 KiB keep their head and tail. Ranked items
+  are added until `--max-bundle-tokens` is spent; the estimate assumes 1.9 bytes per
+  token, and the rest is counted in `coverage.truncated`. The default, 120000, fits a
+  200K-token window with room for the answer. The default `sonnet` model reported a
+  1M-token window, so a larger budget is possible there, at proportionally higher cost
+  and latency (a measured 30-day `errors` run used 113K input tokens, 148 s). `--dry-run`
+  prints the exact redacted bundle and sends nothing.
+- **Isolation.** The call runs as `claude -p --safe-mode --setting-sources ""
+  --strict-mcp-config --tools "" --no-session-persistence --output-format json
+  --json-schema ...` from a scratch directory outside every registered project, with
+  the bundle on stdin. Safe mode keeps the user's login but disables hooks, CLAUDE.md,
+  skills, plugins, and MCP servers, so Watchdog cannot observe its own analysis. If the
+  installed CLI has no `--safe-mode`, the command refuses rather than run un-isolated.
+- **Failures.** `status` is `ok`, `dry_run`, or `unavailable` (exit code 1) with a
+  `reason`: `disabled`, `not_found`, `timeout` (`--timeout`, default 300 s),
+  `nonzero_exit`, `is_error`, `malformed_output`, or `isolation_unavailable`. Nothing is
+  retried.
+- **Provenance.** `provenance` records the CLI path and version, the flags (without
+  the prompt and schema), requested and reported models, the model's context window,
+  token usage, the list-price cost the CLI reports (not billed spend on a
+  subscription), duration, and the bundle's SHA-256 and size.
+- **Opt-out.** Running the command is the opt-in. `insights_llm_enabled = false` under
+  `[defaults]` or a project's `overrides` refuses every call for all projects or one.
+
+The default window is the last seven days unless `--since` or `--session` is given;
+`--session` requires `--provider`. `--model` defaults to `sonnet`, `--effort` passes
+through, and `--language` sets the prose language (commands and instruction drafts stay
+English).
 
 ## Labels, pins, export, and purge
 

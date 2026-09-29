@@ -45,6 +45,10 @@ log_detail = false
 # model as its coordinating conversation. Never affects the rule's own `log`
 # finding, which stays unconditional, or any other policy rule's switch.
 policy_intervene_same_model_subagent_spawn = true
+# Allow `agent-watchdog insights` to send this project's redacted evidence bundle
+# to one isolated `claude -p` call when you run it. Set false to refuse every
+# call; `insights --dry-run` sends nothing and keeps working.
+insights_llm_enabled = true
 
 # The quota relationship must remain:
 # payload_bytes <= inbox_bytes <= project_bytes
@@ -67,3 +71,4 @@ policy_intervene_same_model_subagent_spawn = true
 # [projects.overrides]
 # capture_content = false
 # policy_intervene_same_model_subagent_spawn = false
+# insights_llm_enabled = false

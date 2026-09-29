@@ -614,6 +614,55 @@ def test_errors_paginates_with_limit_and_offset(tmp_path, monkeypatch, capsys):
     assert result["has_more"] is False
 
 
+def test_errors_reads_claude_exit_code_from_error_text_and_reports_event_id(
+    tmp_path, monkeypatch, capsys
+):
+    project = Project(id=uuid4(), root=tmp_path)
+    save_config(tmp_path / "config.toml", Config(projects=(project,)))
+    data = tmp_path / "data" / "projects" / str(project.id)
+    failure = _tool_finish(
+        "claude",
+        project.id,
+        hook_event_name="PostToolUseFailure",
+        tool_name="Bash",
+        metadata={"error": "Exit code 127\n/usr/bin/bash: Get-ChildItem: command not found"},
+    )
+    with Store(data, project.id) as store:
+        store.put(failure)
+    code, result = invoke(
+        monkeypatch, capsys, tmp_path, "analyze", "errors", "--project", str(project.id)
+    )
+    assert code == 0
+    row = result["errors"][0]
+    assert row["exit_code"] == 127
+    assert row["event_id"] == str(failure.event_id)
+
+
+def test_errors_counts_retention_stripped_rows_instead_of_dropping_them(
+    tmp_path, monkeypatch, capsys
+):
+    project = Project(id=uuid4(), root=tmp_path)
+    save_config(tmp_path / "config.toml", Config(projects=(project,)))
+    data = tmp_path / "data" / "projects" / str(project.id)
+    stripped = Envelope(
+        provider="claude",
+        project_id=project.id,
+        session_id="one",
+        kind="tool.finish",
+        source="hook",
+        availability={"content": "unavailable"},
+    )
+    with Store(data, project.id) as store:
+        store.put(stripped)
+    code, result = invoke(
+        monkeypatch, capsys, tmp_path, "analyze", "errors", "--project", str(project.id)
+    )
+    assert code == 0
+    assert result["errors"] == []
+    assert result["content_expired"] == 1
+    assert result["unknown_outcome"] == 0
+
+
 def test_diff_oscillation_is_not_reported_for_an_unrelated_session_sharing_a_checkout(
     tmp_path, monkeypatch, capsys
 ):
