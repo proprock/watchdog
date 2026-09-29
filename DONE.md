@@ -11,9 +11,9 @@ Historical records only. Read this file when prior verification is relevant; act
   - **Verification.**
     - Native release build.
     - Full offline `uv run pytest`: 572 passed. It is the fallback because shared insights modules changed.
-    - After that run, a correction landed for calls in flat intervals, with its regression test; `tests/test_insights.py` and `tests/test_insights_context_tokens.py` passed on the final tree (56 passed).
+    - After that run, a correction for calls in flat intervals and a Codex test for both builders landed: occupancy, compaction without a summary, and a string `tool_response`. `tests/test_insights.py` and `tests/test_insights_context_tokens.py` passed on the final tree (57 passed, no warnings).
     - `uv run ruff check .`, `uv run ruff format --check src tests scripts`, `uv run ty check`, Cargo fmt/Clippy, `uv build` (the wheel includes `timeline`, `context`, `tokens`), and `git diff --check` passed.
-    - Live dry runs and two Sonnet 5 calls on the live store (`tokens`: 5 recommendations and 3 rule candidates in 337 s; `context`: 4 and 2 in 198 s; all grounded), with unchanged session counts, are recorded in [verification.md](docs/verification.md#wd-124-context-and-tokens-on-the-live-store). The second call used the remembered 1M window, an 800000-token budget.
+    - Live dry runs and two Sonnet 5 calls on the live store (`tokens`: 5 recommendations and 3 rule candidates in 337 s; `context`: 4 and 2 in 198 s; all grounded), with unchanged session counts, are recorded in [verification.md](docs/verification.md#wd-124-context-and-tokens-on-the-live-store). The second call used the remembered 1M window, an 800000-token budget. The live `context` call predates `context_windows_reported`, `peak_share_of_window` and the matching prompt text; those were checked by dry run (the top session reached 0.739 of Sonnet 5's window), not by a model call.
     - Target branch: `feature/wd-124-insights-context-tokens`, based on the WD-123 branch.
     - `LIVE.md` needed no update: this is analysis, not observation or control.
 

@@ -356,3 +356,66 @@ def test_codex_occupancy_comes_from_input_tokens(tmp_path):
     paths, project = store(tmp_path, [event])
     series, _counts = load(paths, project)
     assert [request.occupancy for request in series[("codex", SESSION, None)]] == [30_000]
+
+
+def codex_request(offset, response_id, occupancy):
+    delta = {
+        "input_tokens": occupancy,
+        "cached_input_tokens": occupancy - 500,
+        "cache_write_input_tokens": 0,
+        "output_tokens": 0,
+        "reasoning_output_tokens": 0,
+        "total_tokens": occupancy,
+    }
+    return codex_usage(
+        uuid4(), session=SESSION, offset=offset, response_id=response_id, turn_id="t1", delta=delta
+    )
+
+
+def codex_finish(offset, command, response):
+    return hook(
+        "tool.finish",
+        offset,
+        provider="codex",
+        hook_event_name="PostToolUse",
+        tool_name="Bash",
+        content={"tool_input": {"command": command}, "tool_response": response},
+        metadata={},
+    )
+
+
+def test_both_builders_handle_the_codex_shapes(tmp_path):
+    events = [
+        codex_request(0, "resp_1", 30_000),
+        codex_finish(1, "Get-Content -Raw ./README.md", "# Title\n" + "text " * 400),
+        codex_request(2, "resp_2", 33_000),
+        codex_finish(3, 'rg -n "parser" src', "src/a.py:1: parser"),
+        codex_request(4, "resp_3", 33_500),
+        hook("compaction.start", 5, provider="codex", metadata={"trigger": "auto"}),
+        hook("compaction.end", 6, provider="codex", metadata={"trigger": "auto"}),
+        codex_request(7, "resp_4", 9_000),
+    ]
+    paths, project = store(tmp_path, events)
+
+    profile = context.build(
+        paths, project, provider="codex", session_id=None, since=None, until=None
+    ).items[0]
+    assert (profile["provider"], profile["baseline_tokens"], profile["peak_tokens"]) == (
+        "codex",
+        30_000,
+        33_500,
+    )
+    (compaction,) = profile["compactions"]
+    assert (compaction["before_tokens"], compaction["after_tokens"]) == (33_500, 9_000)
+    assert compaction["summary_chars"] is None
+    assert profile["resets_count"] == 0
+
+    draft = tokens.build(paths, project, provider="codex", session_id=None, since=None, until=None)
+    by_class = {row["class"]: row for row in draft.facts["by_class"]}
+    assert by_class["Bash: get-content"]["attributed_tokens"] == 3_000
+    assert by_class["Bash: rg"]["attributed_tokens"] == 500
+    top = draft.items[0]
+    assert top["class"] == "Bash: get-content"
+    assert top["response_head"].startswith("# Title")
+    assert top["response_bytes"] == len(("# Title\n" + "text " * 400).encode())
+    assert draft.facts["cache_rebuilds"]["count"] == 0
