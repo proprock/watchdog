@@ -221,12 +221,18 @@ statistical one also needs calibration.
   marked `ungrounded` with the unknown IDs listed.
 - **Redaction and size.** The bundle leaves the machine, so every excerpt passes the
   export credential filter. Excerpts over 16 KiB keep their head and tail. Ranked items
-  are added until `--max-bundle-tokens` is spent; the estimate assumes 1.9 bytes per
-  token, and the rest is counted in `coverage.truncated`. The default, 120000, fits a
-  200K-token window with room for the answer. The default `sonnet` model reported a
-  1M-token window, so a larger budget is possible there, at proportionally higher cost
-  and latency (a measured 30-day `errors` run used 113K input tokens, 148 s). `--dry-run`
-  prints the exact redacted bundle and sends nothing.
+  are added until the token budget is spent; the estimate assumes 1.9 bytes per token,
+  and the rest is counted in `coverage.truncated`. `--dry-run` prints the exact
+  redacted bundle and sends nothing.
+- **Budget.** `claude -p` reports a model's context window and answer limit only in
+  its result, so Watchdog remembers them per `--model` value in
+  `<data>/insights/model-windows.json` (provider-reported numbers only). The first call
+  for a model uses 120000 tokens, which fits a 200K window. Later calls use
+  `min(80% of the window, window - answer limit - 8000)`: 800000 for Sonnet 5's 1M
+  window. `--max-bundle-tokens` overrides it, and `budget` in the result states the
+  value and its source (`explicit`, `remembered_window`, or `default`). A larger bundle
+  costs proportionally more input and time: a measured 30-day `errors` run used 113K
+  input tokens and took 148 s, mostly writing the answer.
 - **Isolation.** The call runs as `claude -p --safe-mode --setting-sources ""
   --strict-mcp-config --tools "" --no-session-persistence --output-format json
   --json-schema ...` from a scratch directory outside every registered project, with
@@ -234,7 +240,7 @@ statistical one also needs calibration.
   skills, plugins, and MCP servers, so Watchdog cannot observe its own analysis. If the
   installed CLI has no `--safe-mode`, the command refuses rather than run un-isolated.
 - **Failures.** `status` is `ok`, `dry_run`, or `unavailable` (exit code 1) with a
-  `reason`: `disabled`, `not_found`, `timeout` (`--timeout`, default 300 s),
+  `reason`: `disabled`, `not_found`, `timeout` (`--timeout`, default 600 s),
   `nonzero_exit`, `is_error`, `malformed_output`, or `isolation_unavailable`. Nothing is
   retried.
 - **Provenance.** `provenance` records the CLI path and version, the flags (without

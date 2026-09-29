@@ -105,14 +105,19 @@ def _answer(envelope: dict[str, Any]) -> dict[str, Any] | None:
     return None
 
 
+def _limits(models: dict[str, Any], key: str) -> list[int]:
+    return [
+        entry[key]
+        for entry in models.values()
+        if isinstance(entry, dict) and type(entry.get(key)) is int
+    ]
+
+
 def _envelope_provenance(envelope: dict[str, Any]) -> dict[str, Any]:
     models = envelope.get("modelUsage")
     models = models if isinstance(models, dict) else {}
-    windows = [
-        entry["contextWindow"]
-        for entry in models.values()
-        if isinstance(entry, dict) and isinstance(entry.get("contextWindow"), int)
-    ]
+    windows = _limits(models, "contextWindow")
+    answers = _limits(models, "maxOutputTokens")
     bases = {entry.get("costBasis") for entry in models.values() if isinstance(entry, dict)} - {
         None
     }
@@ -120,7 +125,9 @@ def _envelope_provenance(envelope: dict[str, Any]) -> dict[str, Any]:
     usage = usage if isinstance(usage, dict) else {}
     return {
         "models": sorted(models),
-        "context_window": max(windows) if windows else None,
+        # A call can touch several models; the smallest limits bind the next bundle.
+        "context_window": min(windows) if windows else None,
+        "max_output_tokens": max(answers) if answers else None,
         "usage": {
             key: usage[key]
             for key in (

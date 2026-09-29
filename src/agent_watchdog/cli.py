@@ -174,13 +174,13 @@ def main() -> int:
     insights_view.add_argument("--model", default="sonnet", help="Claude model alias or name")
     insights_view.add_argument("--effort", choices=("low", "medium", "high", "xhigh", "max"))
     insights_view.add_argument(
-        "--timeout", type=float, default=300.0, help="Seconds before the call is abandoned"
+        "--timeout", type=float, default=600.0, help="Seconds before the call is abandoned"
     )
     insights_view.add_argument(
         "--max-bundle-tokens",
         type=int,
-        default=120_000,
-        help="Estimated token budget for the evidence bundle; lower-ranked items are cut",
+        help="Estimated token budget for the evidence bundle; default scales with the "
+        "context window the model reported last time (120000 before the first call)",
     )
     insights_view.add_argument(
         "--language", default="English", help="Language for summary and recommendation prose"

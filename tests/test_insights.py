@@ -19,7 +19,7 @@ from agent_watchdog import insights
 from agent_watchdog.cli import main
 from agent_watchdog.config import Config, Limits, Overrides, Project, UserPaths, save_config
 from agent_watchdog.events import Envelope
-from agent_watchdog.insights import bundle, contract, errors, llm
+from agent_watchdog.insights import budget, bundle, contract, errors, llm
 from agent_watchdog.storage import Store
 
 T0 = datetime(2026, 9, 20, 12, tzinfo=UTC)
@@ -261,7 +261,7 @@ def _run(paths, project, runner, **overrides):
         "model": "sonnet",
         "effort": None,
         "timeout": 60.0,
-        "max_bundle_tokens": 120_000,
+        "max_bundle_tokens": None,
         "language": "English",
         "dry_run": False,
         "output": None,
@@ -348,6 +348,57 @@ def test_kill_switch_refuses_the_llm_call_but_not_a_dry_run(tmp_path, switch):
     assert dry["status"] == "dry_run"
     assert dry["bundle"]["items"][0]["cluster_id"] == "E1"
     assert runner.requests == []
+
+
+def _window_runner(events, window=1_000_000, max_output=64_000):
+    return FakeRunner(
+        llm.Result(
+            output=_answer(events),
+            reason=None,
+            provenance={"context_window": window, "max_output_tokens": max_output},
+        )
+    )
+
+
+def test_budget_scales_with_the_window_the_model_reported_last_time(tmp_path):
+    events = _sample_events(uuid4())
+    paths, project = _store(tmp_path, events)
+    first = _run(paths, project, _window_runner(events))
+    assert first["budget"] == {
+        "max_bundle_tokens": insights.DEFAULT_MAX_BUNDLE_TOKENS,
+        "source": "default",
+        "context_window": None,
+    }
+    second = _run(paths, project, _window_runner(events), dry_run=True)
+    assert second["budget"]["source"] == "remembered_window"
+    assert second["budget"]["context_window"] == 1_000_000
+    # 80% of the window, and never past the window minus the answer and prompt reserve.
+    assert second["budget"]["max_bundle_tokens"] == 800_000
+    small = _run(paths, project, _window_runner(events, 200_000, 64_000), model="opus")
+    assert small["budget"]["source"] == "default"
+    after = _run(paths, project, _window_runner(events), model="opus", dry_run=True)
+    assert after["budget"]["max_bundle_tokens"] == 200_000 - 64_000 - budget.PROMPT_RESERVE
+
+
+def test_an_explicit_budget_wins_and_a_broken_memory_is_ignored(tmp_path):
+    events = _sample_events(uuid4())
+    paths, project = _store(tmp_path, events)
+    _run(paths, project, _window_runner(events))
+    explicit = _run(paths, project, _window_runner(events), max_bundle_tokens=5000, dry_run=True)
+    assert explicit["budget"] == {
+        "max_bundle_tokens": 5000,
+        "source": "explicit",
+        "context_window": None,
+    }
+    budget.memory_path(paths).write_text("{not json", encoding="utf-8")
+    fallback = _run(paths, project, _window_runner(events), dry_run=True)
+    assert fallback["budget"]["source"] == "default"
+
+
+def test_a_dry_run_never_writes_the_window_memory(tmp_path):
+    paths, project = _store(tmp_path, _sample_events(uuid4()))
+    _run(paths, project, FakeRunner(llm.Result(None, "timeout", {})), dry_run=True)
+    assert not budget.memory_path(paths).exists()
 
 
 def test_output_schema_is_self_contained_and_keeps_field_names():
@@ -475,7 +526,12 @@ ENVELOPE = {
     "num_turns": 2,
     "usage": {"input_tokens": 10, "cache_creation_input_tokens": 900, "output_tokens": 50},
     "modelUsage": {
-        "claude-sonnet-5": {"contextWindow": 1_000_000, "costBasis": "list", "inputTokens": 10}
+        "claude-sonnet-5": {
+            "contextWindow": 1_000_000,
+            "maxOutputTokens": 64_000,
+            "costBasis": "list",
+            "inputTokens": 10,
+        }
     },
 }
 
@@ -548,6 +604,7 @@ def test_claude_runner_isolates_the_call_and_records_provenance(fake_claude, tmp
     assert provenance["version"] == "2.1.283 (Claude Code)"
     assert provenance["models"] == ["claude-sonnet-5"]
     assert provenance["context_window"] == 1_000_000
+    assert provenance["max_output_tokens"] == 64_000
     assert provenance["cost_usd"] == 0.01
     assert "system rules" not in json.dumps(provenance["argv"])
 
