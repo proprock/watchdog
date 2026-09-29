@@ -17,7 +17,9 @@ from agent_watchdog import privacy
 # densest measurement keeps a fitted bundle inside its budget.
 BYTES_PER_TOKEN = 1.9
 EXCERPT_LIMIT = 16 * 1024
-EVIDENCE_KEYS = frozenset({"evidence_id", "failed_evidence_id", "cluster_id", "event_ids"})
+EVIDENCE_KEYS = frozenset(
+    {"evidence_id", "failed_evidence_id", "cluster_id", "item_id", "event_ids"}
+)
 
 
 @dataclass(frozen=True)

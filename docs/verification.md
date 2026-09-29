@@ -32,6 +32,36 @@ The same checks then ran against the implemented command: `insights errors --pro
 - **Live call on Sonnet 5.** It returned `status: ok`, four grounded recommendations (none `ungrounded`) with instruction drafts, and four `log`-only rule candidates, in 148 s. It used 112630 input and 13137 output tokens, a list-price cost of 0.58 USD.
 - **No recursion.** Session counts were again unchanged.
 
+### WD-124 `context` and `tokens` on the live store
+
+2026-09-29, same host and CLI, project `watchdog`, `--since 2026-08-30T00:00:00+00:00`. All reads were read-only.
+
+**Data checks before the builders:**
+- **Codex occupancy.** The rollout reader's `usage.delta.input_tokens` is the whole request context, with `cached_input_tokens` as a subset. Example: 37637 input, of which 37120 cached.
+- **Duplicate usage rows.** 544 of 2522 Codex usage rows repeat an earlier `native_event_id`: the same response re-emitted about 4 minutes later in 8 sessions, 2026-09-08 to 2026-09-12. The builders drop them and count them in coverage. The re-emission itself is a separate follow-up.
+- **Summed iterations.** 7 Claude rows are single responses whose usage sums two API iterations: `input_tokens` 4 and cache reads doubled. They surface as one-request spikes to about twice the context, so the spike rule excludes them.
+- **Synthetic row.** One `<synthetic>` zero-usage row.
+
+Without these exclusions, one-step "growth" reached 464K tokens on a `git commit`. With them, the largest measured step was 42K.
+
+**Dry runs:**
+- `context`: 49 root sessions (17 Claude, 32 Codex).
+  - Median baseline 56634 tokens for Claude and 32817 for Codex. Peak medians 214957 and 152143; maxima 926620 and 230637.
+  - All 4 compactions in the project were Codex: 3 `auto` and 1 with no trigger. No Claude session compacted. Once the CLI reported Sonnet 5's 1M window, the top session peaked at 0.739 of it.
+- `tokens`: 5182 tool finishes in 257 classes.
+  - The largest classes are Claude `Read` (1.16M attributed tokens), then Codex `get-content` and `rg` (about 0.42M and 0.41M).
+  - 3 Claude cache rebuilds rewrote 580K tokens after idle gaps of 2.8 to 22.8 hours.
+
+**Live Sonnet 5 calls**, both `status: ok`, every recommendation grounded:
+
+| Mode | Recommendations | Rule candidates | Time | Input tokens (cache write + read) | Output tokens | List price |
+|---|---|---|---|---|---|---|
+| `tokens` | 5 | 3 | 337 s | 118090 + 210300 | 29735 | 0.81 USD |
+| `context` | 4 | 2 | 198 s | 144941 + 132211 | 17067 | 0.78 USD |
+
+- **Budget.** The `tokens` call ran on the default 120000-token budget. It recorded the 1M window in `model-windows.json`, so the `context` call used the remembered-window budget of 800000 with nothing truncated.
+- **No recursion.** Session counts were unchanged across all three projects (84, 29, 19).
+
 ## WD-012 calibration (in progress)
 
 2026-09-07: the first manual calibration pass reviewed 20 completed root Codex

@@ -59,6 +59,18 @@ def plan(paths: UserPaths, model: str, explicit: int | None) -> dict[str, Any]:
     }
 
 
+def reported_windows(paths: UserPaths) -> dict[str, int]:
+    """Context windows the Claude CLI reported, keyed by resolved model id."""
+    windows: dict[str, int] = {}
+    for entry in _memory(paths).values():
+        if not isinstance(entry, dict) or type(entry.get("context_window")) is not int:
+            continue
+        for name in entry.get("resolved_models") or []:
+            if isinstance(name, str):
+                windows[name] = entry["context_window"]
+    return windows
+
+
 def remember(paths: UserPaths, model: str, provenance: dict[str, Any], now: datetime) -> None:
     """Record the window a call reported; best effort, never a reason to fail the run."""
     window = provenance.get("context_window")

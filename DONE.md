@@ -2,6 +2,21 @@
 
 Historical records only. Read this file when prior verification is relevant; active work belongs in [TODO.md](TODO.md). Preserve task IDs when moving entries here.
 
+- [x] **WD-124 - `insights context` and `insights tokens` (2026-09-29).** Added two modes on the WD-123 pipeline ([docs/cli.md](docs/cli.md#insights)), built on a shared request timeline (`agent_watchdog.insights.timeline`).
+  - **Occupancy and growth.** Each usage row's occupancy is the context it read: Claude input + cache read + cache write; Codex `input_tokens`, with cached tokens a subset, as verified on live rollout data. Before pairing consecutive requests of one agent, the timeline drops re-emitted responses (same native ID), Claude `<synthetic>` zero rows, and one-request spikes that return to the earlier level. The growth between two requests, minus the earlier answer, is spread evenly across the tool calls that finished in between (inferred).
+  - **`context`.** Profiles each root session: baseline, peak and final occupancy; each prompt with the occupancy that followed; compactions with trigger, before/after and summary; resets without a compaction; the largest steps and their calls; and a subagent summary. Sessions are ranked by peak. The peak's share of the window uses only windows the Claude CLI reported during an earlier insights call; any other window stays unknown.
+  - **`tokens`.** Aggregates calls by tool and shell command class (program plus subcommand, never arguments) with attributed tokens and hook response bytes. It lists the costliest calls with input and response excerpts, identical repeats within a session, and Claude cache rebuilds after idle gaps. A call in a flat interval costs 0; across a reset its growth is unknown.
+  - **Shared changes.** Markdown drafts are fenced so that code blocks inside a model's draft survive.
+  - **Found while building it.** Two issues were flagged as separate tasks: duplicate Codex usage rows (544 of 2522 on the live `watchdog` project, which inflate `usage` totals) and Claude usage missing from `report`/`export`.
+  - **Verification.**
+    - Native release build.
+    - Full offline `uv run pytest`: 572 passed. It is the fallback because shared insights modules changed.
+    - After that run, a correction landed for calls in flat intervals, with its regression test; `tests/test_insights.py` and `tests/test_insights_context_tokens.py` passed on the final tree (56 passed).
+    - `uv run ruff check .`, `uv run ruff format --check src tests scripts`, `uv run ty check`, Cargo fmt/Clippy, `uv build` (the wheel includes `timeline`, `context`, `tokens`), and `git diff --check` passed.
+    - Live dry runs and two Sonnet 5 calls on the live store (`tokens`: 5 recommendations and 3 rule candidates in 337 s; `context`: 4 and 2 in 198 s; all grounded), with unchanged session counts, are recorded in [verification.md](docs/verification.md#wd-124-context-and-tokens-on-the-live-store). The second call used the remembered 1M window, an 800000-token budget.
+    - Target branch: `feature/wd-124-insights-context-tokens`, based on the WD-123 branch.
+    - `LIVE.md` needed no update: this is analysis, not observation or control.
+
 - [x] **WD-123 - `insights errors`: LLM-assisted recommendations (2026-09-29).** Added `agent-watchdog insights errors` ([docs/cli.md](docs/cli.md#insights)). It is the first user-run model call and the WD-014 manual path, amended in [docs/architecture.md](docs/architecture.md).
   - **Pipeline** (package `agent_watchdog.insights`).
     - A deterministic builder clusters failing tool calls by tool, exit code, and a normalized key error line. Each cluster carries counts, sessions, agent types, samples, and recoveries: the next successful call of the same tool by the same agent within five calls.

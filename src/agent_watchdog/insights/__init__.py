@@ -16,10 +16,19 @@ from pydantic import ValidationError
 
 from agent_watchdog.config import Project, UserPaths, load_config
 from agent_watchdog.files import atomic_write
-from agent_watchdog.insights import budget, bundle, contract, errors, llm, render
+from agent_watchdog.insights import (
+    budget,
+    bundle,
+    context,
+    contract,
+    errors,
+    llm,
+    render,
+    tokens,
+)
 from agent_watchdog.storage import StorageError
 
-MODES = {errors.MODE: errors}
+MODES = {module.MODE: module for module in (errors, context, tokens)}
 DEFAULT_MODEL = "sonnet"
 DEFAULT_WINDOW = timedelta(days=7)
 DEFAULT_MAX_BUNDLE_TOKENS = budget.DEFAULT_MAX_BUNDLE_TOKENS

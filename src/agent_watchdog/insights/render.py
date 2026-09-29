@@ -1,10 +1,19 @@
 """Readable Markdown for one insights result; the JSON result stays the source of truth."""
 
 import json
+import re
 from typing import Any
 
-_PROSE = ("title", "recommendation", "instruction_draft", "evidence_ids", "cluster_ids")
+_PROSE = ("title", "recommendation", "evidence_ids", "cluster_ids", "item_ids")
+_DRAFTS = ("instruction_draft", "draft")
 _MARKERS = ("ungrounded", "unknown_evidence_ids")
+
+
+def _fenced(text: str) -> list[str]:
+    """Fence model text with more backticks than it contains, so its own fences survive."""
+    longest = max((len(run) for run in re.findall(r"`+", text)), default=0)
+    fence = "`" * max(3, longest + 1)
+    return [f"{fence}text", text, fence]
 
 
 def _ids(values: list[str]) -> str:
@@ -19,17 +28,19 @@ def _entry(index: int, entry: dict[str, Any], *, body: str) -> list[str]:
     if entry.get(body):
         lines += [str(entry[body]), ""]
     for key, value in entry.items():
-        if key in _PROSE or key in _MARKERS or key in (body, "name"):
+        if key in _PROSE or key in _DRAFTS or key in _MARKERS or key in (body, "name"):
             continue
         lines.append(f"- **{key}:** {value}")
-    if entry.get("cluster_ids"):
-        lines.append(f"- **clusters:** {_ids(entry['cluster_ids'])}")
+    for key in ("cluster_ids", "item_ids"):
+        if entry.get(key):
+            lines.append(f"- **{key.removesuffix('_ids')}s:** {_ids(entry[key])}")
     lines.append(f"- **evidence:** {_ids(entry.get('evidence_ids', []))}")
     if entry.get("unknown_evidence_ids"):
         lines.append(f"- **ids not in the bundle:** {_ids(entry['unknown_evidence_ids'])}")
     lines.append("")
-    if entry.get("instruction_draft"):
-        lines += ["Instruction draft:", "", "```text", entry["instruction_draft"], "```", ""]
+    for key in _DRAFTS:
+        if entry.get(key):
+            lines += ["Draft:", "", *_fenced(entry[key]), ""]
     return lines
 
 

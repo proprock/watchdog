@@ -196,7 +196,8 @@ silently dropped.
 ```console
 agent-watchdog insights errors --project PROJECT --dry-run
 agent-watchdog insights errors --project PROJECT --since 2026-09-01T00:00:00+00:00 --output errors.md
-agent-watchdog insights errors --project PROJECT --provider claude --session SESSION_ID --model opus --language Russian
+agent-watchdog insights context --project PROJECT --provider claude --session SESSION_ID
+agent-watchdog insights tokens --project PROJECT --model opus --language Russian
 ```
 
 `insights` is the only command that sends data to a model, and only when you run it.
@@ -215,6 +216,30 @@ classifies each cluster's cause (`environment`, `agent_misuse`, `false_positive`
 propose `rule_candidates`: detection rules for human review, always with action `log`
 and never enabled automatically. A new daemon rule is still reviewed code; a
 statistical one also needs calibration.
+
+`context` and `tokens` read context size from the measured usage rows.
+- **Occupancy.** Each request's occupancy is the input it read: for Claude, input plus cache read plus cache write; for Codex, `input_tokens`, of which cached tokens are a subset.
+- **Excluded rows.** Before pairing requests, the builders drop:
+  - a response re-emitted under the same native ID;
+  - Claude's zero-usage `<synthetic>` rows;
+  - spikes: a request more than 1.5 times its predecessor's size, after which the context returns to the earlier level. On live data these were single responses whose usage summed two API iterations.
+- **Appended tokens.** The growth between two consecutive requests of one agent, minus the earlier answer, is what was appended in between. Tool calls that finished in that interval share it evenly, which is an inferred attribution.
+
+`context` profiles each root session and ranks sessions by peak occupancy.
+- **Occupancy figures:** the baseline (the first request, i.e. the startup context), the peak and final occupancy, and the peak as a share of the window.
+- **Prompts:** each prompt with the occupancy that followed it.
+- **Compactions:** trigger, occupancy before and after, and the compact summary when the provider sent one.
+- **Resets:** drops with no compaction event.
+- **Also:** the largest steps with their tool calls, and a subagent summary.
+
+The window share uses only windows the Claude CLI itself reported during an earlier insights call; any other model's window stays unknown. The model recommends compact instructions, compaction thresholds, clearing between unrelated tasks, and trimming the startup context.
+
+`tokens` aggregates tool calls by tool and, for shell tools, by command class: the program plus a subcommand, such as `Bash: uv run pytest`, never the arguments. For each class it reports attributed tokens and hook response bytes. It also lists:
+- the individual calls that added the most, with input and response excerpts;
+- identical calls repeated within one session;
+- Claude cache rebuilds: requests that rewrote most of their context after an idle gap.
+
+Hook response bytes overstate some tools: for Claude `Edit` and `Write` they include the whole original file, which the model never sees. The model therefore ranks by attributed tokens and recommends output limits, wrapper scripts, subagent delegation, avoiding rereads, better-targeted tools, and cache-friendly timing.
 
 - **Grounding.** Every recommendation and rule candidate must cite evidence IDs from
   the bundle. One that cites nothing, or an ID the bundle does not contain, is kept but
@@ -246,7 +271,9 @@ statistical one also needs calibration.
 - **Provenance.** `provenance` records the CLI path and version, the flags (without
   the prompt and schema), requested and reported models, the model's context window,
   token usage, the list-price cost the CLI reports (not billed spend on a
-  subscription), duration, and the bundle's SHA-256 and size.
+  subscription), duration, and the bundle's SHA-256 and size. Structured output takes
+  two model turns, so the reported input covers the bundle about twice, the second time
+  mostly as cache reads.
 - **Opt-out.** Running the command is the opt-in. `insights_llm_enabled = false` under
   `[defaults]` or a project's `overrides` refuses every call for all projects or one.
 

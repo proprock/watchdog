@@ -19,7 +19,7 @@ from agent_watchdog import insights
 from agent_watchdog.cli import main
 from agent_watchdog.config import Config, Limits, Overrides, Project, UserPaths, save_config
 from agent_watchdog.events import Envelope
-from agent_watchdog.insights import budget, bundle, contract, errors, llm
+from agent_watchdog.insights import budget, bundle, contract, errors, llm, render
 from agent_watchdog.storage import Store
 
 T0 = datetime(2026, 9, 20, 12, tzinfo=UTC)
@@ -427,6 +427,19 @@ def test_markdown_report_is_written_once_and_never_overwritten(tmp_path):
     with pytest.raises(Exception, match="already exists"):
         _run(paths, project, runner, output=output)
     assert len(runner.requests) == 1
+
+
+def test_markdown_keeps_a_draft_that_contains_its_own_code_fence():
+    draft = "Wrapper:\n```powershell\npytest -q\n```"
+    text = render.markdown(
+        {
+            "mode": "tokens",
+            "recommendations": [
+                {"title": "t", "recommendation": "r", "draft": draft, "evidence_ids": ["e"]}
+            ],
+        }
+    )
+    assert "````text\n" + draft + "\n````" in text
 
 
 def _cli(monkeypatch, capsys, paths, *args):
