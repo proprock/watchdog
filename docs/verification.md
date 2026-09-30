@@ -859,7 +859,9 @@ failed before handler start in WD-024). Keep the installed PowerShell
 measured four-way p95. Hooks stay observation-only with fail-open semantics, so the
 cost is latency Codex pays per hook, not lost events. The WD-024 figures are
 unchanged. The upstream request is a hook-level shell or argv setting, related to
-`openai/codex` #16579, #47810, and #26998; it is drafted but not filed.
+`openai/codex` #16579, #47810, and #26998. It was filed on 2026-09-30 as
+[openai/codex#49716](https://github.com/openai/codex/issues/49716); WD-026 waits for
+the maintainers' response.
 
 ## WD-008 CLI and performance baseline
 
