@@ -4,7 +4,16 @@ import json
 import re
 from typing import Any
 
-_PROSE = ("title", "recommendation", "evidence_ids", "cluster_ids", "item_ids", "sessions")
+_PROSE = (
+    "title",
+    "recommendation",
+    "evidence_ids",
+    "cluster_ids",
+    "item_ids",
+    "sessions",
+    "modes",
+    "cross_mode",
+)
 _DRAFTS = ("instruction_draft", "draft")
 _MARKERS = ("ungrounded", "unknown_evidence_ids")
 
@@ -24,6 +33,8 @@ def _entry(index: int, entry: dict[str, Any], *, body: str) -> list[str]:
     heading = f"### {index}. {entry.get('title') or entry.get('name')}"
     if entry.get("ungrounded"):
         heading += " (ungrounded: cites no evidence from the bundle)"
+    if entry.get("cross_mode") is False:
+        heading += " (single-mode: cites evidence from fewer than two modes)"
     lines = [heading, ""]
     if entry.get(body):
         lines += [str(entry[body]), ""]
@@ -34,6 +45,8 @@ def _entry(index: int, entry: dict[str, Any], *, body: str) -> list[str]:
     for key in ("cluster_ids", "item_ids"):
         if entry.get(key):
             lines.append(f"- **{key.removesuffix('_ids')}s:** {_ids(entry[key])}")
+    if entry.get("modes"):
+        lines.append(f"- **modes:** {', '.join(entry['modes'])}")
     for found in entry.get("sessions", []):
         lines.append(f"- **session:** `{found['provider']}` `{found['session_id']}`")
     lines.append(f"- **evidence:** {_ids(entry.get('evidence_ids', []))}")
@@ -89,6 +102,7 @@ def markdown(result: dict[str, Any]) -> str:
     for key, heading, body in (
         ("candidates", "Candidate sessions (a second opinion, not a verdict)", "rationale"),
         ("patterns", "Patterns", "description"),
+        ("links", "Cross-mode links", "explanation"),
     ):
         if key not in result:
             continue

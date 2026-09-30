@@ -22,6 +22,7 @@ from agent_watchdog.insights import (
     bundle,
     context,
     contract,
+    digest,
     errors,
     llm,
     permissions,
@@ -46,6 +47,7 @@ MODES = {
         permissions,
         session,
         sessions,
+        digest,
     )
 }
 DEFAULT_MODEL = "sonnet"
@@ -240,9 +242,9 @@ def _respond(
 ) -> dict[str, Any]:
     mode = module.MODE
     budget_plan = budget.plan(paths, model, max_bundle_tokens)
-    fitted = bundle.fit(
-        draft, mode=mode, window=window, max_tokens=budget_plan["max_bundle_tokens"]
-    )
+    # A mode may fit its own bundle shape, as the digest does per sub-mode.
+    fit = getattr(module, "fit", bundle.fit)
+    fitted = fit(draft, mode=mode, window=window, max_tokens=budget_plan["max_bundle_tokens"])
     text = bundle.dumps(fitted)
     result: dict[str, Any] = {
         "project": label,
