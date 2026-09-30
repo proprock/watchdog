@@ -2,6 +2,27 @@
 
 Historical records only. Read this file when prior verification is relevant; active work belongs in [TODO.md](TODO.md). Preserve task IDs when moving entries here.
 
+- [x] **WD-131 - Codex subagent rollouts (2026-09-30).** A WD-128 follow-up. Codex hooks fired inside a subagent (`PreToolUse`, `PostToolUse`, `SubagentStart`) carry the parent `session_id`, the subagent's `agent_id`, and the subagent's own rollout as `transcript_path`. `SubagentStop` carries the parent's rollout. The reader registered the child rollout under the parent session and rejected it as `session_meta_mismatch`, recording a new gap each time the file grew. Its usage was never read.
+  - **Evidence (read-only).**
+    - 12 live child rollouts. In each, `session_meta.id` is the child thread (also the thread id in the file name), `session_meta.session_id` and `parent_thread_id` are the parent session, and `source.subagent` is present.
+    - Their `token_usage_record`s carry the parent `session_id` and the child `thread_id`.
+    - None of their 369 response ids appear in the parent rollout, and nothing is keyed by the child id, so the usage was lost rather than duplicated.
+    - All 41 root rollouts have `session_meta.id` equal to the hook session.
+  - **Fix.**
+    - A Codex rollout whose file name names another thread is read as that subagent once `session_meta` names the thread and the parent session; otherwise it records a `subagent_meta_mismatch` gap. Its usage is stored under the parent session with `agent_id` set to the thread id.
+    - The usage id and the stored-response check are scoped by agent.
+    - A usage row now inherits model and effort only from the same agent's hooks, since a subagent can run another model.
+    - A child source the former reader left rejected is read once more.
+  - **Verification.**
+    - Failing tests first:
+      - A child rollout under the parent session produced a mismatch and no usage.
+      - A thread mismatch was reported as `session_meta_mismatch`.
+      - A pre-seeded rejected child source was never retried.
+      - The subagent usage row asserts its own model (`gpt-5.4-mini`), not the parent's.
+    - Replay of the 12 live child rollouts into a scratch store (the live store untouched): 369/369 usage records, 12 distinct agents, none attributed to the parent, no failures, no gaps.
+    - Native release build. Full offline `uv run pytest`: 601 passed in 197 s. It is the fallback because coverage stayed `metadata_changed`, and the working tree also held the user's uncommitted insights work. `uv run ruff check .`, Ruff format on `src`/`tests`/`scripts`, `uv run ty check`, Cargo fmt/Clippy, `uv build`, and `git diff --check` passed.
+    - Branch `feature/wd-131-codex-subagent-rollouts`, stacked on WD-130 (`b79dc93`): fix commit `fa76499`. The live instance was not updated.
+
 - [x] **WD-130 - Transcript lines over 1 MiB (2026-09-30).** A WD-128 follow-up. The daemon's transcript reader read files in 1 MiB windows and carried an unfinished line in a tail capped at 1 MiB. On a longer line it recorded one `rollout_line_invalid` gap and reset the source to offset 0, and it never read past that line again. The degraded status then cleared after 15 minutes, while the usage after the line stayed unread. Hooks, the database, and the reports were not involved: the loss happened where the reader turns transcripts into `usage` events.
   - **Evidence (read-only).**
     - The oversized lines are Codex `event_msg`/`item_completed` records, 1.46–2.33 MB in the stuck files and up to 6.71 MiB across 518 local rollouts, which hold 69 such lines.
