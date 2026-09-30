@@ -124,6 +124,17 @@ def main() -> int:
     relocate.add_argument("project")
     relocate.add_argument("path", type=Path)
     commands.add_parser("doctor", help="Inspect configuration, storage, and daemon health")
+    readiness = commands.add_parser(
+        "readiness", help="Check per stage whether provider events reach the project store"
+    )
+    readiness.add_argument("provider", choices=("codex", "claude"))
+    readiness.add_argument("--file", type=Path, required=True, help="Installed hook file to check")
+    readiness.add_argument("--project", help="Project alias; UUID accepted; default resolves cwd")
+    readiness.add_argument(
+        "--probe",
+        action="store_true",
+        help="Send one labeled synthetic event through the installed adapter, then purge it",
+    )
     commands.add_parser("summary", help="Summarize known observations for registered projects")
     report = commands.add_parser(
         "report", help="Analyze collected observations without control actions"
@@ -328,6 +339,14 @@ def main() -> int:
                 daemon.mutate_registry(paths, mutate)
             print(json.dumps(result))
             return 0
+        if args.command == "readiness":
+            from agent_watchdog import readiness
+
+            report = readiness.check(
+                paths, args.provider, args.file, project_ref=args.project, probe=args.probe
+            )
+            print(json.dumps(report))
+            return 0 if report["ok"] else 1
         if args.command == "insights":
             from agent_watchdog import insights, inspection
             from agent_watchdog.insights import llm

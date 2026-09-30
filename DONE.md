@@ -2,6 +2,27 @@
 
 Historical records only. Read this file when prior verification is relevant; active work belongs in [TODO.md](TODO.md). Preserve task IDs when moving entries here.
 
+- [x] **WD-120 - End-to-end collection readiness (2026-09-30).** A `readiness` command distinct from `doctor` ([docs/cli.md](docs/cli.md#readiness)); an audit follow-up.
+  - **Stages.** `hook`, `project`, `provider_callback`, `spool`, `admission`, each `ready`/`failed`/`unknown` with evidence and an action; the exit code is 1 only when a stage failed.
+    - `hook` checks the ownership record, every owned hook unedited, a native (not Python-fallback) command, its adapter and Python existing, `--version`, and that its `--config`/`--data`/`--runtime` match the invocation.
+    - `provider_callback` is `ready` only from real events stored after the install; native trust stays `not_inspected` and synthetic probe events never count.
+    - `spool` and `admission` stay `unknown` without a probe. A paused daemon fails both (the adapter drops events then); a degraded one fails `admission`.
+  - **`--probe`.** Runs the installed adapter command once with a synthetic `SessionStart` (session ID `watchdog-readiness-probe-*`), reports `probe: "synthetic-local"`, then purges it through the core. Cleanup is reported. The core's usual diff snapshot is not removed. A real provider callback still needs a separate live probe.
+  - **Not done.** The separate opt-in live provider probe; trust inspection.
+  - **Verification.**
+    - New offline tests in `tests/test_readiness.py` (32 cases over Codex and Claude, using the built native adapter):
+      - absent hook, missing ownership record, and four damage modes (executable deleted, owned hook edited, owned hook dropped, hook of another instance);
+      - the Python-fallback command;
+      - unresolved project, which blocks the probe;
+      - paused and unavailable daemon;
+      - successful adapter-to-store probe with purge and unchanged hook bytes;
+      - spool ready with admission failed, and an adapter that cannot spool;
+      - callback history counting real events only.
+    - CLI test in `tests/test_observation_cli.py`: a fresh home is not initialized.
+    - Live run against an isolated temp home with the release adapter and a real daemon: passive check `unknown` for delivery, `--probe` gave `spool`/`admission` `ready`, `cleanup: purged`, and `sessions list` was empty afterwards. The daemon was stopped.
+    - `ruff check`, `ruff format --check`, `ty check`, `git diff --check` clean.
+    - Full `uv run pytest` (fallback: index coverage stayed `metadata_changed`, `detect_changes` found no impacted modules): 657 passed, 1 failed. `tests/test_cli.py::test_help_does_not_initialize_an_isolated_home` timed out at 10 s under full-suite load and passed alone with the rest of `tests/test_cli.py` (3 passed in 2.9 s). CI has not run.
+
 - [x] **WD-126 - `insights session` second opinion (2026-09-30).** The WD-014 judge, run by hand ([docs/cli.md](docs/cli.md#insights)).
   - **Bundle.** One session's task as first stated, its latest prompt and final message, totals and measured tokens, the deterministic shadow findings with evidence, gaps, and label. Items are the turns, newest first: prompt, the context size after it, the calls with class, outcome, duration, input and error, and the assistant's last message. A long turn keeps its first 20 and latest 100 of up to 120 calls, and counts the rest.
   - **Answer.** A validated `judgement` (`progress|uncertain|stuck|blocked`, rationale, next step, confidence) whose evidence IDs are grounded like recommendations. It is rendered as "a second opinion, not a verdict", and it never overwrites a finding or stores anything. Shadow-finding evidence IDs are now citable.

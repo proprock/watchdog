@@ -118,6 +118,19 @@ def test_doctor_does_not_initialize_fresh_home(tmp_path, monkeypatch, capsys):
     assert not home.exists()
 
 
+def test_readiness_reports_stage_failures_without_initializing_a_fresh_home(
+    tmp_path, monkeypatch, capsys
+):
+    home = tmp_path / "absent"
+    code, report = invoke(
+        monkeypatch, capsys, home, "readiness", "claude", "--file", str(tmp_path / "settings.json")
+    )
+    assert code == 1 and not report["ok"] and report["probe"] == "none"
+    assert report["stages"]["hook"]["evidence"]["reason"] == "hook_file_missing"
+    assert report["stages"]["project"]["state"] == "failed"
+    assert not home.exists() and not (tmp_path / "settings.json").exists()
+
+
 def test_sessions_separate_identities_and_report_gaps(tmp_path, monkeypatch, capsys):
     project = Project(id=uuid4(), root=tmp_path)
     save_config(tmp_path / "config.toml", Config(projects=(project,)))

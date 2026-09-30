@@ -107,6 +107,45 @@ means collection is unavailable, not corrupt. Corrupt, wrong-project, and future
 databases are errors. An unregistered fresh installation does not create state.
 Existing daemon lock files may be probed for process ownership. Doctor does not
 repair files, inspect native trust, or infer event coverage from hook definitions.
+Use [`readiness`](#readiness) for the delivery path.
+
+## Readiness
+
+```console
+agent-watchdog readiness codex --file HOOKS_JSON [--project PROJECT] [--probe]
+agent-watchdog readiness claude --file SETTINGS_JSON [--project PROJECT] [--probe]
+```
+
+Reports, per stage, whether provider events can reach the selected project's
+SQLite store. Each stage is `ready`, `failed`, or `unknown`, with `evidence` and,
+when a fix is known, an `action`. `ok` is false when any stage failed; `unknown`
+alone is not a failure. `--file` is the installed hook file, as for `hooks install`;
+pass the same `--config`/`--data`/`--runtime` that hook uses.
+
+| Stage | What it checks |
+|---|---|
+| `hook` | An ownership record exists and every owned hook is present unedited. The command is the native adapter (not the Python fallback), it and its Python exist, it runs `--version`, and its `--config`/`--data`/`--runtime` match this invocation. |
+| `project` | The `--project` alias, or the working directory, resolves to a registered project whose root exists. |
+| `provider_callback` | Real provider events stored after the hook was installed. Native trust is never inspected, so this stage is `ready` only from that history and otherwise `unknown`; the evidence lists the provider versions and surfaces seen. Synthetic probe events never count. |
+| `spool` | The adapter wrote a record to the spool. `failed` while the daemon is paused, because the adapter drops events then. |
+| `admission` | The daemon committed the record to the project's SQLite store. `failed` while paused or degraded. |
+
+Without `--probe` the command only reads: it never edits provider settings,
+sends an event, starts a daemon, or invokes a provider. `spool` and `admission`
+stay `unknown` (a running daemon and zero loss counters prove nothing about
+delivery), and the `hook` and `provider_callback` stages carry the evidence.
+
+`--probe` runs the *installed* adapter command once with one synthetic
+`SessionStart` for the selected project, under a session ID that starts with
+`watchdog-readiness-probe-`. The report has `probe: "synthetic-local"` and marks
+each probe stage `synthetic: true`. Like any hook, the adapter starts the daemon
+when it is not running. The probe waits up to five seconds for admission, then
+purges the synthetic session through the core; `cleanup` reports `purged`,
+`purge_failed` (with the `purge` command to run), `removed_from_spool`, or
+`left_in_spool`. The core's usual diff snapshot for the checkout is not removed.
+The probe proves the local adapter-to-store path only. A real provider callback,
+and trust, need a separate live probe with provider, version, and surface
+provenance.
 
 ## Sessions
 
