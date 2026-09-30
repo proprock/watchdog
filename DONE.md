@@ -2,6 +2,11 @@
 
 Historical records only. Read this file when prior verification is relevant; active work belongs in [TODO.md](TODO.md). Preserve task IDs when moving entries here.
 
+- [x] **WD-117 - Local real-transcript corpus (2026-09-30).** Real transcripts of the user's own sessions can now drive regression checks without entering the repository.
+  - **Layout.** `tests/local/claude/**/*.jsonl` and `tests/local/codex/**/*.jsonl`, git-ignored (already in `.gitignore`); documented in `tests/fixtures/hooks/README.md`.
+  - **Fixture.** `pytest_generate_tests` in `tests/conftest.py` parametrizes `corpus_transcript` over the corpus as `(provider, path)`; an empty corpus gives one clean skip.
+  - **Check.** `tests/test_local_corpus.py` enriches each transcript through `enrich` and requires no transcript failure; a file without a declared session id is skipped.
+  - **Verification.** Without `tests/local/`, native release build and full offline `uv run pytest`: 729 passed, 1 skipped in 166 s (the full-suite fallback, as `tests/conftest.py` changed). With a valid Claude sample the check passed; with a corrupt line added it failed as intended. Ruff check/format and `ty check` pass. No Codex sample was tried.
 - [x] **WD-134 - `insights digest`: one cross-mode synthesis (2026-09-30).** A project-wide mode over the six deterministic builders ([docs/cli.md](docs/cli.md#insights)).
   - **Bundle.** `errors`, `context`, `tokens`, `workflow`, `subagents`, and `permissions` are built for one window, each keeping its facts and coverage. Each mode fills a fixed share of the budget (20/15/15/15/10/10%, 15% headroom); an unused share is not redistributed, so an empty mode is reported as empty. `coverage.modes.<mode>.truncated` counts what a cut dropped. All builders read up to one shared upper bound.
   - **Answer.** `links` across modes and a ranked action list of at most 5, with optional `log`-only rule candidates. A link is cross-mode only when its cited item IDs (one per mode) span two modes; otherwise it stays listed as single-mode. An event ID alone grounds a link but names no mode, because one event appears in several modes.
