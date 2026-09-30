@@ -22,6 +22,14 @@ class RuleCandidate(OutputModel):
     evidence_ids: list[str]
 
 
+class ScopeFields(OutputModel):
+    """Where a cross-project recommendation belongs; mixed into each mode's recommendation."""
+
+    scope: Literal["user", "project"]
+    target_file: str
+    project: str | None
+
+
 SYSTEM_RULES = """\
 You are Watchdog's offline analyst. Watchdog is a local observer of one user's own \
 AI coding-agent sessions (Claude Code and Codex). You receive one JSON evidence bundle \

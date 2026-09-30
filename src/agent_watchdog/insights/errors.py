@@ -2,6 +2,7 @@
 
 import re
 from collections import Counter
+from collections.abc import Sequence
 from datetime import datetime
 from typing import Any, Literal
 
@@ -10,7 +11,8 @@ from agent_watchdog.config import Project, UserPaths
 from agent_watchdog.events import Envelope
 from agent_watchdog.insights import timeline
 from agent_watchdog.insights.bundle import Draft, excerpt
-from agent_watchdog.insights.contract import OutputModel, RuleCandidate
+from agent_watchdog.insights.contract import OutputModel, RuleCandidate, ScopeFields
+from agent_watchdog.insights.scope import share
 
 MODE = "errors"
 RECOVERY_WINDOW = 5
@@ -76,6 +78,20 @@ class Output(OutputModel):
     rule_candidates: list[RuleCandidate]
 
 
+class ScopedErrorRecommendation(ErrorRecommendation, ScopeFields):
+    pass
+
+
+class CrossOutput(OutputModel):
+    summary: str
+    recommendations: list[ScopedErrorRecommendation]
+    rule_candidates: list[RuleCandidate]
+
+
+# One project's subagent types by agent id and the window's tool.finish events.
+Raw = tuple[dict[str, str], list[Envelope]]
+
+
 def key_line(text: str) -> str:
     """Pick the line that names the failure, then drop paths, numbers and quoted values."""
     lines = [line.strip() for line in text.splitlines() if line.strip()]
@@ -92,8 +108,26 @@ def key_line(text: str) -> str:
     return chosen.strip()[:160]
 
 
-def _agent(event: Envelope) -> tuple[str, str | None, str | None]:
-    return (event.provider, event.session_id, event.agent_id)
+def _agent(alias: str | None, event: Envelope) -> tuple:
+    return (alias, event.provider, event.session_id, event.agent_id)
+
+
+def _owner(record: dict[str, Any]) -> str | None:
+    return record.get("project")
+
+
+def read(
+    paths: UserPaths,
+    project: Project,
+    *,
+    provider: str | None,
+    session_id: str | None,
+    since: datetime | None,
+    until: datetime | None,
+) -> Raw:
+    return inspection.tool_finishes(
+        paths, project, provider=provider, session_id=session_id, since=since, until=until
+    )
 
 
 def build(
@@ -105,13 +139,22 @@ def build(
     since: datetime | None,
     until: datetime | None,
 ) -> Draft:
-    agent_types, finishes = inspection.tool_finishes(
-        paths, project, provider=provider, session_id=session_id, since=since, until=until
-    )
+    raw = read(paths, project, provider=provider, session_id=session_id, since=since, until=until)
+    return analyze([(None, raw)])
+
+
+def analyze(sources: Sequence[tuple[str | None, Raw]]) -> Draft:
+    """Cluster the failures of one project (alias None) or of several tagged by alias."""
+    tagged = any(alias is not None for alias, _raw in sources)
+    agent_types = {alias: types for alias, (types, _finishes) in sources}
+    entries = [(alias, event) for alias, (_types, finishes) in sources for event in finishes]
+    if len(sources) > 1:
+        entries.sort(key=lambda entry: entry[1].received_at)
+    finishes = [event for _alias, event in entries]
     statuses = [inspection.finish_status(event) for event in finishes]
     later: dict[tuple, list[tuple[Envelope, str]]] = {}
-    for event, status in zip(finishes, statuses, strict=True):
-        later.setdefault(_agent(event), []).append((event, status))
+    for (alias, event), status in zip(entries, statuses, strict=True):
+        later.setdefault(_agent(alias, event), []).append((event, status))
     position = {
         event.event_id: index
         for sequence in later.values()
@@ -119,17 +162,19 @@ def build(
     }
 
     clusters: dict[tuple, list[tuple[dict[str, Any], dict[str, Any] | None]]] = {}
-    for event, status in zip(finishes, statuses, strict=True):
+    for (alias, event), status in zip(entries, statuses, strict=True):
         if status != "failure":
             continue
-        record = inspection.error_record(event, agent_types)
+        record = inspection.error_record(event, agent_types[alias])
+        if tagged:
+            record["project"] = alias
         error_text = privacy.text(record["error"] or "")
         signature = (record["tool_name"], record["exit_code"], key_line(error_text))
         recovery = None
-        sequence = later[_agent(event)]
+        sequence = later[_agent(alias, event)]
         start = position[event.event_id] + 1
         for candidate, candidate_status in sequence[start : start + RECOVERY_WINDOW]:
-            fix = inspection.error_record(candidate, agent_types)
+            fix = inspection.error_record(candidate, agent_types[alias])
             if fix["tool_name"] != record["tool_name"]:
                 continue
             if timeline.succeeded(candidate, candidate_status):
@@ -138,13 +183,20 @@ def build(
                     "failed_evidence_id": record["event_id"],
                     "tool_input": excerpt(fix["tool_input"]),
                 }
+                if tagged:
+                    recovery["project"] = alias
             break
         clusters.setdefault(signature, []).append((record, recovery))
 
-    # Most frequent first, then most recent; stored times are UTC ISO strings.
+    # Seen in the most projects first (constant for one project), then most frequent, then
+    # most recent; stored times are UTC ISO strings.
     ranked = sorted(
         clusters.items(),
-        key=lambda pair: (len(pair[1]), max(record["received_at"] for record, _ in pair[1])),
+        key=lambda pair: (
+            len({_owner(record) for record, _ in pair[1]} - {None}),
+            len(pair[1]),
+            max(record["received_at"] for record, _ in pair[1]),
+        ),
         reverse=True,
     )
     items = [
@@ -161,13 +213,17 @@ def build(
         "failures": len(failures),
         "successes": counts["success"],
         "clusters": len(items),
-        "sessions_with_failures": len({(r["provider"], r["session_id"]) for r in failures}),
+        "sessions_with_failures": len(
+            {(_owner(r), r["provider"], r["session_id"]) for r in failures}
+        ),
         "by_tool": dict(Counter(str(r["tool_name"]) for r in failures).most_common()),
         "by_provider": dict(Counter(r["provider"] for r in failures).most_common()),
         "by_agent_type": dict(
             Counter(r["agent_type"] or "coordinator" for r in failures).most_common()
         ),
     }
+    if tagged:
+        facts["by_project"] = dict(Counter(r["project"] for r in failures).most_common())
     coverage = {
         "unknown_outcome": counts["unknown"],
         "unclassified_outcome": counts["unclassified"],
@@ -191,7 +247,8 @@ def _cluster(
     records = [record for record, _ in members]
     recoveries = [recovery for _, recovery in members if recovery is not None]
     tool_name, exit_code, key = signature
-    # The most recent samples reflect the current environment best.
+    # The most recent samples reflect the current environment best; with several projects
+    # each keeps a fair share.
     samples = [
         {
             "evidence_id": record["event_id"],
@@ -201,18 +258,24 @@ def _cluster(
             "tool_input": excerpt(record["tool_input"]),
             "error": excerpt(record["error"]),
         }
-        for record in records[-SAMPLES:]
+        | ({"project": record["project"]} if "project" in record else {})
+        for record in share(records, SAMPLES, _owner)
     ]
-    return {
+    item = {
         "cluster_id": cluster_id,
         "signature": {"tool_name": tool_name, "exit_code": exit_code, "key_line": key},
         "count": len(records),
-        "sessions": len({(r["provider"], r["session_id"]) for r in records}),
+        "sessions": len({(_owner(r), r["provider"], r["session_id"]) for r in records}),
         "agent_types": dict(Counter(r["agent_type"] or "coordinator" for r in records)),
         "first_seen": records[0]["received_at"],
         "last_seen": records[-1]["received_at"],
         "recovered": len(recoveries),
-        "event_ids": [record["event_id"] for record in records[:EVENT_IDS]],
+        "event_ids": [
+            record["event_id"] for record in share(records, EVENT_IDS, _owner, newest=False)
+        ],
         "samples": samples,
-        "recoveries": recoveries[-SAMPLES:],
+        "recoveries": share(recoveries, SAMPLES, _owner),
     }
+    if "project" in records[0]:
+        item["projects"] = dict(Counter(record["project"] for record in records))
+    return item

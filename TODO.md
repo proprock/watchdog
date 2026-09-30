@@ -20,6 +20,7 @@ WD-123 to WD-126 shipped seven `insights` modes over one project, plus the singl
     - offline tests with two synthetic projects: a shared pattern merges with both projects listed, a one-project pattern stays project-scoped, and a disabled project is excluded and counted;
     - the fitted bundle stays within budget with nothing raw;
     - one live run over the registered projects recorded in verification, with cost and unchanged session counts.
+  - **Status.** `--all-projects` is implemented for `errors`, `permissions`, and `workflow` and verified offline, including a live dry run over the three registered projects. The paid live `claude -p` run is pending the user's opt-in; `context`, `tokens`, and `subagents` are not extended.
 - [ ] **WD-133 - `insights sessions`: project session triage.** A project-wide mode over the window's sessions.
   - **Bundle.** A deterministic, compact facet per session, about 1-2K tokens: the first prompt excerpt, turns, calls, failures, loops, measured tokens, compactions, subagents, shadow findings, whether it ended, the last assistant message excerpt, and any recorded label. Sessions are ranked by signals of trouble (failures, loops, findings, no end), so a budget cut drops the calmest sessions.
   - **Answer.** One model call returns:

@@ -8,6 +8,7 @@ observations, findings, labels, or verdicts.
 """
 
 import hashlib
+from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
@@ -25,6 +26,7 @@ from agent_watchdog.insights import (
     llm,
     permissions,
     render,
+    scope,
     session,
     subagents,
     tokens,
@@ -46,6 +48,34 @@ TASK = (
     "Analyze the Watchdog evidence bundle below and answer in the required structure.\n\n"
     "<bundle>\n{bundle}\n</bundle>\n"
 )
+
+
+def _window(
+    *,
+    provider: str | None,
+    session_id: str | None,
+    since: datetime | None,
+    until: datetime | None,
+    max_bundle_tokens: int | None,
+    timeout: float,
+    output: Path | None,
+    now: datetime,
+) -> tuple[dict[str, Any], datetime | None, Path | None]:
+    if (max_bundle_tokens is not None and max_bundle_tokens < 1000) or timeout <= 0:
+        raise StorageError("Require --max-bundle-tokens >= 1000 and a positive --timeout")
+    if output is not None:
+        output = output.resolve()
+        if output.exists():
+            raise StorageError("Insights report already exists")
+    if since is None and session_id is None:
+        since = now - DEFAULT_WINDOW
+    window = {
+        "since": since.isoformat() if since else None,
+        "until": until.isoformat() if until else None,
+        "provider": provider,
+        "session_id": session_id,
+    }
+    return window, since, output
 
 
 def run(
@@ -72,31 +102,138 @@ def run(
         raise StorageError("Select --provider with --session")
     if getattr(module, "REQUIRES_SESSION", False) and session_id is None:
         raise StorageError(f"Select --provider and --session for the {mode} mode")
-    if (max_bundle_tokens is not None and max_bundle_tokens < 1000) or timeout <= 0:
-        raise StorageError("Require --max-bundle-tokens >= 1000 and a positive --timeout")
-    if output is not None:
-        output = output.resolve()
-        if output.exists():
-            raise StorageError("Insights report already exists")
     now = datetime.now(UTC)
-    if since is None and session_id is None:
-        since = now - DEFAULT_WINDOW
-    window = {
-        "since": since.isoformat() if since else None,
-        "until": until.isoformat() if until else None,
-        "provider": provider,
-        "session_id": session_id,
-    }
+    window, since, output = _window(
+        provider=provider,
+        session_id=session_id,
+        since=since,
+        until=until,
+        max_bundle_tokens=max_bundle_tokens,
+        timeout=timeout,
+        output=output,
+        now=now,
+    )
     draft = module.build(
         paths, project, provider=provider, session_id=session_id, since=since, until=until
     )
+
+    def enabled() -> bool:
+        limits = project.overrides.apply(load_config(paths.config).defaults)
+        return limits.insights_llm_enabled
+
+    return _respond(
+        paths,
+        module,
+        draft,
+        label=alias,
+        cross=False,
+        window=window,
+        now=now,
+        enabled=enabled,
+        model=model,
+        effort=effort,
+        timeout=timeout,
+        max_bundle_tokens=max_bundle_tokens,
+        language=language,
+        dry_run=dry_run,
+        output=output,
+        runner=runner,
+    )
+
+
+def run_all(
+    paths: UserPaths,
+    *,
+    mode: str,
+    provider: str | None,
+    since: datetime | None,
+    until: datetime | None,
+    model: str,
+    effort: str | None,
+    timeout: float,
+    max_bundle_tokens: int | None,
+    language: str,
+    dry_run: bool,
+    output: Path | None,
+    runner: llm.Runner,
+) -> dict[str, Any]:
+    """Run one mode over every registered project that allows insights (WD-132)."""
+    if mode not in scope.CROSS_MODES:
+        raise StorageError(f"--all-projects supports only {', '.join(scope.CROSS_MODES)}")
+    # Only the cross-project modes define `analyze`, so the union of mode modules is untyped here.
+    module: Any = MODES[mode]
+    now = datetime.now(UTC)
+    window, since, output = _window(
+        provider=provider,
+        session_id=None,
+        since=since,
+        until=until,
+        max_bundle_tokens=max_bundle_tokens,
+        timeout=timeout,
+        output=output,
+        now=now,
+    )
+    sources, selection = scope.collect(
+        module, paths, load_config(paths.config), provider=provider, since=since, until=until
+    )
+    draft = scope.annotate(module.analyze(sources), selection)
+    result = _respond(
+        paths,
+        module,
+        draft,
+        label=f"{len(selection.included)} projects: {', '.join(selection.included)}",
+        cross=True,
+        window=window,
+        now=now,
+        enabled=lambda: bool(selection.included),
+        model=model,
+        effort=effort,
+        timeout=timeout,
+        max_bundle_tokens=max_bundle_tokens,
+        language=language,
+        dry_run=dry_run,
+        output=output,
+        runner=runner,
+    )
+    if result["reason"] == "disabled":
+        result["reason"] = "no_eligible_projects"
+    # Skipped names stay local: the bundle only counts them.
+    return result | {
+        "projects": {
+            "included": selection.included,
+            "disabled": selection.disabled,
+            "unreadable": selection.unreadable,
+        }
+    }
+
+
+def _respond(
+    paths: UserPaths,
+    module: Any,
+    draft: bundle.Draft,
+    *,
+    label: str,
+    cross: bool,
+    window: dict[str, Any],
+    now: datetime,
+    enabled: Callable[[], bool],
+    model: str,
+    effort: str | None,
+    timeout: float,
+    max_bundle_tokens: int | None,
+    language: str,
+    dry_run: bool,
+    output: Path | None,
+    runner: llm.Runner,
+) -> dict[str, Any]:
+    mode = module.MODE
     budget_plan = budget.plan(paths, model, max_bundle_tokens)
     fitted = bundle.fit(
         draft, mode=mode, window=window, max_tokens=budget_plan["max_bundle_tokens"]
     )
     text = bundle.dumps(fitted)
     result: dict[str, Any] = {
-        "project": alias,
+        "project": label,
         "mode": mode,
         "status": "dry_run",
         "reason": None,
@@ -115,14 +252,16 @@ def run(
     if dry_run:
         return result | {"bundle": fitted}
 
-    limits = project.overrides.apply(load_config(paths.config).defaults)
-    if not limits.insights_llm_enabled:
+    if not enabled():
         return result | {"status": "unavailable", "reason": "disabled"}
+    output_model = module.CrossOutput if cross else module.Output
     answer = runner(
         llm.Request(
-            system_prompt=contract.system_prompt(module.PROMPT, language),
+            system_prompt=contract.system_prompt(
+                module.PROMPT + (scope.ADDENDUM if cross else ""), language
+            ),
             prompt=TASK.format(bundle=text),
-            schema=contract.json_schema(module.Output),
+            schema=contract.json_schema(output_model),
             model=model,
             effort=effort,
             timeout=timeout,
@@ -136,15 +275,16 @@ def run(
     if answer.reason is not None:
         return result | {"status": "unavailable", "reason": answer.reason}
     try:
-        parsed = module.Output.model_validate(answer.output)
+        parsed = output_model.model_validate(answer.output)
     except ValidationError:
         return result | {"status": "unavailable", "reason": "malformed_output"}
     known = bundle.evidence_ids(fitted)
     content = parsed.model_dump(mode="json")
+    recommendations = contract.ground(content["recommendations"], known)
     result |= {
         "status": "ok",
         "summary": content["summary"],
-        "recommendations": contract.ground(content["recommendations"], known),
+        "recommendations": scope.enforce(recommendations, fitted) if cross else recommendations,
         "rule_candidates": contract.ground(content["rule_candidates"], known),
     }
     # Mode-specific answers, such as the session judgement, are grounded the same way.

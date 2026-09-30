@@ -2,6 +2,7 @@
 
 import json
 from collections import Counter, defaultdict
+from collections.abc import Sequence
 from datetime import datetime
 from typing import Any, Literal
 
@@ -10,7 +11,8 @@ from agent_watchdog.config import Project, UserPaths
 from agent_watchdog.events import Envelope
 from agent_watchdog.insights import timeline
 from agent_watchdog.insights.bundle import Draft, excerpt
-from agent_watchdog.insights.contract import OutputModel, RuleCandidate
+from agent_watchdog.insights.contract import OutputModel, RuleCandidate, ScopeFields
+from agent_watchdog.insights.scope import share
 from agent_watchdog.insights.tokens import command_class
 
 MODE = "workflow"
@@ -75,17 +77,33 @@ class Output(OutputModel):
     rule_candidates: list[RuleCandidate]
 
 
+class ScopedWorkflowRecommendation(WorkflowRecommendation, ScopeFields):
+    pass
+
+
+class CrossOutput(OutputModel):
+    summary: str
+    recommendations: list[ScopedWorkflowRecommendation]
+    rule_candidates: list[RuleCandidate]
+
+
 Call = tuple[Envelope, str]
 # Back-to-back calls of one class, collapsed so a chain is a list of distinct steps.
 Block = list[Call]
+# Project alias (None for a single-project read), provider, session, agent.
+AgentKey = tuple[str | None, str, str | None, str | None]
 
 
-def _blocks(finishes: list[Envelope]) -> dict[timeline.Key, list[Block]]:
-    blocks: dict[timeline.Key, list[Block]] = defaultdict(list)
-    for event in finishes:
+def _session(key: AgentKey) -> tuple[str | None, str, str | None]:
+    return key[:3]
+
+
+def _blocks(entries: list[tuple[str | None, Envelope]]) -> dict[AgentKey, list[Block]]:
+    blocks: dict[AgentKey, list[Block]] = defaultdict(list)
+    for alias, event in entries:
         tool_input, _response = timeline.tool_content(event)
         name = command_class(timeline.tool_name(event), tool_input)
-        agent = blocks[(event.provider, event.session_id, event.agent_id)]
+        agent = blocks[(alias, event.provider, event.session_id, event.agent_id)]
         if agent and agent[-1][0][1] == name:
             agent[-1].append((event, name))
         else:
@@ -97,21 +115,21 @@ def _inputs(block: Block) -> list[str]:
     return [json.dumps(timeline.tool_content(event)[0], sort_keys=True) for event, _ in block]
 
 
-def _loops(blocks: dict[timeline.Key, list[Block]]) -> list[Block]:
+def _loops(blocks: dict[AgentKey, list[Block]]) -> list[tuple[AgentKey, Block]]:
     """Runs that repeat the same input: polling or blind re-running, not varied work."""
     loops = [
-        block
-        for agent in blocks.values()
+        (key, block)
+        for key, agent in blocks.items()
         for block in agent
         if len(block) >= LOOP_MIN and len(set(_inputs(block))) <= len(block) // 2
     ]
-    return sorted(loops, key=len, reverse=True)[:TOP_LOOPS]
+    return sorted(loops, key=lambda loop: len(loop[1]), reverse=True)
 
 
 def _patterns(
-    blocks: dict[timeline.Key, list[Block]],
-) -> list[tuple[tuple[str, ...], list[tuple[timeline.Key, int]]]]:
-    found: dict[tuple[str, ...], list[tuple[timeline.Key, int]]] = defaultdict(list)
+    blocks: dict[AgentKey, list[Block]],
+) -> list[tuple[tuple[str, ...], list[tuple[AgentKey, int]]]]:
+    found: dict[tuple[str, ...], list[tuple[AgentKey, int]]] = defaultdict(list)
     for key, agent in blocks.items():
         names = [block[0][1] for block in agent]
         for length in LENGTHS:
@@ -121,7 +139,7 @@ def _patterns(
         gram: places
         for gram, places in found.items()
         if len(places) >= MIN_OCCURRENCES
-        and len({(key[0], key[1]) for key, _start in places}) >= MIN_SESSIONS
+        and len({_session(key) for key, _start in places}) >= MIN_SESSIONS
         and not set(gram) <= ROUTINE
     }
 
@@ -148,6 +166,25 @@ def _brief(event: Envelope) -> dict[str, Any]:
     return {"evidence_id": str(event.event_id), "input": excerpt(tool_input, 240)}
 
 
+# One project's tool.finish events in the window.
+Raw = list[Envelope]
+
+
+def read(
+    paths: UserPaths,
+    project: Project,
+    *,
+    provider: str | None,
+    session_id: str | None,
+    since: datetime | None,
+    until: datetime | None,
+) -> Raw:
+    _types, finishes = inspection.tool_finishes(
+        paths, project, provider=provider, session_id=session_id, since=since, until=until
+    )
+    return finishes
+
+
 def build(
     paths: UserPaths,
     project: Project,
@@ -157,12 +194,33 @@ def build(
     since: datetime | None,
     until: datetime | None,
 ) -> Draft:
-    _types, finishes = inspection.tool_finishes(
-        paths, project, provider=provider, session_id=session_id, since=since, until=until
-    )
-    blocks = _blocks(finishes)
+    raw = read(paths, project, provider=provider, session_id=session_id, since=since, until=until)
+    return analyze([(None, raw)])
+
+
+def _owner(place: tuple[AgentKey, int]) -> str | None:
+    return place[0][0]
+
+
+def analyze(sources: Sequence[tuple[str | None, Raw]]) -> Draft:
+    """Find chains and loops in one project (alias None) or across several tagged by alias.
+
+    The thresholds apply to the union, so a chain too rare in every project alone still
+    counts when the projects together repeat it.
+    """
+    tagged = any(alias is not None for alias, _raw in sources)
+    entries = [(alias, event) for alias, finishes in sources for event in finishes]
+    if len(sources) > 1:
+        entries.sort(key=lambda entry: entry[1].received_at)
+    blocks = _blocks(entries)
     patterns = _patterns(blocks)
-    loops = _loops(blocks)
+    all_loops = _loops(blocks)
+    loops = all_loops[:TOP_LOOPS]
+    # Loops are per agent run and are not merged: each keeps its own project, and carries
+    # how many loops of its class ran in each project, so the class ranks by spread.
+    loop_projects: dict[str, Counter[str | None]] = defaultdict(Counter)
+    for key, run in all_loops:
+        loop_projects[run[0][1]][key[0]] += 1
 
     items: list[dict[str, Any]] = []
     for gram, places in patterns:
@@ -170,56 +228,62 @@ def build(
         calls = [call for occurrence in occurrences for block in occurrence for call in block]
         durations = [timeline.duration_ms(event) for event, _name in calls]
         known = [value for value in durations if value is not None]
-        items.append(
-            {
-                "kind": "sequence",
-                "steps": list(gram),
-                "occurrences": len(places),
-                "sessions": len({(key[0], key[1]) for key, _start in places}),
-                "calls": len(calls),
-                "wall_ms_known": sum(known),
-                "duration_unknown_calls": len(durations) - len(known),
-                "examples": [
-                    [_brief(block[0][0]) for block in occurrence]
-                    for occurrence in occurrences[:EXAMPLES]
-                ],
-            }
-        )
-    for run in loops:
+        item = {
+            "kind": "sequence",
+            "steps": list(gram),
+            "occurrences": len(places),
+            "sessions": len({_session(key) for key, _start in places}),
+            "calls": len(calls),
+            "wall_ms_known": sum(known),
+            "duration_unknown_calls": len(durations) - len(known),
+            "examples": [
+                [_brief(block[0][0]) for block in blocks[key][start : start + len(gram)]]
+                for key, start in share(places, EXAMPLES, _owner, newest=False)
+            ],
+        }
+        if tagged:
+            item["projects"] = dict(Counter(key[0] for key, _start in places))
+        items.append(item)
+    for key, run in loops:
         first, last = run[0][0], run[-1][0]
         durations = [timeline.duration_ms(event) for event, _name in run]
-        items.append(
-            {
-                "kind": "loop",
-                "class": run[0][1],
-                "provider": first.provider,
-                "session_id": first.session_id,
-                "agent_id": first.agent_id,
-                "calls": len(run),
-                "distinct_inputs": len(set(_inputs(run))),
-                "span_seconds": round((last.received_at - first.received_at).total_seconds()),
-                "wall_ms_known": sum(value for value in durations if value is not None),
-                "first": _brief(first),
-                "last": _brief(last),
-                "event_ids": [str(event.event_id) for event, _name in run[:20]],
-            }
-        )
-    items.sort(key=lambda item: item["calls"], reverse=True)
+        item = {
+            "kind": "loop",
+            "class": run[0][1],
+            "provider": first.provider,
+            "session_id": first.session_id,
+            "agent_id": first.agent_id,
+            "calls": len(run),
+            "distinct_inputs": len(set(_inputs(run))),
+            "span_seconds": round((last.received_at - first.received_at).total_seconds()),
+            "wall_ms_known": sum(value for value in durations if value is not None),
+            "first": _brief(first),
+            "last": _brief(last),
+            "event_ids": [str(event.event_id) for event, _name in run[:20]],
+        }
+        if tagged:
+            item["project"] = key[0]
+            item["projects"] = dict(loop_projects[run[0][1]])
+        items.append(item)
+    # Seen in the most projects first (constant for one project), then the most calls.
+    items.sort(key=lambda item: (len(item.get("projects", {})), item["calls"]), reverse=True)
     items = [{"item_id": f"W{index}", **item} for index, item in enumerate(items, 1)]
 
     classes = Counter(name for agent in blocks.values() for block in agent for _e, name in block)
     facts = {
-        "tool_calls": len(finishes),
+        "tool_calls": len(entries),
         "agents": len(blocks),
-        "sessions": len({(key[0], key[1]) for key in blocks}),
+        "sessions": len({_session(key) for key in blocks}),
         "distinct_classes": len(classes),
         "sequences_listed": len(patterns),
         "loops_listed": len(loops),
         "top_classes": dict(classes.most_common(TOP_CLASSES)),
     }
+    if tagged:
+        facts["calls_by_project"] = dict(Counter(alias for alias, _event in entries))
     coverage = {
         "calls_without_captured_input": sum(
-            1 for event in finishes if timeline.tool_content(event)[0] is None
+            1 for _alias, event in entries if timeline.tool_content(event)[0] is None
         ),
         "notes": [
             "Classes ignore arguments, so one class can cover different targets; back-to-back "

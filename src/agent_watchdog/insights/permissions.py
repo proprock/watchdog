@@ -2,6 +2,7 @@
 
 import re
 from collections import Counter, defaultdict
+from collections.abc import Sequence
 from datetime import datetime
 from typing import Any, Literal
 
@@ -10,7 +11,8 @@ from agent_watchdog.config import Project, UserPaths
 from agent_watchdog.events import Envelope
 from agent_watchdog.insights import timeline
 from agent_watchdog.insights.bundle import Draft, excerpt
-from agent_watchdog.insights.contract import OutputModel, RuleCandidate
+from agent_watchdog.insights.contract import OutputModel, RuleCandidate, ScopeFields
+from agent_watchdog.insights.scope import share
 from agent_watchdog.insights.tokens import command_class
 
 MODE = "permissions"
@@ -63,6 +65,20 @@ class Output(OutputModel):
     rule_candidates: list[RuleCandidate]
 
 
+class ScopedPermissionRecommendation(PermissionRecommendation, ScopeFields):
+    pass
+
+
+class CrossOutput(OutputModel):
+    summary: str
+    recommendations: list[ScopedPermissionRecommendation]
+    rule_candidates: list[RuleCandidate]
+
+
+# One project's permission-related events and the window's tool.finish events.
+Raw = tuple[list[Envelope], list[Envelope]]
+
+
 def _gated_start(prompt: Envelope, starts: list[Envelope]) -> Envelope | None:
     match = _TOOL.search(str(timeline.metadata(prompt).get("message") or ""))
     tool = match.group(1) if match else None
@@ -91,6 +107,22 @@ def _tool_use_id(event: Envelope) -> str | None:
     return value if isinstance(value, str) else None
 
 
+def read(
+    paths: UserPaths,
+    project: Project,
+    *,
+    provider: str | None,
+    session_id: str | None,
+    since: datetime | None,
+    until: datetime | None,
+) -> Raw:
+    options = {"provider": provider, "session_id": session_id, "since": since, "until": until}
+    with inspection.database(paths, project) as db:
+        events = timeline.events(db, ("tool.start", "waiting"), **options)
+    _types, finishes = inspection.tool_finishes(paths, project, **options)
+    return events, finishes
+
+
 def build(
     paths: UserPaths,
     project: Project,
@@ -100,40 +132,52 @@ def build(
     since: datetime | None,
     until: datetime | None,
 ) -> Draft:
-    options = {"provider": provider, "session_id": session_id, "since": since, "until": until}
-    with inspection.database(paths, project) as db:
-        events = timeline.events(db, ("tool.start", "waiting"), **options)
-    _types, finishes = inspection.tool_finishes(paths, project, **options)
+    raw = read(paths, project, provider=provider, session_id=session_id, since=since, until=until)
+    return analyze([(None, raw)])
+
+
+def _owner(member: dict[str, Any]) -> str | None:
+    return member["project"]
+
+
+def analyze(sources: Sequence[tuple[str | None, Raw]]) -> Draft:
+    """Group the permission prompts of one project (alias None) or of several tagged by alias."""
+    tagged = any(alias is not None for alias, _raw in sources)
+    tagged_events = [(alias, event) for alias, (events, _finishes) in sources for event in events]
+    if len(sources) > 1:
+        tagged_events.sort(key=lambda entry: entry[1].received_at)
     finished = {
-        (event.provider, event.session_id, _tool_use_id(event)): event
+        (alias, event.provider, event.session_id, _tool_use_id(event)): event
+        for alias, (_events, finishes) in sources
         for event in finishes
         if _tool_use_id(event)
     }
 
-    starts: dict[tuple[str, str | None], list[Envelope]] = defaultdict(list)
+    starts: dict[tuple, list[Envelope]] = defaultdict(list)
     modes: dict[str, Counter[str]] = defaultdict(Counter)
-    prompts = []
-    for event in events:
+    prompts: list[tuple[str | None, Envelope]] = []
+    for alias, event in tagged_events:
         if event.kind == "tool.start":
-            starts[(event.provider, event.session_id)].append(event)
+            starts[(alias, event.provider, event.session_id)].append(event)
             mode = timeline.metadata(event).get("permission_mode")
             modes[event.provider][str(mode) if mode else "(unknown)"] += 1
         elif timeline.metadata(event).get("notification_type") == "permission_prompt":
-            prompts.append(event)
+            prompts.append((alias, event))
 
     groups: dict[str, list[dict[str, Any]]] = defaultdict(list)
     unmatched = 0
-    for prompt in prompts:
-        start = _gated_start(prompt, starts[(prompt.provider, prompt.session_id)])
+    for alias, prompt in prompts:
+        start = _gated_start(prompt, starts[(alias, prompt.provider, prompt.session_id)])
         if start is None:
             unmatched += 1
             continue
         tool_input = timeline.content(start, "tool_input")
         name = command_class(timeline.tool_name(start), tool_input)
         use_id = _tool_use_id(start)
-        finish = finished.get((start.provider, start.session_id, use_id)) if use_id else None
+        finish = finished.get((alias, start.provider, start.session_id, use_id)) if use_id else None
         groups[name].append(
             {
+                "project": alias,
                 "prompt": prompt,
                 "start": start,
                 "input": tool_input,
@@ -145,48 +189,67 @@ def build(
             }
         )
 
+    # Seen in the most projects first (constant for one project), then most prompted.
+    ranked = sorted(
+        groups.items(),
+        key=lambda pair: (
+            len({member["project"] for member in pair[1]} - {None}),
+            len(pair[1]),
+        ),
+        reverse=True,
+    )
     items = []
-    for name, members in sorted(groups.items(), key=lambda pair: len(pair[1]), reverse=True):
+    for name, members in ranked:
         waits = sorted(member["waited_s"] for member in members if member["waited_s"] is not None)
         tool = timeline.tool_name(members[0]["start"])
-        items.append(
-            {
-                "class": name,
-                "tool": tool,
-                "user_interaction": tool in INTERACTIVE_TOOLS,
-                "prompts": len(members),
-                "sessions": len({member["prompt"].session_id for member in members}),
-                "permission_modes": dict(Counter(str(member["mode"]) for member in members)),
-                "waited_s": {
-                    "median": waits[len(waits) // 2] if waits else None,
-                    "max": waits[-1] if waits else None,
-                    "total": sum(waits),
-                    "unknown": len(members) - len(waits),
-                },
-                "outcomes": dict(Counter(member["outcome"] for member in members)),
-                "examples": [
-                    {
-                        "evidence_id": str(member["prompt"].event_id),
-                        "tool_evidence_id": str(member["start"].event_id),
-                        "input": excerpt(member["input"], 400),
-                    }
-                    for member in members[-EXAMPLES:]
-                ],
-            }
-        )
+        item = {
+            "class": name,
+            "tool": tool,
+            "user_interaction": tool in INTERACTIVE_TOOLS,
+            "prompts": len(members),
+            "sessions": len(
+                {(member["project"], member["prompt"].session_id) for member in members}
+            ),
+            "permission_modes": dict(Counter(str(member["mode"]) for member in members)),
+            "waited_s": {
+                "median": waits[len(waits) // 2] if waits else None,
+                "max": waits[-1] if waits else None,
+                "total": sum(waits),
+                "unknown": len(members) - len(waits),
+            },
+            "outcomes": dict(Counter(member["outcome"] for member in members)),
+            "examples": [
+                {
+                    "evidence_id": str(member["prompt"].event_id),
+                    "tool_evidence_id": str(member["start"].event_id),
+                    "input": excerpt(member["input"], 400),
+                }
+                | ({"project": member["project"]} if tagged else {})
+                for member in share(members, EXAMPLES, _owner)
+            ],
+        }
+        if tagged:
+            item["projects"] = dict(Counter(member["project"] for member in members))
+        items.append(item)
     items = [{"item_id": f"P{index}", **item} for index, item in enumerate(items, 1)]
 
     total_starts = {name: sum(counter.values()) for name, counter in modes.items()}
     facts = {
         "permission_prompts": len(prompts),
-        "sessions_with_prompts": len({(event.provider, event.session_id) for event in prompts}),
+        "sessions_with_prompts": len(
+            {(alias, event.provider, event.session_id) for alias, event in prompts}
+        ),
         "tool_starts_by_mode": {name: dict(counter) for name, counter in modes.items()},
         "prompts_per_100_tool_starts": {
-            name: round(100 * sum(1 for event in prompts if event.provider == name) / count, 2)
+            name: round(
+                100 * sum(1 for _alias, event in prompts if event.provider == name) / count, 2
+            )
             for name, count in total_starts.items()
             if count
         },
     }
+    if tagged:
+        facts["prompts_by_project"] = dict(Counter(alias for alias, _event in prompts))
     coverage = {
         "prompts_without_matched_call": unmatched,
         "notes": [

@@ -250,6 +250,7 @@ agent-watchdog insights subagents --project PROJECT --provider claude
 agent-watchdog insights permissions --project PROJECT --since 2026-09-01T00:00:00+00:00
 agent-watchdog insights errors --project PROJECT --days 30
 agent-watchdog insights session --project PROJECT --provider claude --session SESSION_ID
+agent-watchdog insights workflow --all-projects --days 30 --dry-run
 ```
 
 `insights` is the only command that sends data to a model, and only when you run it.
@@ -340,7 +341,7 @@ A call with no observed finish may have been denied, interrupted, or lost. Promp
   skills, plugins, and MCP servers, so Watchdog cannot observe its own analysis. If the
   installed CLI has no `--safe-mode`, the command refuses rather than run un-isolated.
 - **Failures.** `status` is `ok`, `dry_run`, or `unavailable` (exit code 1) with a
-  `reason`: `disabled`, `not_found`, `timeout` (`--timeout`, default 600 s),
+  `reason`: `disabled` (`no_eligible_projects` with `--all-projects`), `not_found`, `timeout` (`--timeout`, default 600 s),
   `nonzero_exit`, `is_error`, `malformed_output`, or `isolation_unavailable`. Nothing is
   retried. The CLI reports API errors and usage limits in its JSON result rather than
   on stderr, so for a failed call `provenance` keeps the exit code and the tail of
@@ -366,6 +367,12 @@ A call with no observed finish may have been denied, interrupted, or lost. Promp
   - the assistant's last message.
 - **Answer.** The model returns a `judgement`: `progress`, `uncertain`, `stuck`, or `blocked`, with a rationale, evidence IDs checked like any recommendation, the most useful next step, and a confidence. Optional recommendations come with it.
 - **Limits.** The judgement is a second opinion, not a verdict. It never overwrites a shadow finding and is never stored.
+
+`--all-projects` runs `errors`, `permissions`, or `workflow` over every registered project at once, to find patterns that belong in user-level rules. It cannot be combined with `--project` or `--session`.
+- **Reads.** Each project is read through its own read-only snapshot and the records are unioned in memory, never into a merged store. Thresholds such as `workflow`'s three occurrences in two sessions apply to the union, so a chain too rare in any one project still counts. Sessions are keyed by project, so one session ID in two projects is two sessions.
+- **Merging.** Error clusters merge by signature, permission classes by class, and workflow chains by their steps. Every item carries `projects`, the count per project, and ranks by the number of projects first, then frequency, so a budget cut drops single-project items first. A workflow loop stays one item per run with its own `project`; its `projects` counts the loops of that class per project.
+- **Skipped projects.** A project with `insights_llm_enabled = false` is excluded from the bundle, including a dry run. A project without a readable database is skipped too. The bundle counts both in `coverage.projects_skipped` without naming them; the printed result lists their names under `projects`.
+- **Answer.** Each recommendation also carries `scope`, `target_file`, and `project`. User scope targets `~/.claude/CLAUDE.md`, `~/.codex/AGENTS.md`, or `~/.claude/settings.json`; project scope targets the project's own `CLAUDE.md`, `AGENTS.md`, or `.claude/settings.json`. Watchdog narrows a `user` recommendation to `project` when none of its cited items occurred in two projects, and records why in `scope_notes`.
 
 The default window is the last seven days unless `--since`, `--days`, or `--session` is given. `--days N` looks back N whole days from now and cannot be combined with `--since`. The window can reach back as far as the store does, but prompts, tool input and output, and error text survive only `content_days` (30 by default); older events keep their metrics only. `--session` requires `--provider`. `--model` defaults to `sonnet`, `--effort` passes through, and `--language` sets the prose language (commands and instruction drafts stay English).
 

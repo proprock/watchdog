@@ -190,8 +190,13 @@ def main() -> int:
             "session",
         ),
     )
-    insights_view.add_argument(
-        "--project", help="Project alias; UUID accepted; default resolves cwd"
+    scope_group = insights_view.add_mutually_exclusive_group()
+    scope_group.add_argument("--project", help="Project alias; UUID accepted; default resolves cwd")
+    scope_group.add_argument(
+        "--all-projects",
+        action="store_true",
+        help="Analyze every registered project that allows insights together "
+        "(errors, permissions, workflow)",
     )
     insights_view.add_argument(
         "--provider", help="Limit to one provider namespace; default scans every provider"
@@ -352,29 +357,37 @@ def main() -> int:
             from agent_watchdog.insights import llm
 
             config = load_config(paths.config)
-            project = inspection.project_at(paths, args.project)
             roots = [item.root for item in config.projects]
             since = args.since
             if args.days is not None:
                 since = datetime.now(UTC) - timedelta(days=args.days)
-            result = insights.run(
-                paths,
-                project,
-                alias=project_aliases(config.projects)[project.id],
-                mode=args.mode,
-                provider=args.provider,
-                session_id=args.session,
-                since=since,
-                until=args.until,
-                model=args.model,
-                effort=args.effort,
-                timeout=args.timeout,
-                max_bundle_tokens=args.max_bundle_tokens,
-                language=args.language,
-                dry_run=args.dry_run,
-                output=args.output,
-                runner=lambda request: llm.claude(request, forbidden_roots=roots),
-            )
+            options = {
+                "mode": args.mode,
+                "provider": args.provider,
+                "since": since,
+                "until": args.until,
+                "model": args.model,
+                "effort": args.effort,
+                "timeout": args.timeout,
+                "max_bundle_tokens": args.max_bundle_tokens,
+                "language": args.language,
+                "dry_run": args.dry_run,
+                "output": args.output,
+                "runner": lambda request: llm.claude(request, forbidden_roots=roots),
+            }
+            if args.all_projects:
+                if args.session is not None:
+                    raise StorageError("--all-projects cannot be combined with --session")
+                result = insights.run_all(paths, **options)
+            else:
+                project = inspection.project_at(paths, args.project)
+                result = insights.run(
+                    paths,
+                    project,
+                    alias=project_aliases(config.projects)[project.id],
+                    session_id=args.session,
+                    **options,
+                )
             print(json.dumps(result))
             return 1 if result["status"] == "unavailable" else 0
         if args.command in (
