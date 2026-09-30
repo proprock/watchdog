@@ -1,10 +1,12 @@
 import json
 import os
 import socket
+import sqlite3
 import subprocess
 import sys
 import time
 from concurrent.futures import ThreadPoolExecutor
+from contextlib import closing
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from uuid import UUID, uuid4
@@ -785,10 +787,36 @@ def test_enrichment_log_detail_uses_the_global_opt_in_contract(paths):
     assert secret not in line and ' detail="' in line and "C:/private/rollout.jsonl" in line
 
 
-def test_missing_transcript_degrades_the_daemon_until_the_source_recovers(paths, tmp_path):
+def source_devices(paths, project_id) -> list[bool]:
+    """Per transcript source: whether a read recorded the file's identity."""
+    database = paths.project_data(project_id) / "events.sqlite3"
+    if not database.exists():
+        return []
+    # A reader beside the running daemon; opening a Store would contend for the writer.
+    with closing(sqlite3.connect(f"{database.as_uri()}?mode=ro", uri=True)) as connection:
+        try:
+            rows = connection.execute("SELECT device FROM transcript_sources").fetchall()
+        except sqlite3.OperationalError:
+            return []
+    return [device is not None for (device,) in rows]
+
+
+def remove(path: Path) -> bool:
+    """Delete a file the daemon may be reading; Windows refuses while it is open."""
+    try:
+        path.unlink()
+    except PermissionError:
+        return False
+    return True
+
+
+def test_vanished_transcript_degrades_the_daemon_until_the_source_recovers(paths, tmp_path):
     root = tmp_path / "project"
     root.mkdir()
-    missing = tmp_path / "private-rollout.jsonl"
+    transcript = tmp_path / "private-rollout.jsonl"
+    meta_record = {"type": "session_meta", "payload": {"id": "session-1", "cli_version": "0.153.4"}}
+    meta = json.dumps(meta_record) + "\n"
+    transcript.write_text(meta, encoding="utf-8")
     mutate_registry(paths, lambda registry: registry.add(root))
     project = load_config(paths.config).projects[0]
     write_spool_record(
@@ -797,11 +825,16 @@ def test_missing_transcript_degrades_the_daemon_until_the_source_recovers(paths,
             root,
             hook_event_name="Stop",
             session_id="session-1",
-            transcript_path=str(missing),
+            transcript_path=str(transcript),
         ),
     )
 
     start(paths)
+    wait_for(lambda: source_devices(paths, project.id) == [True])
+    wait_for(lambda: status(paths)["state"] == "running")
+
+    # A file that never existed is only unobserved; losing one that was read is a failure.
+    wait_for(lambda: remove(transcript))
     wait_for(lambda: str(project.id) in status(paths).get("errors", []))
     report = status(paths)
     assert report["state"] == "degraded"
@@ -811,24 +844,41 @@ def test_missing_transcript_degrades_the_daemon_until_the_source_recovers(paths,
         "event=enrichment decision=unavailable "
         f"error_type=transcript_unreadable project_id={project.id}" in body
     )
-    assert str(missing) not in body
+    assert str(transcript) not in body
 
-    missing.write_text(
-        json.dumps(
-            {
-                "type": "session_meta",
-                "payload": {"id": "session-1", "cli_version": "0.153.4"},
-            }
-        )
-        + "\n",
-        encoding="utf-8",
-    )
+    transcript.write_text(meta, encoding="utf-8")
     wait_for(lambda: status(paths)["state"] == "running")
+
+
+def test_absent_transcript_does_not_degrade_the_daemon(paths, tmp_path):
+    root = tmp_path / "project"
+    root.mkdir()
+    mutate_registry(paths, lambda registry: registry.add(root))
+    project = load_config(paths.config).projects[0]
+    write_spool_record(
+        paths,
+        spool_record(
+            root,
+            hook_event_name="Stop",
+            session_id="session-1",
+            transcript_path=str(tmp_path / "not-created-yet.jsonl"),
+        ),
+    )
+
+    start(paths)
+    wait_for(lambda: source_devices(paths, project.id) == [False])
+    wait_for(lambda: status(paths)["state"] == "running")
+
+    report = status(paths)
+    assert (report["errors"], report["transcript_failures"]) == ([], {})
 
 
 def test_stale_transcript_failure_does_not_degrade_daemon(paths, tmp_path):
     root = tmp_path / "project"
     root.mkdir()
+    # A directory is a failure that cannot heal; an absent file is only unobserved.
+    not_a_file = tmp_path / "not-a-file.jsonl"
+    not_a_file.mkdir()
     mutate_registry(paths, lambda registry: registry.add(root))
     config = load_config(paths.config)
     project = config.projects[0]
@@ -844,7 +894,7 @@ def test_stale_transcript_failure_does_not_degrade_daemon(paths, tmp_path):
         root,
         hook_event_name="Stop",
         session_id="session-1",
-        transcript_path=str(tmp_path / "missing.jsonl"),
+        transcript_path=str(not_a_file),
     )
     record["received_at"] = (datetime.now(UTC) - timedelta(minutes=2)).isoformat()
     write_spool_record(paths, record)
@@ -854,7 +904,7 @@ def test_stale_transcript_failure_does_not_degrade_daemon(paths, tmp_path):
 
     with Store(paths.project_data(project.id), project.id) as store:
         sources = store.transcript_sources()
-    assert sources[0]["last_error"] == "transcript_unreadable"
+    assert sources[0]["last_error"] == "transcript_path_not_regular"
     assert status(paths)["transcript_failures"] == {}
 
 

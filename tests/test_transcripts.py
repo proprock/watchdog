@@ -606,24 +606,26 @@ def test_source_failure_is_safe_isolated_and_not_retried_until_change(tmp_path, 
 def test_stale_transcript_failure_stays_diagnostic_without_degrading(tmp_path):
     project = uuid4()
     session = "session-1"
-    missing = tmp_path / "missing.jsonl"
+    # A directory is a failure that cannot heal; an absent file is only unobserved.
+    not_a_file = tmp_path / "not-a-file.jsonl"
+    not_a_file.mkdir()
     observed_at = datetime(2026, 9, 7, tzinfo=UTC)
     cutoff = datetime(2026, 9, 7, 0, 15, tzinfo=UTC)
     with Store(tmp_path / "data", project) as store:
-        store.put(hook(project, session, missing, received_at=observed_at))
+        store.put(hook(project, session, not_a_file, received_at=observed_at))
         first = enrich(store, active_failure_since=cutoff)
         sources = store.transcript_sources()
 
         store.put(
-            hook(project, session, missing, received_at=datetime(2026, 9, 7, 0, 20, tzinfo=UTC))
+            hook(project, session, not_a_file, received_at=datetime(2026, 9, 7, 0, 20, tzinfo=UTC))
         )
         refreshed = enrich(store, active_failure_since=cutoff)
 
-    assert first.failures == ("transcript_unreadable",)
+    assert first.failures == ("transcript_path_not_regular",)
     assert first.active_failures == ()
-    assert sources[0]["last_error"] == "transcript_unreadable"
+    assert sources[0]["last_error"] == "transcript_path_not_regular"
     assert refreshed.failures == ()
-    assert refreshed.active_failures == ("transcript_unreadable",)
+    assert refreshed.active_failures == ("transcript_path_not_regular",)
 
 
 def test_source_listing_failure_returns_only_an_allowlisted_code():

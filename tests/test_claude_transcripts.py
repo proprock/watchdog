@@ -593,6 +593,58 @@ def test_unreadable_transcript_isolates_and_is_retired_by_retention(tmp_path):
         assert store.transcript_sources() == []
 
 
+CURRENT = datetime(2026, 9, 8, tzinfo=UTC)
+
+
+def test_absent_subagent_transcript_is_unobserved_until_it_appears(tmp_path):
+    # Claude Code's per-turn helper agents report a transcript path they never write.
+    project = uuid4()
+    agent_transcript = tmp_path / "subagents" / "agent-helper.jsonl"
+    with Store(tmp_path / "data", project) as store:
+        assert store.put(subagent_hook(project, SESSION, "helper", agent_transcript))
+        absent = enrich(store, active_failure_since=CURRENT)
+        gaps = gap_events(store)
+
+        agent_transcript.parent.mkdir()
+        write_transcript(agent_transcript, [assistant(SESSION, "req_late", sidechain=True)])
+        appeared = enrich(store, active_failure_since=CURRENT)
+
+    assert (absent.failures, absent.active_failures, gaps) == ((), (), [])
+    assert appeared.accepted == 1
+
+
+def test_session_transcript_created_after_its_first_hook_is_not_a_gap(tmp_path):
+    # Claude Code creates the session file at the first prompt, after SessionStart.
+    project = uuid4()
+    transcript = tmp_path / "session.jsonl"
+    with Store(tmp_path / "data", project) as store:
+        assert store.put(hook(project, SESSION, transcript))
+        absent = enrich(store, active_failure_since=CURRENT)
+        gaps = gap_events(store)
+
+        write_transcript(transcript, [assistant(SESSION, "req_first")])
+        appeared = enrich(store, active_failure_since=CURRENT)
+
+    assert (absent.failures, absent.active_failures, gaps) == ((), (), [])
+    assert appeared.accepted == 1
+
+
+def test_transcript_that_vanishes_after_being_read_is_still_a_failure(tmp_path):
+    project = uuid4()
+    agent_transcript = tmp_path / "agent.jsonl"
+    write_transcript(agent_transcript, [assistant(SESSION, "req_seen", sidechain=True)])
+    with Store(tmp_path / "data", project) as store:
+        assert store.put(subagent_hook(project, SESSION, "agent-7", agent_transcript))
+        assert enrich(store, active_failure_since=CURRENT).accepted == 1
+        agent_transcript.unlink()
+        vanished = enrich(store, active_failure_since=CURRENT)
+        gaps = gap_events(store)
+
+    assert vanished.failures == ("transcript_unreadable",)
+    assert vanished.active_failures == ("transcript_unreadable",)
+    assert [claude(gap)["reason"] for gap in gaps] == ["transcript_unreadable"]
+
+
 def test_subagent_transcript_is_correlated_to_the_parent(tmp_path):
     project = uuid4()
     agent_transcript = tmp_path / "agent.jsonl"

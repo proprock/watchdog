@@ -584,11 +584,22 @@ def _source_is_current(source: Mapping[str, object], active_failure_since: datet
     return observed_at >= active_failure_since
 
 
+def _never_read(source: Mapping[str, object]) -> bool:
+    """True until a read recorded the file's identity or a failure was recorded."""
+    return source["device"] is None and source["last_error"] is None
+
+
 def _process_source(store: "Store", source: dict[str, object]) -> EnrichmentResult:
     path = Path(str(source["path"]))
     try:
         device, inode, size, mtime = _signature(path)
-    except OSError:
+    except OSError as error:
+        if isinstance(error, FileNotFoundError) and _never_read(source):
+            # Not a loss: Claude Code creates the session file at the first prompt,
+            # after the hook that named it, and its per-turn helper agents name a
+            # subagent file they never write. The source stays registered, so the
+            # file is read if it appears; until then its usage is unobserved.
+            return EnrichmentResult()
         changed = _update_failure(store, source, "transcript_unreadable", "unreadable")
         failures = ("transcript_unreadable",) if changed else ()
         return EnrichmentResult(failures=failures, active_failures=("transcript_unreadable",))
