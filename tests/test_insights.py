@@ -673,6 +673,38 @@ def test_claude_runner_maps_failures_without_retrying(fake_claude, main, reason)
     assert len(proc.calls) == 3
 
 
+@pytest.mark.parametrize(
+    ("stdout", "expected"),
+    [
+        (
+            json.dumps(
+                {
+                    "is_error": True,
+                    "subtype": "error_during_execution",
+                    "api_error_status": 429,
+                    "result": "Usage limit reached",
+                }
+            ),
+            {
+                "subtype": "error_during_execution",
+                "api_error_status": 429,
+                "result": "Usage limit reached",
+            },
+        ),
+        ("plain failure text", {"stdout": "plain failure text"}),
+        ("", {}),
+    ],
+)
+def test_claude_runner_keeps_the_reason_a_failed_call_printed(fake_claude, stdout, expected):
+    fake_claude(
+        RecordedProc(main=lambda argv, kwargs: _completed(argv, stdout, returncode=1, stderr=""))
+    )
+    result = llm.claude(REQUEST, forbidden_roots=[])
+    assert result.reason == "nonzero_exit"
+    assert {key: result.provenance[key] for key in expected} == expected
+    assert result.provenance["exit_code"] == 1
+
+
 def test_claude_runner_accepts_json_result_text_when_structured_output_is_absent(fake_claude):
     answer = {"summary": "ok", "recommendations": [], "rule_candidates": []}
     fake_claude(

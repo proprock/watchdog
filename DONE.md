@@ -22,6 +22,11 @@ Historical records only. Read this file when prior verification is relevant; act
     - `uv run ruff check .`, Ruff format on `src`/`tests`/`scripts`, `uv run ty check`, Cargo fmt/Clippy, `uv build`, and `git diff --check` passed.
     - The live dry run and Sonnet 5 call on the WD-022b session are recorded in [verification.md](docs/verification.md#wd-126-session-on-the-live-store): `progress`, high confidence, grounded; the next step matched the WD-022b record.
     - Branch `feature/wd-126-insights-session` on WD-125 (`545ce56`).
+  - **Live instance, updated 2026-09-30.** The update installed the wheel from `660b561`, which also carries WD-127 to WD-131.
+    - The adapter binary was unchanged: its SHA-256 matched the build, so it was not replaced.
+    - The daemon was stopped and started with the hook's own paths. Its first pass took about 85 s to re-read transcripts. It then ran `running` with no errors and an empty spool, and 369 Codex subagent usage rows appeared (WD-131).
+  - **Follow-up fix.** A re-run of all seven reports right after the update failed every `claude -p` call with exit code 1 and empty stderr. A minimal call moments later succeeded, which is consistent with a transient limit. The runner now keeps the CLI's JSON failure detail (`subtype`, `api_error_status`, `terminal_reason`, and the start of `result`, or of plain output) in provenance, covered by a new parametrized runner test; full offline `uv run pytest` passed (625).
+  - **Deferred.** The seven reports stay deferred until the user asks for them.
 
 - [x] **WD-125 - `insights workflow`, `subagents`, and `permissions` (2026-09-30).** Three modes on the WD-123 pipeline ([docs/cli.md](docs/cli.md#insights)).
   - **`workflow`.** Reduces each agent's calls to tool and command classes and collapses back-to-back calls of one class into a step.

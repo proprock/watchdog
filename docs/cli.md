@@ -303,7 +303,10 @@ A call with no observed finish may have been denied, interrupted, or lost. Promp
 - **Failures.** `status` is `ok`, `dry_run`, or `unavailable` (exit code 1) with a
   `reason`: `disabled`, `not_found`, `timeout` (`--timeout`, default 600 s),
   `nonzero_exit`, `is_error`, `malformed_output`, or `isolation_unavailable`. Nothing is
-  retried.
+  retried. The CLI reports API errors and usage limits in its JSON result rather than
+  on stderr, so for a failed call `provenance` keeps the exit code and the tail of
+  stderr. It also keeps the result's `subtype`, `api_error_status`, `terminal_reason`,
+  and the start of its message, or the start of any non-JSON output instead.
 - **Provenance.** `provenance` records the CLI path and version, the flags (without
   the prompt and schema), requested and reported models, the model's context window,
   token usage, the list-price cost the CLI reports (not billed spend on a

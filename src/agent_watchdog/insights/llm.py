@@ -146,6 +146,25 @@ def _envelope_provenance(envelope: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def _failure_detail(stdout: str | None) -> dict[str, Any]:
+    """The CLI reports API errors and limits in its JSON result, not on stderr."""
+    try:
+        envelope = json.loads(stdout or "")
+    except json.JSONDecodeError:
+        text = (stdout or "").strip()
+        return {"stdout": privacy.text(text[-500:])} if text else {}
+    if not isinstance(envelope, dict):
+        return {}
+    detail = {
+        key: envelope[key]
+        for key in ("subtype", "api_error_status", "terminal_reason")
+        if isinstance(envelope.get(key), str | int)
+    }
+    if isinstance(envelope.get("result"), str):
+        detail["result"] = privacy.text(envelope["result"][:500])
+    return detail
+
+
 def _run(argv: list[str], *, timeout: float, **kwargs: Any) -> subprocess.CompletedProcess[str]:
     return _proc.run(
         argv,
@@ -193,6 +212,7 @@ def claude(request: Request, *, forbidden_roots: Sequence[Path]) -> Result:
     if completed.returncode != 0:
         provenance["exit_code"] = completed.returncode
         provenance["stderr"] = privacy.text((completed.stderr or "").strip()[-500:])
+        provenance |= _failure_detail(completed.stdout)
         return Result(None, "nonzero_exit", provenance)
     try:
         envelope = json.loads(completed.stdout)
