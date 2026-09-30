@@ -2,6 +2,29 @@
 
 Historical records only. Read this file when prior verification is relevant; active work belongs in [TODO.md](TODO.md). Preserve task IDs when moving entries here.
 
+- [x] **WD-128 - Codex usage stored once per response (2026-09-30).** The live store held 2522 Codex usage rows but only 1978 distinct `native_event_id`s. The 544 duplicates double counted tokens in `usage`, `--price`, `report`, and `export`, which violates the M2 acceptance "replay/enrichment does not double usage".
+  - **Root cause.** Codex reports the same rollout under two path spellings: `C:\...`, and the Win32 verbatim form `\\?\C:\...` on `SessionEnd` and on hooks in resumed sessions. `transcript_sources` is keyed by `(provider, session_id, path)`, so the file became two sources, each read from offset 0. The usage event id hashed the path, device/inode, offset, and line bytes, so the second source stored every response again under new ids.
+  - **Evidence.** Read-only queries against the live store. Exactly the 8 affected sessions have a `\\?\` twin source row, and all 544 pairs are identical apart from `event_id` and `received_at`. The lag between copies runs from 0 s to 49.9 h, median 14 h; it is not a constant 4 minutes, since it depends on when the twin spelling first arrived. No response id repeats across sessions, and Claude has no duplicates.
+  - **Second bug.** A re-read of the same path after a transient failure (for example `transcript_unreadable`) recomputed a different delta under the same legacy id. `put` then raised `RejectedEvent`, which left the source stuck as `transcript_source_invalid`.
+  - **Fix.** The usage event id is now derived from `(session, response_id)`. The reader skips a response already stored for the session under any event id (`Store.usage_native_ids`) and only advances the cumulative baseline, so skipped lines neither emit a reset gap nor mark the source inert. `_hook_path` strips the `\\?\X:\` prefix, and nothing broader, so existing sources keep their keys. The `\\?\UNC\` form is not stripped; the idempotence check covers it.
+  - **Existing rows.** No migration: stored events are authoritative. Reads count each stored response once, using its first copy (`facts_query._FIRST_COPY` for `usage`/`--price`, and a per-session Codex response set in `analysis`), and `insights` already deduped. `sessions` still counts stored usage events raw. On the live store (read-only), Codex usage falls from 2522 to 1978 rows, input tokens from 287,798,105 to 223,698,653, and output tokens from 1,106,185 to 886,150.
+  - **Verification.**
+    - Failing tests first:
+      - A twin spelling (`sub/..`) re-stored 2 rows.
+      - A legacy-id row was duplicated.
+      - A re-read after a transient read failure returned `transcript_source_invalid`.
+      - The Windows `\\?\` spelling added a second source.
+      - `usage`, `--price`, and `report` counted a twin twice.
+    - Native release build.
+    - Full offline `uv run pytest`: 589 passed in 110 s. It is the fallback because coverage for the changed files stayed `metadata_changed` after a fast reindex, so `detect_changes` was not used. The run's working tree also held the user's uncommitted insights work.
+    - `uv run ruff check .`, `uv run ty check`, Cargo fmt/Clippy, `uv build`, and `git diff --check` passed. The repository-wide Ruff format check fails only on the pre-existing untracked research Markdown.
+    - Branch `feature/wd-128-codex-usage-idempotence` from `b1e328b`: commits `880fd5a` (reader) and `00a5770` (read side).
+    - The live instance was not updated. Its daemon still runs the old reader, so a later `\\?\` spelling can still store duplicates; the read-side dedupe hides them.
+  - **Follow-ups (offered, not queued):**
+    - The Claude usage id also hashes the path.
+    - Rollout lines over 1 MiB pin sources `01a07e28` and `01a07faa` in `rollout_line_invalid`.
+    - Codex subagent rollouts registered under the parent session emit repeated `session_meta_mismatch` gaps.
+
 - [x] **WD-127 - Claude usage in `report` and `export` (2026-09-30).** `analysis.analyze` read only Codex `usage.delta`, so every Claude session showed empty usage deltas and the `usage_incomplete` gap in `report` and the `export` manifest, even when usage was observed. The bug was flagged during WD-124.
   - **Fix.** Claude `usage.response` counters are summed once per `requestId` through `facts.claude_response_usage`, extracted from the schema-v6 `event_facts` projection. They keep raw values under the `event_facts` names, with no synthesised `total_tokens`. A counter missing from any response is omitted as unknown, never summed partially. `usage_incomplete` is set only when input, cache-read, or output tokens are missing, or a response has no counter map. Codex behavior is unchanged. `REPORT_SCHEMA_VERSION` stays 2 because the report shape did not change.
   - **Why omit rather than flag a partly observed counter.** A content-free scan of 743 local Claude transcripts (20,229 distinct real responses) found `thinking_tokens` on 16,691. The other four counters were on every response, including 500 `<synthetic>` rows. Flagging mixed presence would have restored the gap on nearly every session.
