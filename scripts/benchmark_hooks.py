@@ -46,6 +46,65 @@ def hook_invocation(shell: str, arguments: list[str]) -> list[str] | str:
     return [shell, "-NoLogo", "-NoProfile", "-NonInteractive", "-Command", quoted]
 
 
+def warm_up(hook, count: int) -> int:
+    """Run untimed hook calls, sequential then four-way, so caches and the daemon settle."""
+    for index in range(count):
+        hook(index)
+    with ThreadPoolExecutor(max_workers=4) as pool:
+        list(pool.map(hook, range(count)))
+    return 2 * count
+
+
+def cpu_busy_percent(before: tuple[int, int, int], after: tuple[int, int, int]) -> float:
+    """Busy share between two (idle, kernel, user) counters; kernel time includes idle."""
+    idle = after[0] - before[0]
+    total = (after[1] - before[1]) + (after[2] - before[2])
+    if total <= 0:
+        raise ValueError("no elapsed CPU time between the two readings")
+    return 100.0 * (total - idle) / total
+
+
+def _system_times() -> tuple[int, int, int] | None:
+    if os.name != "nt":
+        return None
+    import ctypes
+    from ctypes import wintypes
+
+    idle, kernel, user = (wintypes.FILETIME() for _ in range(3))
+    if not ctypes.windll.kernel32.GetSystemTimes(
+        ctypes.byref(idle), ctypes.byref(kernel), ctypes.byref(user)
+    ):
+        return None
+    return tuple((t.dwHighDateTime << 32) | t.dwLowDateTime for t in (idle, kernel, user))  # ty: ignore[invalid-return-type]
+
+
+def host_cpu_percent(seconds: float) -> float | None:
+    """Whole-host CPU busy share over a short window; None where unsupported."""
+    before = _system_times()
+    if before is None:
+        return None
+    time.sleep(seconds)
+    after = _system_times()
+    return None if after is None else cpu_busy_percent(before, after)
+
+
+def settle_host(
+    limit: float | None,
+    seconds: float,
+    timeout: float,
+    sample=host_cpu_percent,
+    clock=time.monotonic,
+) -> float | None:
+    """Sample host CPU until it is at or below `limit`; fail once `timeout` seconds pass."""
+    deadline = clock() + timeout
+    while True:
+        percent = sample(seconds)
+        if percent is None or limit is None or percent <= limit:
+            return percent
+        if clock() >= deadline:
+            raise RuntimeError(f"Host stayed busy: {percent:.0f}% CPU above the {limit:.0f}% limit")
+
+
 def wait_for_daemon(command: list[str]) -> dict:
     # Start returns before readiness, and a startup contender can invalidate status.
     deadline = time.monotonic() + 15
@@ -76,6 +135,16 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--samples", type=int, default=40)
     parser.add_argument("--idle-seconds", type=float, default=20)
+    parser.add_argument(
+        "--warmup", type=int, default=8, help="Untimed calls per phase before timing"
+    )
+    parser.add_argument("--cpu-seconds", type=float, default=3, help="Host CPU sampling window")
+    parser.add_argument(
+        "--max-host-cpu", type=float, help="Wait until host CPU is at or below this percent"
+    )
+    parser.add_argument(
+        "--settle-timeout", type=float, default=60, help="Seconds to wait for --max-host-cpu"
+    )
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--adapter-executable", type=Path)
     parser.add_argument("--provider", choices=("codex", "claude"), default="codex")
@@ -88,6 +157,8 @@ def main() -> None:
     args = parser.parse_args()
     if args.samples < 20 or not 1 <= args.idle_seconds <= 60:
         parser.error("Require at least 20 samples and 1..60 idle seconds")
+    if args.warmup < 0 or args.cpu_seconds <= 0:
+        parser.error("Require a non-negative warmup and a positive CPU window")
     if args.shell in ("powershell.exe", "pwsh.exe") and os.name != "nt":
         parser.error("PowerShell launch measurements require Windows")
     with tempfile.TemporaryDirectory(prefix="wd008 benchmark ") as directory:
@@ -154,14 +225,16 @@ def main() -> None:
                 return elapsed
 
             first = hook(0)
+            warmup_calls = warm_up(hook, args.warmup)
+            cpu_percent = settle_host(args.max_host_cpu, args.cpu_seconds, args.settle_timeout)
             sequential = [hook(index) for index in range(args.samples)]
             with ThreadPoolExecutor(max_workers=4) as pool:
                 concurrent = list(pool.map(hook, range(args.samples)))
-            expected = 1 + 2 * args.samples
+            expected = 1 + warmup_calls + 2 * args.samples
             deadline = time.monotonic() + 15
             while True:
                 sessions = json.loads(
-                    run(command + ["sessions", "list", "--project", project["id"]]).stdout
+                    run(command + ["sessions", "list", "--project", project["project"]]).stdout
                 )
                 if sum(item["event_count"] for item in sessions["sessions"]) == expected:
                     break
@@ -178,7 +251,7 @@ def main() -> None:
                             "show",
                             session["session_id"],
                             "--project",
-                            project["id"],
+                            project["project"],
                             "--provider",
                             args.provider,
                         ]
@@ -202,7 +275,7 @@ def main() -> None:
             run(command + ["daemon", "start"])
             wait_for_daemon(command)
             reopened = json.loads(
-                run(command + ["sessions", "list", "--project", project["id"]]).stdout
+                run(command + ["sessions", "list", "--project", project["project"]]).stdout
             )
             assert reopened == sessions
 
@@ -228,6 +301,8 @@ def main() -> None:
                 "provider": args.provider,
                 "launch": args.shell,
                 "first_ms": first,
+                "warmup_calls": warmup_calls,
+                "host_cpu_percent": cpu_percent,
                 "sequential": distribution(sequential),
                 "concurrent_four": distribution(concurrent),
                 "idle": idle,
