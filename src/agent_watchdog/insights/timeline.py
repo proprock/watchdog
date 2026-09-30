@@ -191,16 +191,18 @@ def steps(
 
 def events(
     db: sqlite3.Connection,
-    kinds: tuple[str, ...],
+    kinds: tuple[str, ...] | None,
     *,
     provider: str | None,
     session_id: str | None,
     since: datetime | None,
     until: datetime | None,
 ) -> list[Envelope]:
-    """Load envelopes of the given kinds in received order, filtered like the other reads."""
-    where = f"kind IN ({', '.join('?' for _ in kinds)})"
-    params: list[object] = list(kinds)
+    """Load envelopes of the given kinds (all when None) in received order, window-filtered."""
+    where, params = "1 = 1", []
+    if kinds is not None:
+        where = f"kind IN ({', '.join('?' for _ in kinds)})"
+        params = list(kinds)
     if provider is not None:
         where += " AND json_extract(envelope, '$.provider') = ?"
         params.append(provider)

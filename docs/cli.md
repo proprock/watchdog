@@ -250,6 +250,7 @@ agent-watchdog insights subagents --project PROJECT --provider claude
 agent-watchdog insights permissions --project PROJECT --since 2026-09-01T00:00:00+00:00
 agent-watchdog insights errors --project PROJECT --days 30
 agent-watchdog insights session --project PROJECT --provider claude --session SESSION_ID
+agent-watchdog insights sessions --project PROJECT --days 7 --dry-run
 agent-watchdog insights workflow --all-projects --days 30 --dry-run
 ```
 
@@ -367,6 +368,15 @@ A call with no observed finish may have been denied, interrupted, or lost. Promp
   - the assistant's last message.
 - **Answer.** The model returns a `judgement`: `progress`, `uncertain`, `stuck`, or `blocked`, with a rationale, evidence IDs checked like any recommendation, the most useful next step, and a confidence. Optional recommendations come with it.
 - **Limits.** The judgement is a second opinion, not a verdict. It never overwrites a shadow finding and is never stored.
+
+`sessions` triages every session of the project in the window; it covers the whole project, so `--session` and `--all-projects` are refused (use `session` for one).
+- **Items** are sessions, ranked by trouble, so a budget cut drops the calmest first. Each is a compact facet of about 1-2K tokens:
+  - the first prompt and the last assistant message, as excerpts;
+  - turns, tool calls and failures, loops (a run of three or more back-to-back calls of one class that mostly repeats an input, as in `workflow`), shadow findings with evidence, measured tokens, compactions, and subagents;
+  - whether a session end was observed, any recorded label, and its trouble `signals`: `findings`, `loops`, `failures` (three or more failed calls), and `no_end`.
+- **Facts and coverage** count every session, even those cut from the items: totals, sessions with signals, ended and labelled sessions, and the unknowns (no prompt, no usage, no observed end, no label). A facet covers the window only: shadow findings are computed per session, never merged across sessions, and only diff snapshots taken during the session's part of the window can implicate it. A diff oscillation that cannot be tied to one session (no observed turn boundary on its checkout) is counted in `unattributed_oscillations`, not as a finding or a trouble signal. `no_end` ranks after the other signals and is not trouble by itself.
+- **Answer.** The model returns `candidates` (`stuck`, `blocked`, `abandoned`, or `uncertain`, each with a rationale, a suggestion, and evidence IDs), recurring session-level `patterns` across two or more sessions, and optional recommendations and `log`-only rule candidates. Watchdog resolves each cited item to its provider and session ID and prints an `open_with` command for `insights session`, so the model never retypes an ID.
+- **Limits.** One model call, no per-session calls. It never labels a session or stores anything. A session without an observed end may still be running; that is not evidence of abandonment.
 
 `--all-projects` runs `errors`, `permissions`, or `workflow` over every registered project at once, to find patterns that belong in user-level rules. It cannot be combined with `--project` or `--session`.
 - **Reads.** Each project is read through its own read-only snapshot and the records are unioned in memory, never into a merged store. Thresholds such as `workflow`'s three occurrences in two sessions apply to the union, so a chain too rare in any one project still counts. Sessions are keyed by project, so one session ID in two projects is two sessions.

@@ -28,6 +28,7 @@ from agent_watchdog.insights import (
     render,
     scope,
     session,
+    sessions,
     subagents,
     tokens,
     workflow,
@@ -36,7 +37,16 @@ from agent_watchdog.storage import StorageError
 
 MODES = {
     module.MODE: module
-    for module in (errors, context, tokens, workflow, subagents, permissions, session)
+    for module in (
+        errors,
+        context,
+        tokens,
+        workflow,
+        subagents,
+        permissions,
+        session,
+        sessions,
+    )
 }
 DEFAULT_MODEL = "sonnet"
 DEFAULT_WINDOW = timedelta(days=7)
@@ -100,6 +110,8 @@ def run(
     module = MODES[mode]
     if session_id is not None and provider is None:
         raise StorageError("Select --provider with --session")
+    if getattr(module, "PROJECT_WIDE", False) and session_id is not None:
+        raise StorageError(f"The {mode} mode covers the whole project; drop --session")
     if getattr(module, "REQUIRES_SESSION", False) and session_id is None:
         raise StorageError(f"Select --provider and --session for the {mode} mode")
     now = datetime.now(UTC)
@@ -287,10 +299,17 @@ def _respond(
         "recommendations": scope.enforce(recommendations, fitted) if cross else recommendations,
         "rule_candidates": contract.ground(content["rule_candidates"], known),
     }
-    # Mode-specific answers, such as the session judgement, are grounded the same way.
+    # Mode-specific answers, such as the session judgement or the sessions triage lists,
+    # are grounded the same way; a mode may then resolve the ids they cite.
+    resolve = getattr(module, "resolve", None)
     for key, value in content.items():
-        if key not in result and isinstance(value, dict):
+        if key in result:
+            continue
+        if isinstance(value, dict):
             result[key] = contract.ground([value], known)[0]
+        elif isinstance(value, list) and all(isinstance(entry, dict) for entry in value):
+            grounded = contract.ground(value, known)
+            result[key] = resolve(grounded, fitted, label) if resolve else grounded
     if output is not None:
         result["output"] = str(output)
         atomic_write(output, render.markdown(result).encode("utf-8"))

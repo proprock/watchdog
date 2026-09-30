@@ -188,6 +188,7 @@ def main() -> int:
             "subagents",
             "permissions",
             "session",
+            "sessions",
         ),
     )
     scope_group = insights_view.add_mutually_exclusive_group()

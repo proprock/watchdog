@@ -4,7 +4,7 @@ import json
 import re
 from typing import Any
 
-_PROSE = ("title", "recommendation", "evidence_ids", "cluster_ids", "item_ids")
+_PROSE = ("title", "recommendation", "evidence_ids", "cluster_ids", "item_ids", "sessions")
 _DRAFTS = ("instruction_draft", "draft")
 _MARKERS = ("ungrounded", "unknown_evidence_ids")
 
@@ -34,6 +34,8 @@ def _entry(index: int, entry: dict[str, Any], *, body: str) -> list[str]:
     for key in ("cluster_ids", "item_ids"):
         if entry.get(key):
             lines.append(f"- **{key.removesuffix('_ids')}s:** {_ids(entry[key])}")
+    for found in entry.get("sessions", []):
+        lines.append(f"- **session:** `{found['provider']}` `{found['session_id']}`")
     lines.append(f"- **evidence:** {_ids(entry.get('evidence_ids', []))}")
     if entry.get("unknown_evidence_ids"):
         lines.append(f"- **ids not in the bundle:** {_ids(entry['unknown_evidence_ids'])}")
@@ -84,6 +86,17 @@ def markdown(result: dict[str, Any]) -> str:
         if judgement.get("unblock"):
             lines += [f"- **Next step:** {judgement['unblock']}"]
         lines += [f"- **evidence:** {_ids(judgement.get('evidence_ids', []))}", ""]
+    for key, heading, body in (
+        ("candidates", "Candidate sessions (a second opinion, not a verdict)", "rationale"),
+        ("patterns", "Patterns", "description"),
+    ):
+        if key not in result:
+            continue
+        lines += [f"## {heading}", ""]
+        for index, entry in enumerate(result[key], start=1):
+            lines += _entry(index, entry, body=body)
+        if not result[key]:
+            lines += ["None.", ""]
     lines += ["## Recommendations", ""]
     recommendations = result.get("recommendations") or []
     for index, entry in enumerate(recommendations, start=1):

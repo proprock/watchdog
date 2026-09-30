@@ -151,6 +151,19 @@ All three used the remembered 800000-token budget with nothing truncated. Sessio
 - **Cost.** 217 s; 130593 cache-write and 0 cache-read input tokens and 20928 output tokens; 0.73 USD list price. The bundle was 225625 bytes.
 - **No recursion.** Session counts from `sessions list` were unchanged before and after (89, 33, 19).
 
+### WD-133 `sessions` on the live store
+
+2026-09-30, same host and CLI (Claude Code 2.1.283), project `watchdog`, `--days 7`, paths copied from the installed hook.
+
+**Dry runs** (nothing sent):
+- The first run ranked four Codex sessions with no calls in the window at the top, each with 13-17 `diff_oscillation` findings. `analyze` had been given every snapshot the checkout ever had, and a session with an unmatched turn start stays active for all later snapshots. `sessions.build` now passes each session only the snapshots taken during its own span in the window (30 s grace), which removed them: the bundle fell from about 27K to 18.6K tokens and sessions with trouble from 16 to 7.
+- Final: 25 sessions (12 Codex, 13 Claude), 18645 estimated tokens, about 2.5 KB per facet, nothing truncated at the remembered 800000-token budget. 16 sessions had no observed end, 10 no captured prompt, 7 no usage, 21 no label.
+
+**Live Sonnet 5 call** (`insights sessions --project watchdog --days 7 --output ...`):
+- **Result.** `status: ok`. Four candidates (one `blocked`, one `abandoned`, two `uncertain`) and three patterns (`never_compacts`, `abandoned_after_failure`, `other`), each resolved to a provider and session ID; four recommendations and four rule candidates. All grounded. One candidate was the session running the verification itself.
+- **Cost.** 197 s; 19340 cache-write and 0 cache-read input tokens and 17590 output tokens; 0.25 USD list price. The bundle was 35424 bytes.
+- **No recursion.** Distinct session counts per project were unchanged before and after (92, 35, 19 for `watchdog`, `GSIM30`, `agent-session-insights`).
+
 ## WD-012 calibration (in progress)
 
 2026-09-07: the first manual calibration pass reviewed 20 completed root Codex

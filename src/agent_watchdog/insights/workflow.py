@@ -126,6 +126,16 @@ def _loops(blocks: dict[AgentKey, list[Block]]) -> list[tuple[AgentKey, Block]]:
     return sorted(loops, key=lambda loop: len(loop[1]), reverse=True)
 
 
+def loops_by_session(finishes: Sequence[Envelope]) -> dict[tuple[str, str], list[Block]]:
+    """Each session's polling loops, keyed by (provider, session); longest first."""
+    found: dict[tuple[str, str], list[Block]] = defaultdict(list)
+    entries = [(None, event) for event in finishes if event.session_id is not None]
+    for (_alias, provider, session_id, _agent), block in _loops(_blocks(entries)):
+        if session_id is not None:
+            found[(provider, session_id)].append(block)
+    return found
+
+
 def _patterns(
     blocks: dict[AgentKey, list[Block]],
 ) -> list[tuple[tuple[str, ...], list[tuple[AgentKey, int]]]]:
