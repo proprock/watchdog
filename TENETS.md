@@ -13,7 +13,7 @@ Milestones: ROADMAP.md
 - Read `git status --short` and preserve unrelated user changes.
 - Features: when a new task branch is needed, name it `feature/<name>`; write a failing behavioral test, implement the smallest solution, then refactor.
 - Debugging: reproduce, form a hypothesis, apply a minimal fix, run a focused test and relevant broader checks. Do not repeat an expensive failed run without changing the conditions.
-- Docs/config: review content and run `git diff --check`; do not write tests that merely assert documentation strings exist.
+- Docs/config: review content and run `git diff --check`; do not write tests that merely assert that strings exist in documentation or source files.
 - Local pytest selection for code changes follows the impact-guided workflow below. The full suite remains mandatory in CI and is the local fallback when the graph cannot support a safe selection.
 - For a verified change that improves observation or control, update the user-local live Codex hook instance using the ignored [LIVE.md](LIVE.md). This file is local-only and must never be committed; do not update that instance for user-experience work or unrelated minor changes.
 - Use Conventional Commits, one subject per commit, and an action list in the commit body. Do not push unless requested.
