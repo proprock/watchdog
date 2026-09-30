@@ -61,9 +61,14 @@ near a bound: it carries about 300 untracked files and 4.7 MB of untracked conte
 warns about unreadable `.cache/test-context-*` directories (exit status stays 0). No file-count or
 byte bound is close on any registered checkout, so the four limits stay constants.
 
-Live log: no `event=checkout` record in the first minutes after the restart. Not yet measured:
-the unknown rate from real hook traffic, which needs sessions in the three other checkouts.
-WD-135 stays open for that measurement.
+Live log, read at 2026-09-30 21:55 UTC: 8 `event=checkout` records since the restart, all for
+`watchdog` (7 `deadline`, 1 `too_many_untracked` at 1077 files against the 500 bound). `project-a`
+has none: its 11 snapshots from real hook traffic (20:41-21:19 UTC, 8 distinct fingerprints, at most
+30 285 bytes) all succeeded. That checkout is nearly clean (one untracked file, empty `git diff`),
+so the result shows the log stays silent when nothing is unknown, not that a bound holds under
+load. `project-c` has 2 snapshots (last 18:24 UTC) and `project-b` has 1 from before the
+restart. Not yet measured: the unknown rate in those two checkouts, which needs real sessions
+there. WD-135 stays open for that measurement.
 
 ## WD-123 insights live probe
 
