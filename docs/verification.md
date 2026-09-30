@@ -99,6 +99,22 @@ All three used the remembered 800000-token budget with nothing truncated. Sessio
 - **Cost.** 98 s; 117352 cache-write and 103530 cache-read input tokens and 9049 output tokens; 0.58 USD list price.
 - **No recursion.** Session counts were unchanged (86, 31, 19).
 
+### WD-132 `--all-projects` on the live store
+
+2026-09-30, same host and CLI (Claude Code 2.1.283), registered projects `watchdog`, `GSIM30`, and `agent-session-insights`, paths copied from the installed hook.
+
+**Dry runs** (`--all-projects --days 30`, nothing sent), none disabled or unreadable:
+- `errors`: about 152K tokens, 74 clusters, 3 seen in two or more projects.
+- `permissions`: about 9K tokens, 7 classes, 2 in two or more projects.
+- `workflow`: about 119K tokens, 67 items, 32 in two or more projects.
+- Nothing truncated at the remembered 800000-token budget. The added fields are aliases and counts only; registered roots still appear inside the existing tool-input and error excerpts, as in single-project bundles.
+
+**Live Sonnet 5 call** (`insights workflow --all-projects --days 30 --output ...`):
+- **Result.** `status: ok`. 75 sessions, 115 agents, 8403 calls (`watchdog` 5886, `GSIM30` 2517); `agent-session-insights` had no calls in the window and the summary said so. Four recommendations (two scripts, one hook, one skill) and three rule candidates, all grounded.
+- **Scope.** All four recommendations came back at project scope, each naming its project, with no `scope_notes`. The model proposed no user-level rule, although 32 items spanned projects.
+- **Cost.** 217 s; 130593 cache-write and 0 cache-read input tokens and 20928 output tokens; 0.73 USD list price. The bundle was 225625 bytes.
+- **No recursion.** Session counts from `sessions list` were unchanged before and after (89, 33, 19).
+
 ## WD-012 calibration (in progress)
 
 2026-09-07: the first manual calibration pass reviewed 20 completed root Codex

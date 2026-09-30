@@ -2,6 +2,27 @@
 
 Historical records only. Read this file when prior verification is relevant; active work belongs in [TODO.md](TODO.md). Preserve task IDs when moving entries here.
 
+- [x] **WD-132 - Cross-project insights for user-level rules (2026-09-30).** `--all-projects` for `errors`, `permissions`, and `workflow` ([docs/cli.md](docs/cli.md#insights)).
+  - **Reads.** Each registered project is read through its own read-only snapshot and the records are unioned in memory, never a merged store. The three builders split into `read` and `analyze`, so single-project bundles are unchanged and thresholds such as `workflow`'s 3 occurrences in 2 sessions apply to the union. Sessions are keyed by project.
+  - **Merging.** Error clusters by signature, permission classes by class, workflow chains by steps. Each item carries `projects` with counts and ranks by project count, then frequency, so a budget cut drops single-project items first. A workflow loop stays one item per run with its `project`; its `projects` counts loops of that class.
+  - **Skipped.** A project with `insights_llm_enabled = false`, without a readable database, or with a locked one is excluded, including in a dry run. The bundle counts them without naming them; the printed result lists them. With none left, the call is `unavailable` with `no_eligible_projects`.
+  - **Answer.** Recommendations add `scope`, `target_file`, and `project`. A `user` recommendation is narrowed to `project`, with a `scope_notes` entry, when no cited item occurred in two projects.
+  - **Not done.** `context`, `tokens`, and `subagents` are not extended.
+  - **Verification.**
+    - `tests/test_insights_cross_project.py` (23 tests, two synthetic projects):
+      - a shared error merges with both projects and outranks a more frequent one-project error;
+      - a chain below the thresholds in each project is found across both;
+      - the same session ID in two projects counts as two sessions;
+      - a disabled project is excluded and counted, a project without a database is counted, and no eligible project refuses the call;
+      - the bundle is redacted and names no root path;
+      - a tight budget keeps only the two-project item;
+      - a wrong user-scope answer is narrowed, a missing scope is malformed, and an unknown project is corrected;
+      - the CLI dry run, and the `--project`, `--session`, and mode refusals.
+    - Native release build. Full offline `uv run pytest`: 681 passed in 166 s, run before the last test and `scope.py` edit; the two changed test modules then passed again (63). It is the fallback because the index could not be validated: `index_repository` left `indexed_at` and the `metadata_changed` coverage unchanged, and it was not retried.
+    - `uv run ruff check .`, `uv run ruff format --check .`, `uv run ty check`, and `git diff --check` passed.
+    - Live dry runs and one Sonnet 5 `workflow` call over the three registered projects, with cost and unchanged session counts, are in [verification.md](docs/verification.md#wd-132---all-projects-on-the-live-store): `ok`, four grounded project-scope recommendations, 0.73 USD list price.
+    - Branch `feature/wd-132-cross-project-insights` on WD-120 (`b8cece3`). `LIVE.md` was not updated: this is analysis, not observation or control.
+
 - [x] **WD-120 - End-to-end collection readiness (2026-09-30).** A `readiness` command distinct from `doctor` ([docs/cli.md](docs/cli.md#readiness)); an audit follow-up.
   - **Stages.** `hook`, `project`, `provider_callback`, `spool`, `admission`, each `ready`/`failed`/`unknown` with evidence and an action; the exit code is 1 only when a stage failed.
     - `hook` checks the ownership record, every owned hook unedited, a native (not Python-fallback) command, its adapter and Python existing, `--version`, and that its `--config`/`--data`/`--runtime` match the invocation.
