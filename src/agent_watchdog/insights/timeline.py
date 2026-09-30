@@ -16,6 +16,7 @@ from typing import Any
 
 from agent_watchdog.analysis import captured_content
 from agent_watchdog.events import Envelope
+from agent_watchdog.storage import persisted_envelope
 
 Key = tuple[str, str | None, str | None]
 # A request whose context is below this share of the previous one was reset:
@@ -186,6 +187,58 @@ def steps(
         else:
             unattributed.append(event)
     return result, unattributed
+
+
+def events(
+    db: sqlite3.Connection,
+    kinds: tuple[str, ...],
+    *,
+    provider: str | None,
+    session_id: str | None,
+    since: datetime | None,
+    until: datetime | None,
+) -> list[Envelope]:
+    """Load envelopes of the given kinds in received order, filtered like the other reads."""
+    where = f"kind IN ({', '.join('?' for _ in kinds)})"
+    params: list[object] = list(kinds)
+    if provider is not None:
+        where += " AND json_extract(envelope, '$.provider') = ?"
+        params.append(provider)
+    if session_id is not None:
+        where += " AND session_id = ?"
+        params.append(session_id)
+    result = []
+    for (document,) in db.execute(
+        f"SELECT envelope FROM events WHERE {where} ORDER BY received_at", params
+    ):
+        event = persisted_envelope(document)
+        if since is not None and event.received_at < since:
+            continue
+        if until is not None and event.received_at >= until:
+            continue
+        result.append(event)
+    return result
+
+
+def namespace(event: Envelope) -> dict[str, Any]:
+    value = event.payload.get(event.provider)
+    return value if isinstance(value, dict) else {}
+
+
+def metadata(event: Envelope) -> dict[str, Any]:
+    value = namespace(event).get("metadata")
+    return value if isinstance(value, dict) else {}
+
+
+def content(event: Envelope, field: str) -> Any:
+    """Return one retained content field, or None when content was not captured."""
+    value = namespace(event).get("content")
+    return value.get(field) if isinstance(value, dict) else None
+
+
+def duration_ms(event: Envelope) -> int | None:
+    value = metadata(event).get("duration_ms")
+    return value if type(value) is int and value >= 0 else None
 
 
 def tool_name(event: Envelope) -> str:

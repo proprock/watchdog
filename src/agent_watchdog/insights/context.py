@@ -1,6 +1,5 @@
 """`insights context`: how each session's context grew, reset, and compacted."""
 
-import sqlite3
 from collections import defaultdict
 from datetime import datetime
 from statistics import median
@@ -12,7 +11,6 @@ from agent_watchdog.events import Envelope
 from agent_watchdog.insights import budget, timeline
 from agent_watchdog.insights.bundle import Draft, excerpt
 from agent_watchdog.insights.contract import OutputModel, RuleCandidate
-from agent_watchdog.storage import persisted_envelope
 
 MODE = "context"
 TURN_LIMIT = 40
@@ -82,50 +80,6 @@ class Output(OutputModel):
     rule_candidates: list[RuleCandidate]
 
 
-def events(
-    db: sqlite3.Connection,
-    kinds: tuple[str, ...],
-    *,
-    provider: str | None,
-    session_id: str | None,
-    since: datetime | None,
-    until: datetime | None,
-) -> list[Envelope]:
-    where = f"kind IN ({', '.join('?' for _ in kinds)})"
-    params: list[object] = list(kinds)
-    if provider is not None:
-        where += " AND json_extract(envelope, '$.provider') = ?"
-        params.append(provider)
-    if session_id is not None:
-        where += " AND session_id = ?"
-        params.append(session_id)
-    result = []
-    for (document,) in db.execute(
-        f"SELECT envelope FROM events WHERE {where} ORDER BY received_at", params
-    ):
-        event = persisted_envelope(document)
-        if since is not None and event.received_at < since:
-            continue
-        if until is not None and event.received_at >= until:
-            continue
-        result.append(event)
-    return result
-
-
-def metadata(event: Envelope) -> dict[str, Any]:
-    payload = event.payload.get(event.provider)
-    value = payload.get("metadata") if isinstance(payload, dict) else None
-    return value if isinstance(value, dict) else {}
-
-
-def prompt(event: Envelope) -> Any:
-    payload = event.payload.get(event.provider)
-    if not isinstance(payload, dict):
-        return None
-    content = payload.get("content")
-    return content.get("prompt") if isinstance(content, dict) else None
-
-
 def _at_or_after(sequence: list[timeline.Request], at_us: int) -> timeline.Request | None:
     return next((request for request in sequence if request.at_us >= at_us), None)
 
@@ -144,7 +98,7 @@ def _turns(sequence: list[timeline.Request], starts: list[Envelope]) -> list[dic
                 "evidence_id": str(event.event_id),
                 "at": event.received_at.isoformat(),
                 "occupancy_after": after.occupancy if after else None,
-                "prompt": excerpt(prompt(event), PROMPT_EXCERPT),
+                "prompt": excerpt(timeline.content(event, "prompt"), PROMPT_EXCERPT),
             }
         )
     if len(turns) > TURN_LIMIT:
@@ -160,14 +114,14 @@ def _compactions(sequence: list[timeline.Request], events_: list[Envelope]) -> l
     for start in starts:
         at = timeline.us(start.received_at) or 0
         end = next((event for event in ends if event.received_at >= start.received_at), None)
-        summary = metadata(end).get("compact_summary") if end else None
+        summary = timeline.metadata(end).get("compact_summary") if end else None
         before = _before(sequence, at)
         after = _at_or_after(sequence, timeline.us(end.received_at) or at) if end else None
         result.append(
             {
                 "evidence_id": str(start.event_id),
                 "at": start.received_at.isoformat(),
-                "trigger": metadata(start).get("trigger"),
+                "trigger": timeline.metadata(start).get("trigger"),
                 "before_tokens": before.occupancy if before else None,
                 "after_tokens": after.occupancy if after else None,
                 "summary_chars": len(summary) if isinstance(summary, str) else None,
@@ -189,7 +143,7 @@ def build(
     options = {"provider": provider, "session_id": session_id, "since": since, "until": until}
     with inspection.database(paths, project) as db:
         series, counts = timeline.requests(db, **options)
-        lifecycle = events(
+        lifecycle = timeline.events(
             db,
             ("session.start", "turn.start", "compaction.start", "compaction.end"),
             **options,
@@ -239,7 +193,7 @@ def build(
             and not any(step.before.at_us <= at <= step.after.at_us for at in compacted_at)
         ]
         sources = [
-            metadata(event).get("source")
+            timeline.metadata(event).get("source")
             for event in session_events
             if event.kind == "session.start"
         ]

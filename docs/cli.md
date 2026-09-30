@@ -206,6 +206,9 @@ agent-watchdog insights errors --project PROJECT --dry-run
 agent-watchdog insights errors --project PROJECT --since 2026-09-01T00:00:00+00:00 --output errors.md
 agent-watchdog insights context --project PROJECT --provider claude --session SESSION_ID
 agent-watchdog insights tokens --project PROJECT --model opus --language Russian
+agent-watchdog insights workflow --project PROJECT --output workflow.md
+agent-watchdog insights subagents --project PROJECT --provider claude
+agent-watchdog insights permissions --project PROJECT --since 2026-09-01T00:00:00+00:00
 ```
 
 `insights` is the only command that sends data to a model, and only when you run it.
@@ -248,6 +251,29 @@ The window share uses only windows the Claude CLI itself reported during an earl
 - Claude cache rebuilds: requests that rewrote most of their context after an idle gap.
 
 Hook response bytes overstate some tools: for Claude `Edit` and `Write` they include the whole original file, which the model never sees. The model therefore ranks by attributed tokens and recommends output limits, wrapper scripts, subagent delegation, avoiding rereads, better-targeted tools, and cache-friendly timing.
+
+`workflow` reduces each agent's calls to the same classes and collapses back-to-back calls of one class into one step. The top 60 **sequences** and top 40 **loops** are listed, and the model proposes skills, scripts, slash commands, instructions or hooks, each with a draft.
+- **Sequences** are chains of 3 to 6 steps that recur at least three times across at least two sessions.
+  - A chain made only of reading, searching and editing (`Read`, `Edit`, `Grep`, `apply_patch`, and similar) is dropped: that is the work itself.
+  - A chain that a longer chain always contains is dropped as well.
+- **Loops** are at least three back-to-back calls of one class by one agent, at least half of them repeating an earlier input: polling, or re-running the same command.
+
+`subagents` lists each delegated agent, ranked by the context it read. For each agent it reports:
+- the agent type and the task text from the spawning call (a Claude `Agent` call is linked by the agent ID in its response);
+- the models it ran on, next to the coordinator's model at its start. Models are compared by family, such as `opus` or `sonnet`, not by exact ID;
+- measured requests and tokens;
+- tool calls and failures;
+- its duration and the result it handed back.
+
+`SubagentStop` events with no type and no start, calls or usage are Claude Code internal helpers; they are excluded and counted. The model recommends model routing, more or less delegation, narrower task prompts, agent definitions, and parallelism.
+
+`permissions` matches each `permission_prompt` notification to the latest start of the tool its message names (within ten minutes). It then groups the prompts by class and reports:
+- the permission modes involved;
+- the wait from prompt to the call's finish;
+- how the calls ended;
+- examples of the gated input.
+
+A call with no observed finish may have been denied, interrupted, or lost. Prompts for `AskUserQuestion` and `ExitPlanMode` are questions to the user and are marked as such. The model proposes allow or deny rules with a risk class (`read_only`, `mutating`, `destructive`), permission modes, or hooks, and never applies anything. Codex approval prompts are not observed through hooks.
 
 - **Grounding.** Every recommendation and rule candidate must cite evidence IDs from
   the bundle. One that cites nothing, or an ID the bundle does not contain, is kept but

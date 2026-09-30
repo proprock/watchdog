@@ -62,6 +62,30 @@ Without these exclusions, one-step "growth" reached 464K tokens on a `git commit
 - **Budget.** The `tokens` call ran on the default 120000-token budget. It recorded the 1M window in `model-windows.json`, so the `context` call used the remembered-window budget of 800000 with nothing truncated.
 - **No recursion.** Session counts were unchanged across all three projects (84, 29, 19).
 
+### WD-125 `workflow`, `subagents`, and `permissions` on the live store
+
+2026-09-30, same host and CLI, project `watchdog`, `--since 2026-08-30T00:00:00+00:00`. The store was read only, and the live instance itself was not updated.
+
+**Tuning from dry runs:**
+- **`workflow`.** The first draft counted any class repeated back to back as a loop, and every recurring chain as a sequence. That gave 451 sequences and 301 loops, and the bundle hit the 800K budget.
+  - Collapsing back-to-back calls into one step, dropping chains made only of reading, searching and editing, requiring loops to repeat an input, and capping the lists left 60 sequences and 3 loops, about 106K tokens.
+- **`subagents`.** 126 of the 164 agents were `SubagentStop` events with no type, start, calls or usage: Claude Code internal helpers. They are now excluded and counted; 38 agents remain.
+- **`permissions`.** 49 prompts formed 7 classes, and 3 prompts had no matching call.
+
+**Findings the dry runs surfaced:**
+- **Subagents on the coordinator's model.** 16 of 20 Explore agents ran on the same model family as their coordinator. Each read 1.1M to 3.2M tokens.
+- **Permission prompts.** At 1.56 prompts per 100 Claude tool starts, the longest waits were `AskUserQuestion` (median 584 s) and `ExitPlanMode` (472 s), which are questions to the user rather than permission gates.
+
+**Live Sonnet 5 calls**, each `status: ok`, with every recommendation and rule candidate grounded:
+
+| Mode | Recommendations | Rule candidates | Time | Input (cache write) | Output | List price |
+|---|---|---|---|---|---|---|
+| `permissions` | 3 | 3 | 133 s | 10694 | 12592 | 0.17 USD |
+| `subagents` | 3 | 2 | 140 s | 41399 | 12142 | 0.29 USD |
+| `workflow` | 4 | 2 | 152 s | 115429 | 12687 | 0.59 USD |
+
+All three used the remembered 800000-token budget with nothing truncated. Session counts were unchanged before and after (86, 31, 19).
+
 ## WD-012 calibration (in progress)
 
 2026-09-07: the first manual calibration pass reviewed 20 completed root Codex

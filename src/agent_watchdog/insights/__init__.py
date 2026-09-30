@@ -23,12 +23,17 @@ from agent_watchdog.insights import (
     contract,
     errors,
     llm,
+    permissions,
     render,
+    subagents,
     tokens,
+    workflow,
 )
 from agent_watchdog.storage import StorageError
 
-MODES = {module.MODE: module for module in (errors, context, tokens)}
+MODES = {
+    module.MODE: module for module in (errors, context, tokens, workflow, subagents, permissions)
+}
 DEFAULT_MODEL = "sonnet"
 DEFAULT_WINDOW = timedelta(days=7)
 DEFAULT_MAX_BUNDLE_TOKENS = budget.DEFAULT_MAX_BUNDLE_TOKENS

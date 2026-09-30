@@ -157,7 +157,10 @@ def main() -> int:
         "insights",
         help="Ask one isolated `claude -p` call for recommendations over collected evidence",
     )
-    insights_view.add_argument("mode", choices=("errors", "context", "tokens"))
+    insights_view.add_argument(
+        "mode",
+        choices=("errors", "context", "tokens", "workflow", "subagents", "permissions"),
+    )
     insights_view.add_argument(
         "--project", help="Project alias; UUID accepted; default resolves cwd"
     )

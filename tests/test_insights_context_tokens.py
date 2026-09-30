@@ -137,6 +137,8 @@ def test_steps_attribute_growth_to_the_calls_that_finished_in_between(tmp_path):
         ("PowerShell", {"command": "Get-Content -Raw .\\TENETS.md"}, "PowerShell: get-content"),
         ("Bash", {"command": "C:\\tools\\rg.exe -n foo src"}, "Bash: rg"),
         ("Bash", {"command": ["bash", "-lc", "ls"]}, "Bash: bash"),
+        ("PowerShell", {"command": '& "C:\\bin\\claude.EXE" --help'}, "PowerShell: claude"),
+        ("PowerShell", {"command": "@'\nprint(1)\n'@ | python -"}, "PowerShell: (here-string)"),
         ("Read", {"file_path": "a.py"}, "Read"),
         ("mcp__server__search", {"q": "x"}, "mcp__server__search"),
         ("Bash", None, "Bash: (unknown)"),

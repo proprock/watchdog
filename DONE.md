@@ -2,6 +2,36 @@
 
 Historical records only. Read this file when prior verification is relevant; active work belongs in [TODO.md](TODO.md). Preserve task IDs when moving entries here.
 
+- [x] **WD-125 - `insights workflow`, `subagents`, and `permissions` (2026-09-30).** Three modes on the WD-123 pipeline ([docs/cli.md](docs/cli.md#insights)).
+  - **`workflow`.** Reduces each agent's calls to tool and command classes and collapses back-to-back calls of one class into a step.
+    - Sequences are 3-6 steps recurring 3+ times in 2+ sessions. Chains of only reading, searching and editing, and chains a longer chain always contains, are dropped; the top 60 are listed.
+    - Loops are 3+ back-to-back calls of one class by one agent with at least half the inputs repeated; the top 40 are listed.
+    - Answers are skills, scripts, slash commands, instructions or hooks, with drafts.
+  - **`subagents`.**
+    - Profiles each delegated agent: type, and the task text from the spawning Claude `Agent` call, linked by the agent ID in its response.
+    - Models are shown next to the coordinator's model at start and compared by family.
+    - Also reported: measured requests and tokens, tool calls and failures, duration, and the result handed back.
+    - Excludes untyped `SubagentStop`-only internal helpers and counts them.
+  - **`permissions`.**
+    - Matches each `permission_prompt` to the latest start of the named tool within ten minutes.
+    - Groups prompts by class with permission modes, the wait to the call's finish, outcomes and gated inputs; questions to the user are marked.
+    - Answers are allow or deny rules with a risk class, permission modes, or hooks. Nothing is applied.
+  - **Shared.**
+    - Event helpers moved into `insights.timeline`.
+    - `command_class` handles the PowerShell `&` call operator, quoted programs, and here-strings.
+  - **Verification.**
+    - 14 new offline tests in `tests/test_insights_modes.py`, written after the builders were tuned on live dry runs: sequences across sessions, routine-only chains dropped, loops versus varied work, subagent cost, model family and result, untyped stops excluded, permission matching, wait, outcome and interaction flag, schemas, and grounding and validation of a permissions answer. All insights modules passed on the final tree (73 passed).
+    - Native release build. Full offline `uv run pytest`: 615 passed in 210 s. It is the fallback, because shared insights modules changed.
+    - `uv run ruff check .`, `uv run ruff format --check src tests scripts`, `uv run ty check`, Cargo fmt/Clippy, `uv build` (the wheel includes the three modules), and `git diff --check` passed.
+    - Dry runs and three live Sonnet 5 calls on the live store are recorded in [verification.md](docs/verification.md#wd-125-workflow-subagents-and-permissions-on-the-live-store):
+      - `permissions`: 3 recommendations and 3 rule candidates, 133 s;
+      - `subagents`: 3 and 2, 140 s;
+      - `workflow`: 4 and 2, 152 s.
+
+      All were grounded, and session counts were unchanged.
+    - Branch `feature/wd-125-insights-workflow-subagents-permissions`, fast-forwarded onto WD-131 (`71bbd15`) before committing.
+    - The live instance was not updated, by user decision.
+
 - [x] **WD-131 - Codex subagent rollouts (2026-09-30).** A WD-128 follow-up. Codex hooks fired inside a subagent (`PreToolUse`, `PostToolUse`, `SubagentStart`) carry the parent `session_id`, the subagent's `agent_id`, and the subagent's own rollout as `transcript_path`. `SubagentStop` carries the parent's rollout. The reader registered the child rollout under the parent session and rejected it as `session_meta_mismatch`, recording a new gap each time the file grew. Its usage was never read.
   - **Evidence (read-only).**
     - 12 live child rollouts. In each, `session_meta.id` is the child thread (also the thread id in the file name), `session_meta.session_id` and `parent_thread_id` are the parent session, and `source.subagent` is present.

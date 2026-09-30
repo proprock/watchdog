@@ -100,9 +100,14 @@ def command_class(tool: str, tool_input: Any) -> str:
         words = words[words.index("&&") + 1 :]
     while words and "=" in words[0] and not words[0].startswith(("-", "=")):
         words = words[1:]
+    if words and words[0] == "&":  # PowerShell call operator
+        words = words[1:]
     if not words:
         return f"{tool}: (unknown)"
-    program = PurePath(words[0].replace("\\", "/")).name.lower().removesuffix(".exe")
+    if words[0].startswith(("@'", '@"')):
+        return f"{tool}: (here-string)"
+    program = PurePath(words[0].strip("\"'").replace("\\", "/")).name.lower()
+    program = program.removesuffix(".exe")
     arguments = [word for word in words[1:] if not word.startswith("-")]
     parts = [program]
     if program in _PYTHONS and "-m" in words[1:3]:
