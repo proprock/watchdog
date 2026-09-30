@@ -38,7 +38,7 @@ The same checks then ran against the implemented command: `insights errors --pro
 
 **Data checks before the builders:**
 - **Codex occupancy.** The rollout reader's `usage.delta.input_tokens` is the whole request context, with `cached_input_tokens` as a subset. Example: 37637 input, of which 37120 cached.
-- **Duplicate usage rows.** 544 of 2522 Codex usage rows repeat an earlier `native_event_id`: the same response re-emitted about 4 minutes later in 8 sessions, 2026-09-08 to 2026-09-12. The builders drop them and count them in coverage. The re-emission itself is a separate follow-up.
+- **Duplicate usage rows.** 544 of 2522 Codex usage rows repeat an earlier `native_event_id`: the same response re-emitted about 4 minutes later in 8 sessions, 2026-09-08 to 2026-09-12. The builders drop them and count them in coverage. The re-emission itself is a separate follow-up. (WD-128 fixed it and found a second path spelling of the same rollout. The lag between copies ranges from 0 s to 50 h, not a constant 4 minutes.)
 - **Summed iterations.** 7 Claude rows are single responses whose usage sums two API iterations: `input_tokens` 4 and cache reads doubled. They surface as one-request spikes to about twice the context, so the spike rule excludes them.
 - **Synthetic row.** One `<synthetic>` zero-usage row.
 

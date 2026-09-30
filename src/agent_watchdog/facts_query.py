@@ -46,6 +46,17 @@ _GROUPS: dict[str, tuple[str, str, tuple[str, ...]]] = {
 }
 
 
+# Before WD-128 the Codex reader keyed usage by transcript path, and two spellings
+# of one rollout stored some responses twice under different event ids. Stored
+# rows stay authoritative, so each response counts once here instead: its first
+# copy, in that copy's time window (the subquery is deliberately unwindowed).
+_FIRST_COPY = (
+    " AND (native_event_id IS NULL OR rowid IN (SELECT min(rowid) FROM event_facts "
+    "WHERE kind = 'usage' AND native_event_id IS NOT NULL "
+    "GROUP BY provider, session_id, agent_id, native_event_id))"
+)
+
+
 def _rows(db: sqlite3.Connection, sql: str, params: tuple[Any, ...] = ()) -> list[dict[str, Any]]:
     cursor = db.execute(sql, params)
     names = [column[0] for column in cursor.description]
@@ -92,7 +103,7 @@ def token_usage(
     return _rows(
         db,
         f"SELECT {select_keys}, COUNT(*) AS usage_rows, {sums}, {coverage} "
-        f"FROM event_facts WHERE kind = 'usage'{where} "
+        f"FROM event_facts WHERE kind = 'usage'{where}{_FIRST_COPY} "
         f"GROUP BY {group_expr} ORDER BY {group_expr}",
         tuple(params),
     )
@@ -122,7 +133,8 @@ def cost(
     rows = _rows(
         db,
         f"SELECT {select_keys}, model, received_at_us, {counters} "
-        f"FROM event_facts WHERE kind = 'usage'{where} ORDER BY received_at_us, rowid",
+        f"FROM event_facts WHERE kind = 'usage'{where}{_FIRST_COPY} "
+        "ORDER BY received_at_us, rowid",
         tuple(params),
     )
 

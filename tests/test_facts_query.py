@@ -148,6 +148,25 @@ def test_token_usage_time_window_filters_and_buckets(tmp_path, project):
     assert sum(r["output_tokens"] for r in hourly) == 420
 
 
+def test_a_response_stored_twice_counts_once_in_its_first_window(tmp_path, project):
+    # WD-128: before the reader keyed Codex usage by response, two spellings of
+    # one rollout path stored some responses under two event ids. Stored rows
+    # stay authoritative; reads count each response once.
+    events = sample_events(project)
+    first = next(event for event in events if event.kind == "usage" and event.provider == "codex")
+    twin = first.model_copy(
+        update={"event_id": uuid4(), "received_at": BASE + timedelta(seconds=20)}
+    )
+    build_v5(tmp_path, project, [*events, twin])
+    cut = int((BASE + timedelta(seconds=20)).timestamp() * 1_000_000)
+    with Store(tmp_path, project) as store:
+        total = {r["provider"]: r for r in facts_query.token_usage(store.connection)}
+        after = facts_query.token_usage(store.connection, since_us=cut)
+
+    assert (total["codex"]["usage_rows"], total["codex"]["input_tokens"]) == (1, 100)
+    assert after == []
+
+
 def test_process_efficiency_reports_tool_cost_error_rate_and_throughput(tmp_path, project):
     seed(tmp_path, project)
     with Store(tmp_path, project) as store:

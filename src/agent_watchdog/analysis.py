@@ -556,6 +556,7 @@ def analyze(
     usage_unavailable = False
     claude_responses: list[dict[str, int | None]] = []
     claude_requests: set[str] = set()
+    codex_responses: set[tuple[str | None, str]] = set()
     telemetry_fields: Counter[str] = Counter()
     unknown_fields: Counter[str] = Counter()
     for event in ordered:
@@ -583,6 +584,13 @@ def analyze(
                 claude_responses.append(counters)
             continue
         if event.kind == "usage":
+            # A response stored twice under different event ids (pre-WD-128
+            # Codex reader) counts once.
+            if event.native_event_id is not None:
+                response = (event.session_id, event.native_event_id)
+                if response in codex_responses:
+                    continue
+                codex_responses.add(response)
             record = provider.get("usage")
             delta = record.get("delta") if isinstance(record, dict) else None
             if not isinstance(delta, dict):

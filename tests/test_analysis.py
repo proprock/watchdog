@@ -77,13 +77,14 @@ def claude_response(**overrides):
     } | overrides
 
 
-def codex_usage(project, moment, *, delta):
+def codex_usage(project, moment, *, delta, response_id=None):
     return Envelope(
         provider="codex",
         project_id=project,
         session_id="session-1",
         kind="usage",
         source="transcript",
+        native_event_id=response_id,
         received_at=moment,
         payload={"codex": {"usage": {"cumulative": delta, "delta": delta}}},
     )
@@ -295,6 +296,26 @@ def test_report_sums_codex_rollout_deltas():
         "deltas": {"cached_input_tokens": 120, "input_tokens": 200, "output_tokens": 20},
     }
     assert "usage_incomplete" not in report["gaps"]
+
+
+def test_report_counts_a_codex_response_stored_twice_once():
+    # WD-128: two spellings of one rollout path stored some responses twice.
+    project = uuid4()
+    start = datetime(2026, 9, 30, tzinfo=UTC)
+    delta = {"input_tokens": 100, "output_tokens": 10}
+
+    report = analyze(
+        [
+            codex_usage(project, start, delta=delta, response_id="resp-1"),
+            codex_usage(project, start + timedelta(seconds=1), delta=delta, response_id="resp-1"),
+            codex_usage(project, start + timedelta(seconds=2), delta=delta, response_id="resp-2"),
+        ]
+    )
+
+    assert report["metrics"]["usage"] == {
+        "records": 2,
+        "deltas": {"input_tokens": 200, "output_tokens": 20},
+    }
 
 
 def test_report_sums_claude_responses_once_per_request():

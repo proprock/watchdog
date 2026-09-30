@@ -109,7 +109,7 @@ def test_estimate_marks_a_missing_rate_field_unpriced_without_inventing_a_value(
     assert provenance["unpriced_reason"] == "rate_field_missing"
 
 
-def _seed(root, project):
+def _seed(root, project, *, twin=False):
     root.mkdir(parents=True, exist_ok=True)
     session = "cccccccc-cccc-4ccc-8ccc-cccccccccccc"
     events = [
@@ -146,6 +146,9 @@ def _seed(root, project):
             },
         ),
     ]
+    if twin:
+        # WD-128: the same Codex response stored again under another event id.
+        events.append(events[1].model_copy(update={"event_id": uuid4()}))
     build_v5(root, project, events)
     with Store(root, project):
         pass
@@ -173,6 +176,18 @@ def test_cost_prices_each_usage_row_then_groups(tmp_path, project, tariffs_file)
     assert claude["cost_estimate"] == "8.400000"
     assert claude["currency"] == "USD"
     assert claude["by_field"]["cache_write"]["tokens"] == 400_000
+
+
+def test_cost_prices_a_response_stored_twice_once(tmp_path, project, tariffs_file):
+    _seed(tmp_path, project, twin=True)
+    tariffs = pricing.Tariffs.load(tariffs_file)
+    with Store(tmp_path, project) as store:
+        rows = {
+            row["provider"]: row
+            for row in facts_query.cost(store.connection, tariffs, group_by="provider")
+        }
+
+    assert rows["codex"]["cost_estimate"] == "3.250000"
 
 
 def test_cost_flags_unpriced_models_and_pre_tariff_usage(tmp_path, project):
