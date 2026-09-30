@@ -35,6 +35,12 @@ Resolve user config/data/runtime directories with platformdirs. User TOML contai
 
 One directory per UUID: SQLite (WAL), inbox, artifacts, and quarantine. The registry contains no aggregate analytics. Store large raw outputs as separate artifacts; the database holds references, fingerprints, and bounded excerpts. Do not recursively scan user files: the transcript reader opens only an absolute Codex path previously recorded from a Codex hook and validates it against the observed session.
 
+### Cross-project views (WD-016)
+
+Decision: a cross-project view is a read-only fan-out over the per-project stores, never a merged database or a registry-level aggregate. `summary`, `overview`, and `insights --all-projects` (WD-132) each open one short read-only snapshot per project and combine the results in memory; the result is a set of known observations, not a global transaction, and an unreadable or absent project stays unknown instead of zero. `overview` is the shared per-project picture: counts, token use with an optional list-price estimate, finding counts per rule, and last activity.
+
+A local web UI is not built with WD-016. It would present the same read-only data, so it adds a surface to secure and maintain (a listener, rendering, dependencies) without new observation. It is recorded as the next milestone (WD-136) with an entry gate: build it only if the `overview` JSON proves insufficient in daily use. If built, it stays loopback-only and read-only, reuses `inspection.overview`, and adds no plugin or framework layer.
+
 ### Local fidelity and redaction
 
 Watchdog observes one user's own coding sessions, whose prompts and outputs have already been sent to the provider, and it analyzes them locally without transmitting anything off the machine without the user's sanction. The per-project store is therefore not a sharing surface: it keeps the raw provider input, subject to `capture_content` and size limits. The credential filter is a bounded pattern matcher that can over-redact; it must not be the reason the only local copy of a session loses signal. WD-115 makes it an export-time transform: ingest and drain persist raw input, and the filter runs only when `inspection` writes an export intended to leave the machine. Collection scope (explicit registration, `daemon stop`, retention) still bounds what is kept.

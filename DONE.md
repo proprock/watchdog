@@ -2,6 +2,15 @@
 
 Historical records only. Read this file when prior verification is relevant; active work belongs in [TODO.md](TODO.md). Preserve task IDs when moving entries here.
 
+- [x] **WD-016 - Cross-project overview (2026-09-30).** `agent-watchdog overview` ([docs/cli.md](docs/cli.md#overview)); the decision is in [docs/architecture.md](docs/architecture.md#cross-project-views-wd-016).
+  - **Reads.** Extends `summary` per project with `usage` (raw token sums by provider, optional labeled list-price estimate), `findings` (count per rule for `codex` and `claude`, plus gaps; not windowed) and `last_activity`. Each project uses its own read-only snapshots; nothing is merged or written.
+  - **Unknown stays unknown.** No database gives `null` sections and `complete: false`; a pre-v6 database gives `usage: unsupported` and keeps `findings`; a database error marks only that row and exits 1; an invalid tariff file fails once up front.
+  - **Decision.** The local web UI was not built; it is the optional next milestone WD-136 (TODO.md, ROADMAP.md) with an entry gate and a latency measurement first.
+  - **Verification.**
+    - `tests/test_overview.py` (8 tests, synthetic stores): per-project usage, findings, and recency; a fired rule counted per provider; missing, corrupt, and pre-v6 databases; `--since`; `--tariffs` with a good and a bad file; no file changed by a call.
+    - Red first (`invalid choice: 'overview'`), then green. Ruff check/format and `ty check` pass; native release build, `cargo fmt --check`, and clippy pass.
+    - Full offline `uv run pytest`: 757 passed, 1 skipped in 145 s. This was the fallback, because the code graph coverage for the changed files still reported `metadata_changed` after a fast re-index.
+    - Live run on the four registered projects ([verification.md](docs/verification.md#wd-016-overview-on-the-live-store)): exit 0, complete, 162 sessions and 35236 events, 9.4 s unprofiled. `LIVE.md` is not updated (user-experience work).
 - [x] **WD-117 - Local real-transcript corpus (2026-09-30).** Real transcripts of the user's own sessions can now drive regression checks without entering the repository.
   - **Layout.** `tests/local/claude/**/*.jsonl` and `tests/local/codex/**/*.jsonl`, git-ignored (already in `.gitignore`); documented in `tests/fixtures/hooks/README.md`.
   - **Fixture.** `pytest_generate_tests` in `tests/conftest.py` parametrizes `corpus_transcript` over the corpus as `(provider, path)`; an empty corpus gives one clean skip.

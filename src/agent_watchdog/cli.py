@@ -136,6 +136,17 @@ def main() -> int:
         help="Send one labeled synthetic event through the installed adapter, then purge it",
     )
     commands.add_parser("summary", help="Summarize known observations for registered projects")
+    overview = commands.add_parser(
+        "overview",
+        help="Show usage, findings, and recency per registered project (read-only)",
+    )
+    overview.add_argument("--since", type=_since, help="ISO-8601 inclusive lower bound for usage")
+    overview.add_argument("--until", type=_since, help="ISO-8601 exclusive upper bound for usage")
+    overview.add_argument(
+        "--tariffs",
+        type=Path,
+        help="List-price tariff file; adds an estimate. Defaults to [pricing] tariffs",
+    )
     report = commands.add_parser(
         "report", help="Analyze collected observations without control actions"
     )
@@ -395,6 +406,7 @@ def main() -> int:
         if args.command in (
             "doctor",
             "summary",
+            "overview",
             "sessions",
             "report",
             "telemetry",
@@ -414,6 +426,15 @@ def main() -> int:
                 return 0 if report["ok"] else 1
             if args.command == "summary":
                 report = inspection.summary(paths)
+                print(json.dumps(report))
+                return 0 if report["ok"] else 1
+            if args.command == "overview":
+                report = inspection.overview(
+                    paths,
+                    since=args.since,
+                    until=args.until,
+                    tariffs=args.tariffs or load_config(paths.config).pricing.tariffs,
+                )
                 print(json.dumps(report))
                 return 0 if report["ok"] else 1
             project = inspection.project_at(paths, args.project)

@@ -180,6 +180,15 @@ All three used the remembered 800000-token budget with nothing truncated. Sessio
 - **Cost.** 217 s; 130593 cache-write and 0 cache-read input tokens and 20928 output tokens; 0.73 USD list price. The bundle was 225625 bytes.
 - **No recursion.** Session counts from `sessions list` were unchanged before and after (89, 33, 19).
 
+### WD-016 `overview` on the live store
+
+2026-09-30, same host, four registered projects, paths copied from the installed hook, `overview --since 2026-09-01T00:00:00+00:00`, branch `feature/wd-016-overview` code, read-only.
+
+- **Result.** Exit 0, `ok` and `complete` true, all four databases `ready` with `usage` ready: 162 sessions and 35236 events in total (per project 98/22104, 43/12938, 19/114, 2/80). The output was 4761 bytes; wall time 9.4 s including `uv run` start-up.
+- **Findings.** Only the two large projects had findings, per provider and rule (for example Codex `repeated_tool_outcome` 44 and 35, `diff_oscillation` 21 and 12; Claude `same_model_subagent_spawn` 19 and 2). The two small projects showed none, as an empty count, not unknown.
+- **Latest activity.** Three projects were active on the test day; one was last active two days earlier.
+- **Limits.** No tariff file was passed, so the estimate path is covered by offline tests only. The findings pass re-analyzes every retained event of a project on each call; the 9.4 s was not profiled, so its split between findings and start-up is unknown. A web UI that polls this would need to measure that first.
+
 ### WD-133 `sessions` on the live store
 
 2026-09-30, same host and CLI (Claude Code 2.1.283), project `watchdog`, `--days 7`, paths copied from the installed hook.

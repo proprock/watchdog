@@ -3,7 +3,7 @@
 import json
 import re
 import sqlite3
-from collections import defaultdict
+from collections import Counter, defaultdict
 from collections.abc import Iterator
 from contextlib import closing, contextmanager
 from datetime import datetime
@@ -823,6 +823,77 @@ def summary(paths: UserPaths) -> dict:
         "observed_session_count": observed_sessions,
         "observed_event_count": observed_events,
     }
+
+
+def _overview_sections(
+    paths: UserPaths,
+    project: Project,
+    *,
+    since: datetime | None,
+    until: datetime | None,
+    tariffs: Path | None,
+) -> dict[str, Any]:
+    with database(paths, project) as db:
+        schema = db.execute("PRAGMA user_version").fetchone()[0]
+        last_activity = db.execute("SELECT MAX(received_at) FROM events").fetchone()[0]
+    if schema < 6:
+        usage_section: dict[str, Any] = {"state": "unsupported", "reason": "schema_predates_v6"}
+    else:
+        measured = usage(paths, project, since=since, until=until, tariffs=tariffs)
+        usage_section = {"state": "ready", "token_usage": measured["token_usage"]}
+        if "pricing" in measured:
+            pricing = measured["pricing"]
+            usage_section["pricing"] = {
+                "currency": pricing["currency"],
+                "estimate": pricing["estimate"],
+                "caveat": pricing["caveat"],
+                "by_provider": pricing["by"]["provider"],
+            }
+    by_provider = {}
+    for provider in ("codex", "claude"):
+        found = report(paths, project, session_id=None, provider=provider)
+        by_provider[provider] = {
+            "by_rule": dict(Counter(finding["rule"] for finding in found["findings"])),
+            "gaps": found["gaps"],
+        }
+    return {
+        "usage": usage_section,
+        # Unlike usage, findings are not windowed: they cover every retained event.
+        "findings": {"state": "ready", "window": "all", "by_provider": by_provider},
+        "last_activity": last_activity,
+    }
+
+
+def overview(
+    paths: UserPaths,
+    *,
+    since: datetime | None,
+    until: datetime | None,
+    tariffs: Path | None = None,
+) -> dict:
+    """Extend ``summary`` with usage, findings, and recency per project, never merging stores.
+
+    Every project is read through its own short read-only snapshots, so the result is a
+    set of known observations, not a global transaction. Unknown stays null or a
+    non-ready state, never zero.
+    """
+    from agent_watchdog import pricing
+
+    if tariffs is not None:
+        pricing.Tariffs.load(tariffs)  # fail the command once, not once per project
+    result = summary(paths)
+    for project, row in zip(load_config(paths.config).projects, result["projects"], strict=True):
+        row |= {"usage": None, "findings": None, "last_activity": None}
+        if row["database"]["state"] != "ready":
+            continue
+        try:
+            row |= _overview_sections(paths, project, since=since, until=until, tariffs=tariffs)
+        except (OSError, ValueError, sqlite3.Error) as error:
+            row["database"] = {"state": "error", "error": type(error).__name__}
+            result["ok"] = False
+        if row["usage"] is None or row["usage"]["state"] != "ready":
+            result["complete"] = False
+    return result
 
 
 def doctor(paths: UserPaths) -> dict:

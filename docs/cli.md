@@ -51,6 +51,16 @@ Each ready project is read through its own short-lived SQLite read-only snapshot
 Concurrent ingestion can therefore change one project between snapshots; the
 cross-project totals are known observations, not a global transaction.
 
+## Overview
+
+```console
+agent-watchdog overview [--since ISO] [--until ISO] [--tariffs PATH]
+```
+
+Extends [`summary`](#summary) with, per registered project: `usage` (raw token sums by provider from `usage`, schema v6), `findings` (count per shadow rule for `codex` and `claude`, plus the report's `gaps`), and `last_activity` (latest `received_at`). With `--tariffs` (or `[pricing] tariffs`), `usage.pricing` adds the list-price estimate by provider, marked `estimate`, with the same caveat as [`usage`](#token-and-process-telemetry). `--since`/`--until` bound `usage` only; `findings` always cover every retained event (`window: "all"`).
+
+Each project is read through its own short-lived read-only snapshots and nothing is merged or written. A project without a database has `null` sections and makes `complete` false. A database older than schema v6 has `usage: {"state": "unsupported", ...}` and keeps `findings`. A database error marks that row `error`, sets `ok` to false, and returns exit code 1; other projects are still reported. An invalid tariff file fails the command once, before any project is read.
+
 ## Pipeline telemetry
 
 ```console
