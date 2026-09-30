@@ -164,6 +164,29 @@ All three used the remembered 800000-token budget with nothing truncated. Sessio
 - **Cost.** 197 s; 19340 cache-write and 0 cache-read input tokens and 17590 output tokens; 0.25 USD list price. The bundle was 35424 bytes.
 - **No recursion.** Distinct session counts per project were unchanged before and after (92, 35, 19 for `watchdog`, `GSIM30`, `agent-session-insights`).
 
+### WD-134 `digest` on the live store
+
+2026-09-30, same host and CLI (Claude Code 2.1.283), project `watchdog`, one fixed window (`--since 2026-09-23T16:10:23Z --until 2026-09-30T16:10:22Z`) for every run, paths copied from the installed hook, Sonnet 5.
+
+**Dry run** (nothing sent): 345095 estimated tokens at the remembered 800000-token budget, nothing truncated in any mode (37 error clusters, 19 context sessions, 80 token items, 48 workflow items, 22 subagent items, 2 permission classes).
+
+**One `digest` call against the six separate reports** (`errors`, `context`, `tokens`, `workflow`, `subagents`, `permissions`; the task text says seven, but `session` needs a session ID and `sessions` is WD-133's mode):
+
+| | `digest` | six separate reports |
+|---|---|---|
+| Calls | 1 | 6 |
+| Bundle | 655679 bytes | 655970 bytes (the same evidence) |
+| Cache-write / cache-read input tokens | 333346 / 0 | 358596 / 83451 |
+| Output tokens | 26136 | 90805 |
+| List cost | 1.59 USD | 2.36 USD (0.09 to 0.55 each) |
+| Wall time | 308 s | 979 s, run one after another |
+| Recommendations / rule candidates | 4 / 3, plus 2 links | 22 / 18 |
+| Ungrounded entries | 0 | 1 (`permissions`) |
+
+- **Result.** `status: ok`, nothing truncated. Both links were grounded and cross-mode (`context` + `subagents`; `context` + `errors` + `subagents`), and all four ranked actions cited item IDs from the bundle.
+- **Reading the comparison.** The digest costs about 68% of the separate reports and takes about a third of the wall time, mostly because it writes 3.5 times fewer answer tokens; the input side is the same evidence. It gives up per-mode depth (4 actions against 22), which is why the separate reports stay available. Only the cross-mode grounding of the links is checked here; whether they are worth having is the reader's judgement.
+- **No recursion.** The project had 93 sessions before and after the seven calls.
+
 ## WD-012 calibration (in progress)
 
 2026-09-07: the first manual calibration pass reviewed 20 completed root Codex

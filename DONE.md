@@ -2,6 +2,18 @@
 
 Historical records only. Read this file when prior verification is relevant; active work belongs in [TODO.md](TODO.md). Preserve task IDs when moving entries here.
 
+- [x] **WD-134 - `insights digest`: one cross-mode synthesis (2026-09-30).** A project-wide mode over the six deterministic builders ([docs/cli.md](docs/cli.md#insights)).
+  - **Bundle.** `errors`, `context`, `tokens`, `workflow`, `subagents`, and `permissions` are built for one window, each keeping its facts and coverage. Each mode fills a fixed share of the budget (20/15/15/15/10/10%, 15% headroom); an unused share is not redistributed, so an empty mode is reported as empty. `coverage.modes.<mode>.truncated` counts what a cut dropped. All builders read up to one shared upper bound.
+  - **Answer.** `links` across modes and a ranked action list of at most 5, with optional `log`-only rule candidates. A link is cross-mode only when its cited item IDs (one per mode) span two modes; otherwise it stays listed as single-mode. An event ID alone grounds a link but names no mode, because one event appears in several modes.
+  - **Core changes.** `_respond` uses a mode's optional `fit`; `--session` and `--all-projects` are refused; `render` prints a Cross-mode links section.
+  - **Not done.** `--all-projects` does not cover `digest`; `session` and `sessions` are not part of it.
+  - **Verification.**
+    - `tests/test_insights_digest.py` (16 tests): the declared shares, tagged per-mode build with unique IDs, one shared window, each mode within its share and the whole bundle within the budget, an empty mode keeping facts and coverage without giving its share away, a tiny budget, cross-mode and single-mode links, invented and truncated-tail IDs, a shared event ID naming no mode, the grounded answer with Markdown, the prompt and schema, the dry run, the whole-project refusals, the CLI, and the self-contained schema.
+    - Native release build. Full offline `uv run pytest`: 729 passed in 151 s, the fallback because `cli.py` and `insights/__init__.py` fan out widely.
+    - `uv run ruff check .`, `uv run ruff format --check .`, `uv run ty check`, and `git diff --check` passed. `cargo fmt` and `clippy` were not run: no Rust file changed.
+    - One live Sonnet 5 call against the six separate reports on one window is in [verification.md](docs/verification.md#wd-134-digest-on-the-live-store): 1.59 USD against 2.36 USD, 308 s against 979 s, 4 actions and 2 grounded cross-mode links against 22 recommendations.
+    - `LIVE.md` is not updated: this is a manual analysis mode, not an observation or control change.
+
 - [x] **WD-133 - `insights sessions`: project session triage (2026-09-30).** A project-wide mode over a window's sessions ([docs/cli.md](docs/cli.md#insights)).
   - **Bundle.** One compact facet per session, about 2.5 KB: first prompt and last assistant message excerpts, turns, calls, failures, loops (reusing `workflow`'s loop definition through `workflow.loops_by_session`), shadow findings, measured tokens, compactions, subagents, whether an end was observed, any recorded label, trouble `signals`, and evidence IDs. Sessions are ranked by trouble, so a budget cut drops the calmest; `no_end` ranks last and is not trouble alone. Facts and coverage count every session and the unknowns.
   - **Findings.** Computed per session, never merged across the project. A session only receives diff snapshots taken during its own span in the window, and an oscillation without turn attribution is counted in `unattributed_oscillations`, not as a finding.
