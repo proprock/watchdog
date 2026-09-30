@@ -19,11 +19,11 @@ Historical records only. Read this file when prior verification is relevant; act
     - Full offline `uv run pytest`: 589 passed in 110 s. It is the fallback because coverage for the changed files stayed `metadata_changed` after a fast reindex, so `detect_changes` was not used. The run's working tree also held the user's uncommitted insights work.
     - `uv run ruff check .`, `uv run ty check`, Cargo fmt/Clippy, `uv build`, and `git diff --check` passed. The repository-wide Ruff format check fails only on the pre-existing untracked research Markdown.
     - Branch `feature/wd-128-codex-usage-idempotence` from `b1e328b`: commits `880fd5a` (reader) and `00a5770` (read side).
-    - The live instance was not updated. Its daemon still runs the old reader, so a later `\\?\` spelling can still store duplicates; the read-side dedupe hides them.
-  - **Follow-ups (offered, not queued):**
-    - The Claude usage id also hashes the path.
-    - Rollout lines over 1 MiB pin sources `01a07e28` and `01a07faa` in `rollout_line_invalid`.
-    - Codex subagent rollouts registered under the parent session emit repeated `session_meta_mismatch` gaps.
+    - The user declined the live-instance update (2026-09-30). Its daemon still runs the old reader, so a later `\\?\` spelling can still store duplicates; the read-side dedupe hides them.
+  - **Follow-up notes (not queued in TODO.md):**
+    - **WD-129.** The Claude usage id also hashes the transcript path, so the same twin-spelling duplication is possible there.
+    - **WD-130.** Rollout lines over 1 MiB pin sources `01a07e28` and `01a07faa` in `rollout_line_invalid`, so every growth re-reads from byte 0.
+    - **WD-131.** Codex subagent rollouts registered under the parent session emit repeated `session_meta_mismatch` gaps (84 and 79 in two sessions).
 
 - [x] **WD-127 - Claude usage in `report` and `export` (2026-09-30).** `analysis.analyze` read only Codex `usage.delta`, so every Claude session showed empty usage deltas and the `usage_incomplete` gap in `report` and the `export` manifest, even when usage was observed. The bug was flagged during WD-124.
   - **Fix.** Claude `usage.response` counters are summed once per `requestId` through `facts.claude_response_usage`, extracted from the schema-v6 `event_facts` projection. They keep raw values under the `event_facts` names, with no synthesised `total_tokens`. A counter missing from any response is omitted as unknown, never summed partially. `usage_incomplete` is set only when input, cache-read, or output tokens are missing, or a response has no counter map. Codex behavior is unchanged. `REPORT_SCHEMA_VERSION` stays 2 because the report shape did not change.
