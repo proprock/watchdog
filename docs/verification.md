@@ -192,7 +192,8 @@ All three used the remembered 800000-token budget with nothing truncated. Sessio
 - **Result.** Exit 0, `ok` and `complete` true, all four databases `ready` with `usage` ready: 162 sessions and 35236 events in total (per project 98/22104, 43/12938, 19/114, 2/80). The output was 4761 bytes; wall time 9.4 s including `uv run` start-up.
 - **Findings.** Only the two large projects had findings, per provider and rule (for example Codex `repeated_tool_outcome` 44 and 35, `diff_oscillation` 21 and 12; Claude `same_model_subagent_spawn` 19 and 2). The two small projects showed none, as an empty count, not unknown.
 - **Latest activity.** Three projects were active on the test day; one was last active two days earlier.
-- **Limits.** No tariff file was passed, so the estimate path is covered by offline tests only. The findings pass re-analyzes every retained event of a project on each call; the 9.4 s was not profiled, so its split between findings and start-up is unknown. A web UI that polls this would need to measure that first.
+- **Limits.** No tariff file was passed, so the estimate path is covered by offline tests only. The findings pass re-analyzes every retained event of a project on each call.
+- **Latency split (WD-136, 2026-10-01).** Same store and window, code called in-process (`inspection.overview` and its parts), two warm runs. `overview` took 9.3 s both times (9.32, 9.27). Python import took 0.7 s. `summary` alone took 1.3-1.7 s. Per project, `usage` took 0.50 s and 0.21 s for the two large projects and 0.01 s for each small one. The per-provider `report` passes took 1.6 s and 2.6 s (project 1), 1.5 s and 1.2 s (project 2), and at most 0.06 s for each small project. The `report` passes are about 6.9 s, roughly three quarters of the total; `summary` counting and usage add about 2.4 s, and start-up is under 1 s. So the cost is in-process analysis that every call repeats, not `uv run` start-up.
 
 ### WD-133 `sessions` on the live store
 

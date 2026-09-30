@@ -39,7 +39,7 @@ One directory per UUID: SQLite (WAL), inbox, artifacts, and quarantine. The regi
 
 Decision: a cross-project view is a read-only fan-out over the per-project stores, never a merged database or a registry-level aggregate. `summary`, `overview`, and `insights --all-projects` (WD-132) each open one short read-only snapshot per project and combine the results in memory; the result is a set of known observations, not a global transaction, and an unreadable or absent project stays unknown instead of zero. `overview` is the shared per-project picture: counts, token use with an optional list-price estimate, finding counts per rule, and last activity.
 
-A local web UI is not built with WD-016. It would present the same read-only data, so it adds a surface to secure and maintain (a listener, rendering, dependencies) without new observation. It is recorded as the next milestone (WD-136) with an entry gate: build it only if the `overview` JSON proves insufficient in daily use. If built, it stays loopback-only and read-only, reuses `inspection.overview`, and adds no plugin or framework layer.
+A local web UI is not built with WD-016. It would present the same read-only data, so it adds a surface to secure and maintain (a listener, rendering, dependencies) without new observation. It is recorded as the next milestone (WD-136) with an entry gate: build it only if the `overview` JSON proves insufficient in daily use. `overview` takes about 9.3 s, mostly per-call re-analysis, so a long-lived UI process would also remove that cost; with a fast `overview` it would be convenience only. If built, it stays loopback-only and read-only, reuses `inspection.overview`, and adds no plugin or framework layer.
 
 ### Local fidelity and redaction
 
