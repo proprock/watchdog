@@ -382,6 +382,19 @@ class Store:
             is not None
         )
 
+    def usage_native_ids(self, provider: str, session_id: str) -> set[str]:
+        """Native ids of the usage events already stored for one conversation.
+
+        Lets a reader recognise a response stored under any earlier event id,
+        e.g. one derived from another spelling of the same transcript path.
+        """
+        rows = self.connection.execute(
+            "SELECT native_event_id FROM event_facts WHERE provider=? AND session_id=? "
+            "AND kind='usage' AND native_event_id IS NOT NULL",
+            (provider, session_id),
+        )
+        return {row[0] for row in rows}
+
     def put(self, event: Envelope, *, artifacts: Mapping[str, bytes] | None = None) -> bool:
         with resources.admission(self.root):
             return self._put(event, artifacts=artifacts)

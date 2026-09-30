@@ -1,4 +1,5 @@
 import json
+import os
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import cast
@@ -212,6 +213,115 @@ def test_truncation_revalidates_the_new_rollout_without_duplicate_usage(tmp_path
         events = [event for event in store.events() if event.kind == "usage"]
 
     assert [codex(event)["response_id"] for event in events] == ["response-1", "response-2"]
+
+
+def test_one_rollout_under_two_path_spellings_stores_each_response_once(tmp_path):
+    project = uuid4()
+    session = "session-1"
+    transcript = tmp_path / "rollout.jsonl"
+    (tmp_path / "sub").mkdir()
+    twin = tmp_path / "sub" / ".." / "rollout.jsonl"
+    write_rollout(
+        transcript,
+        session,
+        [
+            usage(session, "response-1", total=10, output=4),
+            usage(session, "response-2", total=16, output=6),
+        ],
+    )
+    with Store(tmp_path / "data", project) as store:
+        store.put(hook(project, session, transcript))
+        assert enrich(store).accepted == 2
+        store.put(hook(project, session, twin))
+        assert len(store.transcript_sources()) == 2
+        reread = enrich(store)
+        with transcript.open("a", encoding="utf-8") as stream:
+            stream.write(json.dumps(usage(session, "response-3", total=25, output=9)) + "\n")
+        grown = enrich(store)
+        ids = [event.native_event_id for event in store.events() if event.kind == "usage"]
+
+    assert (reread.accepted, reread.inert, reread.failures) == (0, False, ())
+    assert (grown.accepted, grown.inert, grown.failures) == (1, False, ())
+    assert ids == ["response-1", "response-2", "response-3"]
+
+
+def test_response_stored_under_an_earlier_event_id_is_not_stored_again(tmp_path):
+    project = uuid4()
+    session = "session-1"
+    transcript = tmp_path / "rollout.jsonl"
+    write_rollout(
+        transcript,
+        session,
+        [
+            usage(session, "response-1", total=10, output=4),
+            usage(session, "response-2", total=16, output=6),
+        ],
+    )
+    earlier = Envelope(
+        provider="codex",
+        project_id=project,
+        session_id=session,
+        native_event_id="response-1",
+        kind="usage",
+        source="transcript",
+        payload={"codex": {"reader": "codex-rollout-v1", "response_id": "response-1"}},
+    )
+    with Store(tmp_path / "data", project) as store:
+        store.put(earlier)
+        store.put(hook(project, session, transcript))
+        result = enrich(store)
+        events = [event for event in store.events() if event.kind == "usage"]
+
+    assert (result.accepted, result.inert) == (1, False)
+    assert [event.native_event_id for event in events] == ["response-1", "response-2"]
+    # The skipped response still advances the cumulative baseline.
+    assert usage_payload(events[1])["delta"]["total_tokens"] == 6
+
+
+def test_reread_after_a_transient_read_failure_neither_duplicates_nor_rejects(tmp_path):
+    project = uuid4()
+    session = "session-1"
+    transcript = tmp_path / "rollout.jsonl"
+    moved = tmp_path / "moved.jsonl"
+    write_rollout(
+        transcript,
+        session,
+        [
+            usage(session, "response-1", total=10, output=4),
+            usage(session, "response-2", total=16, output=6),
+        ],
+    )
+    with Store(tmp_path / "data", project) as store:
+        store.put(hook(project, session, transcript))
+        assert enrich(store).accepted == 2
+        transcript.rename(moved)
+        assert enrich(store).failures == ("transcript_unreadable",)
+        moved.rename(transcript)
+        with transcript.open("a", encoding="utf-8") as stream:
+            stream.write(json.dumps(usage(session, "response-3", total=25, output=9)) + "\n")
+        result = enrich(store)
+        events = [event for event in store.events() if event.kind == "usage"]
+        gaps = [event for event in store.events() if event.kind == "observation.gap"]
+
+    assert (result.accepted, result.failures) == (1, ())
+    assert [event.native_event_id for event in events] == ["response-1", "response-2", "response-3"]
+    assert usage_payload(events[-1])["delta"]["total_tokens"] == 9
+    assert [codex(gap)["reason"] for gap in gaps] == ["transcript_unreadable"]
+
+
+@pytest.mark.skipif(os.name != "nt", reason="Win32 verbatim path spelling")
+def test_verbatim_windows_spelling_registers_the_same_source(tmp_path):
+    project = uuid4()
+    session = "session-1"
+    transcript = tmp_path / "rollout.jsonl"
+    write_rollout(transcript, session, [usage(session, "response-1", total=10, output=4)])
+    verbatim = Path("\\\\?\\" + str(transcript))
+    with Store(tmp_path / "data", project) as store:
+        store.put(hook(project, session, transcript))
+        store.put(hook(project, session, verbatim))
+        sources = store.transcript_sources()
+
+    assert [source["path"] for source in sources] == [str(transcript)]
 
 
 def test_source_failure_is_safe_isolated_and_not_retried_until_change(tmp_path, monkeypatch):

@@ -1,7 +1,8 @@
 """Version-gated, daemon-only transcript enrichment for Codex and Claude.
 
 Codex uses the ``codex-rollout-v1`` reader (cumulative ``thread_token_usage``
-deltas). Claude uses the ``claude-transcript-v1`` reader: each assistant
+deltas); a response already stored for the session, under any event id, is
+never emitted again. Claude uses the ``claude-transcript-v1`` reader: each assistant
 response carries its own ``message.usage``, repeated on every content block of
 the response, and can grow across blocks while the response streams (commonly
 seen on subagent responses). One ``usage`` event is emitted per distinct
@@ -11,7 +12,6 @@ readers share the file-identity, offset, partial-tail, rotation and resume
 machinery below.
 """
 
-import hashlib
 import json
 from collections.abc import Mapping
 from dataclasses import dataclass
@@ -151,6 +151,12 @@ def _hook_path(payload: object, key: str) -> str | None:
     value = payload.get(key)
     if not isinstance(value, str) or not value or len(value) > 4096:
         return None
+    # Codex reports some rollout paths in the Win32 verbatim form (``\\?\C:\...``,
+    # seen on SessionEnd and in resumed sessions) and others plainly. Strip only
+    # that prefix so both spellings key one source; wider normalisation would
+    # re-key sources already stored under their literal spelling.
+    if value.startswith("\\\\?\\") and value[5:7] == ":\\":
+        value = value[4:]
     path = Path(value)
     return str(path) if path.is_absolute() else None
 
@@ -225,14 +231,6 @@ def _meta_record(record: object, session_id: str) -> None:
         raise UnsupportedTranscript("session_meta_version_missing")
 
 
-def _identifier(
-    source: dict[str, object], identity: tuple[int, int], offset: int, line: bytes
-) -> str:
-    digest = hashlib.sha256(line).hexdigest()
-    name = f"{READER}|{source['path']}|{identity[0]}:{identity[1]}|{offset}|{digest}"
-    return str(uuid5(NAMESPACE_URL, name))
-
-
 def _gap(store: "Store", source: dict[str, object], reason: str, signature: str) -> None:
     provider = str(source.get("provider") or "codex")
     reader = CLAUDE_READER if provider == "claude" else READER
@@ -293,13 +291,13 @@ def _usage_event(
     record: dict[str, Any],
     counters: dict[str, int | None],
     delta: dict[str, int | None],
-    identity: tuple[int, int],
-    offset: int,
-    line: bytes,
 ) -> Envelope:
     payload = record["payload"]
     occurred_at = _occurred_at(record.get("timestamp"))
-    event_id = uuid5(NAMESPACE_URL, _identifier(source, identity, offset, line))
+    # One response is one usage event, however the rollout path is spelled and
+    # wherever its line sits in the file.
+    name = f"{READER}|{source['session_id']}|{payload['response_id']}"
+    event_id = uuid5(NAMESPACE_URL, name)
     return Envelope(
         event_id=event_id,
         provider="codex",
@@ -619,14 +617,11 @@ def _process_source(store: "Store", source: dict[str, object]) -> EnrichmentResu
         )
         failures = ("rollout_line_invalid",) if changed else ()
         return EnrichmentResult(failures=failures, active_failures=("rollout_line_invalid",))
-    line_offset = offset - len(source["tail"] if isinstance(source["tail"], bytes) else b"")
     counters = _load_counters(source["counters"])
     if source["provider"] == "claude":
         consumed = _consume_claude(store, source, lines, signature, stalled=stalled)
     else:
-        consumed = _consume_codex(
-            store, source, lines, line_offset, (device, inode), signature, reader, counters
-        )
+        consumed = _consume_codex(store, source, lines, signature, reader, counters)
     store.update_transcript_source(
         source,
         reader=consumed.reader,
@@ -666,8 +661,6 @@ def _consume_codex(
     store: "Store",
     source: dict[str, object],
     lines: list[bytes],
-    line_offset: int,
-    identity: tuple[int, int],
     signature: str,
     reader: str | None,
     counters: dict[str, int | None] | None,
@@ -676,10 +669,9 @@ def _consume_codex(
     usage_seen = 0
     error: TranscriptFailureCode | None = None
     failures: list[TranscriptFailureCode] = []
+    stored: set[str] | None = None
     try:
         for line in lines:
-            current_offset = line_offset
-            line_offset += len(line)
             try:
                 record = json.loads(line)
             except (UnicodeDecodeError, json.JSONDecodeError) as exc:
@@ -692,17 +684,24 @@ def _consume_codex(
                 raise UnsupportedTranscript("rollout_record_invalid")
             if record.get("type") != "token_usage_record":
                 continue
-            usage_seen += 1
             payload, current = _usage_record(record, str(source["session_id"]))
+            if stored is None:
+                stored = store.usage_native_ids("codex", str(source["session_id"]))
+            if payload["response_id"] in stored:
+                # Already stored, possibly under an earlier path- or offset-derived
+                # event id: a re-read after a reset, or another spelling of this
+                # rollout. Only advance the cumulative baseline.
+                counters = current
+                continue
+            usage_seen += 1
             delta, reset = _delta(counters, current)
             if reset:
                 _gap(store, source, "usage_counter_reset", signature)
                 failures.append("usage_counter_reset")
-            store.put(
-                _usage_event(store, source, record, current, delta, identity, current_offset, line)
-            )
+            if store.put(_usage_event(store, source, record, current, delta)):
+                accepted += 1
+            stored.add(payload["response_id"])
             counters = current
-            accepted += 1
     except UnsupportedTranscript as exc:
         error = exc.code
         if source["last_error"] != error or source["error_signature"] != signature:
