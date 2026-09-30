@@ -2,6 +2,29 @@
 
 Historical records only. Read this file when prior verification is relevant; active work belongs in [TODO.md](TODO.md). Preserve task IDs when moving entries here.
 
+- [x] **WD-130 - Transcript lines over 1 MiB (2026-09-30).** A WD-128 follow-up. The daemon's transcript reader read files in 1 MiB windows and carried an unfinished line in a tail capped at 1 MiB. On a longer line it recorded one `rollout_line_invalid` gap and reset the source to offset 0, and it never read past that line again. The degraded status then cleared after 15 minutes, while the usage after the line stayed unread. Hooks, the database, and the reports were not involved: the loss happened where the reader turns transcripts into `usage` events.
+  - **Evidence (read-only).**
+    - The oversized lines are Codex `event_msg`/`item_completed` records, 1.46–2.33 MB in the stuck files and up to 6.71 MiB across 518 local rollouts, which hold 69 such lines.
+    - The live store was missing 56 usage records in three sessions: `01a07e28` 4, `01a07f91` 38, `01a07faa` 14. A line of 1–2 MiB passes or fails depending on where it falls relative to a window boundary, which is why `01a07f91` got past its first long line but not its second.
+    - Every local Claude line over 512 KiB is a `user` or `attachment` line, up to 1.92 MiB. None carries usage.
+  - **Fix.**
+    - A read window that lies inside one line is extended until the line ends.
+    - An unfinished line of up to 32 MiB (`MAX_LINE_BYTES`) is held in the tail; `storage.TRANSCRIPT_TAIL_BYTES` is now 33 MiB. This also removes a latent `StorageError`, because a held Claude response plus a partial line could already exceed the former 1 MiB cap.
+    - A longer line is skipped whole with a `transcript_line_oversized` gap. It is re-read from its start while it is still being written.
+    - A Claude response too large to hold open is still emitted early, now with a `claude_response_oversized` gap.
+    - A source the old limit left stuck (`rollout_line_invalid`, offset 0, empty tail) is read once more; WD-128's natural-key skip prevents duplicates.
+  - **Verification.**
+    - Failing tests first:
+      - A 2.5 MiB line between two usage records stored only the first record.
+      - An unfinished 1.5 MiB line failed.
+      - With the bound lowered, no skip gap appeared.
+      - A pre-seeded stuck source was never retried.
+      - A 2.5 MiB Claude user line blocked the next response.
+      - An early flush recorded no gap.
+    - Replay of the three stuck live rollouts through the new reader into a scratch store (the live store untouched): 50/50, 155/155, and 32/32 usage records, no failures, no gaps.
+    - Native release build. Full offline `uv run pytest`: 598 passed in 118 s. It is the fallback because coverage stayed `metadata_changed`, and the working tree also held the user's uncommitted insights work. `uv run ruff check .`, Ruff format on `src`/`tests`/`scripts`, `uv run ty check`, Cargo fmt/Clippy, `uv build`, and `git diff --check` passed.
+    - Branch `feature/wd-130-codex-oversized-lines`, stacked on WD-129 (`ccc400d`): fix commit `546beb8`. The live instance was not updated, so its stuck sources recover only after deployment.
+
 - [x] **WD-129 - Claude usage identity independent of path spelling (2026-09-30).** A WD-128 follow-up. The `claude-transcript-v1` usage id hashed the transcript path, so a second spelling of one transcript would store every response twice. A re-read of already stored requests still counted them as unstored usage, which marked the source `inert` and made the daemon degrade the project. The live store had no Claude duplicates.
   - **Fix.** The usage event id is now derived from `(session, agent_id, requestId)`. The reader skips a request already stored for that conversation agent under any event id, and removes its lines from the unstored-usage count. This check replaces the receipt check: a request stored by an earlier path-keyed or first-block-wins reader is never overwritten or added again. `Store.usage_native_ids` is now scoped by `agent_id`, and the unused `Store.has_receipt` is removed.
   - **Verification.**
