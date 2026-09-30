@@ -1,15 +1,15 @@
 """Version-gated, daemon-only transcript enrichment for Codex and Claude.
 
 Codex uses the ``codex-rollout-v1`` reader (cumulative ``thread_token_usage``
-deltas); a response already stored for the session, under any event id, is
-never emitted again. Claude uses the ``claude-transcript-v1`` reader: each assistant
+deltas). Claude uses the ``claude-transcript-v1`` reader: each assistant
 response carries its own ``message.usage``, repeated on every content block of
 the response, and can grow across blocks while the response streams (commonly
 seen on subagent responses). One ``usage`` event is emitted per distinct
 ``requestId``, holding the response open until a block reports a non-null
 ``stop_reason`` so the emitted value is the final one, not the first. Both
 readers share the file-identity, offset, partial-tail, rotation and resume
-machinery below.
+machinery below, and neither emits a response already stored for the same
+conversation agent, under any event id.
 """
 
 import json
@@ -433,7 +433,9 @@ def _claude_usage_event(
     store: "Store", source: Mapping[str, object], response: _ClaudeResponse
 ) -> Envelope:
     session_id, agent_id = _split_subagent(source)
-    name = f"{CLAUDE_READER}|{source['path']}|{session_id}|{response.request_id}"
+    # One request is one usage event per conversation agent, however the
+    # transcript path is spelled.
+    name = f"{CLAUDE_READER}|{session_id}|{agent_id or ''}|{response.request_id}"
     availability: dict[str, Availability] = {
         key: "observed" if response.counters[key] is not None else "unavailable"
         for key in CLAUDE_OBSERVED_KEYS
@@ -743,6 +745,7 @@ def _consume_claude(
     latest: dict[str, _ClaudeResponse] = {}
     closed: set[str] = set()
     blocks: dict[str, list[bytes]] = {}
+    stored: set[str] | None = None
     accepted = 0
     usage_seen = 0
     held_tail = b""
@@ -779,14 +782,17 @@ def _consume_claude(
                     continue
                 # Source stopped growing, or the held response is unbounded:
                 # flush its last-known value instead of holding it forever.
-            event = _claude_usage_event(store, source, latest[request_id])
-            if store.has_receipt(event.event_id):
-                # Already stored, most likely under a prior first-block-wins
-                # reader version; do not attempt to overwrite it with a
-                # different value under the same deterministic event id.
+            if stored is None:
+                stored = store.usage_native_ids("claude", parent, agent_id)
+            if request_id in stored:
+                # Already stored, possibly under an earlier path-derived event id
+                # or by a prior first-block-wins reader version: never overwrite
+                # or add it, and do not report its lines as unstored usage.
+                usage_seen -= len(blocks[request_id])
                 continue
-            if store.put(event):
+            if store.put(_claude_usage_event(store, source, latest[request_id])):
                 accepted += 1
+            stored.add(request_id)
     except UnsupportedTranscript as exc:
         error = exc.code
         if source["last_error"] != error or source["error_signature"] != signature:

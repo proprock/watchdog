@@ -424,6 +424,83 @@ def test_truncation_reprocesses_without_duplicate_usage(tmp_path):
         ]
 
 
+def test_one_transcript_under_two_path_spellings_stores_each_request_once(tmp_path):
+    project = uuid4()
+    transcript = tmp_path / "session.jsonl"
+    (tmp_path / "sub").mkdir()
+    twin = tmp_path / "sub" / ".." / "session.jsonl"
+    write_transcript(transcript, [assistant(SESSION, "req_A"), assistant(SESSION, "req_B")])
+    with Store(tmp_path / "data", project) as store:
+        store.put(hook(project, SESSION, transcript))
+        assert enrich(store).accepted == 2
+        store.put(hook(project, SESSION, twin))
+        assert len(store.transcript_sources()) == 2
+        reread = enrich(store)
+        with transcript.open("a", encoding="utf-8") as stream:
+            stream.write(json.dumps(assistant(SESSION, "req_C")) + "\n")
+        grown = enrich(store)
+        requests = [claude(event)["request_id"] for event in usage_events(store)]
+
+    assert (reread.accepted, reread.inert, reread.failures) == (0, False, ())
+    assert (grown.accepted, grown.inert, grown.failures) == (1, False, ())
+    assert requests == ["req_A", "req_B", "req_C"]
+
+
+def test_request_stored_under_an_earlier_event_id_is_not_stored_again(tmp_path):
+    project = uuid4()
+    transcript = tmp_path / "session.jsonl"
+    write_transcript(transcript, [assistant(SESSION, "req_A"), assistant(SESSION, "req_B")])
+
+    def earlier(request: str, agent_id: str | None) -> Envelope:
+        return Envelope(
+            provider="claude",
+            project_id=project,
+            session_id=SESSION,
+            agent_id=agent_id,
+            native_event_id=request,
+            kind="usage",
+            source="transcript",
+            payload={"claude": {"reader": "claude-transcript-v1", "request_id": request}},
+        )
+
+    with Store(tmp_path / "data", project) as store:
+        store.put(earlier("req_A", None))
+        # The same request id stored for a subagent does not cover the parent.
+        store.put(earlier("req_B", "agent-7"))
+        store.put(hook(project, SESSION, transcript))
+        result = enrich(store)
+        parent = [event.native_event_id for event in usage_events(store) if not event.agent_id]
+
+    assert (result.accepted, result.inert) == (1, False)
+    assert parent == ["req_A", "req_B"]
+
+
+def test_rereading_stored_requests_is_not_inert(tmp_path):
+    project = uuid4()
+    transcript = tmp_path / "session.jsonl"
+    write_transcript(transcript, [assistant(SESSION, "req_A")])
+    with Store(tmp_path / "data", project) as store:
+        store.put(hook(project, SESSION, transcript))
+        assert enrich(store).accepted == 1
+        # A rotation or reset re-reads bytes whose request is already stored.
+        store.update_transcript_source(
+            store.transcript_sources()[0],
+            reader=None,
+            device=None,
+            inode=None,
+            size=None,
+            mtime=None,
+            offset=0,
+            tail=b"",
+            counters=None,
+            last_error=None,
+            error_signature=None,
+        )
+        reread = enrich(store)
+
+    assert (reread.accepted, reread.inert) == (0, False)
+
+
 def test_wrong_session_id_records_a_durable_gap(tmp_path):
     project = uuid4()
     transcript = tmp_path / "session.jsonl"

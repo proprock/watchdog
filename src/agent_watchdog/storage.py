@@ -368,30 +368,20 @@ class Store:
             ).encode()
         ).hexdigest()
 
-    def has_receipt(self, event_id: object) -> bool:
-        """Whether an event with this id was already stored, regardless of content.
-
-        Lets a deterministic reader skip a replay outright instead of risking a
-        content-fingerprint conflict against a row stored under an earlier,
-        differently-computed value for the same event id.
-        """
-        return (
-            self.connection.execute(
-                "SELECT 1 FROM receipts WHERE event_id=?", (str(event_id),)
-            ).fetchone()
-            is not None
-        )
-
-    def usage_native_ids(self, provider: str, session_id: str) -> set[str]:
-        """Native ids of the usage events already stored for one conversation.
+    def usage_native_ids(
+        self, provider: str, session_id: str, agent_id: str | None = None
+    ) -> set[str]:
+        """Native ids of the usage events already stored for one conversation agent.
 
         Lets a reader recognise a response stored under any earlier event id,
-        e.g. one derived from another spelling of the same transcript path.
+        e.g. one derived from another spelling of the same transcript path or
+        computed by an earlier reader version, and skip it instead of storing it
+        again or conflicting with its receipt.
         """
         rows = self.connection.execute(
             "SELECT native_event_id FROM event_facts WHERE provider=? AND session_id=? "
-            "AND kind='usage' AND native_event_id IS NOT NULL",
-            (provider, session_id),
+            "AND agent_id IS ? AND kind='usage' AND native_event_id IS NOT NULL",
+            (provider, session_id, agent_id),
         )
         return {row[0] for row in rows}
 
