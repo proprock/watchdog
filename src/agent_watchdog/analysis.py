@@ -12,6 +12,7 @@ from typing import Any
 
 from agent_watchdog._proc import run as _run
 from agent_watchdog.events import Envelope
+from agent_watchdog.facts import USAGE_COLUMNS, claude_response_usage
 
 REPORT_SCHEMA_VERSION = 2
 RULE_VERSION = "wd-010.v1"
@@ -29,6 +30,9 @@ REPETITION_THRESHOLD = 3
 # gate and carry their own rule/version namespace and an explicit `action`.
 POLICY_RULE_VERSION = "wd-014.v1"
 POLICY_RULES = ("same_model_subagent_spawn",)
+# The counters the claude-transcript-v1 reader records as observed or
+# unavailable; cache writes and thinking tokens are optional per response.
+_CLAUDE_REQUIRED_USAGE = ("input_tokens", "cached_input_tokens", "output_tokens")
 TELEMETRY_SCHEMA_VERSION = 1
 _DELIVERY_TIMESTAMPS = (
     "adapter_started_at",
@@ -550,6 +554,8 @@ def analyze(
     usage: dict[str, int] = defaultdict(int)
     usage_records = 0
     usage_unavailable = False
+    claude_responses: list[dict[str, int | None]] = []
+    claude_requests: set[str] = set()
     telemetry_fields: Counter[str] = Counter()
     unknown_fields: Counter[str] = Counter()
     for event in ordered:
@@ -560,6 +566,22 @@ def analyze(
         unknown = provider.get("unknown_fields")
         if isinstance(unknown, list):
             unknown_fields.update(item for item in unknown if isinstance(item, str))
+        if event.kind == "usage" and event.provider == "claude":
+            # Per-response counters, not cumulative: count each requestId once.
+            request_id = provider.get("request_id") or event.native_event_id
+            if isinstance(request_id, str):
+                if request_id in claude_requests:
+                    continue
+                claude_requests.add(request_id)
+            record = provider.get("usage")
+            counters = claude_response_usage(
+                record.get("response") if isinstance(record, dict) else None
+            )
+            if counters is None:
+                usage_unavailable = True
+            else:
+                claude_responses.append(counters)
+            continue
         if event.kind == "usage":
             record = provider.get("usage")
             delta = record.get("delta") if isinstance(record, dict) else None
@@ -596,6 +618,17 @@ def analyze(
         if tests:
             test_signature = _fingerprint({"input": command, "failures": tests})
             failing_tests[test_signature].append(str(event.event_id))
+    if claude_responses:
+        usage_records += len(claude_responses)
+        for name in USAGE_COLUMNS:
+            observed = [
+                value for counters in claude_responses if (value := counters[name]) is not None
+            ]
+            # A counter missing from any response is unknown, not a partial sum.
+            if len(observed) == len(claude_responses):
+                usage[name] += sum(observed)
+            elif name in _CLAUDE_REQUIRED_USAGE:
+                usage_unavailable = True
 
     findings: list[dict[str, Any]] = []
     for evidence_ids in repeated.values():

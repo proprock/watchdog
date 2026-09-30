@@ -189,8 +189,13 @@ tool-call ID/name, and tool-response type. Identifiers are bounded. WD-007 also
 captures the native `prompt`, `tool_input`, `tool_response`, and
 `last_assistant_message` fields under `payload.<provider>.content`, when present.
 Capture defaults to true for registered projects; `capture_content = false` in
-defaults or project overrides omits those fields at drain. Transcript paths and
-arbitrary native fields are not copied. Pre-WD-115, known credential forms are
+defaults or project overrides omits those fields at drain. Every other native
+field, known or not, stays under `payload.<provider>.metadata` even with capture
+disabled, including text-bearing fields such as Claude PostCompact
+`compact_summary`; unrecognized names are also listed in `unknown_fields`.
+`transcript_path` (and Claude `agent_transcript_path`) is additionally promoted to
+`payload.<provider>` as a validated absolute path for the daemon's transcript
+readers. Pre-WD-115, known credential forms are
 removed in the adapter before the spool write — the first durable write — and the
 daemon re-sanitizes when it builds the canonical envelope; WD-115 removes both
 steps so the store keeps raw input and the credential filter runs only at

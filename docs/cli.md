@@ -153,6 +153,14 @@ than being silently dropped. Missing lifecycle/usage/output data remains a gap;
 waiting, exit code zero, and session Stop do not establish a stall, progress, or task
 success.
 
+The usage metric sums Codex rollout deltas. For Claude it sums each response's
+counters once per `requestId`, with raw values under the `event_facts` names:
+`cache_read_input_tokens` as `cached_input_tokens`, `cache_creation_input_tokens` as
+`cache_write_input_tokens`, and `thinking_tokens` as `reasoning_output_tokens`.
+Anthropic reports no total, so there is no `total_tokens`. A Claude counter missing
+from any response is omitted as unknown rather than summed partially; a response
+without input, cache-read, or output tokens adds the `usage_incomplete` gap.
+
 ## Analyze
 
 ```console

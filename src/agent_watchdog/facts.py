@@ -167,9 +167,17 @@ def _usage(envelope: dict[str, Any]) -> dict[str, int | None]:
         if not isinstance(delta, dict):
             return empty
         return {name: _count(delta.get(name)) for name in USAGE_COLUMNS}
-    response = usage.get("response")
+    return claude_response_usage(usage.get("response")) or empty
+
+
+def claude_response_usage(response: object) -> dict[str, int | None] | None:
+    """Map one Claude ``usage.response`` onto ``USAGE_COLUMNS``, or ``None``.
+
+    Only the names change; values stay raw. Anthropic's ``input_tokens`` excludes
+    cache reads and writes, unlike Codex's.
+    """
     if not isinstance(response, dict):
-        return empty
+        return None
     return {
         "input_tokens": _count(response.get("input_tokens")),
         "cached_input_tokens": _count(response.get("cache_read_input_tokens")),

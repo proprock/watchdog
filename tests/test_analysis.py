@@ -38,17 +38,54 @@ def tool(project, moment, *, code, output, command="pytest tests/test_sample.py"
     )
 
 
-def claude_usage(project, moment, *, model, agent_id=None, occurred_at=None, received_at=None):
+def claude_usage(
+    project,
+    moment,
+    *,
+    model,
+    agent_id=None,
+    occurred_at=None,
+    received_at=None,
+    request_id=None,
+    response=None,
+):
+    payload: dict = {"model": model}
+    if response is not None:
+        # The claude-transcript-v1 reader's per-response shape.
+        payload |= {"request_id": request_id, "usage": {"response": response}}
     return Envelope(
         provider="claude",
         project_id=project,
         session_id="session-1",
         agent_id=agent_id,
+        native_event_id=request_id,
         kind="usage",
         source="transcript",
         received_at=received_at if received_at is not None else moment,
         occurred_at=occurred_at if occurred_at is not None else moment,
-        payload={"claude": {"model": model}},
+        payload={"claude": payload},
+    )
+
+
+def claude_response(**overrides):
+    return {
+        "input_tokens": 5,
+        "cache_read_input_tokens": 100,
+        "cache_creation_input_tokens": 20,
+        "output_tokens": 30,
+        "thinking_tokens": 7,
+    } | overrides
+
+
+def codex_usage(project, moment, *, delta):
+    return Envelope(
+        provider="codex",
+        project_id=project,
+        session_id="session-1",
+        kind="usage",
+        source="transcript",
+        received_at=moment,
+        payload={"codex": {"usage": {"cumulative": delta, "delta": delta}}},
     )
 
 
@@ -239,6 +276,109 @@ def test_report_has_reproducible_shadow_findings_without_a_stall_verdict():
     }
     assert all(len(finding["evidence_ids"]) == 3 for finding in report["findings"])
     assert "stall" not in str(report).lower()
+
+
+def test_report_sums_codex_rollout_deltas():
+    project = uuid4()
+    start = datetime(2026, 9, 30, tzinfo=UTC)
+    delta = {"input_tokens": 100, "cached_input_tokens": 60, "output_tokens": 10}
+
+    report = analyze(
+        [
+            codex_usage(project, start, delta=delta),
+            codex_usage(project, start + timedelta(seconds=1), delta=delta),
+        ]
+    )
+
+    assert report["metrics"]["usage"] == {
+        "records": 2,
+        "deltas": {"cached_input_tokens": 120, "input_tokens": 200, "output_tokens": 20},
+    }
+    assert "usage_incomplete" not in report["gaps"]
+
+
+def test_report_sums_claude_responses_once_per_request():
+    project = uuid4()
+    start = datetime(2026, 9, 30, tzinfo=UTC)
+    events = [
+        claude_usage(project, start, model="m", request_id="req_1", response=claude_response()),
+        claude_usage(
+            project,
+            start + timedelta(seconds=1),
+            model="m",
+            request_id="req_2",
+            response=claude_response(input_tokens=3, cache_creation_input_tokens=0),
+        ),
+        # The same response observed twice counts once.
+        claude_usage(
+            project,
+            start + timedelta(seconds=2),
+            model="m",
+            request_id="req_1",
+            response=claude_response(),
+        ),
+    ]
+
+    report = analyze(events)
+
+    # Anthropic counters keep their raw values under the event_facts names, and
+    # Anthropic reports no total, so none is synthesised.
+    assert report["metrics"]["usage"] == {
+        "records": 2,
+        "deltas": {
+            "cache_write_input_tokens": 20,
+            "cached_input_tokens": 200,
+            "input_tokens": 8,
+            "output_tokens": 60,
+            "reasoning_output_tokens": 14,
+        },
+    }
+    assert "usage_incomplete" not in report["gaps"]
+
+
+def test_claude_counter_missing_on_some_responses_is_unknown_not_partial():
+    project = uuid4()
+    start = datetime(2026, 9, 30, tzinfo=UTC)
+    events = [
+        claude_usage(project, start, model="m", request_id="req_1", response=claude_response()),
+        claude_usage(
+            project,
+            start + timedelta(seconds=1),
+            model="m",
+            request_id="req_2",
+            response=claude_response(thinking_tokens=None),
+        ),
+    ]
+
+    report = analyze(events)
+
+    # Real transcripts report thinking tokens on only some responses; a partial
+    # sum would read as a complete total, so the counter stays unknown.
+    assert "reasoning_output_tokens" not in report["metrics"]["usage"]["deltas"]
+    assert report["metrics"]["usage"]["deltas"]["output_tokens"] == 60
+    assert "usage_incomplete" not in report["gaps"]
+
+
+@pytest.mark.parametrize(
+    ("response", "unknown"),
+    [
+        (claude_response(input_tokens=None), "input_tokens"),
+        (claude_response(cache_read_input_tokens=None), "cached_input_tokens"),
+        (claude_response(output_tokens=None), "output_tokens"),
+        ("not-a-counter-map", None),
+    ],
+)
+def test_claude_usage_without_a_required_counter_is_incomplete(response, unknown):
+    project = uuid4()
+    start = datetime(2026, 9, 30, tzinfo=UTC)
+
+    report = analyze(
+        [claude_usage(project, start, model="m", request_id="req_1", response=response)]
+    )
+
+    assert "usage_incomplete" in report["gaps"]
+    if unknown is not None:
+        assert unknown not in report["metrics"]["usage"]["deltas"]
 
 
 def test_diff_oscillation_is_a_signal_with_uncertain_attribution():
