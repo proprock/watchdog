@@ -22,6 +22,7 @@ Milestones: ROADMAP.md
 
 # Code and text
 
+- Public text names only this repository. Refer to any other project or repository by an alias (`project-a`, `project-b`, ...) defined in the git-ignored [LIVE.md](LIVE.md). Never commit that mapping or a real private project name.
 - Write all repository text in English: documentation, instructions, comments, docstrings, CLI messages, configuration explanations, and task records.
 - Prefer small functions, explicit errors, and types at boundaries. Avoid abstractions without a real use; comments explain why.
 - Keep this a small local utility. Do not introduce a general agent platform, plugin framework, or speculative extensibility. Add abstractions only for concrete current requirements.
