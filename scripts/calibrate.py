@@ -25,7 +25,7 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
-from agent_watchdog import daemon, inspection
+from agent_watchdog import daemon, insights, inspection
 from agent_watchdog.analysis import (
     RULE_VERSION,
     RULES,
@@ -34,8 +34,14 @@ from agent_watchdog.analysis import (
     exit_code,
     tool_outcome,
 )
-from agent_watchdog.config import UserPaths, user_paths
-from agent_watchdog.storage import FINDING_VERDICTS, PROGRESS_STATES, persisted_envelope
+from agent_watchdog.config import UserPaths, load_config, project_aliases, user_paths
+from agent_watchdog.insights import llm
+from agent_watchdog.storage import (
+    FINDING_VERDICTS,
+    PROGRESS_STATES,
+    StorageError,
+    persisted_envelope,
+)
 
 SAMPLE_FORMAT = "wd-012.sample.v1"
 CALIBRATION_FORMAT = "wd-012.calibration.v3"
@@ -914,8 +920,54 @@ def annotate_checkout_findings(paths: UserPaths, project_id: str, findings: list
 HELP = (
     "[o]utcome [t]ype [p]rogress [r]emark [1-9] verdict | "
     "[l]ine timeline (l 50 | l all) [d]etail live report [dj] raw JSON | "
-    "e[x]ternal transcript [c]heckout findings | [n]ext [b]ack [j]ump [q]uit"
+    "e[x]ternal transcript [c]heckout findings | [s]uggest (asks a model) | "
+    "[n]ext [b]ack [j]ump [q]uit"
 )
+
+
+def suggestion_runner(paths: UserPaths) -> llm.Runner:
+    """The isolated `claude -p` runner `insights` uses; tests replace this factory."""
+    roots = [project.root for project in load_config(paths.config).projects]
+    return lambda request: llm.claude(request, forbidden_roots=roots)
+
+
+def show_suggestion(paths: UserPaths, project, record: Mapping[str, Any]) -> None:
+    """Print a model's second opinion for this card; it never records a label or verdict."""
+    print("  asking a model for a second opinion (sends the redacted session bundle) ...")
+    alias = project_aliases(load_config(paths.config).projects)[project.id]
+    try:
+        result = insights.run(
+            paths,
+            project,
+            alias=alias,
+            mode="session",
+            provider=record["provider"],
+            session_id=record["session_id"],
+            since=None,
+            until=None,
+            model=insights.DEFAULT_MODEL,
+            effort=None,
+            timeout=insights.DEFAULT_TIMEOUT,
+            max_bundle_tokens=None,
+            language="English",
+            dry_run=False,
+            output=None,
+            runner=suggestion_runner(paths),
+        )
+    except StorageError as error:
+        print(f"  no suggestion: {error}")
+        return
+    if result["status"] != "ok":
+        print(f"  no suggestion: {result['reason']}")
+        return
+    judgement = result["judgement"]
+    print("  LLM suggestion, not a verdict - nothing was recorded")
+    flag = "  (ungrounded: cites nothing in the bundle)" if judgement["ungrounded"] else ""
+    print(f"  state      {judgement['state']}  confidence {judgement['confidence']}{flag}")
+    print(f"  rationale  {one_line(judgement['rationale'], 600)}")
+    if judgement.get("unblock"):
+        print(f"  next step  {one_line(judgement['unblock'], 300)}")
+    print(f"  summary    {one_line(result['summary'], 400)}")
 
 
 def annotate(paths: UserPaths, args: argparse.Namespace) -> int:
@@ -968,6 +1020,8 @@ def annotate(paths: UserPaths, args: argparse.Namespace) -> int:
             offer_transcript(state["context"]["transcript_path"])
         elif command in ("c", "checkout"):
             annotate_checkout_findings(paths, str(project.id), sample["checkout_findings"])
+        elif command in ("s", "suggest"):
+            show_suggestion(paths, project, record)
         elif command in ("o", "outcome"):
             outcome = choose("Task outcome", TASK_OUTCOMES, {}, state["label"]["task_outcome"])
             if outcome is not None:

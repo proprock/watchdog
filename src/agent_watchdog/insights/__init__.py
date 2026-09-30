@@ -25,6 +25,7 @@ from agent_watchdog.insights import (
     llm,
     permissions,
     render,
+    session,
     subagents,
     tokens,
     workflow,
@@ -32,7 +33,8 @@ from agent_watchdog.insights import (
 from agent_watchdog.storage import StorageError
 
 MODES = {
-    module.MODE: module for module in (errors, context, tokens, workflow, subagents, permissions)
+    module.MODE: module
+    for module in (errors, context, tokens, workflow, subagents, permissions, session)
 }
 DEFAULT_MODEL = "sonnet"
 DEFAULT_WINDOW = timedelta(days=7)
@@ -68,6 +70,8 @@ def run(
     module = MODES[mode]
     if session_id is not None and provider is None:
         raise StorageError("Select --provider with --session")
+    if getattr(module, "REQUIRES_SESSION", False) and session_id is None:
+        raise StorageError(f"Select --provider and --session for the {mode} mode")
     if (max_bundle_tokens is not None and max_bundle_tokens < 1000) or timeout <= 0:
         raise StorageError("Require --max-bundle-tokens >= 1000 and a positive --timeout")
     if output is not None:
@@ -143,6 +147,10 @@ def run(
         "recommendations": contract.ground(content["recommendations"], known),
         "rule_candidates": contract.ground(content["rule_candidates"], known),
     }
+    # Mode-specific answers, such as the session judgement, are grounded the same way.
+    for key, value in content.items():
+        if key not in result and isinstance(value, dict):
+            result[key] = contract.ground([value], known)[0]
     if output is not None:
         result["output"] = str(output)
         atomic_write(output, render.markdown(result).encode("utf-8"))

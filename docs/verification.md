@@ -86,6 +86,19 @@ Without these exclusions, one-step "growth" reached 464K tokens on a `git commit
 
 All three used the remembered 800000-token budget with nothing truncated. Session counts were unchanged before and after (86, 31, 19).
 
+### WD-126 `session` on the live store
+
+2026-09-30, same host and CLI. `insights session --project watchdog --provider claude --session f06870ad-049c-45be-abdf-a265f4f87cba`, the WD-022b session.
+
+**Dry run.** 27 turns, 610 calls (6 failed), 469 requests peaking at 738963 tokens, 12 shadow findings, and label `unknown`. The bundle was about 91K tokens, with nothing truncated.
+- **Call cap.** The first 60-call cap per turn left out 245 calls. Raising it to 120, keeping each long turn's first 20 and latest 100 calls, fits the same budget.
+
+**Live Sonnet 5 call:**
+- **Judgement.** `status: ok`, `progress` with high confidence. The judgement and the one recommendation were grounded, and one rule candidate was proposed.
+- **Next step.** The model named, from the final turn, the live `intervene` deny probe that WD-022b left as opt-in evidence. That matches the WD-022b record.
+- **Cost.** 98 s; 117352 cache-write and 103530 cache-read input tokens and 9049 output tokens; 0.58 USD list price.
+- **No recursion.** Session counts were unchanged (86, 31, 19).
+
 ## WD-012 calibration (in progress)
 
 2026-09-07: the first manual calibration pass reviewed 20 completed root Codex

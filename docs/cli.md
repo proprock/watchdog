@@ -209,6 +209,8 @@ agent-watchdog insights tokens --project PROJECT --model opus --language Russian
 agent-watchdog insights workflow --project PROJECT --output workflow.md
 agent-watchdog insights subagents --project PROJECT --provider claude
 agent-watchdog insights permissions --project PROJECT --since 2026-09-01T00:00:00+00:00
+agent-watchdog insights errors --project PROJECT --days 30
+agent-watchdog insights session --project PROJECT --provider claude --session SESSION_ID
 ```
 
 `insights` is the only command that sends data to a model, and only when you run it.
@@ -311,10 +313,19 @@ A call with no observed finish may have been denied, interrupted, or lost. Promp
 - **Opt-out.** Running the command is the opt-in. `insights_llm_enabled = false` under
   `[defaults]` or a project's `overrides` refuses every call for all projects or one.
 
-The default window is the last seven days unless `--since` or `--session` is given;
-`--session` requires `--provider`. `--model` defaults to `sonnet`, `--effort` passes
-through, and `--language` sets the prose language (commands and instruction drafts stay
-English).
+`session` gives a second opinion on one session (the WD-014 judge, run by hand); it requires `--provider` and `--session`.
+- **Facts:**
+  - the task as first stated, the latest prompt, and the final assistant message;
+  - totals: turns, calls, failures, subagents, compactions, permission prompts, and measured tokens;
+  - the deterministic shadow findings with their evidence, the report gaps, and any recorded label.
+- **Items** are the turns, newest first, so a budget cut drops the oldest turns first. Each turn has:
+  - the prompt and the context size after it;
+  - its calls in order, with class, outcome, duration, input, and error. A long turn keeps its first 20 and latest 100 calls, and counts the rest;
+  - the assistant's last message.
+- **Answer.** The model returns a `judgement`: `progress`, `uncertain`, `stuck`, or `blocked`, with a rationale, evidence IDs checked like any recommendation, the most useful next step, and a confidence. Optional recommendations come with it.
+- **Limits.** The judgement is a second opinion, not a verdict. It never overwrites a shadow finding and is never stored.
+
+The default window is the last seven days unless `--since`, `--days`, or `--session` is given. `--days N` looks back N whole days from now and cannot be combined with `--since`. The window can reach back as far as the store does, but prompts, tool input and output, and error text survive only `content_days` (30 by default); older events keep their metrics only. `--session` requires `--provider`. `--model` defaults to `sonnet`, `--effort` passes through, and `--language` sets the prose language (commands and instruction drafts stay English).
 
 ## Labels, pins, export, and purge
 
@@ -430,6 +441,14 @@ handed over and Watchdog never writes to it. `c` reviews the checkout-scoped
 findings once rather than once per session. Every answer is sent to the running
 core and the acknowledgement is printed; a rejected write is reported and
 nothing advances. Rerunning resumes from what the store already holds.
+
+`s` asks a model for a second opinion on the card's session: it runs
+`insights session` for that provider and session through the same isolated
+`claude -p` call, so it sends the redacted session bundle, and it runs only when
+the key is pressed, so the reviewer can judge first. It prints the state,
+confidence, rationale, and next step under "LLM suggestion, not a verdict". It
+records no label or verdict and stores nothing; the reviewer's own keys still
+decide. Comparing these suggestions with human labels is a separate, later task.
 
 The labelling rules themselves - what each progress state, outcome, and verdict
 means, and what a reviewer refuses to decide - are recorded in

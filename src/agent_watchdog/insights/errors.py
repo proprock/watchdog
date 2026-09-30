@@ -8,6 +8,7 @@ from typing import Any, Literal
 from agent_watchdog import inspection, privacy
 from agent_watchdog.config import Project, UserPaths
 from agent_watchdog.events import Envelope
+from agent_watchdog.insights import timeline
 from agent_watchdog.insights.bundle import Draft, excerpt
 from agent_watchdog.insights.contract import OutputModel, RuleCandidate
 
@@ -91,18 +92,6 @@ def key_line(text: str) -> str:
     return chosen.strip()[:160]
 
 
-def _succeeded(event: Envelope, status: str) -> bool:
-    # Claude fires PostToolUse only after a successful call (PostToolUseFailure
-    # otherwise), and its responses carry no exit code to judge. A failing captured
-    # response still wins over the hook name.
-    if status in ("failure", "interrupt", "expired"):
-        return False
-    if event.provider == "claude":
-        payload = event.payload.get(event.provider)
-        return isinstance(payload, dict) and payload.get("hook_event_name") == "PostToolUse"
-    return status == "success"
-
-
 def _agent(event: Envelope) -> tuple[str, str | None, str | None]:
     return (event.provider, event.session_id, event.agent_id)
 
@@ -143,7 +132,7 @@ def build(
             fix = inspection.error_record(candidate, agent_types)
             if fix["tool_name"] != record["tool_name"]:
                 continue
-            if _succeeded(candidate, candidate_status):
+            if timeline.succeeded(candidate, candidate_status):
                 recovery = {
                     "evidence_id": fix["event_id"],
                     "failed_evidence_id": record["event_id"],
@@ -164,7 +153,7 @@ def build(
     ]
     failures = [record for members in clusters.values() for record, _ in members]
     counts = Counter(
-        "success" if _succeeded(event, status) else status
+        "success" if timeline.succeeded(event, status) else status
         for event, status in zip(finishes, statuses, strict=True)
     )
     facts = {

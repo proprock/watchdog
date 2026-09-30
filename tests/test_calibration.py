@@ -940,3 +940,56 @@ def test_the_card_reports_how_the_tool_calls_ended(calibrate):
 
     assert calibrate.result_line(rows, 1) == "FAILED 1"
     assert "the frozen sample recorded 4 failed" in calibrate.result_line(rows, 4)
+
+
+def test_the_suggest_key_prints_a_model_opinion_and_records_nothing(
+    calibrate, capture, tmp_path, monkeypatch, capsys
+):
+    paths, _, _ = capture
+    sample_path = tmp_path / "sample.json"
+    sample = calibrate.build_sample(paths, sample_args(calibrate, paths, sample_path))
+    calibrate.write_sample(sample, sample_path)
+    answer = {
+        "summary": "The same test keeps failing.",
+        "judgement": {
+            "state": "stuck",
+            "rationale": "Three identical failing runs with no edit between them.",
+            "unblock": "Read the failure before re-running.",
+            "confidence": "medium",
+            "evidence_ids": [],
+        },
+        "recommendations": [],
+        "rule_candidates": [],
+    }
+    requests = []
+
+    def runner(request):
+        requests.append(request)
+        return calibrate.llm.Result(answer, None, {})
+
+    monkeypatch.setattr(calibrate, "suggestion_runner", lambda _paths: runner)
+    monkeypatch.setattr(
+        calibrate, "submit", lambda *_: pytest.fail("a suggestion must not write anything")
+    )
+    answers = iter(["s", "q"])
+    monkeypatch.setattr("builtins.input", lambda *_: next(answers))
+    args = calibrate.build_parser().parse_args(
+        [
+            "annotate",
+            "--home",
+            str(paths.config.parent),
+            "--project",
+            "checkout",
+            "--sample",
+            str(sample_path),
+        ]
+    )
+
+    assert calibrate.annotate(paths, args) == 0
+
+    printed = capsys.readouterr().out
+    assert "LLM suggestion, not a verdict - nothing was recorded" in printed
+    assert "state      stuck  confidence medium  (ungrounded" in printed
+    assert "next step  Read the failure before re-running." in printed
+    (request,) = requests
+    assert "Mode: session" in request.system_prompt

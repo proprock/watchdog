@@ -65,9 +65,26 @@ def markdown(result: dict[str, Any]) -> str:
         "",
         result.get("summary") or "No summary.",
         "",
-        "## Recommendations",
-        "",
     ]
+    judgement = result.get("judgement")
+    if isinstance(judgement, dict):
+        lines += [
+            "## Judgement (a second opinion, not a verdict)",
+            "",
+            f"**{judgement.get('state')}** (confidence {judgement.get('confidence')})"
+            + (
+                " - ungrounded: cites no evidence from the bundle"
+                if judgement.get("ungrounded")
+                else ""
+            ),
+            "",
+            str(judgement.get("rationale") or ""),
+            "",
+        ]
+        if judgement.get("unblock"):
+            lines += [f"- **Next step:** {judgement['unblock']}"]
+        lines += [f"- **evidence:** {_ids(judgement.get('evidence_ids', []))}", ""]
+    lines += ["## Recommendations", ""]
     recommendations = result.get("recommendations") or []
     for index, entry in enumerate(recommendations, start=1):
         lines += _entry(index, entry, body="recommendation")

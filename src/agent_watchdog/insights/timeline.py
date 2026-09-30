@@ -241,6 +241,18 @@ def duration_ms(event: Envelope) -> int | None:
     return value if type(value) is int and value >= 0 else None
 
 
+def succeeded(event: Envelope, status: str) -> bool:
+    """Whether a finished call worked, given its ``inspection.finish_status``."""
+    # Claude fires PostToolUse only after a successful call (PostToolUseFailure
+    # otherwise), and its responses carry no exit code to judge. A failing captured
+    # response still wins over the hook name.
+    if status in ("failure", "interrupt", "expired"):
+        return False
+    if event.provider == "claude":
+        return namespace(event).get("hook_event_name") == "PostToolUse"
+    return status == "success"
+
+
 def tool_name(event: Envelope) -> str:
     payload = event.payload.get(event.provider)
     name = payload.get("tool_name") if isinstance(payload, dict) else None

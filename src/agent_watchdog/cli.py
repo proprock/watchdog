@@ -3,7 +3,7 @@ import json
 import sqlite3
 import sys
 import time
-from datetime import datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from uuid import UUID
 
@@ -69,6 +69,16 @@ def _since(value: str) -> datetime:
     if parsed.tzinfo is None or parsed.utcoffset() is None:
         raise argparse.ArgumentTypeError("--since must include a UTC offset")
     return parsed
+
+
+def _days(value: str) -> int:
+    try:
+        days = int(value)
+    except ValueError as error:
+        raise argparse.ArgumentTypeError("--days must be a whole number") from error
+    if days < 1:
+        raise argparse.ArgumentTypeError("--days must be at least 1")
+    return days
 
 
 def main() -> int:
@@ -159,7 +169,15 @@ def main() -> int:
     )
     insights_view.add_argument(
         "mode",
-        choices=("errors", "context", "tokens", "workflow", "subagents", "permissions"),
+        choices=(
+            "errors",
+            "context",
+            "tokens",
+            "workflow",
+            "subagents",
+            "permissions",
+            "session",
+        ),
     )
     insights_view.add_argument(
         "--project", help="Project alias; UUID accepted; default resolves cwd"
@@ -170,9 +188,11 @@ def main() -> int:
     insights_view.add_argument(
         "--session", help="Limit to one native session (requires --provider)"
     )
-    insights_view.add_argument(
+    window = insights_view.add_mutually_exclusive_group()
+    window.add_argument(
         "--since", type=_since, help="ISO-8601 inclusive lower bound; default 7 days ago"
     )
+    window.add_argument("--days", type=_days, help="Look back this many days instead of --since")
     insights_view.add_argument("--until", type=_since, help="ISO-8601 exclusive upper bound")
     insights_view.add_argument("--model", default="sonnet", help="Claude model alias or name")
     insights_view.add_argument("--effort", choices=("low", "medium", "high", "xhigh", "max"))
@@ -315,6 +335,9 @@ def main() -> int:
             config = load_config(paths.config)
             project = inspection.project_at(paths, args.project)
             roots = [item.root for item in config.projects]
+            since = args.since
+            if args.days is not None:
+                since = datetime.now(UTC) - timedelta(days=args.days)
             result = insights.run(
                 paths,
                 project,
@@ -322,7 +345,7 @@ def main() -> int:
                 mode=args.mode,
                 provider=args.provider,
                 session_id=args.session,
-                since=args.since,
+                since=since,
                 until=args.until,
                 model=args.model,
                 effort=args.effort,

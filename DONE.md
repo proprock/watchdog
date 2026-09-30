@@ -2,6 +2,27 @@
 
 Historical records only. Read this file when prior verification is relevant; active work belongs in [TODO.md](TODO.md). Preserve task IDs when moving entries here.
 
+- [x] **WD-126 - `insights session` second opinion (2026-09-30).** The WD-014 judge, run by hand ([docs/cli.md](docs/cli.md#insights)).
+  - **Bundle.** One session's task as first stated, its latest prompt and final message, totals and measured tokens, the deterministic shadow findings with evidence, gaps, and label. Items are the turns, newest first: prompt, the context size after it, the calls with class, outcome, duration, input and error, and the assistant's last message. A long turn keeps its first 20 and latest 100 of up to 120 calls, and counts the rest.
+  - **Answer.** A validated `judgement` (`progress|uncertain|stuck|blocked`, rationale, next step, confidence) whose evidence IDs are grounded like recommendations. It is rendered as "a second opinion, not a verdict", and it never overwrites a finding or stores anything. Shadow-finding evidence IDs are now citable.
+  - **`scripts/calibrate.py annotate`.** An on-request `s` key runs it for the card's session and prints the result as "LLM suggestion, not a verdict". It records no label or verdict.
+  - **Also.**
+    - `insights --days N` looks back N days; it is exclusive with `--since`.
+    - The Claude success rule moved to `timeline.succeeded` for reuse.
+  - **Verification.**
+    - New offline tests in `tests/test_insights_session.py` and `tests/test_calibration.py`:
+      - bundle contents and turn order;
+      - head and tail of a long turn;
+      - the judgement grounded, rendered, and rejected when malformed;
+      - a missing or unknown session refused;
+      - `--days` window and argument errors;
+      - the `s` key printing a suggestion without submitting anything.
+    - All insights and calibration modules passed on the final tree (79 + 36).
+    - Native release build. Full offline `uv run pytest`: 622 passed in 113 s. It is the fallback because shared modules changed.
+    - `uv run ruff check .`, Ruff format on `src`/`tests`/`scripts`, `uv run ty check`, Cargo fmt/Clippy, `uv build`, and `git diff --check` passed.
+    - The live dry run and Sonnet 5 call on the WD-022b session are recorded in [verification.md](docs/verification.md#wd-126-session-on-the-live-store): `progress`, high confidence, grounded; the next step matched the WD-022b record.
+    - Branch `feature/wd-126-insights-session` on WD-125 (`545ce56`).
+
 - [x] **WD-125 - `insights workflow`, `subagents`, and `permissions` (2026-09-30).** Three modes on the WD-123 pipeline ([docs/cli.md](docs/cli.md#insights)).
   - **`workflow`.** Reduces each agent's calls to tool and command classes and collapses back-to-back calls of one class into a step.
     - Sequences are 3-6 steps recurring 3+ times in 2+ sessions. Chains of only reading, searching and editing, and chains a longer chain always contains, are dropped; the top 60 are listed.
