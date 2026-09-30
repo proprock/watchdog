@@ -147,6 +147,8 @@ new usage envelopes. The behavior has substantial fixture/contract coverage in
   admission. `analysis.git_diff_fingerprint` (102-124) hashes
   `git diff --no-ext-diff --no-textconv --binary --`. It therefore observes unstaged
   tracked changes only; staged/index changes and untracked files are outside the signal.
+  *(Audit-time finding; WD-121 has since widened the fingerprint, see
+  [storage.md](storage.md#checkout-fingerprint-coverage-wd-121).)*
 - `analysis.diff_oscillations` (127-154) detects adjacent A-to-B-to-A hashes per checkout
   and always marks attribution uncertain.
 
@@ -168,7 +170,7 @@ an LLM. It preserves the content-review warning and treats trace data as untrust
 | Error identity is exact, not normalized | `analysis.analyze` fingerprints the full canonical failing response and exit code | The research article proposes normalization of timestamps, paths, UUIDs, ports, and addresses; current docs more cautiously say identical or structured error | Deterministic and reproducible, but fragile to incidental output changes; calibrate before broadening normalization |
 | Tool outcome availability is provider-shape dependent | `analysis._outcome` recognizes a nested exit code or `isError: true`; otherwise it returns `unknown` | Live Codex evidence recorded opaque string responses and explicitly avoided a universal exit-code parser (`docs/provider-compatibility.md:34-42`) | The main report tests use structured dictionaries and therefore prove less than live-provider effectiveness |
 | Test-set comparison is intentionally narrow | `_test_failures` requires `pytest` in the captured command for pytest parsing, uses limited regexes, and the final signature includes the exact command | `docs/architecture.md:60-61` intentionally requires comparable commands and warns against aggressive normalization | Sound safety bias, but it misses logically equivalent invocations and non-pytest/JUnit tools |
-| Diff fingerprint omits relevant working-tree state | `git_diff_fingerprint` invokes plain `git diff`, excluding staged and untracked content | Documentation says Git diff fingerprint without defining index/untracked coverage; the research target is general diff oscillation | Deterministic signal blind spot, not necessarily a bug. Future work must define the intended state before changing it |
+| Diff fingerprint omits relevant working-tree state | `git_diff_fingerprint` invokes plain `git diff`, excluding staged and untracked content | Documentation says Git diff fingerprint without defining index/untracked coverage; the research target is general diff oscillation | Deterministic signal blind spot, not necessarily a bug. Future work must define the intended state before changing it. **Resolved by WD-121 (2026-09-30):** the fingerprint now covers staged and untracked work under a defined contract ([storage.md](storage.md#checkout-fingerprint-coverage-wd-121)) |
 | Calibration labels are incomplete for WD-012 | `SessionLabel` stores only task outcome and task type | `ROADMAP.md:43` calls for `progress/slow/stuck/externally blocked` and finding-correctness labels | WD-012 needs an explicit annotation workflow or schema decision before data collection; do not overload task type silently |
 | Output byte count is retained-payload size | `analysis.analyze` counts UTF-8 bytes of the canonical captured response | The report calls it output size; content may be absent, redacted, bounded, or provider-shaped | Useful local metric, but not proof of complete provider output volume or context-token cost |
 | Factory economics are not yet measured | Reports expose event counts, tool duration, compactions, output bytes, and token deltas | The article prioritizes turns/session, requests/turn, tokens/request, and cost per correctly completed task | Partial observability only; no cost model, request accounting, or correctness-denominated benchmark exists |
@@ -232,7 +234,9 @@ checkout. This is evidence about test-environment portability, not a product reg
 3. Real opaque Codex and Claude tool responses produce useful outcomes, error identities,
    and comparable test sets, including missing output and `capture_content = false`.
 4. Staged, unstaged, untracked, renamed, and concurrent multi-agent changes exercise a
-   deliberately specified working-tree fingerprint contract.
+   deliberately specified working-tree fingerprint contract. *(Partly resolved by WD-121:
+   the first four are tested against real Git; concurrent editors remain a documented
+   limit, not a tested case.)*
 5. A real Codex rollout file exercises transcript enrichment through append, partial
    tail, restart, rotation/truncation, and cumulative counter reset without duplicate
    usage. Current coverage is fixture/contract simulation.
@@ -283,8 +287,10 @@ checkout. This is evidence about test-environment portability, not a product reg
 3. Add one practical offline end-to-end report/export scenario driven through the built
    native adapter, spool, daemon, SQLite, and CLI. Use provider-realistic opaque and
    missing fields; no live account is required.
-4. Define the diff state contract—unstaged tracked only, staged plus unstaged, or a wider
-   working-tree inventory—and add focused coverage before changing fingerprint inputs.
+4. ~~Define the diff state contract—unstaged tracked only, staged plus unstaged, or a wider
+   working-tree inventory—and add focused coverage before changing fingerprint inputs.~~
+   Done via WD-121 (2026-09-30): staged, unstaged, and untracked non-ignored files, with
+   real-Git tests ([storage.md](storage.md#checkout-fingerprint-coverage-wd-121)).
 5. Use the WD-102 result record for future manual/live probes so provider dispatch,
    adapter start/failure, missing callback, retries, persisted losses, end-to-end
    delivery, provenance, and cleanup are reported separately.

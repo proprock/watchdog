@@ -2,8 +2,11 @@
 
 import hashlib
 import json
+import os
 import re
+import stat
 import subprocess
+import time
 from collections import Counter, defaultdict
 from collections.abc import Iterable, Mapping
 from datetime import UTC, datetime
@@ -25,6 +28,14 @@ RULES = (
     "diff_oscillation",
 )
 REPETITION_THRESHOLD = 3
+# WD-121 checkout fingerprint bounds; a state beyond any of them is unknown.
+# The tag domain-separates it from the v1 hash of unstaged tracked changes only.
+_CHECKOUT_FINGERPRINT_TAG = b"v2-checkout\0"
+CHECKOUT_DEADLINE_SECONDS = 1.5
+MAX_DIFF_BYTES = 16 * 1024 * 1024
+MAX_UNTRACKED_FILES = 500
+MAX_UNTRACKED_BYTES = 16 * 1024 * 1024
+_READ_CHUNK = 1024 * 1024
 # The WD-014 deterministic policy-rule class: conditions are structural facts,
 # not statistical judgments, so these are exempt from the WD-013 precision
 # gate and carry their own rule/version namespace and an explicit `action`.
@@ -418,29 +429,94 @@ def model_family_matches(alias: str, resolved_model: str) -> bool:
     return alias.strip().lower() in resolved_model.strip().lower().split("-")
 
 
-def git_diff_fingerprint(checkout: Path) -> tuple[str, int] | None:
-    """Hash an unmodified checkout diff; failures remain unknown, not clean."""
+class _Unknown(Exception):
+    """The checkout state could not be observed completely within the bounds."""
+
+
+def _git_output(checkout: Path, args: list[str], deadline: float) -> bytes:
+    remaining = deadline - time.monotonic()
+    if remaining <= 0:
+        raise _Unknown
     try:
+        # By default `git diff` silently rewrites stale stat data in the index;
+        # `--no-optional-locks` does not stop that, this setting does.
         result = _run(
-            [
-                "git",
-                "-C",
-                str(checkout),
-                "diff",
-                "--no-ext-diff",
-                "--no-textconv",
-                "--binary",
-                "--",
-            ],
+            ["git", "-c", "diff.autoRefreshIndex=false", "-C", str(checkout), *args],
             capture_output=True,
-            timeout=0.5,
+            timeout=remaining,
             check=False,
         )
-    except (OSError, subprocess.SubprocessError):
-        return None
+    except (OSError, subprocess.SubprocessError) as error:
+        raise _Unknown from error
     if result.returncode != 0:
+        raise _Unknown
+    return result.stdout
+
+
+def _untracked_record(
+    checkout: Path, name: bytes, budget: int, deadline: float
+) -> tuple[bytes, int]:
+    """One ``path, kind, content hash`` record and the file bytes it read."""
+    if name.endswith(b"/"):  # a nested repository: its interior is not covered
+        return name + b"\0dir\0", 0
+    path = checkout / os.fsdecode(name)
+    info = path.lstat()
+    if stat.S_ISLNK(info.st_mode):  # hash the link itself; never follow it
+        target = hashlib.sha256(os.fsencode(os.readlink(path))).hexdigest()
+        return name + b"\0link\0" + target.encode(), 0
+    if not stat.S_ISREG(info.st_mode):  # a FIFO or device would block on open
+        return name + b"\0other\0", 0
+    digest = hashlib.sha256()
+    size = 0
+    with open(path, "rb") as handle:
+        while chunk := handle.read(_READ_CHUNK):
+            size += len(chunk)
+            if size > budget or time.monotonic() > deadline:
+                raise _Unknown
+            digest.update(chunk)
+    return name + b"\0file\0" + digest.hexdigest().encode(), size
+
+
+def git_diff_fingerprint(checkout: Path) -> tuple[str, int] | None:
+    """Hash the checkout state as ``(digest, bytes hashed)``; failures stay unknown.
+
+    Covers unstaged and staged tracked changes plus untracked, non-ignored files
+    (path and content hash); ignored files and nested repository interiors are
+    outside the signal. Read-only, and content-free: only the digest is kept.
+    Any Git failure, timeout, unreadable file, or exceeded bound returns
+    ``None`` rather than a partial or clean-looking value.
+    """
+    deadline = time.monotonic() + CHECKOUT_DEADLINE_SECONDS
+    diff = ["diff", "--no-ext-diff", "--no-textconv", "--no-renames", "--binary"]
+    try:
+        unstaged = _git_output(checkout, [*diff, "--"], deadline)
+        staged = _git_output(checkout, [*diff, "--cached", "--"], deadline)
+        listing = _git_output(
+            checkout, ["ls-files", "--others", "--exclude-standard", "-z"], deadline
+        )
+        if max(len(unstaged), len(staged)) > MAX_DIFF_BYTES:
+            raise _Unknown
+        names = sorted(name for name in listing.split(b"\0") if name)
+        if len(names) > MAX_UNTRACKED_FILES:
+            raise _Unknown
+        records = []
+        untracked_bytes = 0
+        for name in names:
+            record, size = _untracked_record(
+                checkout, name, MAX_UNTRACKED_BYTES - untracked_bytes, deadline
+            )
+            records.append(record)
+            untracked_bytes += size
+    except (_Unknown, OSError):
         return None
-    return hashlib.sha256(result.stdout).hexdigest(), len(result.stdout)
+    digest = hashlib.sha256(_CHECKOUT_FINGERPRINT_TAG)
+    for section in (unstaged, staged, b"".join(_framed(record) for record in records)):
+        digest.update(_framed(section))
+    return digest.hexdigest(), len(unstaged) + len(staged) + untracked_bytes
+
+
+def _framed(data: bytes) -> bytes:
+    return len(data).to_bytes(8, "big") + data
 
 
 def diff_oscillations(snapshots: Iterable[Mapping[str, object]]) -> list[dict[str, Any]]:

@@ -2,6 +2,23 @@
 
 Historical records only. Read this file when prior verification is relevant; active work belongs in [TODO.md](TODO.md). Preserve task IDs when moving entries here.
 
+- [x] **WD-121 - Cover staged and untracked work in diff fingerprints (2026-09-30).** `analysis.git_diff_fingerprint` now hashes the checkout state under a defined, bounded, read-only contract ([storage.md](docs/storage.md#checkout-fingerprint-coverage-wd-121)); an audit follow-up.
+  - **Coverage.** Unstaged and staged tracked changes (`git diff`, `git diff --cached`, `--no-renames --binary`) plus untracked, non-ignored files by path and content hash. Ignored files, nested-repository interiors, and FIFO/device content are not covered; symlinks hash their target text. A `v2-checkout` tag separates the value from every v1 hash, so no oscillation spans the two contracts. `RULE_VERSION` stays `wd-010.v1`; the cutover date is documented, and there is no schema change.
+  - **Read-only.** Git runs with `-c diff.autoRefreshIndex=false`: plain `git diff` rewrote stale stat data in the index, and `--no-optional-locks` did not prevent it. Untracked files are read, never staged; nothing is written to `.git`.
+  - **Unknown, never clean.** A Git failure or timeout, an unreadable untracked file, or a bound exceeded (1.5 s, 16 MiB per diff, 500 untracked files, 16 MiB untracked content) records no snapshot.
+  - **Verification.**
+    - `tests/test_analysis.py` (44 tests in the module, 16 of them new real-Git cases in a hermetic repository, the deadline raised there so a slow runner cannot flake them):
+      - staged-only, unstaged-only, and untracked-only A->B->A each yield a `diff_oscillation`;
+      - clean, staged, unstaged, untracked, and staged-plus-unstaged fingerprints all differ;
+      - ignored files, renames, binary and symlink content, and a touched-but-unchanged file;
+      - the index bytes, object directory, and `index.lock` stay untouched (the test fails without the setting above);
+      - staged work in a repository with no commit yet differs from the empty one;
+      - a non-repository, a nonzero exit, a timeout, an unreadable file, and each bound return unknown.
+    - Latency against 7 checkouts, 25 runs each, in [verification.md](docs/verification.md#wd-121-checkout-fingerprint-2026-09-30-windows-git-2530): p50 164-500 ms versus 50-102 ms for v1, unknown 0/25 on the real checkouts. The first bounds (2 s, 1000 files, 32 MiB) were tightened after 1.14 s p50 at 1000 files.
+    - Native release build. Full offline `uv run pytest`: 696 passed in 158 s, the fallback because the graph index stayed `metadata_changed` for the uncommitted files (`detect_changes` against `feature/wd-132-cross-project-insights`: 85 impacted symbols, deepest hop 7).
+    - `uv run ruff check .`, `uv run ruff format --check .`, `uv run ty check`, `cargo fmt --check`, and `git diff --check` passed. Clippy was not rerun: `native/` is unchanged.
+    - Branch `feature/wd-121-checkout-fingerprint` on WD-132 (`2679b8a`). `LIVE.md` is not updated yet: pending the user's decision.
+
 - [x] **WD-132 - Cross-project insights for user-level rules (2026-09-30).** `--all-projects` for `errors`, `permissions`, and `workflow` ([docs/cli.md](docs/cli.md#insights)).
   - **Reads.** Each registered project is read through its own read-only snapshot and the records are unioned in memory, never a merged store. The three builders split into `read` and `analyze`, so single-project bundles are unchanged and thresholds such as `workflow`'s 3 occurrences in 2 sessions apply to the union. Sessions are keyed by project.
   - **Merging.** Error clusters by signature, permission classes by class, workflow chains by steps. Each item carries `projects` with counts and ranks by project count, then frequency, so a budget cut drops single-project items first. A workflow loop stays one item per run with its `project`; its `projects` counts loops of that class.

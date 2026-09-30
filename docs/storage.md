@@ -344,6 +344,46 @@ old verdict.
 `purge` deletes a session's verdict rows with its label. Checkout verdicts
 survive a session purge because they do not belong to a session.
 
+## Checkout fingerprint coverage (WD-121)
+
+`diff_snapshots` keeps its schema: a SHA-256 and a byte count per checkout, never
+Git diff text or file content. Since 2026-09-30 the fingerprint (`analysis.git_diff_fingerprint`)
+hashes a `v2-checkout` tag plus three length-framed sections:
+
+| State | Covered | How |
+|---|---|---|
+| Unstaged tracked changes | yes | `git diff` |
+| Staged changes (index against HEAD, also on an unborn HEAD) | yes | `git diff --cached` |
+| Untracked, non-ignored files | yes, path and content hash | `git ls-files --others --exclude-standard -z`, hashed in the core |
+| Ignored files | no | `.gitignore`, `.git/info/exclude`, and global excludes apply |
+| Renames | as delete plus add | `--no-renames`, independent of `diff.renames` |
+| Binary content | yes | `--binary`; untracked files are hashed as raw bytes |
+| Untracked symlinks | the link target text | never followed |
+| Untracked FIFOs, sockets, devices | path and kind only | never opened |
+| Nested repositories | path only | their interior is not covered |
+
+Every Git call is `git -c diff.autoRefreshIndex=false -C <checkout> ...` (plain `git diff`
+otherwise rewrites stale stat data in the index); the core never stages, writes objects,
+or opens a temporary index. Any Git failure, a timeout, an untracked file
+that cannot be read (for example one locked by another process), or an exceeded bound
+(1.5 s overall, 16 MiB per diff, 500 untracked files, 16 MiB of untracked content) yields
+no snapshot: the state is unknown, never clean. The bounds are `analysis.CHECKOUT_DEADLINE_SECONDS`,
+`MAX_DIFF_BYTES`, `MAX_UNTRACKED_FILES`, and `MAX_UNTRACKED_BYTES`.
+
+`diff_snapshots.byte_count` is now the total bytes hashed (both diffs plus untracked file
+content); it was the diff size before, and nothing reads it as a diff size.
+
+Remaining limits: the three Git reads and the file reads are not one atomic snapshot, so a
+concurrent editor can yield a value mixing two states; an oscillation therefore still
+means "the checkout returned to a previous observed state", with attribution uncertain, and
+it cannot say who edited. Ignored generated files and nested-repository interiors cannot
+produce evidence.
+
+The `v2-checkout` tag makes a v2 value unequal to every earlier (v1) value, so the first
+snapshot per checkout after the upgrade is a one-time change and no oscillation can span the
+two contracts. The rule version stays `wd-010.v1`: calibration counts of `diff_oscillation`
+findings from before 2026-09-30 come from the narrower contract.
+
 ## `diff_oscillation` session attribution (WD-118)
 
 No schema change: `diff_snapshots` still stores only `checkout_id`, not a

@@ -1,4 +1,4 @@
-import hashlib
+import os
 import subprocess
 from datetime import UTC, datetime, timedelta
 from uuid import uuid4
@@ -6,6 +6,7 @@ from uuid import uuid4
 import pytest
 
 from agent_watchdog.analysis import (
+    CHECKOUT_DEADLINE_SECONDS,
     POLICY_RULE_VERSION,
     REPORT_SCHEMA_VERSION,
     analyze,
@@ -507,7 +508,7 @@ def test_git_diff_fingerprint_uses_the_hidden_process_runner(tmp_path, monkeypat
 
     def fake_run(command, **kwargs):
         calls.append((command, kwargs))
-        return subprocess.CompletedProcess(command, 0, stdout=b"diff", stderr=b"")
+        return subprocess.CompletedProcess(command, 0, stdout=b"", stderr=b"")
 
     def unexpected_run(*args, **kwargs):
         raise AssertionError("git_diff_fingerprint bypassed the hidden runner")
@@ -515,11 +516,231 @@ def test_git_diff_fingerprint_uses_the_hidden_process_runner(tmp_path, monkeypat
     monkeypatch.setattr("agent_watchdog.analysis._run", fake_run)
     monkeypatch.setattr("agent_watchdog.analysis.subprocess.run", unexpected_run)
 
-    assert git_diff_fingerprint(tmp_path) == (hashlib.sha256(b"diff").hexdigest(), 4)
-    assert len(calls) == 1
-    command, kwargs = calls[0]
-    assert command[:2] == ["git", "-C"]
-    assert kwargs == {"capture_output": True, "timeout": 0.5, "check": False}
+    assert git_diff_fingerprint(tmp_path) is not None
+    assert [command[5] for command, _ in calls] == ["diff", "diff", "ls-files"]
+    for command, kwargs in calls:
+        # Without this setting `git diff` rewrites stale stat data in the index.
+        assert command[:5] == ["git", "-c", "diff.autoRefreshIndex=false", "-C", str(tmp_path)]
+        assert kwargs.keys() == {"capture_output", "timeout", "check"}
+        assert kwargs["capture_output"] is True
+        assert kwargs["check"] is False
+        assert 0 < kwargs["timeout"] <= CHECKOUT_DEADLINE_SECONDS
+    assert "--cached" not in calls[0][0]
+    assert "--cached" in calls[1][0]
+    assert all("--no-renames" in command for command, _ in calls[:2])
+
+
+def git(root, *args):
+    result = subprocess.run(
+        ["git", "-C", str(root), *args], check=True, capture_output=True, text=True
+    )
+    return result.stdout
+
+
+@pytest.fixture
+def checkout(tmp_path, monkeypatch):
+    # Host Git configuration (excludes, autocrlf, external diff) must not change
+    # what a fingerprint means on any CI platform.
+    for key in [key for key in os.environ if key.startswith("GIT_")]:
+        monkeypatch.delenv(key)
+    monkeypatch.setenv("GIT_CONFIG_GLOBAL", os.devnull)
+    monkeypatch.setenv("GIT_CONFIG_NOSYSTEM", "1")
+    # Slow CI runners must not turn the behavioral tests into deadline tests.
+    monkeypatch.setattr("agent_watchdog.analysis.CHECKOUT_DEADLINE_SECONDS", 30.0)
+    root = tmp_path / "checkout"
+    root.mkdir()
+    git(root, "init", "-b", "main")
+    git(root, "config", "user.name", "Test")
+    git(root, "config", "user.email", "test@example.invalid")
+    git(root, "config", "core.autocrlf", "false")
+    (root / "tracked.txt").write_bytes(b"base\n")
+    (root / ".gitignore").write_bytes(b"ignored.txt\n")
+    git(root, "add", ".")
+    git(root, "commit", "-m", "initial")
+    return root
+
+
+def fingerprint(root):
+    result = git_diff_fingerprint(root)
+    assert result is not None
+    return result[0]
+
+
+def stage_change(root):
+    (root / "tracked.txt").write_bytes(b"staged\n")
+    git(root, "add", "tracked.txt")
+    assert git(root, "diff") == "", "the change must be staged only"
+
+
+def unstaged_change(root):
+    (root / "tracked.txt").write_bytes(b"unstaged\n")
+
+
+def untracked_file(root):
+    (root / "new.txt").write_bytes(b"new\n")
+
+
+def revert_tracked(root):
+    git(root, "checkout", "HEAD", "--", "tracked.txt")
+
+
+def remove_untracked(root):
+    (root / "new.txt").unlink()
+
+
+@pytest.mark.parametrize(
+    ("apply", "revert"),
+    [
+        pytest.param(unstaged_change, revert_tracked, id="unstaged"),
+        pytest.param(stage_change, revert_tracked, id="staged"),
+        pytest.param(untracked_file, remove_untracked, id="untracked"),
+    ],
+)
+def test_checkout_fingerprint_yields_oscillation_evidence_for_each_state(checkout, apply, revert):
+    observed = [fingerprint(checkout)]
+    apply(checkout)
+    observed.append(fingerprint(checkout))
+    revert(checkout)
+    observed.append(fingerprint(checkout))
+
+    findings = diff_oscillations(
+        {"checkout_id": "c", "fingerprint": value, "snapshot_id": f"s{index}"}
+        for index, value in enumerate(observed)
+    )
+
+    assert [finding["rule"] for finding in findings] == ["diff_oscillation"]
+
+
+def test_checkout_fingerprint_distinguishes_mixed_states_and_never_reads_clean(checkout):
+    states = {"clean": fingerprint(checkout)}
+    for name, prepare in {
+        "staged": stage_change,
+        "unstaged": unstaged_change,
+        "untracked": untracked_file,
+    }.items():
+        prepare(checkout)
+        states[name] = fingerprint(checkout)
+        revert_tracked(checkout)
+        (checkout / "new.txt").unlink(missing_ok=True)
+    stage_change(checkout)
+    (checkout / "tracked.txt").write_bytes(b"staged then edited\n")
+    states["staged and unstaged"] = fingerprint(checkout)
+
+    assert len(set(states.values())) == len(states)
+
+
+def test_checkout_fingerprint_is_stable_for_an_unchanged_state(checkout):
+    untracked_file(checkout)
+    stage_change(checkout)
+
+    assert git_diff_fingerprint(checkout) == git_diff_fingerprint(checkout)
+
+
+def test_checkout_fingerprint_ignores_ignored_files_and_sees_renames(checkout):
+    clean = fingerprint(checkout)
+
+    (checkout / "ignored.txt").write_bytes(b"ignored\n")
+    assert fingerprint(checkout) == clean
+
+    git(checkout, "mv", "tracked.txt", "renamed.txt")
+    assert fingerprint(checkout) != clean
+
+
+def test_checkout_fingerprint_hashes_binary_untracked_content(checkout):
+    (checkout / "blob.bin").write_bytes(b"\x00\xff\x00one")
+    first = fingerprint(checkout)
+    (checkout / "blob.bin").write_bytes(b"\x00\xff\x00two")
+
+    assert fingerprint(checkout) != first
+
+
+def test_checkout_fingerprint_hashes_untracked_symlinks_without_following_them(checkout):
+    try:
+        (checkout / "link").symlink_to("missing-target")
+    except OSError:
+        pytest.skip("symlinks are unavailable on this host")
+    first = fingerprint(checkout)
+    (checkout / "link").unlink()
+    (checkout / "link").symlink_to("other-target")
+
+    assert fingerprint(checkout) != first
+
+
+def test_checkout_fingerprint_is_read_only(checkout):
+    clean = fingerprint(checkout)
+    # A stale stat entry is what tempts `git diff` into rewriting the index.
+    os.utime(checkout / "tracked.txt", (1, 1))
+    objects = checkout / ".git" / "objects"
+    index_before = (checkout / ".git" / "index").read_bytes()
+    objects_before = sorted(path.name for path in objects.rglob("*"))
+
+    assert fingerprint(checkout) == clean  # a touched, unchanged file is not a change
+
+    assert (checkout / ".git" / "index").read_bytes() == index_before
+    assert sorted(path.name for path in objects.rglob("*")) == objects_before
+    assert not (checkout / ".git" / "index.lock").exists()
+
+
+def test_checkout_fingerprint_covers_staged_work_before_the_first_commit(tmp_path, monkeypatch):
+    monkeypatch.setenv("GIT_CONFIG_GLOBAL", os.devnull)
+    monkeypatch.setenv("GIT_CONFIG_NOSYSTEM", "1")
+    monkeypatch.setattr("agent_watchdog.analysis.CHECKOUT_DEADLINE_SECONDS", 30.0)
+    root = tmp_path / "fresh"
+    root.mkdir()
+    git(root, "init", "-b", "main")
+    empty = fingerprint(root)
+
+    (root / "first.txt").write_bytes(b"first\n")
+    git(root, "add", "first.txt")
+
+    assert git(root, "diff") == ""
+    assert fingerprint(root) != empty
+
+
+def test_checkout_fingerprint_is_unknown_outside_a_repository(tmp_path, monkeypatch):
+    monkeypatch.setenv("GIT_CEILING_DIRECTORIES", str(tmp_path))
+    plain = tmp_path / "plain"
+    plain.mkdir()
+
+    assert git_diff_fingerprint(plain) is None
+
+
+@pytest.mark.parametrize("limit", ["MAX_UNTRACKED_FILES", "MAX_UNTRACKED_BYTES", "MAX_DIFF_BYTES"])
+def test_checkout_fingerprint_is_unknown_when_a_bound_is_exceeded(checkout, monkeypatch, limit):
+    (checkout / "one.txt").write_bytes(b"one\n")
+    (checkout / "two.txt").write_bytes(b"two\n")
+    (checkout / "tracked.txt").write_bytes(b"changed\n")
+    assert git_diff_fingerprint(checkout) is not None
+
+    monkeypatch.setattr(f"agent_watchdog.analysis.{limit}", 1)
+
+    assert git_diff_fingerprint(checkout) is None
+
+
+def test_checkout_fingerprint_is_unknown_when_git_fails_or_times_out(checkout, monkeypatch):
+    def failing(command, **kwargs):
+        return subprocess.CompletedProcess(command, 128, stdout=b"", stderr=b"fatal")
+
+    def timing_out(command, **kwargs):
+        raise subprocess.TimeoutExpired(command, kwargs["timeout"])
+
+    monkeypatch.setattr("agent_watchdog.analysis._run", failing)
+    assert git_diff_fingerprint(checkout) is None
+    monkeypatch.setattr("agent_watchdog.analysis._run", timing_out)
+    assert git_diff_fingerprint(checkout) is None
+
+
+def test_checkout_fingerprint_is_unknown_when_an_untracked_file_cannot_be_read(
+    checkout, monkeypatch
+):
+    untracked_file(checkout)
+
+    def unreadable(*args, **kwargs):
+        raise PermissionError("locked by another process")
+
+    monkeypatch.setattr("agent_watchdog.analysis.open", unreadable, raising=False)
+
+    assert git_diff_fingerprint(checkout) is None
 
 
 def test_report_pairs_tool_boundaries_for_observed_durations():

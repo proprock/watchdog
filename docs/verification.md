@@ -1,5 +1,41 @@
 # Foundation verification
 
+## WD-121 checkout fingerprint (2026-09-30, Windows, Git 2.53.0)
+
+Contract: [storage.md](storage.md#checkout-fingerprint-coverage-wd-121). Real-Git tests in
+`tests/test_analysis.py` (a hermetic repository: no host Git config) show:
+
+- staged-only, unstaged-only, and untracked-only A->B->A each produce a `diff_oscillation`;
+- clean, staged, unstaged, untracked, and staged-plus-unstaged states give five different
+  fingerprints, so none reads as clean;
+- ignored files do not change it, a staged rename does, binary and symlink content is hashed;
+- a touched-but-unchanged file does not change it, and the index bytes, object directory, and
+  `index.lock` are untouched. Removing `-c diff.autoRefreshIndex=false` fails that test:
+  plain `git diff` (the v1 call) rewrites stale stat data in the index, and
+  `--no-optional-locks` does not prevent it;
+- a non-repository, a nonzero Git exit, a timeout, an unreadable untracked file, and each
+  exceeded bound return unknown (`None`).
+
+Latency (25 runs each, `git_diff_fingerprint` against the v1 plain `git diff`, p50 / p95):
+
+| Checkout | v1 | v2 (adopted bounds) |
+|---|---|---|
+| clean, synthetic | 50 / 54 ms | 164 / 236 ms |
+| 200 staged files | 102 / 144 ms | 237 / 254 ms |
+| `watchdog` (dirty, 12 untracked notes, 0.27 MB hashed) | 74 / 101 ms | 289 / 378 ms |
+| 1956 tracked files | 60 / 150 ms | 176 / 231 ms |
+| 312 untracked files, 4.7 MB hashed | 58 / 65 ms | 500 / 559 ms |
+| 1000 untracked files (over the cap) | 51 / 59 ms | unknown, 160 / 185 ms |
+| 100 untracked x 1 MiB (over the byte cap) | 55 / 93 ms | unknown, 239 / 281 ms |
+
+Cost is about 55 ms per Git spawn (three) plus about 1.1 ms per untracked file. A first
+trial with 2 s / 1000 files / 32 MiB gave 1.14 s p50 at 1000 files and one unknown in 25, so
+the adopted bounds are 1.5 s, 500 files, 16 MiB (about 0.6 s of hashing at the cap). The read
+runs inline in the spool drain, debounced to once per 5 s per checkout, so the worst stall is
+the 1.5 s deadline. An unknown result records no snapshot: the diff signal is off for that
+checkout until it fits the bounds again. Unknown results in 25 runs on the measured real
+checkouts: 0.
+
 ## WD-123 insights live probe
 
 2026-09-29, Windows, Claude Code CLI 2.1.283. The probe was opt-in and approved as step 0 of WD-123. It used synthetic bundles and ran before the runner code existed, with the same flag set the runner now uses:
