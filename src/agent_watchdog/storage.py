@@ -473,7 +473,9 @@ class Store:
             session_id = envelope.get("session_id")
             agent_id = envelope.get("agent_id")
             turn_id, _ = facts.turn_of(envelope)
-            inherited = self._inherited_config(db, session_id, turn_id, rowid)
+            inherited = self._inherited_config(
+                db, session_id, agent_id if isinstance(agent_id, str) else None, turn_id, rowid
+            )
             if isinstance(agent_id, str) and agent_id and envelope.get("provider") == "claude":
                 parent_turn = self._parent_turn(db, session_id, agent_id, rowid)
         row = facts.project_event(
@@ -488,19 +490,27 @@ class Store:
 
     @staticmethod
     def _inherited_config(
-        db: sqlite3.Connection, session_id: object, turn_id: str | None, before_rowid: int
+        db: sqlite3.Connection,
+        session_id: object,
+        agent_id: str | None,
+        turn_id: str | None,
+        before_rowid: int,
     ) -> tuple[str | None, str | None]:
-        """Latest earlier observed model/effort in the same conversation, same turn first."""
+        """Latest earlier observed model/effort of the same conversation agent, same turn first.
+
+        A subagent may run another model than its parent, so its usage inherits
+        only from its own hooks (a Codex subagent's hooks carry its agent_id).
+        """
         if not isinstance(session_id, str) or not session_id:
             return (None, None)
 
         def latest(value: str, attribution: str) -> str | None:
             found = db.execute(
                 f"SELECT ef.{value} FROM event_facts ef JOIN events e ON e.event_id = ef.event_id "
-                f"WHERE ef.session_id = ? AND ef.agent_id IS NULL "
+                f"WHERE ef.session_id = ? AND ef.agent_id IS ? "
                 f"AND ef.{attribution} = 'observed' AND ef.{value} IS NOT NULL AND e.rowid < ? "
                 f"ORDER BY (ef.turn_id IS ?) DESC, e.rowid DESC LIMIT 1",
-                (session_id, before_rowid, turn_id),
+                (session_id, agent_id, before_rowid, turn_id),
             ).fetchone()
             return found[0] if found else None
 

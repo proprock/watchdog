@@ -13,6 +13,7 @@ conversation agent, under any event id.
 """
 
 import json
+import re
 from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import datetime
@@ -57,6 +58,7 @@ CLAUDE_OBSERVED_KEYS = ("input_tokens", "cache_read_input_tokens", "output_token
 # agent id into the ``session_id`` column as ``<parent>#<agent_id>`` so no schema
 # bump is needed before WD-111 owns the v6 migration.
 SUBAGENT_SEPARATOR = "#"
+_THREAD_ID = re.compile(r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$")
 
 TranscriptFailureCode = Literal[
     "rollout_line_invalid",
@@ -84,6 +86,7 @@ TranscriptFailureCode = Literal[
     "claude_usage_invalid",
     "claude_response_oversized",
     "transcript_line_oversized",
+    "subagent_meta_mismatch",
 ]
 FAILURE_CODES: frozenset[str] = frozenset(
     {
@@ -101,6 +104,7 @@ FAILURE_CODES: frozenset[str] = frozenset(
         "claude_usage_invalid",
         "claude_response_oversized",
         "transcript_line_oversized",
+        "subagent_meta_mismatch",
         "transcript_source_invalid",
         "transcript_sources_unavailable",
         "transcript_path_not_regular",
@@ -230,12 +234,31 @@ def _usage_record(record: object, session_id: str) -> tuple[dict[str, Any], dict
     return payload, counters
 
 
-def _meta_record(record: object, session_id: str) -> None:
+def _rollout_agent(source: Mapping[str, object]) -> str | None:
+    """The subagent thread a Codex rollout belongs to, or None for the session's own.
+
+    Codex names a rollout ``rollout-<time>-<thread id>.jsonl``. A hook fired
+    inside a subagent reports the subagent's own rollout under the parent
+    session id, so its thread id differs from the session; ``_meta_record``
+    verifies that thread before any of its usage is trusted.
+    """
+    match = _THREAD_ID.search(Path(str(source["path"])).stem)
+    thread = match.group(0) if match else None
+    return thread if thread is not None and thread != source["session_id"] else None
+
+
+def _meta_record(record: object, session_id: str, agent_id: str | None) -> None:
     if not isinstance(record, dict) or record.get("type") != "session_meta":
         raise UnsupportedTranscript("session_meta_missing")
     payload = record.get("payload")
-    if not isinstance(payload, dict) or payload.get("id") != session_id:
+    if not isinstance(payload, dict):
         raise UnsupportedTranscript("session_meta_mismatch")
+    if agent_id is None:
+        if payload.get("id") != session_id:
+            raise UnsupportedTranscript("session_meta_mismatch")
+    elif payload.get("id") != agent_id or payload.get("session_id") != session_id:
+        # A subagent thread names itself and the session that spawned it.
+        raise UnsupportedTranscript("subagent_meta_mismatch")
     if not isinstance(payload.get("cli_version"), str):
         raise UnsupportedTranscript("session_meta_version_missing")
 
@@ -303,15 +326,17 @@ def _usage_event(
 ) -> Envelope:
     payload = record["payload"]
     occurred_at = _occurred_at(record.get("timestamp"))
-    # One response is one usage event, however the rollout path is spelled and
-    # wherever its line sits in the file.
-    name = f"{READER}|{source['session_id']}|{payload['response_id']}"
+    agent_id = _rollout_agent(source)
+    # One response is one usage event per conversation agent, however the
+    # rollout path is spelled and wherever its line sits in the file.
+    name = f"{READER}|{source['session_id']}|{agent_id or ''}|{payload['response_id']}"
     event_id = uuid5(NAMESPACE_URL, name)
     return Envelope(
         event_id=event_id,
         provider="codex",
         project_id=store.project_id,
         session_id=str(source["session_id"]),
+        agent_id=agent_id,
         turn_id=payload.get("turn_id") if isinstance(payload.get("turn_id"), str) else None,
         native_event_id=str(payload["response_id"]),
         kind="usage",
@@ -576,7 +601,7 @@ def _process_source(store: "Store", source: dict[str, object]) -> EnrichmentResu
     if (
         source["last_error"]
         and source["error_signature"] == signature
-        and not _stopped_by_line_limit(source)
+        and not _stopped_by_former_reader(source)
     ):
         code = source["last_error"]
         if isinstance(code, str) and code in FAILURE_CODES:
@@ -663,17 +688,25 @@ def _process_source(store: "Store", source: dict[str, object]) -> EnrichmentResu
     )
 
 
-def _stopped_by_line_limit(source: Mapping[str, object]) -> bool:
-    """A source the former 1 MiB line limit stopped for good (before WD-130).
+def _stopped_by_former_reader(source: Mapping[str, object]) -> bool:
+    """A source an earlier reader version stopped for good; read it once more.
 
-    That limit reset the source to offset 0 with no tail and an error signature
-    equal to the unchanged file's, so the source was never read again. Nothing
-    else leaves this exact state, so it is read once more under the new bound.
+    Its error signature equals the unchanged file's, so it would never be read
+    again. Neither state below is produced by the current reader, so a retry
+    that fails again stores a different state and is not repeated:
+
+    - WD-130: the former 1 MiB line limit left ``rollout_line_invalid`` at
+      offset 0 with no tail.
+    - WD-131: a Codex subagent rollout reported under its parent session was
+      rejected as ``session_meta_mismatch``; it is now read as that subagent,
+      or fails as ``subagent_meta_mismatch``.
     """
+    if source["last_error"] == "rollout_line_invalid":
+        return source["offset"] == 0 and not source["tail"]
     return (
-        source["last_error"] == "rollout_line_invalid"
-        and source["offset"] == 0
-        and not source["tail"]
+        source["last_error"] == "session_meta_mismatch"
+        and source["provider"] == "codex"
+        and _rollout_agent(source) is not None
     )
 
 
@@ -733,6 +766,7 @@ def _consume_codex(
     error: TranscriptFailureCode | None = None
     failures: list[TranscriptFailureCode] = []
     stored: set[str] | None = None
+    agent_id = _rollout_agent(source)
     try:
         for line in lines:
             try:
@@ -740,7 +774,7 @@ def _consume_codex(
             except (UnicodeDecodeError, json.JSONDecodeError) as exc:
                 raise UnsupportedTranscript("rollout_line_invalid") from exc
             if reader is None:
-                _meta_record(record, str(source["session_id"]))
+                _meta_record(record, str(source["session_id"]), agent_id)
                 reader = READER
                 continue
             if not isinstance(record, dict):
@@ -749,7 +783,7 @@ def _consume_codex(
                 continue
             payload, current = _usage_record(record, str(source["session_id"]))
             if stored is None:
-                stored = store.usage_native_ids("codex", str(source["session_id"]))
+                stored = store.usage_native_ids("codex", str(source["session_id"]), agent_id)
             if payload["response_id"] in stored:
                 # Already stored, possibly under an earlier path- or offset-derived
                 # event id: a re-read after a reset, or another spelling of this

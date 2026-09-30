@@ -25,13 +25,16 @@ def usage_payload(event: Envelope) -> dict:
     return cast(dict, payload)
 
 
-def write_rollout(path: Path, session: str, records: list[dict]) -> None:
+def write_rollout(
+    path: Path, session: str, records: list[dict], *, thread: str | None = None
+) -> None:
+    """Write a rollout; ``thread`` makes it a subagent thread spawned by ``session``."""
+    meta: dict = {"id": thread or session, "session_id": session, "cli_version": "0.153.4"}
+    if thread is not None:
+        meta["parent_thread_id"] = session
+        meta["source"] = {"subagent": {"thread_spawn": {"parent_thread_id": session, "depth": 1}}}
     rows = [
-        {
-            "type": "session_meta",
-            "timestamp": "2026-09-07T10:00:00Z",
-            "payload": {"id": session, "session_id": session, "cli_version": "0.153.4"},
-        },
+        {"type": "session_meta", "timestamp": "2026-09-07T10:00:00Z", "payload": meta},
         *records,
     ]
     path.write_text("".join(json.dumps(row) + "\n" for row in rows), encoding="utf-8")
@@ -446,6 +449,101 @@ def test_a_source_stuck_on_a_long_line_is_read_again(tmp_path):
     assert sum(result.accepted for result in results) == 1
     assert [result.failures for result in results] == [()] * 4
     assert usage_ids == ["response-1", "response-2"]
+
+
+PARENT = "01a0824c-df30-74d2-b88a-47f2a22f2229"
+CHILD = "01a08265-0267-7171-899e-ea1113bd7459"
+
+
+def model_hook(project, transcript: Path, model: str, agent_id: str | None = None) -> Envelope:
+    # A Codex hook fired inside a subagent reports the parent session id, the
+    # subagent's agent_id, and the subagent's own rollout as transcript_path.
+    metadata = {"model": model, "turn_id": "turn-1"}
+    return Envelope(
+        provider="codex",
+        project_id=project,
+        session_id=PARENT,
+        agent_id=agent_id,
+        turn_id="turn-1",
+        kind="tool.start",
+        source="hook",
+        payload={"codex": {"transcript_path": str(transcript), "metadata": metadata}},
+    )
+
+
+def rollouts(tmp_path: Path, *, child_meta: str = CHILD) -> tuple[Path, Path]:
+    parent = tmp_path / f"rollout-2026-09-08T20-34-31-{PARENT}.jsonl"
+    child = tmp_path / f"rollout-2026-09-08T21-00-53-{CHILD}.jsonl"
+    write_rollout(parent, PARENT, [usage(PARENT, "resp-parent", total=10, output=4)])
+    write_rollout(
+        child, PARENT, [usage(PARENT, "resp-child", total=7, output=3)], thread=child_meta
+    )
+    return parent, child
+
+
+def test_a_subagent_rollout_under_the_parent_session_is_read_as_that_agent(tmp_path):
+    project = uuid4()
+    parent, child = rollouts(tmp_path)
+    with Store(tmp_path / "data", project) as store:
+        store.put(model_hook(project, parent, "gpt-5.5"))
+        store.put(model_hook(project, child, "gpt-5.4-mini", agent_id=CHILD))
+        result = enrich(store)
+        events = store.events()
+        facts = store.connection.execute(
+            "SELECT native_event_id, session_id, agent_id, model, model_attribution "
+            "FROM event_facts WHERE kind='usage' ORDER BY native_event_id"
+        ).fetchall()
+
+    assert (result.accepted, result.failures) == (2, ())
+    assert not [event for event in events if event.kind == "observation.gap"]
+    # The subagent's usage inherits its own model, not the parent's.
+    assert facts == [
+        ("resp-child", PARENT, CHILD, "gpt-5.4-mini", "inherited"),
+        ("resp-parent", PARENT, None, "gpt-5.5", "inherited"),
+    ]
+
+
+def test_a_subagent_rollout_naming_another_thread_is_a_gap(tmp_path):
+    project = uuid4()
+    _, child = rollouts(tmp_path, child_meta="01a08265-2c75-71e3-b09e-bc02083224d4")
+    with Store(tmp_path / "data", project) as store:
+        store.put(model_hook(project, child, "gpt-5.4-mini", agent_id=CHILD))
+        result = enrich(store)
+        events = store.events()
+
+    assert (result.accepted, result.failures) == (0, ("subagent_meta_mismatch",))
+    assert not [event for event in events if event.kind == "usage"]
+
+
+def test_a_subagent_rollout_the_former_reader_rejected_is_read_again(tmp_path):
+    project = uuid4()
+    _, child = rollouts(tmp_path)
+    stat = child.stat()
+    signature = f"{stat.st_dev}:{stat.st_ino}:{stat.st_size}:{stat.st_mtime_ns}"
+    with Store(tmp_path / "data", project) as store:
+        store.put(model_hook(project, child, "gpt-5.4-mini", agent_id=CHILD))
+        # The state the former reader left: a session_meta_mismatch error whose
+        # signature equals the unchanged file's, so it was never read again.
+        store.update_transcript_source(
+            store.transcript_sources()[0],
+            reader=None,
+            device=stat.st_dev,
+            inode=stat.st_ino,
+            size=stat.st_size,
+            mtime=stat.st_mtime_ns,
+            offset=stat.st_size,
+            tail=b"",
+            counters=None,
+            last_error="session_meta_mismatch",
+            error_signature=signature,
+        )
+        first = enrich(store)
+        second = enrich(store)
+        agents = [event.agent_id for event in store.events() if event.kind == "usage"]
+
+    assert (first.accepted, first.failures) == (1, ())
+    assert (second.accepted, second.failures, second.active_failures) == (0, (), ())
+    assert agents == [CHILD]
 
 
 @pytest.mark.skipif(os.name != "nt", reason="Win32 verbatim path spelling")
