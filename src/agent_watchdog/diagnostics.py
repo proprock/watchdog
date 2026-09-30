@@ -37,6 +37,7 @@ _FIELD_NAMES = {
 }
 _COMPONENTS = {"daemon", "hook", "cli"}
 _EVENTS = {
+    "checkout",
     "command",
     "configuration",
     "control",

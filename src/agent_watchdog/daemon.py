@@ -116,21 +116,47 @@ def _log(
 
 
 def _capture_diff_snapshot(
-    event: Envelope, checkout: Path, project_id: UUID, paths: UserPaths
+    checkout_id: UUID | None,
+    checkout: Path,
+    project_id: UUID,
+    paths: UserPaths,
+    config: Config,
+    logged_unknown: set[tuple[UUID, str]],
 ) -> None:
-    """Run the bounded Git read in the core, never synchronously in a hook."""
-    if event.checkout_id is None:
+    """Run the bounded Git read in the core, never synchronously in a hook.
+
+    An unknown state records no snapshot, which silences ``diff_oscillation`` for
+    the checkout; it is logged once per checkout and reason until a read fits the
+    bounds again.
+    """
+    if checkout_id is None:
         return
-    from agent_watchdog.analysis import git_diff_fingerprint
+    from agent_watchdog.analysis import CheckoutUnknown, git_diff_fingerprint
 
     now = datetime.now(UTC)
     try:
         with Store(paths.project_data(project_id), project_id) as store:
-            if not store.diff_due(event.checkout_id, now=now):
+            if not store.diff_due(checkout_id, now=now):
                 return
             fingerprint = git_diff_fingerprint(checkout)
-            if fingerprint is not None:
-                store.record_diff_snapshot(event.checkout_id, *fingerprint, observed_at=now)
+            if isinstance(fingerprint, CheckoutUnknown):
+                if (checkout_id, fingerprint.reason) not in logged_unknown:
+                    logged_unknown.add((checkout_id, fingerprint.reason))
+                    _log(
+                        paths,
+                        config,
+                        "WARNING",
+                        event="checkout",
+                        decision="unavailable",
+                        error_type=fingerprint.reason,
+                        project_id=project_id,
+                        detail=f"{checkout}: {fingerprint.detail}",
+                    )
+                return
+            logged_unknown.difference_update(
+                {item for item in logged_unknown if item[0] == checkout_id}
+            )
+            store.record_diff_snapshot(checkout_id, *fingerprint, observed_at=now)
     except (OSError, StorageError, ValueError):
         return
 
@@ -694,14 +720,24 @@ def _discard(path: Path) -> None:
         pass
 
 
-def _drain_spool(paths: UserPaths, config: Config, *, limit: int = 100) -> bool:
+def _drain_spool(
+    paths: UserPaths,
+    config: Config,
+    *,
+    limit: int = 100,
+    logged_unknown_checkouts: set[tuple[UUID, str]] | None = None,
+) -> bool:
     """Resolve, build, and admit native adapter spool records.
 
     The adapter writes raw unresolved records; checkout resolution,
     envelope construction, and per-project quota all happen here. Returns whether
-    any record was processed.
+    any record was processed. ``logged_unknown_checkouts`` carries the
+    once-per-episode fingerprint log state across calls.
     """
     from agent_watchdog.hooks import EVENTS, build_envelope, warn_unknown_fields
+
+    if logged_unknown_checkouts is None:
+        logged_unknown_checkouts = set()
 
     spool = paths.data / "spool"
     if not spool.is_dir():
@@ -866,7 +902,14 @@ def _drain_spool(paths: UserPaths, config: Config, *, limit: int = 100) -> bool:
             )
             continue  # Keep the record for the next unpaused poll.
         if admitted:
-            _capture_diff_snapshot(event, resolution.root, project.id, paths)
+            _capture_diff_snapshot(
+                event.checkout_id,
+                resolution.root,
+                project.id,
+                paths,
+                config,
+                logged_unknown_checkouts,
+            )
             _log(
                 paths,
                 config,
@@ -1104,6 +1147,7 @@ def _poll(paths: UserPaths, owner: ExitStack) -> None:
     maintenance: dict[str, float] = {}
     logged_enrichment_failures: set[tuple[str, str]] = set()
     logged_inert_enrichment: set[str] = set()
+    logged_unknown_checkouts: set[tuple[UUID, str]] = set()
     spool_mtime: float | None = None
     while True:
         config: Config | None = None
@@ -1141,7 +1185,7 @@ def _poll(paths: UserPaths, owner: ExitStack) -> None:
                         detail=str(error),
                     )
                     pass
-            if _drain_spool(paths, config):
+            if _drain_spool(paths, config, logged_unknown_checkouts=logged_unknown_checkouts):
                 activity = True
             if _drain_controls(paths, config):
                 activity = True

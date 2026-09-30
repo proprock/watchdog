@@ -7,10 +7,11 @@ import time
 from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 import pytest
 
+from agent_watchdog.analysis import CheckoutUnknown
 from agent_watchdog.config import (
     Config,
     Limits,
@@ -21,6 +22,7 @@ from agent_watchdog.config import (
     save_config,
 )
 from agent_watchdog.daemon import (
+    _capture_diff_snapshot,
     _ConfigCache,
     _drain_spool,
     _policy_server,
@@ -152,6 +154,90 @@ def test_spool_drain_records_a_debounced_content_free_diff_fingerprint(
             "SELECT fingerprint, byte_count FROM diff_snapshots"
         ).fetchall()
     assert rows == [("a" * 64, 123)]
+
+
+UNKNOWN_REASONS = [
+    "git_failed",
+    "deadline",
+    "diff_too_large",
+    "too_many_untracked",
+    "untracked_too_large",
+    "untracked_unreadable",
+]
+
+
+def unknown_checkout_log(paths):
+    log = paths.data / "watchdog.log"
+    lines = log.read_text(encoding="ascii").splitlines() if log.exists() else []
+    return [line for line in lines if "event=checkout" in line]
+
+
+@pytest.mark.parametrize("reason", UNKNOWN_REASONS)
+def test_spool_drain_logs_an_unknown_checkout_without_recording_a_snapshot(
+    paths, tmp_path, monkeypatch, reason
+):
+    root = tmp_path / "project"
+    root.mkdir()
+    mutate_registry(paths, lambda registry: registry.add(root))
+    config = load_config(paths.config)
+    project = config.projects[0]
+    monkeypatch.setattr(
+        "agent_watchdog.analysis.git_diff_fingerprint",
+        lambda checkout: CheckoutUnknown(reason, f"{checkout} is private-detail"),
+    )
+    write_spool_record(paths, spool_record(root, hook_event_name="Stop", session_id="s1"))
+
+    assert _drain_spool(paths, config) is True
+
+    (line,) = unknown_checkout_log(paths)
+    assert "level=WARNING component=daemon event=checkout decision=unavailable" in line
+    assert f"error_type={reason} project_id={project.id}" in line
+    assert "private-detail" not in line and str(root) not in line and "detail=" not in line
+    with Store(paths.project_data(project.id), project.id) as store:
+        assert store.connection.execute("SELECT COUNT(*) FROM diff_snapshots").fetchone() == (0,)
+
+
+def test_unknown_checkout_is_logged_once_per_episode_and_reason(paths, tmp_path, monkeypatch):
+    project_id = uuid4()
+    config = Config(defaults=Limits(log_level="DEBUG"))
+    outcomes = []
+    monkeypatch.setattr(
+        "agent_watchdog.analysis.git_diff_fingerprint", lambda checkout: outcomes.pop(0)
+    )
+    # A recorded snapshot would debounce the next read, which is not under test here.
+    monkeypatch.setattr(Store, "diff_due", lambda self, checkout_id, *, now, **kwargs: True)
+    logged: set[tuple[UUID, str]] = set()
+    first, second = uuid4(), uuid4()
+
+    def observe(checkout_id, outcome):
+        outcomes.append(outcome)
+        _capture_diff_snapshot(checkout_id, tmp_path, project_id, paths, config, logged)
+        return len(unknown_checkout_log(paths))
+
+    deadline = CheckoutUnknown("deadline")
+    assert observe(first, deadline) == 1
+    assert observe(first, deadline) == 1  # the same episode stays quiet
+    assert observe(second, deadline) == 2  # another checkout is its own episode
+    assert observe(first, CheckoutUnknown("diff_too_large")) == 3  # a new reason logs
+    assert observe(first, ("a" * 64, 1)) == 3  # the state fits the bounds again
+    assert observe(first, deadline) == 4  # and a later failure is a new episode
+    assert observe(second, deadline) == 4  # the other checkout's episode was untouched
+
+
+def test_unknown_checkout_detail_is_opt_in_and_carries_the_checkout_path(
+    paths, tmp_path, monkeypatch
+):
+    config = Config(defaults=Limits(log_level="DEBUG", log_detail=True))
+    monkeypatch.setattr(
+        "agent_watchdog.analysis.git_diff_fingerprint",
+        lambda checkout: CheckoutUnknown("untracked_unreadable", "locked by another process"),
+    )
+
+    _capture_diff_snapshot(uuid4(), tmp_path, uuid4(), paths, config, set())
+
+    (line,) = unknown_checkout_log(paths)
+    assert "error_type=untracked_unreadable" in line
+    assert ' detail="' in line and str(tmp_path) in line and "locked by another process" in line
 
 
 def test_spool_unregistered_cwd_is_discarded_without_loss(paths, tmp_path):

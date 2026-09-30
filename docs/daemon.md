@@ -94,6 +94,10 @@ string (paths kept, credentials stripped) for local debugging; see
 [storage](storage.md#daemon-diagnostic-log). A logging failure never affects
 daemon or hook behavior.
 
+A checkout whose state cannot be fingerprinted within the bounds is logged once per
+checkout and reason as `event=checkout decision=unavailable error_type=<reason>`; see
+[storage](storage.md#checkout-fingerprint-coverage-wd-121).
+
 Transcript-enrichment diagnostics use a fixed reader-specific `error_type`
 allowlist rather than exception class names. Newly active failures are logged once
 per project/code pair. A reader failure holds a project `degraded` only while its

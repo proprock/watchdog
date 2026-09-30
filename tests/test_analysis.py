@@ -9,6 +9,7 @@ from agent_watchdog.analysis import (
     CHECKOUT_DEADLINE_SECONDS,
     POLICY_RULE_VERSION,
     REPORT_SCHEMA_VERSION,
+    CheckoutUnknown,
     analyze,
     diff_oscillations,
     finding_fingerprint,
@@ -516,7 +517,7 @@ def test_git_diff_fingerprint_uses_the_hidden_process_runner(tmp_path, monkeypat
     monkeypatch.setattr("agent_watchdog.analysis._run", fake_run)
     monkeypatch.setattr("agent_watchdog.analysis.subprocess.run", unexpected_run)
 
-    assert git_diff_fingerprint(tmp_path) is not None
+    assert isinstance(git_diff_fingerprint(tmp_path), tuple)
     assert [command[5] for command, _ in calls] == ["diff", "diff", "ls-files"]
     for command, kwargs in calls:
         # Without this setting `git diff` rewrites stale stat data in the index.
@@ -562,8 +563,17 @@ def checkout(tmp_path, monkeypatch):
 
 def fingerprint(root):
     result = git_diff_fingerprint(root)
-    assert result is not None
+    assert isinstance(result, tuple)
     return result[0]
+
+
+def unknown(result):
+    assert isinstance(result, CheckoutUnknown)
+    return result
+
+
+def unknown_reason(result):
+    return unknown(result).reason
 
 
 def stage_change(root):
@@ -702,32 +712,63 @@ def test_checkout_fingerprint_is_unknown_outside_a_repository(tmp_path, monkeypa
     plain = tmp_path / "plain"
     plain.mkdir()
 
-    assert git_diff_fingerprint(plain) is None
+    assert unknown_reason(git_diff_fingerprint(plain)) == "git_failed"
 
 
-@pytest.mark.parametrize("limit", ["MAX_UNTRACKED_FILES", "MAX_UNTRACKED_BYTES", "MAX_DIFF_BYTES"])
-def test_checkout_fingerprint_is_unknown_when_a_bound_is_exceeded(checkout, monkeypatch, limit):
+@pytest.mark.parametrize(
+    ("limit", "reason"),
+    [
+        ("MAX_UNTRACKED_FILES", "too_many_untracked"),
+        ("MAX_UNTRACKED_BYTES", "untracked_too_large"),
+        ("MAX_DIFF_BYTES", "diff_too_large"),
+    ],
+)
+def test_checkout_fingerprint_is_unknown_when_a_bound_is_exceeded(
+    checkout, monkeypatch, limit, reason
+):
     (checkout / "one.txt").write_bytes(b"one\n")
     (checkout / "two.txt").write_bytes(b"two\n")
     (checkout / "tracked.txt").write_bytes(b"changed\n")
-    assert git_diff_fingerprint(checkout) is not None
+    assert isinstance(git_diff_fingerprint(checkout), tuple)
 
     monkeypatch.setattr(f"agent_watchdog.analysis.{limit}", 1)
 
-    assert git_diff_fingerprint(checkout) is None
+    assert unknown_reason(git_diff_fingerprint(checkout)) == reason
 
 
-def test_checkout_fingerprint_is_unknown_when_git_fails_or_times_out(checkout, monkeypatch):
+def test_checkout_fingerprint_reports_git_failure_and_timeout_separately(checkout, monkeypatch):
     def failing(command, **kwargs):
-        return subprocess.CompletedProcess(command, 128, stdout=b"", stderr=b"fatal")
+        return subprocess.CompletedProcess(command, 128, stdout=b"", stderr=b"fatal: broken")
 
     def timing_out(command, **kwargs):
         raise subprocess.TimeoutExpired(command, kwargs["timeout"])
 
     monkeypatch.setattr("agent_watchdog.analysis._run", failing)
-    assert git_diff_fingerprint(checkout) is None
+    result = unknown(git_diff_fingerprint(checkout))
+    assert result.reason == "git_failed"
+    assert "128" in result.detail and "fatal: broken" in result.detail
     monkeypatch.setattr("agent_watchdog.analysis._run", timing_out)
-    assert git_diff_fingerprint(checkout) is None
+    assert unknown_reason(git_diff_fingerprint(checkout)) == "deadline"
+
+
+def test_checkout_fingerprint_reports_an_exhausted_deadline(checkout, monkeypatch):
+    monkeypatch.setattr("agent_watchdog.analysis.CHECKOUT_DEADLINE_SECONDS", -1.0)
+
+    assert unknown_reason(git_diff_fingerprint(checkout)) == "deadline"
+
+
+def test_checkout_fingerprint_reports_a_deadline_hit_while_hashing_untracked_content(
+    checkout, monkeypatch
+):
+    untracked_file(checkout)
+    # Skip the Git reads so only the file hashing sees the already-expired deadline.
+    monkeypatch.setattr(
+        "agent_watchdog.analysis._git_output",
+        lambda checkout, args, deadline: b"new.txt\0" if args[0] == "ls-files" else b"",
+    )
+    monkeypatch.setattr("agent_watchdog.analysis.CHECKOUT_DEADLINE_SECONDS", -1.0)
+
+    assert unknown_reason(git_diff_fingerprint(checkout)) == "deadline"
 
 
 def test_checkout_fingerprint_is_unknown_when_an_untracked_file_cannot_be_read(
@@ -740,7 +781,9 @@ def test_checkout_fingerprint_is_unknown_when_an_untracked_file_cannot_be_read(
 
     monkeypatch.setattr("agent_watchdog.analysis.open", unreadable, raising=False)
 
-    assert git_diff_fingerprint(checkout) is None
+    result = unknown(git_diff_fingerprint(checkout))
+    assert result.reason == "untracked_unreadable"
+    assert "locked by another process" in result.detail
 
 
 def test_report_pairs_tool_boundaries_for_observed_durations():

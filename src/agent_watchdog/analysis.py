@@ -9,9 +9,10 @@ import subprocess
 import time
 from collections import Counter, defaultdict
 from collections.abc import Iterable, Mapping
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 from agent_watchdog._proc import run as _run
 from agent_watchdog.events import Envelope
@@ -429,14 +430,40 @@ def model_family_matches(alias: str, resolved_model: str) -> bool:
     return alias.strip().lower() in resolved_model.strip().lower().split("-")
 
 
+UnknownReason = Literal[
+    "git_failed",
+    "deadline",
+    "diff_too_large",
+    "too_many_untracked",
+    "untracked_too_large",
+    "untracked_unreadable",
+]
+
+
+@dataclass(frozen=True)
+class CheckoutUnknown:
+    """Why a checkout state could not be fingerprinted (WD-135).
+
+    ``reason`` is a fixed, content-free code. ``detail`` is free text that may hold
+    paths or Git's stderr; callers must treat it as opt-in diagnostic data.
+    """
+
+    reason: UnknownReason
+    detail: str = ""
+
+
 class _Unknown(Exception):
     """The checkout state could not be observed completely within the bounds."""
+
+    def __init__(self, reason: UnknownReason, detail: str = "") -> None:
+        super().__init__(reason)
+        self.unknown = CheckoutUnknown(reason, detail)
 
 
 def _git_output(checkout: Path, args: list[str], deadline: float) -> bytes:
     remaining = deadline - time.monotonic()
     if remaining <= 0:
-        raise _Unknown
+        raise _Unknown("deadline")
     try:
         # By default `git diff` silently rewrites stale stat data in the index;
         # `--no-optional-locks` does not stop that, this setting does.
@@ -446,10 +473,13 @@ def _git_output(checkout: Path, args: list[str], deadline: float) -> bytes:
             timeout=remaining,
             check=False,
         )
+    except subprocess.TimeoutExpired as error:
+        raise _Unknown("deadline", f"git {args[0]} timed out") from error
     except (OSError, subprocess.SubprocessError) as error:
-        raise _Unknown from error
+        raise _Unknown("git_failed", str(error)) from error
     if result.returncode != 0:
-        raise _Unknown
+        stderr = result.stderr.decode("utf-8", "replace").strip()
+        raise _Unknown("git_failed", f"git {args[0]} exited {result.returncode}: {stderr}")
     return result.stdout
 
 
@@ -471,20 +501,25 @@ def _untracked_record(
     with open(path, "rb") as handle:
         while chunk := handle.read(_READ_CHUNK):
             size += len(chunk)
-            if size > budget or time.monotonic() > deadline:
-                raise _Unknown
+            if size > budget:
+                raise _Unknown(
+                    "untracked_too_large", f"{os.fsdecode(name)} exceeds the byte budget"
+                )
+            if time.monotonic() > deadline:
+                raise _Unknown("deadline", f"hashing {os.fsdecode(name)} ran out of time")
             digest.update(chunk)
     return name + b"\0file\0" + digest.hexdigest().encode(), size
 
 
-def git_diff_fingerprint(checkout: Path) -> tuple[str, int] | None:
+def git_diff_fingerprint(checkout: Path) -> tuple[str, int] | CheckoutUnknown:
     """Hash the checkout state as ``(digest, bytes hashed)``; failures stay unknown.
 
     Covers unstaged and staged tracked changes plus untracked, non-ignored files
     (path and content hash); ignored files and nested repository interiors are
     outside the signal. Read-only, and content-free: only the digest is kept.
-    Any Git failure, timeout, unreadable file, or exceeded bound returns
-    ``None`` rather than a partial or clean-looking value.
+    Any Git failure, timeout, unreadable file, or exceeded bound returns a
+    ``CheckoutUnknown`` naming the reason rather than a partial or clean-looking
+    value.
     """
     deadline = time.monotonic() + CHECKOUT_DEADLINE_SECONDS
     diff = ["diff", "--no-ext-diff", "--no-textconv", "--no-renames", "--binary"]
@@ -495,10 +530,15 @@ def git_diff_fingerprint(checkout: Path) -> tuple[str, int] | None:
             checkout, ["ls-files", "--others", "--exclude-standard", "-z"], deadline
         )
         if max(len(unstaged), len(staged)) > MAX_DIFF_BYTES:
-            raise _Unknown
+            raise _Unknown(
+                "diff_too_large",
+                f"unstaged {len(unstaged)} and staged {len(staged)} bytes exceed {MAX_DIFF_BYTES}",
+            )
         names = sorted(name for name in listing.split(b"\0") if name)
         if len(names) > MAX_UNTRACKED_FILES:
-            raise _Unknown
+            raise _Unknown(
+                "too_many_untracked", f"{len(names)} untracked files exceed {MAX_UNTRACKED_FILES}"
+            )
         records = []
         untracked_bytes = 0
         for name in names:
@@ -507,8 +547,10 @@ def git_diff_fingerprint(checkout: Path) -> tuple[str, int] | None:
             )
             records.append(record)
             untracked_bytes += size
-    except (_Unknown, OSError):
-        return None
+    except _Unknown as unknown:
+        return unknown.unknown
+    except OSError as error:  # an untracked file that vanished or is locked
+        return CheckoutUnknown("untracked_unreadable", str(error))
     digest = hashlib.sha256(_CHECKOUT_FINGERPRINT_TAG)
     for section in (unstaged, staged, b"".join(_framed(record) for record in records)):
         digest.update(_framed(section))

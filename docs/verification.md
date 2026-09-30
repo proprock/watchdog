@@ -36,6 +36,35 @@ the 1.5 s deadline. An unknown result records no snapshot: the diff signal is of
 checkout until it fits the bounds again. Unknown results in 25 runs on the measured real
 checkouts: 0.
 
+### WD-135 unknown visibility and rate (2026-09-30, Windows, Git 2.53.0)
+
+`git_diff_fingerprint` now returns a `CheckoutUnknown` with a fixed reason, and the daemon logs
+one `event=checkout decision=unavailable error_type=<reason>` warning per checkout and reason
+([storage.md](storage.md#checkout-fingerprint-coverage-wd-121)). Offline tests cover each reason,
+once-per-episode logging, and a path-free record without `log_detail`; the full offline suite
+passed (740 passed, 1 skipped). The updated wheel (0.1.4) is installed in the live instance
+and its daemon was restarted at 17:28 UTC (pid 63480, new instance id).
+
+Direct probe of the four registered checkouts (read-only `git_diff_fingerprint` calls from a
+separate process, daemon running; the same call the daemon makes):
+
+| Checkout | Runs | Unknown | p50 / max | Bytes hashed |
+|---|---|---|---|---|
+| `watchdog` | 50 | 0 | 226 / 439 ms | 0.44 MB |
+| `project-a` | 10 | 0 | 228 / 343 ms | 0.02 MB |
+| `project-c` | 10 | 0 | 193 / 239 ms | 0.03 MB |
+| `project-b` | 50 | 2 (`deadline`) | 472 / 1515 ms | 4.7 MB |
+
+The two `deadline` results came from the first ten `project-b` runs, taken right
+after the daemon restart; the next 40 runs had a 569 ms maximum. That checkout is the only one
+near a bound: it carries about 300 untracked files and 4.7 MB of untracked content, and Git also
+warns about unreadable `.cache/test-context-*` directories (exit status stays 0). No file-count or
+byte bound is close on any registered checkout, so the four limits stay constants.
+
+Live log: no `event=checkout` record in the first minutes after the restart. Not yet measured:
+the unknown rate from real hook traffic, which needs sessions in the three other checkouts.
+WD-135 stays open for that measurement.
+
 ## WD-123 insights live probe
 
 2026-09-29, Windows, Claude Code CLI 2.1.283. The probe was opt-in and approved as step 0 of WD-123. It used synthetic bundles and ran before the runner code existed, with the same flag set the runner now uses:
@@ -137,7 +166,7 @@ All three used the remembered 800000-token budget with nothing truncated. Sessio
 
 ### WD-132 `--all-projects` on the live store
 
-2026-09-30, same host and CLI (Claude Code 2.1.283), registered projects `watchdog`, `GSIM30`, and `agent-session-insights`, paths copied from the installed hook.
+2026-09-30, same host and CLI (Claude Code 2.1.283), registered projects `watchdog`, `project-a`, and `project-b`, paths copied from the installed hook.
 
 **Dry runs** (`--all-projects --days 30`, nothing sent), none disabled or unreadable:
 - `errors`: about 152K tokens, 74 clusters, 3 seen in two or more projects.
@@ -146,7 +175,7 @@ All three used the remembered 800000-token budget with nothing truncated. Sessio
 - Nothing truncated at the remembered 800000-token budget. The added fields are aliases and counts only; registered roots still appear inside the existing tool-input and error excerpts, as in single-project bundles.
 
 **Live Sonnet 5 call** (`insights workflow --all-projects --days 30 --output ...`):
-- **Result.** `status: ok`. 75 sessions, 115 agents, 8403 calls (`watchdog` 5886, `GSIM30` 2517); `agent-session-insights` had no calls in the window and the summary said so. Four recommendations (two scripts, one hook, one skill) and three rule candidates, all grounded.
+- **Result.** `status: ok`. 75 sessions, 115 agents, 8403 calls (`watchdog` 5886, `project-a` 2517); `project-b` had no calls in the window and the summary said so. Four recommendations (two scripts, one hook, one skill) and three rule candidates, all grounded.
 - **Scope.** All four recommendations came back at project scope, each naming its project, with no `scope_notes`. The model proposed no user-level rule, although 32 items spanned projects.
 - **Cost.** 217 s; 130593 cache-write and 0 cache-read input tokens and 20928 output tokens; 0.73 USD list price. The bundle was 225625 bytes.
 - **No recursion.** Session counts from `sessions list` were unchanged before and after (89, 33, 19).
@@ -162,7 +191,7 @@ All three used the remembered 800000-token budget with nothing truncated. Sessio
 **Live Sonnet 5 call** (`insights sessions --project watchdog --days 7 --output ...`):
 - **Result.** `status: ok`. Four candidates (one `blocked`, one `abandoned`, two `uncertain`) and three patterns (`never_compacts`, `abandoned_after_failure`, `other`), each resolved to a provider and session ID; four recommendations and four rule candidates. All grounded. One candidate was the session running the verification itself.
 - **Cost.** 197 s; 19340 cache-write and 0 cache-read input tokens and 17590 output tokens; 0.25 USD list price. The bundle was 35424 bytes.
-- **No recursion.** Distinct session counts per project were unchanged before and after (92, 35, 19 for `watchdog`, `GSIM30`, `agent-session-insights`).
+- **No recursion.** Distinct session counts per project were unchanged before and after (92, 35, 19 for `watchdog`, `project-a`, `project-b`).
 
 ### WD-134 `digest` on the live store
 
@@ -198,7 +227,7 @@ JSONL, prompts, assistant output, absolute paths, and provider credentials are
 not copied into this repository.
 
 The convenience sample is deliberately not representative: it contains 11
-`ventFather`, 6 `watchdog`, and 3 `agent-session-insights` sessions. Manual
+`project-d`, 6 `watchdog`, and 3 `project-b` sessions. Manual
 outcomes were 16 `success` and 4 `partial`; its typical work was feature delivery
 (11), hardware validation (4), debugging/investigation (3), and research/design
 (2). This establishes a review protocol and a task/outcome baseline, not a

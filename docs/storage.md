@@ -368,7 +368,17 @@ or opens a temporary index. Any Git failure, a timeout, an untracked file
 that cannot be read (for example one locked by another process), or an exceeded bound
 (1.5 s overall, 16 MiB per diff, 500 untracked files, 16 MiB of untracked content) yields
 no snapshot: the state is unknown, never clean. The bounds are `analysis.CHECKOUT_DEADLINE_SECONDS`,
-`MAX_DIFF_BYTES`, `MAX_UNTRACKED_FILES`, and `MAX_UNTRACKED_BYTES`.
+`MAX_DIFF_BYTES`, `MAX_UNTRACKED_FILES`, and `MAX_UNTRACKED_BYTES`; they stay module constants
+until the log below shows real checkouts hitting one.
+
+`git_diff_fingerprint` returns the `(digest, bytes)` pair or a `CheckoutUnknown` with a fixed
+`reason`: `git_failed`, `deadline`, `diff_too_large`, `too_many_untracked`,
+`untracked_too_large`, or `untracked_unreadable`. Without a snapshot the `diff_oscillation`
+signal is silently off for that checkout, so the daemon logs one `WARNING`
+(`event=checkout decision=unavailable error_type=<reason> project_id=<uuid>`) per checkout and
+reason. It logs again only after a read of that checkout has fit the bounds. The record carries no
+path; under `[defaults] log_detail = true` it adds the checkout path and the bound or Git error
+text, like other caught exceptions.
 
 `diff_snapshots.byte_count` is now the total bytes hashed (both diffs plus untracked file
 content); it was the diff size before, and nothing reads it as a diff size.
