@@ -309,6 +309,145 @@ def test_reread_after_a_transient_read_failure_neither_duplicates_nor_rejects(tm
     assert [codex(gap)["reason"] for gap in gaps] == ["transcript_unreadable"]
 
 
+def long_line(size: int) -> dict:
+    # A real rollout's longest lines are item_completed event_msg records of
+    # up to 6.7 MiB; they carry no usage but precede usage that does.
+    return {"type": "event_msg", "payload": {"type": "item_completed", "text": "x" * size}}
+
+
+def drain(store: Store) -> list:
+    return [enrich(store) for _ in range(4)]
+
+
+def test_a_line_longer_than_the_read_window_is_read_whole(tmp_path):
+    project = uuid4()
+    session = "session-1"
+    transcript = tmp_path / "rollout.jsonl"
+    write_rollout(
+        transcript,
+        session,
+        [
+            usage(session, "response-1", total=10, output=4),
+            long_line(5 * 1024**2 // 2),
+            usage(session, "response-2", total=16, output=6),
+        ],
+    )
+    with Store(tmp_path / "data", project) as store:
+        store.put(hook(project, session, transcript))
+        results = drain(store)
+        events = store.events()
+
+    assert sum(result.accepted for result in results) == 2
+    assert [result.failures for result in results] == [()] * 4
+    assert [event.native_event_id for event in events if event.kind == "usage"] == [
+        "response-1",
+        "response-2",
+    ]
+    assert not [event for event in events if event.kind == "observation.gap"]
+
+
+def test_a_line_over_the_line_bound_is_skipped_with_a_gap(tmp_path, monkeypatch):
+    monkeypatch.setattr(transcripts, "MAX_LINE_BYTES", 3 * 1024**2 // 2)
+    project = uuid4()
+    session = "session-1"
+    transcript = tmp_path / "rollout.jsonl"
+    write_rollout(
+        transcript,
+        session,
+        [
+            usage(session, "response-1", total=10, output=4),
+            long_line(5 * 1024**2 // 2),
+            usage(session, "response-2", total=16, output=6),
+        ],
+    )
+    with Store(tmp_path / "data", project) as store:
+        store.put(hook(project, session, transcript))
+        results = drain(store)
+        events = store.events()
+
+    assert sum(result.accepted for result in results) == 2
+    assert [code for result in results for code in result.failures] == ["transcript_line_oversized"]
+    assert [event.native_event_id for event in events if event.kind == "usage"] == [
+        "response-1",
+        "response-2",
+    ]
+    gaps = [event for event in events if event.kind == "observation.gap"]
+    assert [codex(gap)["reason"] for gap in gaps] == ["transcript_line_oversized"]
+
+
+def test_a_long_line_still_being_written_is_finished_on_a_later_pass(tmp_path):
+    project = uuid4()
+    session = "session-1"
+    transcript = tmp_path / "rollout.jsonl"
+    write_rollout(transcript, session, [usage(session, "response-1", total=10, output=4)])
+    line = json.dumps(long_line(3 * 1024**2 // 2)) + "\n"
+    with transcript.open("a", encoding="utf-8") as stream:
+        stream.write(line[: 5 * 1024**2 // 4])
+    with Store(tmp_path / "data", project) as store:
+        store.put(hook(project, session, transcript))
+        partial = drain(store)
+        with transcript.open("a", encoding="utf-8") as stream:
+            stream.write(line[5 * 1024**2 // 4 :])
+            stream.write(json.dumps(usage(session, "response-2", total=16, output=6)) + "\n")
+        finished = drain(store)
+        usage_ids = [event.native_event_id for event in store.events() if event.kind == "usage"]
+
+    assert [result.accepted for result in partial] == [1, 0, 0, 0]
+    assert sum(result.accepted for result in finished) == 1
+    assert [result.failures for result in partial + finished] == [()] * 8
+    assert usage_ids == ["response-1", "response-2"]
+
+
+def test_a_source_stuck_on_a_long_line_is_read_again(tmp_path):
+    project = uuid4()
+    session = "session-1"
+    transcript = tmp_path / "rollout.jsonl"
+    write_rollout(
+        transcript,
+        session,
+        [
+            usage(session, "response-1", total=10, output=4),
+            long_line(5 * 1024**2 // 2),
+            usage(session, "response-2", total=16, output=6),
+        ],
+    )
+    stat = transcript.stat()
+    signature = f"{stat.st_dev}:{stat.st_ino}:{stat.st_size}:{stat.st_mtime_ns}"
+    stored = Envelope(
+        provider="codex",
+        project_id=project,
+        session_id=session,
+        native_event_id="response-1",
+        kind="usage",
+        source="transcript",
+        payload={"codex": {"reader": "codex-rollout-v1", "response_id": "response-1"}},
+    )
+    with Store(tmp_path / "data", project) as store:
+        store.put(stored)
+        store.put(hook(project, session, transcript))
+        # The state the 1 MiB line limit left behind: offset 0, no tail, and an
+        # error signature equal to the unchanged file's, so it was never retried.
+        store.update_transcript_source(
+            store.transcript_sources()[0],
+            reader=None,
+            device=stat.st_dev,
+            inode=stat.st_ino,
+            size=stat.st_size,
+            mtime=stat.st_mtime_ns,
+            offset=0,
+            tail=b"",
+            counters={"total_tokens": 10},
+            last_error="rollout_line_invalid",
+            error_signature=signature,
+        )
+        results = drain(store)
+        usage_ids = [event.native_event_id for event in store.events() if event.kind == "usage"]
+
+    assert sum(result.accepted for result in results) == 1
+    assert [result.failures for result in results] == [()] * 4
+    assert usage_ids == ["response-1", "response-2"]
+
+
 @pytest.mark.skipif(os.name != "nt", reason="Win32 verbatim path spelling")
 def test_verbatim_windows_spelling_registers_the_same_source(tmp_path):
     project = uuid4()

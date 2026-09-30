@@ -17,7 +17,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Literal, cast
+from typing import TYPE_CHECKING, Any, BinaryIO, Literal, cast
 from uuid import NAMESPACE_URL, uuid5
 
 from agent_watchdog.events import Availability, Envelope
@@ -30,6 +30,11 @@ if TYPE_CHECKING:
 READER = "codex-rollout-v1"
 CLAUDE_READER = "claude-transcript-v1"
 READ_BYTES = 1024**2
+# One line is read whole up to this size, even across read windows. The longest
+# real Codex rollout line seen locally is 6.7 MiB (an item_completed event_msg);
+# the former 1 MiB limit stopped such sources for good and left every later
+# usage record unread. A longer line is skipped with a gap, never silently.
+MAX_LINE_BYTES = 32 * 1024**2
 COUNTERS = (
     "input_tokens",
     "cached_input_tokens",
@@ -77,6 +82,8 @@ TranscriptFailureCode = Literal[
     "claude_record_invalid",
     "claude_session_mismatch",
     "claude_usage_invalid",
+    "claude_response_oversized",
+    "transcript_line_oversized",
 ]
 FAILURE_CODES: frozenset[str] = frozenset(
     {
@@ -92,6 +99,8 @@ FAILURE_CODES: frozenset[str] = frozenset(
         "claude_record_invalid",
         "claude_session_mismatch",
         "claude_usage_invalid",
+        "claude_response_oversized",
+        "transcript_line_oversized",
         "transcript_source_invalid",
         "transcript_sources_unavailable",
         "transcript_path_not_regular",
@@ -564,7 +573,11 @@ def _process_source(store: "Store", source: dict[str, object]) -> EnrichmentResu
         return EnrichmentResult(failures=failures, active_failures=(error.code,))
 
     signature = f"{device}:{inode}:{size}:{mtime}"
-    if source["last_error"] and source["error_signature"] == signature:
+    if (
+        source["last_error"]
+        and source["error_signature"] == signature
+        and not _stopped_by_line_limit(source)
+    ):
         code = source["last_error"]
         if isinstance(code, str) and code in FAILURE_CODES:
             return EnrichmentResult(active_failures=(cast(TranscriptFailureCode, code),))
@@ -580,10 +593,19 @@ def _process_source(store: "Store", source: dict[str, object]) -> EnrichmentResu
         or (size == offset and source["mtime"] is not None and source["mtime"] != mtime)
     ):
         offset, tail, reader = 0, b"", None
+    oversized = False
+    skip_to: int | None = None
     try:
         with path.open("rb") as stream:
             stream.seek(offset)
-            raw = stream.read(READ_BYTES)
+            carried = _unfinished_length(tail)
+            raw = _read_window(stream, carried)
+            unfinished = _unfinished_length(raw) if b"\n" in raw else carried + len(raw)
+            if unfinished > MAX_LINE_BYTES:
+                # Too long to hold: skip the line whole instead. While it is still
+                # being written, its end is unknown and it is read again next pass.
+                oversized = True
+                skip_to = _line_end(stream)
     except OSError:
         changed = _update_failure(
             store,
@@ -606,24 +628,19 @@ def _process_source(store: "Store", source: dict[str, object]) -> EnrichmentResu
         tail = lines.pop()
     else:
         tail = b""
-    if len(tail) > 1024**2:
-        changed = _update_failure(
-            store,
-            source,
-            "rollout_line_invalid",
-            signature,
-            device=device,
-            inode=inode,
-            size=size,
-            mtime=mtime,
-        )
-        failures = ("rollout_line_invalid",) if changed else ()
-        return EnrichmentResult(failures=failures, active_failures=("rollout_line_invalid",))
+    resume = offset + len(raw)
+    if oversized:
+        # Resume past the skipped line, or at its start until it is complete.
+        resume, tail = (skip_to, b"") if skip_to is not None else (resume - len(tail), b"")
     counters = _load_counters(source["counters"])
     if source["provider"] == "claude":
         consumed = _consume_claude(store, source, lines, signature, stalled=stalled)
     else:
         consumed = _consume_codex(store, source, lines, signature, reader, counters)
+    failures = list(consumed.failures)
+    if skip_to is not None and consumed.error is None:
+        _gap(store, source, "transcript_line_oversized", signature)
+        failures.append("transcript_line_oversized")
     store.update_transcript_source(
         source,
         reader=consumed.reader,
@@ -631,7 +648,7 @@ def _process_source(store: "Store", source: dict[str, object]) -> EnrichmentResu
         inode=inode,
         size=size,
         mtime=mtime,
-        offset=offset + len(raw),
+        offset=resume,
         # A held-open response's bytes precede any trailing partial line.
         tail=consumed.held_tail + tail,
         counters=consumed.counters,
@@ -640,10 +657,54 @@ def _process_source(store: "Store", source: dict[str, object]) -> EnrichmentResu
     )
     return EnrichmentResult(
         accepted=consumed.accepted,
-        failures=tuple(consumed.failures),
-        active_failures=tuple(consumed.failures),
+        failures=tuple(failures),
+        active_failures=tuple(failures),
         inert=consumed.usage_seen > 0 and consumed.accepted == 0 and consumed.error is None,
     )
+
+
+def _stopped_by_line_limit(source: Mapping[str, object]) -> bool:
+    """A source the former 1 MiB line limit stopped for good (before WD-130).
+
+    That limit reset the source to offset 0 with no tail and an error signature
+    equal to the unchanged file's, so the source was never read again. Nothing
+    else leaves this exact state, so it is read once more under the new bound.
+    """
+    return (
+        source["last_error"] == "rollout_line_invalid"
+        and source["offset"] == 0
+        and not source["tail"]
+    )
+
+
+def _unfinished_length(data: bytes) -> int:
+    """Length of the unfinished line at the end of ``data``."""
+    return len(data) - (data.rfind(b"\n") + 1)
+
+
+def _read_window(stream: BinaryIO, carried: int) -> bytes:
+    """Read the next window, extended while it lies inside one unfinished line.
+
+    ``carried`` is that line's length already held in the stored tail. Reading
+    stops at the line's end, at EOF, or once the line passes MAX_LINE_BYTES, so
+    a long line is read whole in one pass instead of piling up in the tail.
+    """
+    chunks = [stream.read(READ_BYTES)]
+    while len(chunks[-1]) == READ_BYTES and b"\n" not in chunks[-1]:
+        carried += READ_BYTES
+        if carried > MAX_LINE_BYTES:
+            break
+        chunks.append(stream.read(READ_BYTES))
+    return b"".join(chunks)
+
+
+def _line_end(stream: BinaryIO) -> int | None:
+    """Offset just past the next line break from the stream position, or None at EOF."""
+    while chunk := stream.read(READ_BYTES):
+        cut = chunk.find(b"\n")
+        if cut >= 0:
+            return stream.tell() - len(chunk) + cut + 1
+    return None
 
 
 @dataclass
@@ -713,8 +774,8 @@ def _consume_codex(
     return _Consumed(accepted, failures, reader, counters, error, usage_seen=usage_seen)
 
 
-# A held, still-open response is bounded well under the transcript_sources
-# ``tail`` column's 1 MiB cap, leaving headroom for any trailing partial line.
+# A held, still-open response is bounded so that it and one unfinished line of
+# up to MAX_LINE_BYTES fit the ``tail`` column (storage.TRANSCRIPT_TAIL_BYTES).
 _MAX_HELD_TAIL = 512 * 1024
 
 
@@ -736,7 +797,9 @@ def _consume_claude(
     still be genuinely in progress. That trailing response is held (its raw
     bytes carried into the next read window) unless the source has stopped
     growing (``stalled``) or holding it would exceed the bound above, in which
-    case it is emitted with its last-known value rather than held forever.
+    case it is emitted with its last-known value rather than held forever; the
+    latter also records a ``claude_response_oversized`` gap, since that value
+    may undercount.
     """
     parent, agent_id = _split_subagent(source)
     is_subagent = agent_id is not None
@@ -774,14 +837,16 @@ def _consume_claude(
                 closed.add(request_id)
         pending_id = order[-1] if order else None
         for request_id in order:
+            early = False
             if request_id == pending_id and request_id not in closed:
                 candidate_tail = b"".join(blocks[request_id])
                 if not stalled and len(candidate_tail) <= _MAX_HELD_TAIL:
                     held_tail = candidate_tail
                     usage_seen -= len(blocks[request_id])
                     continue
-                # Source stopped growing, or the held response is unbounded:
-                # flush its last-known value instead of holding it forever.
+                # Source stopped growing, or the held response is too large to
+                # hold: flush its last-known value instead of holding it forever.
+                early = not stalled
             if stored is None:
                 stored = store.usage_native_ids("claude", parent, agent_id)
             if request_id in stored:
@@ -793,6 +858,10 @@ def _consume_claude(
             if store.put(_claude_usage_event(store, source, latest[request_id])):
                 accepted += 1
             stored.add(request_id)
+            if early:
+                # Emitted before its final block, so the value may undercount.
+                _gap(store, source, "claude_response_oversized", signature)
+                failures.append("claude_response_oversized")
     except UnsupportedTranscript as exc:
         error = exc.code
         if source["last_error"] != error or source["error_signature"] != signature:

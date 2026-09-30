@@ -22,6 +22,9 @@ from agent_watchdog.files import atomic_write as atomic_write
 # Manual annotation vocabularies (schema v7, WD-012 calibration).
 PROGRESS_STATES = ("progress", "slow", "stuck", "externally_blocked")
 FINDING_VERDICTS = ("true_positive", "false_positive", "uncertain")
+# A transcript reader's stored ``tail``: one unfinished line of up to 32 MiB
+# (``transcripts.MAX_LINE_BYTES``) after a held Claude response of up to 512 KiB.
+TRANSCRIPT_TAIL_BYTES = 33 * 1024**2
 
 
 class StorageError(ValueError):
@@ -574,7 +577,7 @@ class Store:
         last_error: str | None,
         error_signature: str | None,
     ) -> None:
-        if offset < 0 or len(tail) > 1024**2:
+        if offset < 0 or len(tail) > TRANSCRIPT_TAIL_BYTES:
             raise StorageError("Invalid transcript reader state")
         serialized = json.dumps(counters, sort_keys=True) if counters is not None else None
         with self._transaction() as db:

@@ -501,6 +501,45 @@ def test_rereading_stored_requests_is_not_inert(tmp_path):
     assert (reread.accepted, reread.inert) == (0, False)
 
 
+def test_a_long_user_line_does_not_stop_the_reader(tmp_path):
+    # Every real Claude line over 512 KiB seen locally is a user or attachment
+    # line (tool results, images), up to 1.9 MiB; usage follows it.
+    project = uuid4()
+    transcript = tmp_path / "session.jsonl"
+    image = {"type": "user", "sessionId": SESSION, "message": {"content": "x" * (5 * 1024**2 // 2)}}
+    write_transcript(transcript, [assistant(SESSION, "req_A"), image, assistant(SESSION, "req_B")])
+    with Store(tmp_path / "data", project) as store:
+        store.put(hook(project, SESSION, transcript))
+        results = [enrich(store) for _ in range(4)]
+        requests = [claude(event)["request_id"] for event in usage_events(store)]
+
+    assert sum(result.accepted for result in results) == 2
+    assert [result.failures for result in results] == [()] * 4
+    assert requests == ["req_A", "req_B"]
+
+
+def test_an_open_response_too_large_to_hold_is_emitted_with_a_gap(tmp_path):
+    project = uuid4()
+    transcript = tmp_path / "session.jsonl"
+    first = assistant(SESSION, "req_A", output_tokens=3, stop_reason=None)
+    first["message"]["content"] = [{"type": "text", "text": "x" * (600 * 1024)}]
+    write_transcript(transcript, [first])
+    with Store(tmp_path / "data", project) as store:
+        store.put(hook(project, SESSION, transcript))
+        flushed = enrich(store)
+        with transcript.open("a", encoding="utf-8") as stream:
+            final = assistant(SESSION, "req_A", block=1, output_tokens=116)
+            stream.write(json.dumps(final) + "\n")
+        enrich(store)
+        events = usage_events(store)
+        gaps = gap_events(store)
+
+    # The early value is an undercount, so it must never pass silently.
+    assert [response(event)["output_tokens"] for event in events] == [3]
+    assert flushed.failures == ("claude_response_oversized",)
+    assert [claude(gap)["reason"] for gap in gaps] == ["claude_response_oversized"]
+
+
 def test_wrong_session_id_records_a_durable_gap(tmp_path):
     project = uuid4()
     transcript = tmp_path / "session.jsonl"
