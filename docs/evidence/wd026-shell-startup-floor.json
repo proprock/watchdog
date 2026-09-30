@@ -1,0 +1,67 @@
+{
+  "schema_version": 1,
+  "os": "Windows-11-10.0.22621-SP0",
+  "scope": "no-op shell launch only; no adapter, no provider, no hook installation",
+  "launches": {
+    "powershell.exe -NoProfile -Command": {
+      "first_ms": 900.2,
+      "sequential": {
+        "samples": 40,
+        "p50_ms": 233.6,
+        "p95_ms": 358.5,
+        "max_ms": 635.3
+      },
+      "concurrent_four": {
+        "samples": 40,
+        "p50_ms": 457.0,
+        "p95_ms": 516.9,
+        "max_ms": 570.9
+      }
+    },
+    "powershell.exe -NoLogo -NoProfile -NonInteractive -Command": {
+      "first_ms": 237.9,
+      "sequential": {
+        "samples": 40,
+        "p50_ms": 227.9,
+        "p95_ms": 246.6,
+        "max_ms": 284.3
+      },
+      "concurrent_four": {
+        "samples": 40,
+        "p50_ms": 457.6,
+        "p95_ms": 536.2,
+        "max_ms": 539.0
+      }
+    },
+    "powershell.exe -Command (profile loaded)": {
+      "first_ms": 223.6,
+      "sequential": {
+        "samples": 40,
+        "p50_ms": 225.9,
+        "p95_ms": 251.5,
+        "max_ms": 264.2
+      },
+      "concurrent_four": {
+        "samples": 40,
+        "p50_ms": 449.5,
+        "p95_ms": 524.3,
+        "max_ms": 562.2
+      }
+    },
+    "cmd.exe /d /s /c": {
+      "first_ms": 61.2,
+      "sequential": {
+        "samples": 40,
+        "p50_ms": 39.4,
+        "p95_ms": 42.4,
+        "max_ms": 43.9
+      },
+      "concurrent_four": {
+        "samples": 40,
+        "p50_ms": 69.6,
+        "p95_ms": 87.9,
+        "max_ms": 92.1
+      }
+    }
+  }
+}

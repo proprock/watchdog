@@ -795,6 +795,72 @@ Codex. See [WD-022a Claude observation](#wd-022a-claude-observation-gate-met) an
 the [per-provider blocker table](../tmp-WD-024.md); what the Claude evidence does
 and does not prove about Codex is stated there.
 
+## WD-026 Codex Windows hook-runner cost (external limitation)
+
+2026-09-30, Windows 11 (10.0.22621), Windows PowerShell 5.1.22621.4249, installed
+`codex-cli 0.158.0` (WD-024 measured 0.153.3). The measurements below invoke no
+provider and install no hook; they isolate the cost of the shell that Codex chooses.
+They are synthetic and do not replace a measurement under the actual Codex runner.
+
+**Launch path, from the `rust-v0.158.0` source.** Codex selects the hook shell
+itself. `build_hooks_config` (`codex-rs/core/src/session/mod.rs`) copies the session
+shell's program and arguments into `HooksConfig`, and on Windows the session shell is
+always PowerShell: `get_powershell_shell()` prefers `pwsh` (user default shell, then
+`PATH`, then `C:\Program Files\PowerShell\7\pwsh.exe`) and falls back to Windows
+PowerShell. `[windows]` in `config.toml` has only `sandbox`; no setting chooses the
+shell (open requests: `openai/codex` #16579, #48678). `HookHandlerConfig::Command`
+has only `command`, `commandWindows`, `timeout`, `async`, `statusMessage`, and
+`additionalContextLimit`; there is no `shell`, argv, or exec form. The hook engine's
+`build_command` (`codex-rs/hooks/src/engine/command_runner.rs`) already accepts any
+`CommandShell {program, args}` and has a dedicated `cmd /c` branch, and an empty
+program means `cmd.exe /C` through `COMSPEC`. So only the configuration surface is
+missing, not the launch machinery. Release 0.158.0 changed command-hook spawning only
+for POSIX. Codex persists no per-hook duration in its rollout files on this host, so
+the actual-runner wall time is not observable offline.
+
+**Shell floor** ([evidence](evidence/wd026-shell-startup-floor.json), 40 samples,
+no adapter; `scripts/shell_startup_floor.py`, host CPU low):
+
+| No-op launch | Sequential p50 / p95 (ms) | Four callers p50 / p95 (ms) |
+|---|---:|---:|
+| `powershell.exe -NoLogo -NoProfile -NonInteractive -Command exit` | 228 / 247 | 458 / 536 |
+| `powershell.exe -Command exit` (profile loaded) | 226 / 252 | 450 / 524 |
+| `cmd.exe /d /s /c exit` | 39 / 42 | 70 / 88 |
+
+A `powershell.exe -NoProfile -Command exit` variant is omitted: it recorded a 900 ms
+first call and a 635 ms maximum from host noise in the same run.
+
+**Adapter through each launch mode** (`scripts/benchmark_hooks.py`, Rust adapter,
+100 samples per phase after a 20-call warm-up, host CPU 5-8% before each run, 221
+events per run, zero losses, restart preserved). Evidence:
+[cmd.exe](evidence/wd026-bench-cmd.exe.json),
+[powershell.exe](evidence/wd026-bench-powershell.exe.json),
+[direct](evidence/wd026-bench-direct.json).
+
+| Launch | Sequential p50 / p95 (ms) | Four callers p50 / p95 (ms) |
+|---|---:|---:|
+| `powershell.exe` (what Codex runs) | 259 / 296 | 575 / 708 |
+| `cmd.exe /d /s /c` | 70 / 87 | 178 / 235 |
+| Direct | 44 / 49 | 116 / 159 |
+
+PowerShell alone explains the WD-024 end-to-end figures; the adapter adds about
+30 ms on top of the empty-shell floor. Launching through `cmd.exe` would be 3.7x
+(p50) / 3.4x (p95) faster sequentially and 3.2x / 3.0x faster with four callers, and
+is the only measured mode other than a direct launch that meets the 250 ms target at
+p95 in both shapes. Earlier runs on a busier host showed the same ordering with
+unstable p95 values, which is why the benchmark now warms up, samples host CPU, and
+waits for `--max-host-cpu` before timing.
+
+**Decision.** The 250 ms target cannot be met through any supported Codex
+configuration: the shell is fixed by Codex, PowerShell 5.1 startup alone exceeds the
+target, and `commandWindows` runs inside that shell (the nested CMD variation already
+failed before handler start in WD-024). Keep the installed PowerShell
+`commandWindows` contract and the two-second timeout, which is about three times the
+measured four-way p95. Hooks stay observation-only with fail-open semantics, so the
+cost is latency Codex pays per hook, not lost events. The WD-024 figures are
+unchanged. The upstream request is a hook-level shell or argv setting, related to
+`openai/codex` #16579, #47810, and #26998; it is drafted but not filed.
+
 ## WD-008 CLI and performance baseline
 
 2026-09-06, Windows, CPython 3.12.13. New pytest cases first failed because the

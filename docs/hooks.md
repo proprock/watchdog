@@ -165,7 +165,7 @@ arrival and trusted by the daemon, so a replayed spool record yields the same
 event and the project store deduplicates it. Native handlers are synchronous
 with a two-second timeout; the launch-cost measurements are not a p95 whole-hook
 latency figure. WD-024 closed with recorded Windows shell-launch limitations; the
-final Codex hook-performance resolution is WD-026. WD-027 removed the per-hook
+Codex hook-performance limit is recorded under WD-026: Codex fixes the hook shell (PowerShell), whose empty startup already costs ~280 ms sequential / ~550 ms four-way. WD-027 removed the per-hook
 config parse, redaction-regex compile, and project-tree walks, cutting the
 synthetic concurrent four-caller p95 from 96 ms to 65 ms
 ([evidence](evidence/wd027-spool-bench.json)). Do not treat zero loss counters as
