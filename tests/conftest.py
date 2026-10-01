@@ -20,6 +20,9 @@ import os
 import subprocess
 from pathlib import Path
 
+import pytest
+
+from agent_watchdog import _proc
 from agent_watchdog._proc import hidden_creationflags
 
 _TRUTHY = {"1", "true", "yes", "on"}
@@ -50,6 +53,19 @@ def pytest_unconfigure(config):
     if _original_popen_init is not None:
         subprocess.Popen.__init__ = _original_popen_init
         _original_popen_init = None
+
+
+@pytest.fixture(autouse=True)
+def _keep_runner_priority():
+    """In-process CLI calls must not lower the priority of the pytest process itself.
+
+    Restores by hand: requesting ``monkeypatch`` here would reorder teardown for tests
+    that patch module state while other fixtures still write during their own teardown.
+    """
+    original = _proc.lower_own_priority
+    setattr(_proc, "lower_own_priority", lambda: None)  # noqa: B010
+    yield
+    setattr(_proc, "lower_own_priority", original)  # noqa: B010
 
 
 def local_corpus(root: Path = LOCAL_CORPUS) -> list[tuple[str, Path]]:

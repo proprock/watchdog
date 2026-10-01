@@ -13,6 +13,7 @@ import subprocess
 
 CREATE_NO_WINDOW = 0x08000000 if os.name == "nt" else 0
 _CONSOLE_MODES = 0x00000010 | 0x00000008  # CREATE_NEW_CONSOLE | DETACHED_PROCESS
+BELOW_NORMAL_PRIORITY_CLASS = 0x00004000
 
 
 def hidden_creationflags(existing: int = 0) -> int:
@@ -20,6 +21,26 @@ def hidden_creationflags(existing: int = 0) -> int:
     if os.name != "nt" or existing & _CONSOLE_MODES:
         return existing
     return existing | CREATE_NO_WINDOW
+
+
+def lower_own_priority() -> None:
+    """Run the current process below normal priority so hook handling keeps the CPU.
+
+    Best effort: a refusal leaves the priority unchanged. Used by long read-only
+    analysis commands, never by the daemon or the hook path.
+    """
+    try:
+        if os.name == "nt":
+            import ctypes
+
+            kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+            kernel32.GetCurrentProcess.restype = ctypes.c_void_p
+            kernel32.SetPriorityClass.argtypes = [ctypes.c_void_p, ctypes.c_uint32]
+            kernel32.SetPriorityClass(kernel32.GetCurrentProcess(), BELOW_NORMAL_PRIORITY_CLASS)
+        else:
+            os.nice(5)
+    except (OSError, AttributeError):
+        pass
 
 
 def run(*args, **kwargs):

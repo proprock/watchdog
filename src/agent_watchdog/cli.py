@@ -418,7 +418,7 @@ def main() -> int:
             "pin",
             "purge",
         ):
-            from agent_watchdog import inspection
+            from agent_watchdog import _proc, inspection
 
             if args.command == "doctor":
                 report = inspection.doctor(paths)
@@ -429,6 +429,7 @@ def main() -> int:
                 print(json.dumps(report))
                 return 0 if report["ok"] else 1
             if args.command == "overview":
+                _proc.lower_own_priority()
                 report = inspection.overview(
                     paths,
                     since=args.since,

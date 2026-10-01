@@ -13,7 +13,7 @@ from test_insights import _finish
 from test_pricing import TARIFFS
 from test_storage_v6 import BASE, build_v5
 
-from agent_watchdog import inspection
+from agent_watchdog import _proc, inspection
 from agent_watchdog.cli import main
 from agent_watchdog.config import Config, Project, UserPaths, save_config
 from agent_watchdog.events import Envelope
@@ -253,6 +253,18 @@ def test_tariffs_add_a_labeled_estimate_and_a_bad_file_fails_the_command(
     bad.write_text('["2026-01-01"]\n"m" = { input = "-1" }\n', encoding="utf-8")
     code, _ = overview(monkeypatch, capsys, tmp_path, "--tariffs", str(bad))
     assert code == 1
+
+
+def test_overview_runs_at_a_lower_priority_than_hook_handling(tmp_path, monkeypatch, capsys):
+    # The analysis is CPU-bound; a measured hook-latency regression disappeared at
+    # below-normal priority (docs/verification.md, WD-138).
+    register(tmp_path, "a", seeded=("a",))
+    calls = []
+    monkeypatch.setattr(_proc, "lower_own_priority", lambda: calls.append(True))
+
+    overview(monkeypatch, capsys, tmp_path)
+
+    assert calls == [True]
 
 
 def test_overview_writes_nothing(tmp_path, monkeypatch, capsys):
