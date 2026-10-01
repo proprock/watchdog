@@ -125,6 +125,16 @@ def checkout_verdicts(db: sqlite3.Connection) -> list[dict]:
     ]
 
 
+def _has_facts(db: sqlite3.Connection) -> bool:
+    """Schema v6+ keeps ``events.provider`` and ``event_facts`` filled for every event."""
+    return db.execute("PRAGMA user_version").fetchone()[0] >= 6
+
+
+def _provider_expression(db: sqlite3.Connection) -> str:
+    """Read the provider from its column when it exists, else parse every envelope."""
+    return "provider" if _has_facts(db) else "json_extract(envelope, '$.provider')"
+
+
 def _turn_windows(
     db: sqlite3.Connection, checkouts: set[str]
 ) -> dict[str, list[tuple[str, datetime, datetime | None]]]:
@@ -137,13 +147,23 @@ def _turn_windows(
     if not checkouts:
         return {}
     placeholders = ",".join("?" for _ in checkouts)
-    rows = db.execute(
-        "SELECT json_extract(envelope, '$.checkout_id'), session_id, kind, received_at "
-        f"FROM events WHERE json_extract(envelope, '$.checkout_id') IN ({placeholders}) "
-        "AND kind IN ('turn.start', 'turn.end') AND session_id IS NOT NULL "
-        "ORDER BY received_at, rowid",
-        tuple(checkouts),
-    ).fetchall()
+    if _has_facts(db):
+        rows = db.execute(
+            "SELECT f.checkout_id, e.session_id, e.kind, e.received_at "
+            "FROM events e JOIN event_facts f USING (event_id) "
+            f"WHERE f.checkout_id IN ({placeholders}) "
+            "AND e.kind IN ('turn.start', 'turn.end') AND e.session_id IS NOT NULL "
+            "ORDER BY e.received_at, e.rowid",
+            tuple(checkouts),
+        ).fetchall()
+    else:
+        rows = db.execute(
+            "SELECT json_extract(envelope, '$.checkout_id'), session_id, kind, received_at "
+            f"FROM events WHERE json_extract(envelope, '$.checkout_id') IN ({placeholders}) "
+            "AND kind IN ('turn.start', 'turn.end') AND session_id IS NOT NULL "
+            "ORDER BY received_at, rowid",
+            tuple(checkouts),
+        ).fetchall()
     open_turns: dict[tuple[str, str], datetime] = {}
     windows: dict[str, list[tuple[str, datetime, datetime | None]]] = defaultdict(list)
     for checkout_id, session_id, kind, received_at in rows:
@@ -352,6 +372,45 @@ def show(
     }
 
 
+def _analysis_inputs(
+    db: sqlite3.Connection, provider: str, session_id: str | None
+) -> tuple[list[str], list[dict[str, object]]]:
+    """Read envelope documents and diff snapshots for one provider/session, unparsed.
+
+    The caller parses after its read snapshot ends: parsing is the CPU-bound part, and
+    an open snapshot keeps the daemon's WAL checkpoint from completing.
+    """
+    condition = f"{_provider_expression(db)}=?"
+    parameters: list[object] = [provider]
+    if session_id is not None:
+        condition += " AND session_id=?"
+        parameters.append(session_id)
+    documents = [
+        row[0]
+        for row in db.execute(
+            f"SELECT envelope FROM events WHERE {condition} ORDER BY rowid", parameters
+        )
+    ]
+    table = db.execute(
+        "SELECT 1 FROM sqlite_master WHERE type='table' AND name='diff_snapshots'"
+    ).fetchone()
+    if table is None or not documents:
+        return documents, []
+    if _has_facts(db):
+        checkout_column, source = "checkout_id", "event_facts"
+    else:
+        checkout_column, source = "json_extract(envelope, '$.checkout_id')", "events"
+    checkouts = {
+        row[0]
+        for row in db.execute(
+            f"SELECT DISTINCT {checkout_column} FROM {source} WHERE {condition} "
+            f"AND {checkout_column} IS NOT NULL",
+            parameters,
+        )
+    }
+    return documents, snapshots_for_checkouts(db, checkouts)
+
+
 def report(
     paths: UserPaths,
     project: Project,
@@ -363,34 +422,18 @@ def report(
     from agent_watchdog.analysis import analyze
 
     with database(paths, project) as db:
-        condition = "json_extract(envelope, '$.provider')=?"
-        parameters: list[object] = [provider]
-        if session_id is not None:
-            condition += " AND session_id=?"
-            parameters.append(session_id)
-        rows = db.execute(
-            f"SELECT envelope FROM events WHERE {condition} ORDER BY rowid", parameters
-        ).fetchall()
-        if session_id is not None and not rows:
+        documents, snapshots = _analysis_inputs(db, provider, session_id)
+        if session_id is not None and not documents:
             raise StorageError("Unknown session in the selected project/provider")
-        snapshots: list[dict[str, object]] = []
-        table = db.execute(
-            "SELECT 1 FROM sqlite_master WHERE type='table' AND name='diff_snapshots'"
-        ).fetchone()
-        if table is not None:
-            checkouts = {
-                str(event.checkout_id)
-                for event in (persisted_envelope(row[0]) for row in rows)
-                if event.checkout_id is not None
-            }
-            snapshots = snapshots_for_checkouts(db, checkouts)
-    result = analyze((persisted_envelope(row[0]) for row in rows), snapshots=snapshots)
-    with database(paths, project) as db:
         # Manual verdicts recorded by a calibration review; absent until WD-012 runs.
-        result["verdicts"] = session_verdicts(db, provider, session_id)
-        result["checkout_verdicts"] = checkout_verdicts(db)
-        if session_id is not None:
-            result = _apply_label(result, session_label(db, provider, session_id))
+        verdicts = session_verdicts(db, provider, session_id)
+        checkout = checkout_verdicts(db)
+        label = session_label(db, provider, session_id) if session_id is not None else None
+    result = analyze((persisted_envelope(document) for document in documents), snapshots=snapshots)
+    result["verdicts"] = verdicts
+    result["checkout_verdicts"] = checkout
+    if label is not None:
+        result = _apply_label(result, label)
     return {"project_id": str(project.id), "provider": provider, **result}
 
 
@@ -795,7 +838,7 @@ def summary(paths: UserPaths) -> dict:
                     event_count = db.execute("SELECT COUNT(*) FROM events").fetchone()[0]
                     session_count = db.execute(
                         "SELECT COUNT(*) FROM ("
-                        "SELECT json_extract(envelope, '$.provider'), session_id "
+                        f"SELECT {_provider_expression(db)}, session_id "
                         "FROM events WHERE session_id IS NOT NULL GROUP BY 1, 2)"
                     ).fetchone()[0]
                     state = {"state": "ready"}

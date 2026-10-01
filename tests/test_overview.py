@@ -2,7 +2,9 @@
 
 import json
 import sys
-from datetime import timedelta
+from collections import Counter
+from contextlib import contextmanager
+from datetime import UTC, datetime, timedelta
 from hashlib import sha256
 from uuid import uuid4
 
@@ -11,8 +13,10 @@ from test_insights import _finish
 from test_pricing import TARIFFS
 from test_storage_v6 import BASE, build_v5
 
+from agent_watchdog import inspection
 from agent_watchdog.cli import main
 from agent_watchdog.config import Config, Project, UserPaths, save_config
+from agent_watchdog.events import Envelope
 from agent_watchdog.storage import Store
 
 
@@ -67,6 +71,116 @@ def test_findings_count_a_fired_rule_per_provider(tmp_path, monkeypatch, capsys)
     by_provider = rows(result)["loopy"]["findings"]["by_provider"]
     assert by_provider["claude"]["by_rule"].get("repeated_tool_outcome", 0) >= 1, by_provider
     assert by_provider["codex"]["by_rule"] == {}
+
+
+def _turn(project, checkout, session, kind, at):
+    return Envelope(
+        provider="codex",
+        project_id=project.id,
+        checkout_id=checkout,
+        session_id=session,
+        kind=kind,
+        source="hook",
+        received_at=at,
+    )
+
+
+def _noisy_events(project, checkout):
+    """Both providers fire a repeat rule; the codex checkout also oscillates."""
+    start = datetime(2026, 9, 21, tzinfo=UTC)
+    events = [
+        _finish(project.id, at=at, provider=provider, session_id=f"{provider}-s")
+        for provider in ("claude", "codex")
+        for at in range(3)
+    ]
+    events += [
+        _turn(project, checkout, "codex-s", "turn.start", start),
+        _turn(project, checkout, "codex-s", "turn.end", start + timedelta(seconds=10)),
+    ]
+    return events
+
+
+def _expected_per_provider(paths, project):
+    expected = {}
+    for provider in ("codex", "claude"):
+        found = inspection.report(paths, project, session_id=None, provider=provider)
+        expected[provider] = {
+            "by_rule": dict(Counter(finding["rule"] for finding in found["findings"])),
+            "gaps": found["gaps"],
+        }
+    return expected
+
+
+def test_overview_findings_equal_the_per_provider_report(tmp_path, monkeypatch, capsys):
+    paths, projects = register(tmp_path, "noisy")
+    project, checkout = projects["noisy"], uuid4()
+    start = datetime(2026, 9, 21, tzinfo=UTC)
+    with Store(paths.project_data(project.id), project.id) as store:
+        for event in _noisy_events(project, checkout):
+            store.put(event)
+        for step, fingerprint in enumerate("121"):
+            store.record_diff_snapshot(
+                checkout, fingerprint * 64, 10, observed_at=start + timedelta(seconds=step + 1)
+            )
+
+    _, result = overview(monkeypatch, capsys, tmp_path)
+
+    found = rows(result)["noisy"]["findings"]["by_provider"]
+    assert found == _expected_per_provider(paths, project)
+    assert "repeated_tool_outcome" in found["claude"]["by_rule"], found
+    assert "repeated_tool_outcome" in found["codex"]["by_rule"], found
+    assert "diff_oscillation" in found["codex"]["by_rule"], found
+
+
+def test_overview_findings_on_a_pre_v6_store_equal_the_per_provider_report(
+    tmp_path, monkeypatch, capsys
+):
+    paths, projects = register(tmp_path, "old")
+    project = projects["old"]
+    root = paths.project_data(project.id)
+    root.mkdir(parents=True)
+    build_v5(root, project.id, _noisy_events(project, uuid4()))
+
+    _, result = overview(monkeypatch, capsys, tmp_path)
+
+    found = rows(result)["old"]["findings"]["by_provider"]
+    assert found == _expected_per_provider(paths, project)
+    assert found["claude"]["by_rule"] and found["codex"]["by_rule"], found
+
+
+def test_each_event_is_parsed_once_and_never_inside_the_read_snapshot(tmp_path, monkeypatch):
+    paths, projects = register(tmp_path, "noisy")
+    project = projects["noisy"]
+    events = _noisy_events(project, uuid4())
+    with Store(paths.project_data(project.id), project.id) as store:
+        for event in events:
+            store.put(event)
+    open_snapshots = 0
+    parsed = 0
+    real_database, real_parse = inspection.database, inspection.persisted_envelope
+
+    @contextmanager
+    def tracked(*args):
+        nonlocal open_snapshots
+        open_snapshots += 1
+        try:
+            with real_database(*args) as db:
+                yield db
+        finally:
+            open_snapshots -= 1
+
+    def counting(document):
+        nonlocal parsed
+        assert open_snapshots == 0, "parsing must not hold the read snapshot open"
+        parsed += 1
+        return real_parse(document)
+
+    monkeypatch.setattr(inspection, "database", tracked)
+    monkeypatch.setattr(inspection, "persisted_envelope", counting)
+
+    inspection.overview(paths, since=None, until=None)
+
+    assert parsed == len(events)
 
 
 def test_a_project_without_a_database_is_unknown_not_zero(tmp_path, monkeypatch, capsys):
