@@ -61,6 +61,8 @@ Extends [`summary`](#summary) with, per registered project: `usage` (raw token s
 
 Each project is read through its own short-lived read-only snapshots and nothing is merged or written. A project without a database has `null` sections and makes `complete` false. A database older than schema v6 has `usage: {"state": "unsupported", ...}` and keeps `findings`. A database error marks that row `error`, sets `ok` to false, and returns exit code 1; other projects are still reported. An invalid tariff file fails the command once, before any project is read.
 
+The analysis is CPU-bound, so the command lowers its own process priority and does not compete with hook handling.
+
 ## Pipeline telemetry
 
 ```console

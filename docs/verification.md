@@ -195,6 +195,27 @@ All three used the remembered 800000-token budget with nothing truncated. Sessio
 - **Limits.** No tariff file was passed, so the estimate path is covered by offline tests only. The findings pass re-analyzes every retained event of a project on each call.
 - **Latency split (WD-136, 2026-10-01).** Same store and window, code called in-process (`inspection.overview` and its parts), two warm runs. `overview` took 9.3 s both times (9.32, 9.27). Python import took 0.7 s. `summary` alone took 1.3-1.7 s. Per project, `usage` took 0.50 s and 0.21 s for the two large projects and 0.01 s for each small one. The per-provider `report` passes took 1.6 s and 2.6 s (project 1), 1.5 s and 1.2 s (project 2), and at most 0.06 s for each small project. The `report` passes are about 6.9 s, roughly three quarters of the total; `summary` counting and usage add about 2.4 s, and start-up is under 1 s. So the cost is in-process analysis that every call repeats, not `uv run` start-up.
 
+### WD-138 `overview` speed and hook latency
+
+2026-10-01, same host (4 logical cores) and four registered projects. The live store keeps growing, so before/after runs used one consistent copy of the live databases (SQLite backup into a scratch directory), the code at `HEAD` before the change against the changed code, `--since 2026-09-01T00:00:00+00:00`.
+
+- **Cause (profile of the baseline, 9.3 s).** Every envelope was validated twice in `report()` (72534 validations for 36267 events, about 2.7 s). SQLite spent about 4 s, mostly in `json_extract` scans: `summary` grouped sessions by `json_extract(provider)` (0.95 s on the largest project against 0.14 s on the column), each provider pass filtered by it again, and `_turn_windows` extracted `checkout_id` from every envelope. The rest of `analyze` took about 2.2 s.
+- **Change.** Parse once and outside the read snapshot; on schema v6+ read `events.provider` and `event_facts.checkout_id` (both verified equal to the envelope on all 36 thousand live rows, no NULL provider); keep the envelope fallback below v6.
+- **Result.** In-process `overview`: 8.3-9.2 s before (8.26, 9.23, 8.78, 9.10), 5.1-5.4 s after (5.17, 5.13, 5.33, 5.37). Through the CLI on the live store: 6.4 s and 6.5 s (9.4 s recorded for WD-016), at below-normal priority. Peak working set is unchanged, 275-277 MB.
+- **Same output.** The `overview` JSON and all 28 `report()` results (project-wide per provider, plus up to the six largest sessions per project, with verdicts and labels) are byte-identical before and after on the copy.
+- **Left over.** About 1.7 s validation, 2.3 s `analyze`, 1.3 s SQLite and `usage` (profiled 6.3 s). A process pool over (project, provider) with two workers took 3.2-3.3 s in a prototype; three and four workers on four logical cores were noisy (2.9-5.1 s and 4.1-5.1 s). It was not adopted: a gain of about 2 s on a rarely run command does not justify spawn handling and more CPU contention with hooks. Skipping pydantic validation on the read path would save 1-1.5 s but drops the provider-namespace and replay-identity checks that `export`, `insights`, and `sessions` share; not done.
+- **Hook latency under load.** `scripts/benchmark_hooks.py` (Rust adapter, 40 samples, isolated daemon) while `overview` ran back to back on the scratch copy, which is the worst case. p95 in ms, sequential / four-way:
+
+  | Condition | Runs |
+  |---|---|
+  | No load | 91 / 185, 85 / 297 |
+  | `overview` at normal priority | 130 / 598, 382 / 278, 46 / 211, 193 / 462 |
+  | `overview` at below-normal priority | 52 / 207, 53 / 180 |
+
+  At normal priority the p95 clearly rose in some runs; at below-normal it stayed inside the no-load range. The runs are few and the host was noisy (20-100 % CPU between runs), so this is evidence for the decision, not a precise bound. No delivery was lost or left undrained in any run. The `overview` command therefore lowers its own priority (`_proc.lower_own_priority`, Windows `SetPriorityClass`, POSIX `nice`).
+- **Daemon and WAL.** The stores are WAL, so readers never block the writer. No `-wal` file existed on the live databases during the measurement, so growth from a pinned checkpoint was not observable; the read snapshot now ends before any parsing, which is what limits that pin.
+- **Checks.** Full offline `uv run pytest`: 767 passed, 1 skipped in 131 s. This was the fallback: graph coverage for the changed files still reported `metadata_changed` after a fast re-index, and the diff touches `tests/conftest.py`. Ruff check/format and `ty check` pass. `LIVE.md` is not updated (not an observation or control change).
+
 ### WD-133 `sessions` on the live store
 
 2026-09-30, same host and CLI (Claude Code 2.1.283), project `watchdog`, `--days 7`, paths copied from the installed hook.
