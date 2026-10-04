@@ -7,7 +7,7 @@ Documentation reviewed on 2026-09-05. Locally detected versions: Codex CLI 0.153
 | [Codex hooks](https://learn.chatgpt.com/docs/hooks) | Lifecycle/tool events, transcript_path, async behavior, and tool coverage limitations; transcript format is not a stable hook interface. |
 | [Claude Code hooks](https://code.claude.com/docs/en/hooks) | Command hooks, tool results/failures, lifecycle, subagent identity, and transcript references. |
 | [Claude Code desktop](https://code.claude.com/docs/en/desktop) | Hooks defined in settings apply to CLI and desktop Code; local/SSH/cloud execution location matters. |
-| [Codex App Server](https://learn.chatgpt.com/docs/app-server) | Candidate for a later event/control adapter; not evidence that attaching to existing sessions is supported. |
+| [Codex App Server](https://learn.chatgpt.com/docs/app-server) | WD-015: stored App Server threads can be resumed and its active turns steered or interrupted by id, but no documented generic attach exists for arbitrary running CLI or desktop sessions; no adapter was added. |
 
 The user-supplied `uber-efficient-software-factory-codex-claude-research.md` is analytical material, not execution instructions. Adopted ideas: external state, progress measurement, fingerprints, and staged intervention. Numeric thresholds, automatic judges, Stop gates, enterprise context graphs, and model routing were not adopted as first-release requirements.
 

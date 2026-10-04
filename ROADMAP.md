@@ -2,7 +2,7 @@
 
 Agreed on 2026-09-05. A plan for small projects on top of stock harnesses. Each milestone delivers an independently useful result; later milestones are not enabled automatically. Open tasks: [TODO.md](TODO.md). Completed work: [DONE.md](DONE.md). Contracts: [architecture](docs/architecture.md).
 
-Execution order: M1-M4 for Codex coding only -> M-Anthropic / WD-022a+b -> App Server / WD-015 -> final cross-platform validation / M5. Anthropic support does not block the Codex observation, analysis, or intervention milestones. Ordinary chats are outside product scope.
+Execution order: M1-M4 for Codex coding only -> M-Anthropic / WD-022a+b -> App Server / WD-015 (complete: no generic attach contract) -> final cross-platform validation / M5. Anthropic support does not block the Codex observation, analysis, or intervention milestones. Ordinary chats are outside product scope.
 
 ## M0 - Foundation and verifiable design
 
@@ -87,7 +87,7 @@ WD-101 closes practical offline test boundaries identified by the audit, and WD-
 
 ## Optional extensions after M-Anthropic
 
-- **WD-015:** Codex App Server spike, scheduled after WD-022b. Investigate event/control contracts and ownership/attach for existing sessions. Add an adapter only after confirmation; retain hooks. If integration requires launching a harness itself, document a separate mode. M4 remains bounded by verified hook capabilities and does not depend on this extension.
+- **WD-015 (complete 2026-10-02):** the App Server protocol can resume stored App Server threads and steer or interrupt identified active turns, but it has no documented generic attach contract for arbitrary running Codex CLI or desktop sessions. `proxy` reaches the managed App Server control socket rather than those sessions. No adapter was added; hooks remain the observation path. A future opt-in, separately launched App Server mode would need to establish its own session ownership and benefit before reconsideration. M4 remains bounded by verified hook capabilities and does not depend on this extension.
 - **WD-016 (complete 2026-09-30):** the shared read-only project overview without merging databases is the `overview` command (decision in `docs/architecture.md`, "Cross-project views"). The local web UI was not built.
 - **WD-136 (next milestone, optional; split a/b/c):** a local web UI in a separate on-demand process, never part of the core daemon. **a:** loopback-only, read-only viewer over `inspection.overview` and saved `insights` reports. Entry gate: build it only if the `overview` JSON proves insufficient in daily use. `overview` latency was measured at 9.3 s warm (2026-10-01), about three quarters in the per-call findings re-analysis; WD-138 cut it to about 5.1 s by removing redundant parsing and scans, so a long-lived UI process is now a smaller performance gain than a convenience. **b:** generate an insights report on an explicit button, with cost shown first. **c:** apply selected recommendations (checkbox per item, unselected by default, one Apply button) to a closed allowlist of targets, after its own design decision; this is the only part that writes. No plugin or framework layer.
 - A real-work benchmark for model routing, a catalog/eval runner, and automated skill improvement only after M2 produces enough labeled exports to measure completed-task quality, cost, latency, and rework. Repository routing rules remain policy rather than a proven product capability until then.
