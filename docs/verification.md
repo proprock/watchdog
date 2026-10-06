@@ -216,6 +216,15 @@ All three used the remembered 800000-token budget with nothing truncated. Sessio
 - **Daemon and WAL.** The stores are WAL, so readers never block the writer. No `-wal` file existed on the live databases during the measurement, so growth from a pinned checkpoint was not observable; the read snapshot now ends before any parsing, which is what limits that pin.
 - **Checks.** Full offline `uv run pytest`: 767 passed, 1 skipped in 131 s. This was the fallback: graph coverage for the changed files still reported `metadata_changed` after a fast re-index, and the diff touches `tests/conftest.py`. Ruff check/format and `ty check` pass. `LIVE.md` is not updated (not an observation or control change).
 
+### WD-139 Codex hook-context live probe
+
+2026-10-06, Windows AMD64, Codex CLI 0.160.0. The opt-in `codex-context` probe used a temporary profile and a scratch Git repository outside every registered project. It ran one harmless Bash call and did not call the Watchdog adapter.
+
+- **Result.** `UserPromptSubmit` and `PostToolUse` matched as `Bash` each fired once. Each hook's `hookSpecificOutput.additionalContext` alias appeared in both the final model response and the retained Codex rollout, so both capabilities are **supported** for this CLI/version.
+- **Safety and cleanup.** The temporary profile and scratch repository were removed; the base user configuration was unchanged. The Codex rollout was intentionally retained only long enough to prove read-back; its path and content are not recorded.
+- **Limitation.** This proves two context-delivery events on one Windows CLI build and one harmless Bash command. It does not prove Codex desktop behavior, decision controls, other hook events, or any Claude Code case. WD-139 therefore remains open for the out-of-scope cases.
+- **Evidence.** [wd139-hook-control.json](evidence/wd139-hook-control.json) follows `watchdog.probe-result.v1` and retains only event aliases, field names, counts, versions, and cleanup state.
+
 ### WD-133 `sessions` on the live store
 
 2026-09-30, same host and CLI (Claude Code 2.1.283), project `watchdog`, `--days 7`, paths copied from the installed hook.
