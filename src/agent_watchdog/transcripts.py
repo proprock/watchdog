@@ -22,7 +22,7 @@ from typing import TYPE_CHECKING, Any, BinaryIO, Literal, cast
 from uuid import NAMESPACE_URL, uuid5
 
 from agent_watchdog.events import Availability, Envelope
-from agent_watchdog.storage import RejectedEvent, StorageError
+from agent_watchdog.storage import RejectedEvent, StorageError, sqlite_integer
 
 if TYPE_CHECKING:
     from agent_watchdog.storage import Store
@@ -204,7 +204,12 @@ def _signature(path: Path) -> tuple[int, int, int, int]:
     stat = path.stat()
     if not path.is_file() or path.is_symlink():
         raise UnsupportedTranscript("transcript_path_not_regular")
-    return stat.st_dev, stat.st_ino, stat.st_size, stat.st_mtime_ns
+    return (
+        sqlite_integer(stat.st_dev),
+        sqlite_integer(stat.st_ino),
+        sqlite_integer(stat.st_size),
+        sqlite_integer(stat.st_mtime_ns),
+    )
 
 
 def _counters(value: object) -> dict[str, int | None]:

@@ -25,6 +25,9 @@ FINDING_VERDICTS = ("true_positive", "false_positive", "uncertain")
 # A transcript reader's stored ``tail``: one unfinished line of up to 32 MiB
 # (``transcripts.MAX_LINE_BYTES``) after a held Claude response of up to 512 KiB.
 TRANSCRIPT_TAIL_BYTES = 33 * 1024**2
+SQLITE_INTEGER_MIN = -(2**63)
+SQLITE_INTEGER_MAX = 2**63 - 1
+SQLITE_UNSIGNED_INTEGER_MAX = 2**64 - 1
 
 
 class StorageError(ValueError):
@@ -41,6 +44,15 @@ class RejectedEvent(StorageError):
 
 class QuotaExceeded(StorageError):
     """No room for another write; retained input may be retried after cleanup."""
+
+
+def sqlite_integer(value: int) -> int:
+    """Encode an unsigned filesystem identifier in SQLite's signed INTEGER range."""
+    if SQLITE_INTEGER_MIN <= value <= SQLITE_INTEGER_MAX:
+        return value
+    if 0 <= value <= SQLITE_UNSIGNED_INTEGER_MAX:
+        return value - (SQLITE_UNSIGNED_INTEGER_MAX + 1)
+    raise StorageError("Integer is outside SQLite range")
 
 
 def _check_verdict(rule: str, rule_version: str, fingerprint: str, verdict: str) -> None:
@@ -590,6 +602,10 @@ class Store:
         if offset < 0 or len(tail) > TRANSCRIPT_TAIL_BYTES:
             raise StorageError("Invalid transcript reader state")
         serialized = json.dumps(counters, sort_keys=True) if counters is not None else None
+        identifiers = tuple(
+            sqlite_integer(value) if value is not None else None
+            for value in (device, inode, size, mtime)
+        )
         with self._transaction() as db:
             db.execute(
                 "UPDATE transcript_sources SET reader=?, device=?, inode=?, size=?, mtime=?, "
@@ -597,10 +613,7 @@ class Store:
                 "WHERE provider=? AND session_id=? AND path=?",
                 (
                     reader,
-                    device,
-                    inode,
-                    size,
-                    mtime,
+                    *identifiers,
                     offset,
                     tail,
                     serialized,

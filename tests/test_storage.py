@@ -331,6 +331,37 @@ def test_v1_and_v2_databases_migrate_transcript_reader_state(tmp_path, event, ve
         assert store.transcript_sources() == []
 
 
+def test_transcript_source_accepts_unsigned_windows_stat_values(tmp_path, event):
+    source = {"provider": "codex", "session_id": "session-1", "path": "transcript.jsonl"}
+    with Store(tmp_path, event.project_id) as store:
+        store.connection.execute(
+            "INSERT INTO transcript_sources (provider, session_id, path, last_seen) "
+            "VALUES (?, ?, ?, ?)",
+            (*source.values(), "2026-10-06T00:00:00+00:00"),
+        )
+        store.update_transcript_source(
+            source,
+            reader="codex-rollout-v1",
+            device=2**63,
+            inode=2**64 - 1,
+            size=2**63,
+            mtime=2**64 - 1,
+            offset=0,
+            tail=b"",
+            counters=None,
+            last_error=None,
+            error_signature=None,
+        )
+        stored = store.transcript_sources()[0]
+
+    assert (stored["device"], stored["inode"], stored["size"], stored["mtime"]) == (
+        -(2**63),
+        -1,
+        -(2**63),
+        -1,
+    )
+
+
 @pytest.mark.parametrize("missing", ["event_id", "received_at", "schema_version"])
 def test_persisted_envelope_cannot_generate_new_identity_on_replay(tmp_path, event, missing):
     inbox = Inbox(tmp_path)
