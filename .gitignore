@@ -13,3 +13,4 @@ native/target/
 Thumbs.db
 /LIVE.md
 /tests/local/
+*.agents.md
