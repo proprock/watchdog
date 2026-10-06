@@ -1,0 +1,5202 @@
+[
+  {
+    "capabilities": {
+      "agent-deny": {
+        "callbacks": {
+          "PreToolUse": {
+            "input_fields": [
+              "cwd",
+              "hook_event_name",
+              "permission_mode",
+              "prompt_id",
+              "session_id",
+              "tool_input",
+              "tool_name",
+              "tool_use_id",
+              "transcript_path"
+            ],
+            "observed": 1,
+            "tool_names": [
+              "Agent"
+            ]
+          },
+          "SubagentStart": {
+            "input_fields": [],
+            "observed": 0,
+            "tool_names": []
+          }
+        },
+        "models": [
+          "claude-haiku-4-5-20251001"
+        ],
+        "response_shape": "hookSpecificOutput.permissionDecision=deny",
+        "state": "supported"
+      }
+    },
+    "classification": "live_provider",
+    "cleanup": {
+      "complete": true,
+      "remaining_state": null,
+      "resources": [
+        {
+          "action": "removed",
+          "alias": "temporary-claude-settings",
+          "detail": "Passed with --settings; user and project settings were not loaded.",
+          "evidence": "Scratch directory check",
+          "failure_attribution": "not_applicable",
+          "kind": "hook_installation",
+          "state": "confirmed"
+        },
+        {
+          "action": "removed",
+          "alias": "scratch-repository",
+          "detail": null,
+          "evidence": "Scratch directory check",
+          "failure_attribution": "not_applicable",
+          "kind": "temporary_state",
+          "state": "confirmed"
+        },
+        {
+          "action": "removed",
+          "alias": "claude-project-state",
+          "detail": "Claude's per-directory state for the scratch repository.",
+          "evidence": "Directory check",
+          "failure_attribution": "not_applicable",
+          "kind": "temporary_state",
+          "state": "confirmed"
+        }
+      ]
+    },
+    "finished_at": "2026-10-06T21:31:04.313145Z",
+    "format_version": "watchdog.probe-result.v1",
+    "provenance": {
+      "adapter": {
+        "invocation": "provider",
+        "name": "none",
+        "version": null
+      },
+      "harness": {
+        "name": "claude-cli",
+        "version": "2.1.292"
+      },
+      "os": {
+        "architecture": "AMD64",
+        "name": "Windows",
+        "version": null
+      },
+      "provider": {
+        "name": "claude",
+        "surface": "cli",
+        "version": "2.1.292"
+      },
+      "source": {
+        "kind": "generated-workload",
+        "sanitized_reference": "wd139-agent-deny"
+      }
+    },
+    "record_id": "wd139-claude-cli-agent-deny-2026-10-06-attempt-1",
+    "result": {
+      "limitations": [
+        "One Windows Claude Code CLI version, haiku main model, one scripted prompt."
+      ],
+      "state": "passed"
+    },
+    "scope": {
+      "expected_callback_kinds": [
+        "PreToolUse",
+        "SubagentStart"
+      ],
+      "expected_deliveries": 1,
+      "isolation": "scratch Git repository outside registered projects and a --settings file",
+      "notes": "One capability per run; hook inputs and outputs stayed in scratch."
+    },
+    "stages": {
+      "adapter": {
+        "evidence": "The probe calls no Watchdog adapter.",
+        "failure_category": null,
+        "starts": 0,
+        "state": "not_invoked"
+      },
+      "callbacks": {
+        "evidence": "Minimum expected count per event; input shapes are in capabilities.",
+        "expected": 1,
+        "missing": 0,
+        "missing_attribution": "not_applicable",
+        "observed": 1
+      },
+      "end_to_end_delivery": {
+        "evidence": "Read back from the stream-json output of the same run.",
+        "expected": 1,
+        "failure_attribution": "not_applicable",
+        "failure_detail": null,
+        "persisted": 1,
+        "read_back": 1,
+        "state": "confirmed"
+      },
+      "persistence": {
+        "accepted": 0,
+        "evidence": "Not applicable: the probe does not exercise Watchdog persistence.",
+        "losses": []
+      },
+      "provider_dispatch": {
+        "attempts": 1,
+        "detail": null,
+        "evidence": "Claude emitted a result event",
+        "state": "confirmed"
+      },
+      "retries": {
+        "count": 0,
+        "evidence": "One run per case.",
+        "outcome": "not_attempted",
+        "reason": null,
+        "scopes": []
+      }
+    },
+    "started_at": "2026-10-06T21:30:56.805542Z"
+  },
+  {
+    "capabilities": {
+      "agent-rewrite": {
+        "callbacks": {
+          "PreToolUse": {
+            "input_fields": [
+              "cwd",
+              "hook_event_name",
+              "permission_mode",
+              "prompt_id",
+              "session_id",
+              "tool_input",
+              "tool_name",
+              "tool_use_id",
+              "transcript_path"
+            ],
+            "observed": 1,
+            "tool_names": [
+              "Agent"
+            ]
+          },
+          "SubagentStart": {
+            "input_fields": [
+              "agent_id",
+              "agent_type",
+              "cwd",
+              "hook_event_name",
+              "prompt_id",
+              "session_id",
+              "transcript_path"
+            ],
+            "observed": 1,
+            "tool_names": []
+          }
+        },
+        "models": [
+          "claude-haiku-4-5-20251001",
+          "claude-sonnet-5-5"
+        ],
+        "response_shape": "hookSpecificOutput.updatedInput.model",
+        "state": "supported"
+      }
+    },
+    "classification": "live_provider",
+    "cleanup": {
+      "complete": true,
+      "remaining_state": null,
+      "resources": [
+        {
+          "action": "removed",
+          "alias": "temporary-claude-settings",
+          "detail": "Passed with --settings; user and project settings were not loaded.",
+          "evidence": "Scratch directory check",
+          "failure_attribution": "not_applicable",
+          "kind": "hook_installation",
+          "state": "confirmed"
+        },
+        {
+          "action": "removed",
+          "alias": "scratch-repository",
+          "detail": null,
+          "evidence": "Scratch directory check",
+          "failure_attribution": "not_applicable",
+          "kind": "temporary_state",
+          "state": "confirmed"
+        },
+        {
+          "action": "removed",
+          "alias": "claude-project-state",
+          "detail": "Claude's per-directory state for the scratch repository.",
+          "evidence": "Directory check",
+          "failure_attribution": "not_applicable",
+          "kind": "temporary_state",
+          "state": "confirmed"
+        }
+      ]
+    },
+    "finished_at": "2026-10-06T21:31:12.793247Z",
+    "format_version": "watchdog.probe-result.v1",
+    "provenance": {
+      "adapter": {
+        "invocation": "provider",
+        "name": "none",
+        "version": null
+      },
+      "harness": {
+        "name": "claude-cli",
+        "version": "2.1.292"
+      },
+      "os": {
+        "architecture": "AMD64",
+        "name": "Windows",
+        "version": null
+      },
+      "provider": {
+        "name": "claude",
+        "surface": "cli",
+        "version": "2.1.292"
+      },
+      "source": {
+        "kind": "generated-workload",
+        "sanitized_reference": "wd139-agent-rewrite"
+      }
+    },
+    "record_id": "wd139-claude-cli-agent-rewrite-2026-10-06-attempt-1",
+    "result": {
+      "limitations": [
+        "One Windows Claude Code CLI version, haiku main model, one scripted prompt."
+      ],
+      "state": "passed"
+    },
+    "scope": {
+      "expected_callback_kinds": [
+        "PreToolUse",
+        "SubagentStart"
+      ],
+      "expected_deliveries": 1,
+      "isolation": "scratch Git repository outside registered projects and a --settings file",
+      "notes": "One capability per run; hook inputs and outputs stayed in scratch."
+    },
+    "stages": {
+      "adapter": {
+        "evidence": "The probe calls no Watchdog adapter.",
+        "failure_category": null,
+        "starts": 0,
+        "state": "not_invoked"
+      },
+      "callbacks": {
+        "evidence": "Minimum expected count per event; input shapes are in capabilities.",
+        "expected": 1,
+        "missing": 0,
+        "missing_attribution": "not_applicable",
+        "observed": 1
+      },
+      "end_to_end_delivery": {
+        "evidence": "Read back from the stream-json output of the same run.",
+        "expected": 1,
+        "failure_attribution": "not_applicable",
+        "failure_detail": null,
+        "persisted": 1,
+        "read_back": 1,
+        "state": "confirmed"
+      },
+      "persistence": {
+        "accepted": 0,
+        "evidence": "Not applicable: the probe does not exercise Watchdog persistence.",
+        "losses": []
+      },
+      "provider_dispatch": {
+        "attempts": 1,
+        "detail": null,
+        "evidence": "Claude emitted a result event",
+        "state": "confirmed"
+      },
+      "retries": {
+        "count": 0,
+        "evidence": "One run per case.",
+        "outcome": "not_attempted",
+        "reason": null,
+        "scopes": []
+      }
+    },
+    "started_at": "2026-10-06T21:31:04.381877Z"
+  },
+  {
+    "capabilities": {
+      "permission-allow": {
+        "callbacks": {
+          "PermissionRequest": {
+            "input_fields": [
+              "cwd",
+              "hook_event_name",
+              "permission_mode",
+              "permission_suggestions",
+              "prompt_id",
+              "session_id",
+              "tool_input",
+              "tool_name",
+              "transcript_path"
+            ],
+            "observed": 1,
+            "tool_names": [
+              "Bash"
+            ]
+          }
+        },
+        "models": [
+          "claude-haiku-4-5-20251001"
+        ],
+        "response_shape": "hookSpecificOutput.decision.behavior=allow",
+        "state": "supported"
+      }
+    },
+    "classification": "live_provider",
+    "cleanup": {
+      "complete": true,
+      "remaining_state": null,
+      "resources": [
+        {
+          "action": "removed",
+          "alias": "temporary-claude-settings",
+          "detail": "Passed with --settings; user and project settings were not loaded.",
+          "evidence": "Scratch directory check",
+          "failure_attribution": "not_applicable",
+          "kind": "hook_installation",
+          "state": "confirmed"
+        },
+        {
+          "action": "removed",
+          "alias": "scratch-repository",
+          "detail": null,
+          "evidence": "Scratch directory check",
+          "failure_attribution": "not_applicable",
+          "kind": "temporary_state",
+          "state": "confirmed"
+        },
+        {
+          "action": "removed",
+          "alias": "claude-project-state",
+          "detail": "Claude's per-directory state for the scratch repository.",
+          "evidence": "Directory check",
+          "failure_attribution": "not_applicable",
+          "kind": "temporary_state",
+          "state": "confirmed"
+        }
+      ]
+    },
+    "finished_at": "2026-10-06T21:31:20.420512Z",
+    "format_version": "watchdog.probe-result.v1",
+    "provenance": {
+      "adapter": {
+        "invocation": "provider",
+        "name": "none",
+        "version": null
+      },
+      "harness": {
+        "name": "claude-cli",
+        "version": "2.1.292"
+      },
+      "os": {
+        "architecture": "AMD64",
+        "name": "Windows",
+        "version": null
+      },
+      "provider": {
+        "name": "claude",
+        "surface": "cli",
+        "version": "2.1.292"
+      },
+      "source": {
+        "kind": "generated-workload",
+        "sanitized_reference": "wd139-permission-allow"
+      }
+    },
+    "record_id": "wd139-claude-cli-permission-allow-2026-10-06-attempt-1",
+    "result": {
+      "limitations": [
+        "One Windows Claude Code CLI version, haiku main model, one scripted prompt."
+      ],
+      "state": "passed"
+    },
+    "scope": {
+      "expected_callback_kinds": [
+        "PermissionRequest"
+      ],
+      "expected_deliveries": 1,
+      "isolation": "scratch Git repository outside registered projects and a --settings file",
+      "notes": "One capability per run; hook inputs and outputs stayed in scratch."
+    },
+    "stages": {
+      "adapter": {
+        "evidence": "The probe calls no Watchdog adapter.",
+        "failure_category": null,
+        "starts": 0,
+        "state": "not_invoked"
+      },
+      "callbacks": {
+        "evidence": "Minimum expected count per event; input shapes are in capabilities.",
+        "expected": 1,
+        "missing": 0,
+        "missing_attribution": "not_applicable",
+        "observed": 1
+      },
+      "end_to_end_delivery": {
+        "evidence": "Read back from the stream-json output of the same run.",
+        "expected": 1,
+        "failure_attribution": "not_applicable",
+        "failure_detail": null,
+        "persisted": 1,
+        "read_back": 1,
+        "state": "confirmed"
+      },
+      "persistence": {
+        "accepted": 0,
+        "evidence": "Not applicable: the probe does not exercise Watchdog persistence.",
+        "losses": []
+      },
+      "provider_dispatch": {
+        "attempts": 1,
+        "detail": null,
+        "evidence": "Claude emitted a result event",
+        "state": "confirmed"
+      },
+      "retries": {
+        "count": 0,
+        "evidence": "One run per case.",
+        "outcome": "not_attempted",
+        "reason": null,
+        "scopes": []
+      }
+    },
+    "started_at": "2026-10-06T21:31:12.794246Z"
+  },
+  {
+    "capabilities": {
+      "permission-deny": {
+        "callbacks": {
+          "PermissionRequest": {
+            "input_fields": [
+              "cwd",
+              "hook_event_name",
+              "permission_mode",
+              "permission_suggestions",
+              "prompt_id",
+              "session_id",
+              "tool_input",
+              "tool_name",
+              "transcript_path"
+            ],
+            "observed": 1,
+            "tool_names": [
+              "Bash"
+            ]
+          }
+        },
+        "models": [
+          "claude-haiku-4-5-20251001"
+        ],
+        "response_shape": "hookSpecificOutput.decision.behavior=deny",
+        "state": "supported"
+      }
+    },
+    "classification": "live_provider",
+    "cleanup": {
+      "complete": true,
+      "remaining_state": null,
+      "resources": [
+        {
+          "action": "removed",
+          "alias": "temporary-claude-settings",
+          "detail": "Passed with --settings; user and project settings were not loaded.",
+          "evidence": "Scratch directory check",
+          "failure_attribution": "not_applicable",
+          "kind": "hook_installation",
+          "state": "confirmed"
+        },
+        {
+          "action": "removed",
+          "alias": "scratch-repository",
+          "detail": null,
+          "evidence": "Scratch directory check",
+          "failure_attribution": "not_applicable",
+          "kind": "temporary_state",
+          "state": "confirmed"
+        },
+        {
+          "action": "removed",
+          "alias": "claude-project-state",
+          "detail": "Claude's per-directory state for the scratch repository.",
+          "evidence": "Directory check",
+          "failure_attribution": "not_applicable",
+          "kind": "temporary_state",
+          "state": "confirmed"
+        }
+      ]
+    },
+    "finished_at": "2026-10-06T21:31:27.149567Z",
+    "format_version": "watchdog.probe-result.v1",
+    "provenance": {
+      "adapter": {
+        "invocation": "provider",
+        "name": "none",
+        "version": null
+      },
+      "harness": {
+        "name": "claude-cli",
+        "version": "2.1.292"
+      },
+      "os": {
+        "architecture": "AMD64",
+        "name": "Windows",
+        "version": null
+      },
+      "provider": {
+        "name": "claude",
+        "surface": "cli",
+        "version": "2.1.292"
+      },
+      "source": {
+        "kind": "generated-workload",
+        "sanitized_reference": "wd139-permission-deny"
+      }
+    },
+    "record_id": "wd139-claude-cli-permission-deny-2026-10-06-attempt-1",
+    "result": {
+      "limitations": [
+        "One Windows Claude Code CLI version, haiku main model, one scripted prompt."
+      ],
+      "state": "passed"
+    },
+    "scope": {
+      "expected_callback_kinds": [
+        "PermissionRequest"
+      ],
+      "expected_deliveries": 1,
+      "isolation": "scratch Git repository outside registered projects and a --settings file",
+      "notes": "One capability per run; hook inputs and outputs stayed in scratch."
+    },
+    "stages": {
+      "adapter": {
+        "evidence": "The probe calls no Watchdog adapter.",
+        "failure_category": null,
+        "starts": 0,
+        "state": "not_invoked"
+      },
+      "callbacks": {
+        "evidence": "Minimum expected count per event; input shapes are in capabilities.",
+        "expected": 1,
+        "missing": 0,
+        "missing_attribution": "not_applicable",
+        "observed": 1
+      },
+      "end_to_end_delivery": {
+        "evidence": "Read back from the stream-json output of the same run.",
+        "expected": 1,
+        "failure_attribution": "not_applicable",
+        "failure_detail": null,
+        "persisted": 1,
+        "read_back": 1,
+        "state": "confirmed"
+      },
+      "persistence": {
+        "accepted": 0,
+        "evidence": "Not applicable: the probe does not exercise Watchdog persistence.",
+        "losses": []
+      },
+      "provider_dispatch": {
+        "attempts": 1,
+        "detail": null,
+        "evidence": "Claude emitted a result event",
+        "state": "confirmed"
+      },
+      "retries": {
+        "count": 0,
+        "evidence": "One run per case.",
+        "outcome": "not_attempted",
+        "reason": null,
+        "scopes": []
+      }
+    },
+    "started_at": "2026-10-06T21:31:20.420512Z"
+  },
+  {
+    "capabilities": {
+      "permission-observe": {
+        "callbacks": {
+          "PermissionRequest": {
+            "input_fields": [
+              "cwd",
+              "hook_event_name",
+              "permission_mode",
+              "permission_suggestions",
+              "prompt_id",
+              "session_id",
+              "tool_input",
+              "tool_name",
+              "transcript_path"
+            ],
+            "observed": 1,
+            "tool_names": [
+              "Bash"
+            ]
+          }
+        },
+        "models": [
+          "claude-haiku-4-5-20251001"
+        ],
+        "response_shape": "{}",
+        "state": "supported"
+      }
+    },
+    "classification": "live_provider",
+    "cleanup": {
+      "complete": true,
+      "remaining_state": null,
+      "resources": [
+        {
+          "action": "removed",
+          "alias": "temporary-claude-settings",
+          "detail": "Passed with --settings; user and project settings were not loaded.",
+          "evidence": "Scratch directory check",
+          "failure_attribution": "not_applicable",
+          "kind": "hook_installation",
+          "state": "confirmed"
+        },
+        {
+          "action": "removed",
+          "alias": "scratch-repository",
+          "detail": null,
+          "evidence": "Scratch directory check",
+          "failure_attribution": "not_applicable",
+          "kind": "temporary_state",
+          "state": "confirmed"
+        },
+        {
+          "action": "removed",
+          "alias": "claude-project-state",
+          "detail": "Claude's per-directory state for the scratch repository.",
+          "evidence": "Directory check",
+          "failure_attribution": "not_applicable",
+          "kind": "temporary_state",
+          "state": "confirmed"
+        }
+      ]
+    },
+    "finished_at": "2026-10-06T21:31:34.629518Z",
+    "format_version": "watchdog.probe-result.v1",
+    "provenance": {
+      "adapter": {
+        "invocation": "provider",
+        "name": "none",
+        "version": null
+      },
+      "harness": {
+        "name": "claude-cli",
+        "version": "2.1.292"
+      },
+      "os": {
+        "architecture": "AMD64",
+        "name": "Windows",
+        "version": null
+      },
+      "provider": {
+        "name": "claude",
+        "surface": "cli",
+        "version": "2.1.292"
+      },
+      "source": {
+        "kind": "generated-workload",
+        "sanitized_reference": "wd139-permission-observe"
+      }
+    },
+    "record_id": "wd139-claude-cli-permission-observe-2026-10-06-attempt-1",
+    "result": {
+      "limitations": [
+        "headless baseline: the command was refused",
+        "One Windows Claude Code CLI version, haiku main model, one scripted prompt."
+      ],
+      "state": "passed"
+    },
+    "scope": {
+      "expected_callback_kinds": [
+        "PermissionRequest"
+      ],
+      "expected_deliveries": 1,
+      "isolation": "scratch Git repository outside registered projects and a --settings file",
+      "notes": "One capability per run; hook inputs and outputs stayed in scratch."
+    },
+    "stages": {
+      "adapter": {
+        "evidence": "The probe calls no Watchdog adapter.",
+        "failure_category": null,
+        "starts": 0,
+        "state": "not_invoked"
+      },
+      "callbacks": {
+        "evidence": "Minimum expected count per event; input shapes are in capabilities.",
+        "expected": 1,
+        "missing": 0,
+        "missing_attribution": "not_applicable",
+        "observed": 1
+      },
+      "end_to_end_delivery": {
+        "evidence": "Read back from the stream-json output of the same run.",
+        "expected": 1,
+        "failure_attribution": "not_applicable",
+        "failure_detail": null,
+        "persisted": 1,
+        "read_back": 1,
+        "state": "confirmed"
+      },
+      "persistence": {
+        "accepted": 0,
+        "evidence": "Not applicable: the probe does not exercise Watchdog persistence.",
+        "losses": []
+      },
+      "provider_dispatch": {
+        "attempts": 1,
+        "detail": null,
+        "evidence": "Claude emitted a result event",
+        "state": "confirmed"
+      },
+      "retries": {
+        "count": 0,
+        "evidence": "One run per case.",
+        "outcome": "not_attempted",
+        "reason": null,
+        "scopes": []
+      }
+    },
+    "started_at": "2026-10-06T21:31:27.149567Z"
+  },
+  {
+    "capabilities": {
+      "post-tool-block": {
+        "callbacks": {
+          "PostToolUse": {
+            "input_fields": [
+              "cwd",
+              "duration_ms",
+              "hook_event_name",
+              "permission_mode",
+              "prompt_id",
+              "session_id",
+              "tool_input",
+              "tool_name",
+              "tool_response",
+              "tool_use_id",
+              "transcript_path"
+            ],
+            "observed": 1,
+            "tool_names": [
+              "Bash"
+            ]
+          },
+          "PreToolUse": {
+            "input_fields": [
+              "cwd",
+              "hook_event_name",
+              "permission_mode",
+              "prompt_id",
+              "session_id",
+              "tool_input",
+              "tool_name",
+              "tool_use_id",
+              "transcript_path"
+            ],
+            "observed": 1,
+            "tool_names": [
+              "Bash"
+            ]
+          }
+        },
+        "models": [
+          "claude-haiku-4-5-20251001"
+        ],
+        "response_shape": "decision=block",
+        "state": "supported"
+      }
+    },
+    "classification": "live_provider",
+    "cleanup": {
+      "complete": true,
+      "remaining_state": null,
+      "resources": [
+        {
+          "action": "removed",
+          "alias": "temporary-claude-settings",
+          "detail": "Passed with --settings; user and project settings were not loaded.",
+          "evidence": "Scratch directory check",
+          "failure_attribution": "not_applicable",
+          "kind": "hook_installation",
+          "state": "confirmed"
+        },
+        {
+          "action": "removed",
+          "alias": "scratch-repository",
+          "detail": null,
+          "evidence": "Scratch directory check",
+          "failure_attribution": "not_applicable",
+          "kind": "temporary_state",
+          "state": "confirmed"
+        },
+        {
+          "action": "removed",
+          "alias": "claude-project-state",
+          "detail": "Claude's per-directory state for the scratch repository.",
+          "evidence": "Directory check",
+          "failure_attribution": "not_applicable",
+          "kind": "temporary_state",
+          "state": "confirmed"
+        }
+      ]
+    },
+    "finished_at": "2026-10-06T21:31:42.585162Z",
+    "format_version": "watchdog.probe-result.v1",
+    "provenance": {
+      "adapter": {
+        "invocation": "provider",
+        "name": "none",
+        "version": null
+      },
+      "harness": {
+        "name": "claude-cli",
+        "version": "2.1.292"
+      },
+      "os": {
+        "architecture": "AMD64",
+        "name": "Windows",
+        "version": null
+      },
+      "provider": {
+        "name": "claude",
+        "surface": "cli",
+        "version": "2.1.292"
+      },
+      "source": {
+        "kind": "generated-workload",
+        "sanitized_reference": "wd139-post-tool-block"
+      }
+    },
+    "record_id": "wd139-claude-cli-post-tool-block-2026-10-06-attempt-1",
+    "result": {
+      "limitations": [
+        "One Windows Claude Code CLI version, haiku main model, one scripted prompt."
+      ],
+      "state": "passed"
+    },
+    "scope": {
+      "expected_callback_kinds": [
+        "PreToolUse",
+        "PostToolUse"
+      ],
+      "expected_deliveries": 1,
+      "isolation": "scratch Git repository outside registered projects and a --settings file",
+      "notes": "One capability per run; hook inputs and outputs stayed in scratch."
+    },
+    "stages": {
+      "adapter": {
+        "evidence": "The probe calls no Watchdog adapter.",
+        "failure_category": null,
+        "starts": 0,
+        "state": "not_invoked"
+      },
+      "callbacks": {
+        "evidence": "Minimum expected count per event; input shapes are in capabilities.",
+        "expected": 1,
+        "missing": 0,
+        "missing_attribution": "not_applicable",
+        "observed": 1
+      },
+      "end_to_end_delivery": {
+        "evidence": "Read back from the stream-json output of the same run.",
+        "expected": 1,
+        "failure_attribution": "not_applicable",
+        "failure_detail": null,
+        "persisted": 1,
+        "read_back": 1,
+        "state": "confirmed"
+      },
+      "persistence": {
+        "accepted": 0,
+        "evidence": "Not applicable: the probe does not exercise Watchdog persistence.",
+        "losses": []
+      },
+      "provider_dispatch": {
+        "attempts": 1,
+        "detail": null,
+        "evidence": "Claude emitted a result event",
+        "state": "confirmed"
+      },
+      "retries": {
+        "count": 0,
+        "evidence": "One run per case.",
+        "outcome": "not_attempted",
+        "reason": null,
+        "scopes": []
+      }
+    },
+    "started_at": "2026-10-06T21:31:34.629518Z"
+  },
+  {
+    "capabilities": {
+      "post-tool-context": {
+        "callbacks": {
+          "PostToolUse": {
+            "input_fields": [
+              "cwd",
+              "duration_ms",
+              "hook_event_name",
+              "permission_mode",
+              "prompt_id",
+              "session_id",
+              "tool_input",
+              "tool_name",
+              "tool_response",
+              "tool_use_id",
+              "transcript_path"
+            ],
+            "observed": 1,
+            "tool_names": [
+              "Bash"
+            ]
+          },
+          "PreToolUse": {
+            "input_fields": [
+              "cwd",
+              "hook_event_name",
+              "permission_mode",
+              "prompt_id",
+              "session_id",
+              "tool_input",
+              "tool_name",
+              "tool_use_id",
+              "transcript_path"
+            ],
+            "observed": 1,
+            "tool_names": [
+              "Bash"
+            ]
+          }
+        },
+        "models": [
+          "claude-haiku-4-5-20251001"
+        ],
+        "response_shape": "hookSpecificOutput.additionalContext",
+        "state": "supported"
+      }
+    },
+    "classification": "live_provider",
+    "cleanup": {
+      "complete": true,
+      "remaining_state": null,
+      "resources": [
+        {
+          "action": "removed",
+          "alias": "temporary-claude-settings",
+          "detail": "Passed with --settings; user and project settings were not loaded.",
+          "evidence": "Scratch directory check",
+          "failure_attribution": "not_applicable",
+          "kind": "hook_installation",
+          "state": "confirmed"
+        },
+        {
+          "action": "removed",
+          "alias": "scratch-repository",
+          "detail": null,
+          "evidence": "Scratch directory check",
+          "failure_attribution": "not_applicable",
+          "kind": "temporary_state",
+          "state": "confirmed"
+        },
+        {
+          "action": "removed",
+          "alias": "claude-project-state",
+          "detail": "Claude's per-directory state for the scratch repository.",
+          "evidence": "Directory check",
+          "failure_attribution": "not_applicable",
+          "kind": "temporary_state",
+          "state": "confirmed"
+        }
+      ]
+    },
+    "finished_at": "2026-10-06T21:31:52.307795Z",
+    "format_version": "watchdog.probe-result.v1",
+    "provenance": {
+      "adapter": {
+        "invocation": "provider",
+        "name": "none",
+        "version": null
+      },
+      "harness": {
+        "name": "claude-cli",
+        "version": "2.1.292"
+      },
+      "os": {
+        "architecture": "AMD64",
+        "name": "Windows",
+        "version": null
+      },
+      "provider": {
+        "name": "claude",
+        "surface": "cli",
+        "version": "2.1.292"
+      },
+      "source": {
+        "kind": "generated-workload",
+        "sanitized_reference": "wd139-post-tool-context"
+      }
+    },
+    "record_id": "wd139-claude-cli-post-tool-context-2026-10-06-attempt-1",
+    "result": {
+      "limitations": [
+        "One Windows Claude Code CLI version, haiku main model, one scripted prompt."
+      ],
+      "state": "passed"
+    },
+    "scope": {
+      "expected_callback_kinds": [
+        "PreToolUse",
+        "PostToolUse"
+      ],
+      "expected_deliveries": 1,
+      "isolation": "scratch Git repository outside registered projects and a --settings file",
+      "notes": "One capability per run; hook inputs and outputs stayed in scratch."
+    },
+    "stages": {
+      "adapter": {
+        "evidence": "The probe calls no Watchdog adapter.",
+        "failure_category": null,
+        "starts": 0,
+        "state": "not_invoked"
+      },
+      "callbacks": {
+        "evidence": "Minimum expected count per event; input shapes are in capabilities.",
+        "expected": 1,
+        "missing": 0,
+        "missing_attribution": "not_applicable",
+        "observed": 1
+      },
+      "end_to_end_delivery": {
+        "evidence": "Read back from the stream-json output of the same run.",
+        "expected": 1,
+        "failure_attribution": "not_applicable",
+        "failure_detail": null,
+        "persisted": 1,
+        "read_back": 1,
+        "state": "confirmed"
+      },
+      "persistence": {
+        "accepted": 0,
+        "evidence": "Not applicable: the probe does not exercise Watchdog persistence.",
+        "losses": []
+      },
+      "provider_dispatch": {
+        "attempts": 1,
+        "detail": null,
+        "evidence": "Claude emitted a result event",
+        "state": "confirmed"
+      },
+      "retries": {
+        "count": 0,
+        "evidence": "One run per case.",
+        "outcome": "not_attempted",
+        "reason": null,
+        "scopes": []
+      }
+    },
+    "started_at": "2026-10-06T21:31:42.585162Z"
+  },
+  {
+    "capabilities": {
+      "post-tool-halt": {
+        "callbacks": {
+          "PostToolUse": {
+            "input_fields": [
+              "cwd",
+              "duration_ms",
+              "hook_event_name",
+              "permission_mode",
+              "prompt_id",
+              "session_id",
+              "tool_input",
+              "tool_name",
+              "tool_response",
+              "tool_use_id",
+              "transcript_path"
+            ],
+            "observed": 1,
+            "tool_names": [
+              "Bash"
+            ]
+          },
+          "PreToolUse": {
+            "input_fields": [
+              "cwd",
+              "hook_event_name",
+              "permission_mode",
+              "prompt_id",
+              "session_id",
+              "tool_input",
+              "tool_name",
+              "tool_use_id",
+              "transcript_path"
+            ],
+            "observed": 1,
+            "tool_names": [
+              "Bash"
+            ]
+          }
+        },
+        "models": [
+          "claude-haiku-4-5-20251001"
+        ],
+        "response_shape": "continue=false",
+        "state": "supported"
+      }
+    },
+    "classification": "live_provider",
+    "cleanup": {
+      "complete": true,
+      "remaining_state": null,
+      "resources": [
+        {
+          "action": "removed",
+          "alias": "temporary-claude-settings",
+          "detail": "Passed with --settings; user and project settings were not loaded.",
+          "evidence": "Scratch directory check",
+          "failure_attribution": "not_applicable",
+          "kind": "hook_installation",
+          "state": "confirmed"
+        },
+        {
+          "action": "removed",
+          "alias": "scratch-repository",
+          "detail": null,
+          "evidence": "Scratch directory check",
+          "failure_attribution": "not_applicable",
+          "kind": "temporary_state",
+          "state": "confirmed"
+        },
+        {
+          "action": "removed",
+          "alias": "claude-project-state",
+          "detail": "Claude's per-directory state for the scratch repository.",
+          "evidence": "Directory check",
+          "failure_attribution": "not_applicable",
+          "kind": "temporary_state",
+          "state": "confirmed"
+        }
+      ]
+    },
+    "finished_at": "2026-10-06T21:31:59.054051Z",
+    "format_version": "watchdog.probe-result.v1",
+    "provenance": {
+      "adapter": {
+        "invocation": "provider",
+        "name": "none",
+        "version": null
+      },
+      "harness": {
+        "name": "claude-cli",
+        "version": "2.1.292"
+      },
+      "os": {
+        "architecture": "AMD64",
+        "name": "Windows",
+        "version": null
+      },
+      "provider": {
+        "name": "claude",
+        "surface": "cli",
+        "version": "2.1.292"
+      },
+      "source": {
+        "kind": "generated-workload",
+        "sanitized_reference": "wd139-post-tool-halt"
+      }
+    },
+    "record_id": "wd139-claude-cli-post-tool-halt-2026-10-06-attempt-1",
+    "result": {
+      "limitations": [
+        "evidence is the absence of the post-tool reply",
+        "One Windows Claude Code CLI version, haiku main model, one scripted prompt."
+      ],
+      "state": "passed"
+    },
+    "scope": {
+      "expected_callback_kinds": [
+        "PreToolUse",
+        "PostToolUse"
+      ],
+      "expected_deliveries": 1,
+      "isolation": "scratch Git repository outside registered projects and a --settings file",
+      "notes": "One capability per run; hook inputs and outputs stayed in scratch."
+    },
+    "stages": {
+      "adapter": {
+        "evidence": "The probe calls no Watchdog adapter.",
+        "failure_category": null,
+        "starts": 0,
+        "state": "not_invoked"
+      },
+      "callbacks": {
+        "evidence": "Minimum expected count per event; input shapes are in capabilities.",
+        "expected": 1,
+        "missing": 0,
+        "missing_attribution": "not_applicable",
+        "observed": 1
+      },
+      "end_to_end_delivery": {
+        "evidence": "Read back from the stream-json output of the same run.",
+        "expected": 1,
+        "failure_attribution": "not_applicable",
+        "failure_detail": null,
+        "persisted": 1,
+        "read_back": 1,
+        "state": "confirmed"
+      },
+      "persistence": {
+        "accepted": 0,
+        "evidence": "Not applicable: the probe does not exercise Watchdog persistence.",
+        "losses": []
+      },
+      "provider_dispatch": {
+        "attempts": 1,
+        "detail": null,
+        "evidence": "Claude emitted a result event",
+        "state": "confirmed"
+      },
+      "retries": {
+        "count": 0,
+        "evidence": "One run per case.",
+        "outcome": "not_attempted",
+        "reason": null,
+        "scopes": []
+      }
+    },
+    "started_at": "2026-10-06T21:31:52.307795Z"
+  },
+  {
+    "capabilities": {
+      "pre-compact-block": {
+        "callbacks": {
+          "PostCompact": {
+            "input_fields": [],
+            "observed": 0,
+            "tool_names": []
+          },
+          "PreCompact": {
+            "input_fields": [
+              "custom_instructions",
+              "cwd",
+              "hook_event_name",
+              "prompt_id",
+              "session_id",
+              "transcript_path",
+              "trigger"
+            ],
+            "observed": 1,
+            "tool_names": []
+          }
+        },
+        "models": [
+          "claude-haiku-4-5-20251001"
+        ],
+        "response_shape": "decision=block",
+        "state": "supported"
+      }
+    },
+    "classification": "live_provider",
+    "cleanup": {
+      "complete": true,
+      "remaining_state": null,
+      "resources": [
+        {
+          "action": "removed",
+          "alias": "temporary-claude-settings",
+          "detail": "Passed with --settings; user and project settings were not loaded.",
+          "evidence": "Scratch directory check",
+          "failure_attribution": "not_applicable",
+          "kind": "hook_installation",
+          "state": "confirmed"
+        },
+        {
+          "action": "removed",
+          "alias": "scratch-repository",
+          "detail": null,
+          "evidence": "Scratch directory check",
+          "failure_attribution": "not_applicable",
+          "kind": "temporary_state",
+          "state": "confirmed"
+        },
+        {
+          "action": "removed",
+          "alias": "claude-project-state",
+          "detail": "Claude's per-directory state for the scratch repository.",
+          "evidence": "Directory check",
+          "failure_attribution": "not_applicable",
+          "kind": "temporary_state",
+          "state": "confirmed"
+        }
+      ]
+    },
+    "finished_at": "2026-10-06T21:32:02.992592Z",
+    "format_version": "watchdog.probe-result.v1",
+    "provenance": {
+      "adapter": {
+        "invocation": "provider",
+        "name": "none",
+        "version": null
+      },
+      "harness": {
+        "name": "claude-cli",
+        "version": "2.1.292"
+      },
+      "os": {
+        "architecture": "AMD64",
+        "name": "Windows",
+        "version": null
+      },
+      "provider": {
+        "name": "claude",
+        "surface": "cli",
+        "version": "2.1.292"
+      },
+      "source": {
+        "kind": "generated-workload",
+        "sanitized_reference": "wd139-pre-compact-block"
+      }
+    },
+    "record_id": "wd139-claude-cli-pre-compact-block-2026-10-06-attempt-1",
+    "result": {
+      "limitations": [
+        "evidence is the absence of a compact_boundary event",
+        "One Windows Claude Code CLI version, haiku main model, one scripted prompt."
+      ],
+      "state": "passed"
+    },
+    "scope": {
+      "expected_callback_kinds": [
+        "PreCompact",
+        "PostCompact"
+      ],
+      "expected_deliveries": 1,
+      "isolation": "scratch Git repository outside registered projects and a --settings file",
+      "notes": "One capability per run; hook inputs and outputs stayed in scratch."
+    },
+    "stages": {
+      "adapter": {
+        "evidence": "The probe calls no Watchdog adapter.",
+        "failure_category": null,
+        "starts": 0,
+        "state": "not_invoked"
+      },
+      "callbacks": {
+        "evidence": "Minimum expected count per event; input shapes are in capabilities.",
+        "expected": 1,
+        "missing": 0,
+        "missing_attribution": "not_applicable",
+        "observed": 1
+      },
+      "end_to_end_delivery": {
+        "evidence": "Read back from the stream-json output of the same run.",
+        "expected": 1,
+        "failure_attribution": "not_applicable",
+        "failure_detail": null,
+        "persisted": 1,
+        "read_back": 1,
+        "state": "confirmed"
+      },
+      "persistence": {
+        "accepted": 0,
+        "evidence": "Not applicable: the probe does not exercise Watchdog persistence.",
+        "losses": []
+      },
+      "provider_dispatch": {
+        "attempts": 1,
+        "detail": null,
+        "evidence": "Claude emitted a result event",
+        "state": "confirmed"
+      },
+      "retries": {
+        "count": 0,
+        "evidence": "One run per case.",
+        "outcome": "not_attempted",
+        "reason": null,
+        "scopes": []
+      }
+    },
+    "started_at": "2026-10-06T21:31:59.054051Z"
+  },
+  {
+    "capabilities": {
+      "pre-compact-context": {
+        "callbacks": {
+          "PostCompact": {
+            "input_fields": [
+              "compact_summary",
+              "cwd",
+              "hook_event_name",
+              "prompt_id",
+              "session_id",
+              "transcript_path",
+              "trigger"
+            ],
+            "observed": 1,
+            "tool_names": []
+          },
+          "PreCompact": {
+            "input_fields": [
+              "custom_instructions",
+              "cwd",
+              "hook_event_name",
+              "prompt_id",
+              "session_id",
+              "transcript_path",
+              "trigger"
+            ],
+            "observed": 1,
+            "tool_names": []
+          }
+        },
+        "models": [
+          "claude-haiku-4-5-20251001"
+        ],
+        "response_shape": "hookSpecificOutput.additionalContext",
+        "state": "supported"
+      }
+    },
+    "classification": "live_provider",
+    "cleanup": {
+      "complete": true,
+      "remaining_state": null,
+      "resources": [
+        {
+          "action": "removed",
+          "alias": "temporary-claude-settings",
+          "detail": "Passed with --settings; user and project settings were not loaded.",
+          "evidence": "Scratch directory check",
+          "failure_attribution": "not_applicable",
+          "kind": "hook_installation",
+          "state": "confirmed"
+        },
+        {
+          "action": "removed",
+          "alias": "scratch-repository",
+          "detail": null,
+          "evidence": "Scratch directory check",
+          "failure_attribution": "not_applicable",
+          "kind": "temporary_state",
+          "state": "confirmed"
+        },
+        {
+          "action": "removed",
+          "alias": "claude-project-state",
+          "detail": "Claude's per-directory state for the scratch repository.",
+          "evidence": "Directory check",
+          "failure_attribution": "not_applicable",
+          "kind": "temporary_state",
+          "state": "confirmed"
+        }
+      ]
+    },
+    "finished_at": "2026-10-06T21:32:19.765028Z",
+    "format_version": "watchdog.probe-result.v1",
+    "provenance": {
+      "adapter": {
+        "invocation": "provider",
+        "name": "none",
+        "version": null
+      },
+      "harness": {
+        "name": "claude-cli",
+        "version": "2.1.292"
+      },
+      "os": {
+        "architecture": "AMD64",
+        "name": "Windows",
+        "version": null
+      },
+      "provider": {
+        "name": "claude",
+        "surface": "cli",
+        "version": "2.1.292"
+      },
+      "source": {
+        "kind": "generated-workload",
+        "sanitized_reference": "wd139-pre-compact-context"
+      }
+    },
+    "record_id": "wd139-claude-cli-pre-compact-context-2026-10-06-attempt-1",
+    "result": {
+      "limitations": [
+        "One Windows Claude Code CLI version, haiku main model, one scripted prompt."
+      ],
+      "state": "passed"
+    },
+    "scope": {
+      "expected_callback_kinds": [
+        "PreCompact",
+        "PostCompact"
+      ],
+      "expected_deliveries": 1,
+      "isolation": "scratch Git repository outside registered projects and a --settings file",
+      "notes": "One capability per run; hook inputs and outputs stayed in scratch."
+    },
+    "stages": {
+      "adapter": {
+        "evidence": "The probe calls no Watchdog adapter.",
+        "failure_category": null,
+        "starts": 0,
+        "state": "not_invoked"
+      },
+      "callbacks": {
+        "evidence": "Minimum expected count per event; input shapes are in capabilities.",
+        "expected": 1,
+        "missing": 0,
+        "missing_attribution": "not_applicable",
+        "observed": 1
+      },
+      "end_to_end_delivery": {
+        "evidence": "Read back from the stream-json output of the same run.",
+        "expected": 1,
+        "failure_attribution": "not_applicable",
+        "failure_detail": null,
+        "persisted": 1,
+        "read_back": 1,
+        "state": "confirmed"
+      },
+      "persistence": {
+        "accepted": 0,
+        "evidence": "Not applicable: the probe does not exercise Watchdog persistence.",
+        "losses": []
+      },
+      "provider_dispatch": {
+        "attempts": 1,
+        "detail": null,
+        "evidence": "Claude emitted a result event",
+        "state": "confirmed"
+      },
+      "retries": {
+        "count": 0,
+        "evidence": "One run per case.",
+        "outcome": "not_attempted",
+        "reason": null,
+        "scopes": []
+      }
+    },
+    "started_at": "2026-10-06T21:32:02.992592Z"
+  },
+  {
+    "capabilities": {
+      "pre-tool-context": {
+        "callbacks": {
+          "PostToolUse": {
+            "input_fields": [
+              "cwd",
+              "duration_ms",
+              "hook_event_name",
+              "permission_mode",
+              "prompt_id",
+              "session_id",
+              "tool_input",
+              "tool_name",
+              "tool_response",
+              "tool_use_id",
+              "transcript_path"
+            ],
+            "observed": 1,
+            "tool_names": [
+              "Bash"
+            ]
+          },
+          "PreToolUse": {
+            "input_fields": [
+              "cwd",
+              "hook_event_name",
+              "permission_mode",
+              "prompt_id",
+              "session_id",
+              "tool_input",
+              "tool_name",
+              "tool_use_id",
+              "transcript_path"
+            ],
+            "observed": 1,
+            "tool_names": [
+              "Bash"
+            ]
+          }
+        },
+        "models": [
+          "claude-haiku-4-5-20251001"
+        ],
+        "response_shape": "hookSpecificOutput.additionalContext",
+        "state": "supported"
+      }
+    },
+    "classification": "live_provider",
+    "cleanup": {
+      "complete": true,
+      "remaining_state": null,
+      "resources": [
+        {
+          "action": "removed",
+          "alias": "temporary-claude-settings",
+          "detail": "Passed with --settings; user and project settings were not loaded.",
+          "evidence": "Scratch directory check",
+          "failure_attribution": "not_applicable",
+          "kind": "hook_installation",
+          "state": "confirmed"
+        },
+        {
+          "action": "removed",
+          "alias": "scratch-repository",
+          "detail": null,
+          "evidence": "Scratch directory check",
+          "failure_attribution": "not_applicable",
+          "kind": "temporary_state",
+          "state": "confirmed"
+        },
+        {
+          "action": "removed",
+          "alias": "claude-project-state",
+          "detail": "Claude's per-directory state for the scratch repository.",
+          "evidence": "Directory check",
+          "failure_attribution": "not_applicable",
+          "kind": "temporary_state",
+          "state": "confirmed"
+        }
+      ]
+    },
+    "finished_at": "2026-10-06T21:32:28.412692Z",
+    "format_version": "watchdog.probe-result.v1",
+    "provenance": {
+      "adapter": {
+        "invocation": "provider",
+        "name": "none",
+        "version": null
+      },
+      "harness": {
+        "name": "claude-cli",
+        "version": "2.1.292"
+      },
+      "os": {
+        "architecture": "AMD64",
+        "name": "Windows",
+        "version": null
+      },
+      "provider": {
+        "name": "claude",
+        "surface": "cli",
+        "version": "2.1.292"
+      },
+      "source": {
+        "kind": "generated-workload",
+        "sanitized_reference": "wd139-pre-tool-context"
+      }
+    },
+    "record_id": "wd139-claude-cli-pre-tool-context-2026-10-06-attempt-1",
+    "result": {
+      "limitations": [
+        "One Windows Claude Code CLI version, haiku main model, one scripted prompt."
+      ],
+      "state": "passed"
+    },
+    "scope": {
+      "expected_callback_kinds": [
+        "PreToolUse",
+        "PostToolUse"
+      ],
+      "expected_deliveries": 1,
+      "isolation": "scratch Git repository outside registered projects and a --settings file",
+      "notes": "One capability per run; hook inputs and outputs stayed in scratch."
+    },
+    "stages": {
+      "adapter": {
+        "evidence": "The probe calls no Watchdog adapter.",
+        "failure_category": null,
+        "starts": 0,
+        "state": "not_invoked"
+      },
+      "callbacks": {
+        "evidence": "Minimum expected count per event; input shapes are in capabilities.",
+        "expected": 1,
+        "missing": 0,
+        "missing_attribution": "not_applicable",
+        "observed": 1
+      },
+      "end_to_end_delivery": {
+        "evidence": "Read back from the stream-json output of the same run.",
+        "expected": 1,
+        "failure_attribution": "not_applicable",
+        "failure_detail": null,
+        "persisted": 1,
+        "read_back": 1,
+        "state": "confirmed"
+      },
+      "persistence": {
+        "accepted": 0,
+        "evidence": "Not applicable: the probe does not exercise Watchdog persistence.",
+        "losses": []
+      },
+      "provider_dispatch": {
+        "attempts": 1,
+        "detail": null,
+        "evidence": "Claude emitted a result event",
+        "state": "confirmed"
+      },
+      "retries": {
+        "count": 0,
+        "evidence": "One run per case.",
+        "outcome": "not_attempted",
+        "reason": null,
+        "scopes": []
+      }
+    },
+    "started_at": "2026-10-06T21:32:19.765028Z"
+  },
+  {
+    "capabilities": {
+      "pre-tool-deny": {
+        "callbacks": {
+          "PostToolUse": {
+            "input_fields": [],
+            "observed": 0,
+            "tool_names": []
+          },
+          "PreToolUse": {
+            "input_fields": [
+              "cwd",
+              "hook_event_name",
+              "permission_mode",
+              "prompt_id",
+              "session_id",
+              "tool_input",
+              "tool_name",
+              "tool_use_id",
+              "transcript_path"
+            ],
+            "observed": 1,
+            "tool_names": [
+              "Bash"
+            ]
+          }
+        },
+        "models": [
+          "claude-haiku-4-5-20251001"
+        ],
+        "response_shape": "hookSpecificOutput.permissionDecision=deny",
+        "state": "supported"
+      }
+    },
+    "classification": "live_provider",
+    "cleanup": {
+      "complete": true,
+      "remaining_state": null,
+      "resources": [
+        {
+          "action": "removed",
+          "alias": "temporary-claude-settings",
+          "detail": "Passed with --settings; user and project settings were not loaded.",
+          "evidence": "Scratch directory check",
+          "failure_attribution": "not_applicable",
+          "kind": "hook_installation",
+          "state": "confirmed"
+        },
+        {
+          "action": "removed",
+          "alias": "scratch-repository",
+          "detail": null,
+          "evidence": "Scratch directory check",
+          "failure_attribution": "not_applicable",
+          "kind": "temporary_state",
+          "state": "confirmed"
+        },
+        {
+          "action": "removed",
+          "alias": "claude-project-state",
+          "detail": "Claude's per-directory state for the scratch repository.",
+          "evidence": "Directory check",
+          "failure_attribution": "not_applicable",
+          "kind": "temporary_state",
+          "state": "confirmed"
+        }
+      ]
+    },
+    "finished_at": "2026-10-06T21:32:34.599362Z",
+    "format_version": "watchdog.probe-result.v1",
+    "provenance": {
+      "adapter": {
+        "invocation": "provider",
+        "name": "none",
+        "version": null
+      },
+      "harness": {
+        "name": "claude-cli",
+        "version": "2.1.292"
+      },
+      "os": {
+        "architecture": "AMD64",
+        "name": "Windows",
+        "version": null
+      },
+      "provider": {
+        "name": "claude",
+        "surface": "cli",
+        "version": "2.1.292"
+      },
+      "source": {
+        "kind": "generated-workload",
+        "sanitized_reference": "wd139-pre-tool-deny"
+      }
+    },
+    "record_id": "wd139-claude-cli-pre-tool-deny-2026-10-06-attempt-1",
+    "result": {
+      "limitations": [
+        "One Windows Claude Code CLI version, haiku main model, one scripted prompt."
+      ],
+      "state": "passed"
+    },
+    "scope": {
+      "expected_callback_kinds": [
+        "PreToolUse",
+        "PostToolUse"
+      ],
+      "expected_deliveries": 1,
+      "isolation": "scratch Git repository outside registered projects and a --settings file",
+      "notes": "One capability per run; hook inputs and outputs stayed in scratch."
+    },
+    "stages": {
+      "adapter": {
+        "evidence": "The probe calls no Watchdog adapter.",
+        "failure_category": null,
+        "starts": 0,
+        "state": "not_invoked"
+      },
+      "callbacks": {
+        "evidence": "Minimum expected count per event; input shapes are in capabilities.",
+        "expected": 1,
+        "missing": 0,
+        "missing_attribution": "not_applicable",
+        "observed": 1
+      },
+      "end_to_end_delivery": {
+        "evidence": "Read back from the stream-json output of the same run.",
+        "expected": 1,
+        "failure_attribution": "not_applicable",
+        "failure_detail": null,
+        "persisted": 1,
+        "read_back": 1,
+        "state": "confirmed"
+      },
+      "persistence": {
+        "accepted": 0,
+        "evidence": "Not applicable: the probe does not exercise Watchdog persistence.",
+        "losses": []
+      },
+      "provider_dispatch": {
+        "attempts": 1,
+        "detail": null,
+        "evidence": "Claude emitted a result event",
+        "state": "confirmed"
+      },
+      "retries": {
+        "count": 0,
+        "evidence": "One run per case.",
+        "outcome": "not_attempted",
+        "reason": null,
+        "scopes": []
+      }
+    },
+    "started_at": "2026-10-06T21:32:28.412692Z"
+  },
+  {
+    "capabilities": {
+      "pre-tool-rewrite": {
+        "callbacks": {
+          "PostToolUse": {
+            "input_fields": [
+              "cwd",
+              "duration_ms",
+              "hook_event_name",
+              "permission_mode",
+              "prompt_id",
+              "session_id",
+              "tool_input",
+              "tool_name",
+              "tool_response",
+              "tool_use_id",
+              "transcript_path"
+            ],
+            "observed": 1,
+            "tool_names": [
+              "Bash"
+            ]
+          },
+          "PreToolUse": {
+            "input_fields": [
+              "cwd",
+              "hook_event_name",
+              "permission_mode",
+              "prompt_id",
+              "session_id",
+              "tool_input",
+              "tool_name",
+              "tool_use_id",
+              "transcript_path"
+            ],
+            "observed": 1,
+            "tool_names": [
+              "Bash"
+            ]
+          }
+        },
+        "models": [
+          "claude-haiku-4-5-20251001"
+        ],
+        "response_shape": "hookSpecificOutput.updatedInput",
+        "state": "supported"
+      }
+    },
+    "classification": "live_provider",
+    "cleanup": {
+      "complete": true,
+      "remaining_state": null,
+      "resources": [
+        {
+          "action": "removed",
+          "alias": "temporary-claude-settings",
+          "detail": "Passed with --settings; user and project settings were not loaded.",
+          "evidence": "Scratch directory check",
+          "failure_attribution": "not_applicable",
+          "kind": "hook_installation",
+          "state": "confirmed"
+        },
+        {
+          "action": "removed",
+          "alias": "scratch-repository",
+          "detail": null,
+          "evidence": "Scratch directory check",
+          "failure_attribution": "not_applicable",
+          "kind": "temporary_state",
+          "state": "confirmed"
+        },
+        {
+          "action": "removed",
+          "alias": "claude-project-state",
+          "detail": "Claude's per-directory state for the scratch repository.",
+          "evidence": "Directory check",
+          "failure_attribution": "not_applicable",
+          "kind": "temporary_state",
+          "state": "confirmed"
+        }
+      ]
+    },
+    "finished_at": "2026-10-06T21:32:43.935524Z",
+    "format_version": "watchdog.probe-result.v1",
+    "provenance": {
+      "adapter": {
+        "invocation": "provider",
+        "name": "none",
+        "version": null
+      },
+      "harness": {
+        "name": "claude-cli",
+        "version": "2.1.292"
+      },
+      "os": {
+        "architecture": "AMD64",
+        "name": "Windows",
+        "version": null
+      },
+      "provider": {
+        "name": "claude",
+        "surface": "cli",
+        "version": "2.1.292"
+      },
+      "source": {
+        "kind": "generated-workload",
+        "sanitized_reference": "wd139-pre-tool-rewrite"
+      }
+    },
+    "record_id": "wd139-claude-cli-pre-tool-rewrite-2026-10-06-attempt-1",
+    "result": {
+      "limitations": [
+        "One Windows Claude Code CLI version, haiku main model, one scripted prompt."
+      ],
+      "state": "passed"
+    },
+    "scope": {
+      "expected_callback_kinds": [
+        "PreToolUse",
+        "PostToolUse"
+      ],
+      "expected_deliveries": 1,
+      "isolation": "scratch Git repository outside registered projects and a --settings file",
+      "notes": "One capability per run; hook inputs and outputs stayed in scratch."
+    },
+    "stages": {
+      "adapter": {
+        "evidence": "The probe calls no Watchdog adapter.",
+        "failure_category": null,
+        "starts": 0,
+        "state": "not_invoked"
+      },
+      "callbacks": {
+        "evidence": "Minimum expected count per event; input shapes are in capabilities.",
+        "expected": 1,
+        "missing": 0,
+        "missing_attribution": "not_applicable",
+        "observed": 1
+      },
+      "end_to_end_delivery": {
+        "evidence": "Read back from the stream-json output of the same run.",
+        "expected": 1,
+        "failure_attribution": "not_applicable",
+        "failure_detail": null,
+        "persisted": 1,
+        "read_back": 1,
+        "state": "confirmed"
+      },
+      "persistence": {
+        "accepted": 0,
+        "evidence": "Not applicable: the probe does not exercise Watchdog persistence.",
+        "losses": []
+      },
+      "provider_dispatch": {
+        "attempts": 1,
+        "detail": null,
+        "evidence": "Claude emitted a result event",
+        "state": "confirmed"
+      },
+      "retries": {
+        "count": 0,
+        "evidence": "One run per case.",
+        "outcome": "not_attempted",
+        "reason": null,
+        "scopes": []
+      }
+    },
+    "started_at": "2026-10-06T21:32:34.599362Z"
+  },
+  {
+    "capabilities": {
+      "session-start-context": {
+        "callbacks": {
+          "SessionStart": {
+            "input_fields": [
+              "cwd",
+              "hook_event_name",
+              "session_id",
+              "source",
+              "transcript_path"
+            ],
+            "observed": 1,
+            "tool_names": []
+          }
+        },
+        "models": [
+          "claude-haiku-4-5-20251001"
+        ],
+        "response_shape": "hookSpecificOutput.additionalContext",
+        "state": "supported"
+      }
+    },
+    "classification": "live_provider",
+    "cleanup": {
+      "complete": true,
+      "remaining_state": null,
+      "resources": [
+        {
+          "action": "removed",
+          "alias": "temporary-claude-settings",
+          "detail": "Passed with --settings; user and project settings were not loaded.",
+          "evidence": "Scratch directory check",
+          "failure_attribution": "not_applicable",
+          "kind": "hook_installation",
+          "state": "confirmed"
+        },
+        {
+          "action": "removed",
+          "alias": "scratch-repository",
+          "detail": null,
+          "evidence": "Scratch directory check",
+          "failure_attribution": "not_applicable",
+          "kind": "temporary_state",
+          "state": "confirmed"
+        },
+        {
+          "action": "removed",
+          "alias": "claude-project-state",
+          "detail": "Claude's per-directory state for the scratch repository.",
+          "evidence": "Directory check",
+          "failure_attribution": "not_applicable",
+          "kind": "temporary_state",
+          "state": "confirmed"
+        }
+      ]
+    },
+    "finished_at": "2026-10-06T21:32:48.766821Z",
+    "format_version": "watchdog.probe-result.v1",
+    "provenance": {
+      "adapter": {
+        "invocation": "provider",
+        "name": "none",
+        "version": null
+      },
+      "harness": {
+        "name": "claude-cli",
+        "version": "2.1.292"
+      },
+      "os": {
+        "architecture": "AMD64",
+        "name": "Windows",
+        "version": null
+      },
+      "provider": {
+        "name": "claude",
+        "surface": "cli",
+        "version": "2.1.292"
+      },
+      "source": {
+        "kind": "generated-workload",
+        "sanitized_reference": "wd139-session-start-context"
+      }
+    },
+    "record_id": "wd139-claude-cli-session-start-context-2026-10-06-attempt-1",
+    "result": {
+      "limitations": [
+        "One Windows Claude Code CLI version, haiku main model, one scripted prompt."
+      ],
+      "state": "passed"
+    },
+    "scope": {
+      "expected_callback_kinds": [
+        "SessionStart"
+      ],
+      "expected_deliveries": 1,
+      "isolation": "scratch Git repository outside registered projects and a --settings file",
+      "notes": "One capability per run; hook inputs and outputs stayed in scratch."
+    },
+    "stages": {
+      "adapter": {
+        "evidence": "The probe calls no Watchdog adapter.",
+        "failure_category": null,
+        "starts": 0,
+        "state": "not_invoked"
+      },
+      "callbacks": {
+        "evidence": "Minimum expected count per event; input shapes are in capabilities.",
+        "expected": 1,
+        "missing": 0,
+        "missing_attribution": "not_applicable",
+        "observed": 1
+      },
+      "end_to_end_delivery": {
+        "evidence": "Read back from the stream-json output of the same run.",
+        "expected": 1,
+        "failure_attribution": "not_applicable",
+        "failure_detail": null,
+        "persisted": 1,
+        "read_back": 1,
+        "state": "confirmed"
+      },
+      "persistence": {
+        "accepted": 0,
+        "evidence": "Not applicable: the probe does not exercise Watchdog persistence.",
+        "losses": []
+      },
+      "provider_dispatch": {
+        "attempts": 1,
+        "detail": null,
+        "evidence": "Claude emitted a result event",
+        "state": "confirmed"
+      },
+      "retries": {
+        "count": 0,
+        "evidence": "One run per case.",
+        "outcome": "not_attempted",
+        "reason": null,
+        "scopes": []
+      }
+    },
+    "started_at": "2026-10-06T21:32:43.936520Z"
+  },
+  {
+    "capabilities": {
+      "stop-block": {
+        "callbacks": {
+          "Stop": {
+            "input_fields": [
+              "background_tasks",
+              "cwd",
+              "hook_event_name",
+              "last_assistant_message",
+              "permission_mode",
+              "prompt_id",
+              "session_crons",
+              "session_id",
+              "stop_hook_active",
+              "transcript_path"
+            ],
+            "observed": 2,
+            "tool_names": []
+          }
+        },
+        "models": [
+          "claude-haiku-4-5-20251001"
+        ],
+        "response_shape": "decision=block",
+        "state": "supported"
+      }
+    },
+    "classification": "live_provider",
+    "cleanup": {
+      "complete": true,
+      "remaining_state": null,
+      "resources": [
+        {
+          "action": "removed",
+          "alias": "temporary-claude-settings",
+          "detail": "Passed with --settings; user and project settings were not loaded.",
+          "evidence": "Scratch directory check",
+          "failure_attribution": "not_applicable",
+          "kind": "hook_installation",
+          "state": "confirmed"
+        },
+        {
+          "action": "removed",
+          "alias": "scratch-repository",
+          "detail": null,
+          "evidence": "Scratch directory check",
+          "failure_attribution": "not_applicable",
+          "kind": "temporary_state",
+          "state": "confirmed"
+        },
+        {
+          "action": "removed",
+          "alias": "claude-project-state",
+          "detail": "Claude's per-directory state for the scratch repository.",
+          "evidence": "Directory check",
+          "failure_attribution": "not_applicable",
+          "kind": "temporary_state",
+          "state": "confirmed"
+        }
+      ]
+    },
+    "finished_at": "2026-10-06T21:32:55.395308Z",
+    "format_version": "watchdog.probe-result.v1",
+    "provenance": {
+      "adapter": {
+        "invocation": "provider",
+        "name": "none",
+        "version": null
+      },
+      "harness": {
+        "name": "claude-cli",
+        "version": "2.1.292"
+      },
+      "os": {
+        "architecture": "AMD64",
+        "name": "Windows",
+        "version": null
+      },
+      "provider": {
+        "name": "claude",
+        "surface": "cli",
+        "version": "2.1.292"
+      },
+      "source": {
+        "kind": "generated-workload",
+        "sanitized_reference": "wd139-stop-block"
+      }
+    },
+    "record_id": "wd139-claude-cli-stop-block-2026-10-06-attempt-1",
+    "result": {
+      "limitations": [
+        "One Windows Claude Code CLI version, haiku main model, one scripted prompt."
+      ],
+      "state": "passed"
+    },
+    "scope": {
+      "expected_callback_kinds": [
+        "Stop"
+      ],
+      "expected_deliveries": 1,
+      "isolation": "scratch Git repository outside registered projects and a --settings file",
+      "notes": "One capability per run; hook inputs and outputs stayed in scratch."
+    },
+    "stages": {
+      "adapter": {
+        "evidence": "The probe calls no Watchdog adapter.",
+        "failure_category": null,
+        "starts": 0,
+        "state": "not_invoked"
+      },
+      "callbacks": {
+        "evidence": "Minimum expected count per event; input shapes are in capabilities.",
+        "expected": 1,
+        "missing": 0,
+        "missing_attribution": "not_applicable",
+        "observed": 1
+      },
+      "end_to_end_delivery": {
+        "evidence": "Read back from the stream-json output of the same run.",
+        "expected": 1,
+        "failure_attribution": "not_applicable",
+        "failure_detail": null,
+        "persisted": 1,
+        "read_back": 1,
+        "state": "confirmed"
+      },
+      "persistence": {
+        "accepted": 0,
+        "evidence": "Not applicable: the probe does not exercise Watchdog persistence.",
+        "losses": []
+      },
+      "provider_dispatch": {
+        "attempts": 1,
+        "detail": null,
+        "evidence": "Claude emitted a result event",
+        "state": "confirmed"
+      },
+      "retries": {
+        "count": 0,
+        "evidence": "One run per case.",
+        "outcome": "not_attempted",
+        "reason": null,
+        "scopes": []
+      }
+    },
+    "started_at": "2026-10-06T21:32:48.766821Z"
+  },
+  {
+    "capabilities": {
+      "user-prompt-context": {
+        "callbacks": {
+          "UserPromptSubmit": {
+            "input_fields": [
+              "cwd",
+              "hook_event_name",
+              "permission_mode",
+              "prompt",
+              "prompt_id",
+              "session_id",
+              "transcript_path"
+            ],
+            "observed": 1,
+            "tool_names": []
+          }
+        },
+        "models": [
+          "claude-haiku-4-5-20251001"
+        ],
+        "response_shape": "hookSpecificOutput.additionalContext",
+        "state": "supported"
+      }
+    },
+    "classification": "live_provider",
+    "cleanup": {
+      "complete": true,
+      "remaining_state": null,
+      "resources": [
+        {
+          "action": "removed",
+          "alias": "temporary-claude-settings",
+          "detail": "Passed with --settings; user and project settings were not loaded.",
+          "evidence": "Scratch directory check",
+          "failure_attribution": "not_applicable",
+          "kind": "hook_installation",
+          "state": "confirmed"
+        },
+        {
+          "action": "removed",
+          "alias": "scratch-repository",
+          "detail": null,
+          "evidence": "Scratch directory check",
+          "failure_attribution": "not_applicable",
+          "kind": "temporary_state",
+          "state": "confirmed"
+        },
+        {
+          "action": "removed",
+          "alias": "claude-project-state",
+          "detail": "Claude's per-directory state for the scratch repository.",
+          "evidence": "Directory check",
+          "failure_attribution": "not_applicable",
+          "kind": "temporary_state",
+          "state": "confirmed"
+        }
+      ]
+    },
+    "finished_at": "2026-10-06T21:33:07.574170Z",
+    "format_version": "watchdog.probe-result.v1",
+    "provenance": {
+      "adapter": {
+        "invocation": "provider",
+        "name": "none",
+        "version": null
+      },
+      "harness": {
+        "name": "claude-cli",
+        "version": "2.1.292"
+      },
+      "os": {
+        "architecture": "AMD64",
+        "name": "Windows",
+        "version": null
+      },
+      "provider": {
+        "name": "claude",
+        "surface": "cli",
+        "version": "2.1.292"
+      },
+      "source": {
+        "kind": "generated-workload",
+        "sanitized_reference": "wd139-user-prompt-context"
+      }
+    },
+    "record_id": "wd139-claude-cli-user-prompt-context-2026-10-06-attempt-1",
+    "result": {
+      "limitations": [
+        "One Windows Claude Code CLI version, haiku main model, one scripted prompt."
+      ],
+      "state": "passed"
+    },
+    "scope": {
+      "expected_callback_kinds": [
+        "UserPromptSubmit"
+      ],
+      "expected_deliveries": 1,
+      "isolation": "scratch Git repository outside registered projects and a --settings file",
+      "notes": "One capability per run; hook inputs and outputs stayed in scratch."
+    },
+    "stages": {
+      "adapter": {
+        "evidence": "The probe calls no Watchdog adapter.",
+        "failure_category": null,
+        "starts": 0,
+        "state": "not_invoked"
+      },
+      "callbacks": {
+        "evidence": "Minimum expected count per event; input shapes are in capabilities.",
+        "expected": 1,
+        "missing": 0,
+        "missing_attribution": "not_applicable",
+        "observed": 1
+      },
+      "end_to_end_delivery": {
+        "evidence": "Read back from the stream-json output of the same run.",
+        "expected": 1,
+        "failure_attribution": "not_applicable",
+        "failure_detail": null,
+        "persisted": 1,
+        "read_back": 1,
+        "state": "confirmed"
+      },
+      "persistence": {
+        "accepted": 0,
+        "evidence": "Not applicable: the probe does not exercise Watchdog persistence.",
+        "losses": []
+      },
+      "provider_dispatch": {
+        "attempts": 1,
+        "detail": null,
+        "evidence": "Claude emitted a result event",
+        "state": "confirmed"
+      },
+      "retries": {
+        "count": 0,
+        "evidence": "One run per case.",
+        "outcome": "not_attempted",
+        "reason": null,
+        "scopes": []
+      }
+    },
+    "started_at": "2026-10-06T21:32:55.395308Z"
+  },
+  {
+    "capabilities": {
+      "subagent-start-context": {
+        "callbacks": {
+          "SubagentStart": {
+            "input_fields": [
+              "agent_id",
+              "agent_type",
+              "cwd",
+              "hook_event_name",
+              "prompt_id",
+              "session_id",
+              "transcript_path"
+            ],
+            "observed": 1,
+            "tool_names": []
+          }
+        },
+        "models": [
+          "claude-haiku-4-5-20251001"
+        ],
+        "response_shape": "hookSpecificOutput.additionalContext",
+        "state": "supported"
+      }
+    },
+    "classification": "live_provider",
+    "cleanup": {
+      "complete": true,
+      "remaining_state": null,
+      "resources": [
+        {
+          "action": "removed",
+          "alias": "temporary-claude-settings",
+          "detail": "Passed with --settings; user and project settings were not loaded.",
+          "evidence": "Scratch directory check",
+          "failure_attribution": "not_applicable",
+          "kind": "hook_installation",
+          "state": "confirmed"
+        },
+        {
+          "action": "removed",
+          "alias": "scratch-repository",
+          "detail": null,
+          "evidence": "Scratch directory check",
+          "failure_attribution": "not_applicable",
+          "kind": "temporary_state",
+          "state": "confirmed"
+        },
+        {
+          "action": "removed",
+          "alias": "claude-project-state",
+          "detail": "Claude's per-directory state for the scratch repository.",
+          "evidence": "Directory check",
+          "failure_attribution": "not_applicable",
+          "kind": "temporary_state",
+          "state": "confirmed"
+        }
+      ]
+    },
+    "finished_at": "2026-10-06T21:42:29.210836Z",
+    "format_version": "watchdog.probe-result.v1",
+    "provenance": {
+      "adapter": {
+        "invocation": "provider",
+        "name": "none",
+        "version": null
+      },
+      "harness": {
+        "name": "claude-cli",
+        "version": "2.1.292"
+      },
+      "os": {
+        "architecture": "AMD64",
+        "name": "Windows",
+        "version": null
+      },
+      "provider": {
+        "name": "claude",
+        "surface": "cli",
+        "version": "2.1.292"
+      },
+      "source": {
+        "kind": "generated-workload",
+        "sanitized_reference": "wd139-subagent-start-context"
+      }
+    },
+    "record_id": "wd139-claude-cli-subagent-start-context-2026-10-06-attempt-1",
+    "result": {
+      "limitations": [
+        "One Windows Claude Code CLI version, haiku main model, one scripted prompt."
+      ],
+      "state": "passed"
+    },
+    "scope": {
+      "expected_callback_kinds": [
+        "SubagentStart"
+      ],
+      "expected_deliveries": 1,
+      "isolation": "scratch Git repository outside registered projects and a --settings file",
+      "notes": "One capability per run; hook inputs and outputs stayed in scratch."
+    },
+    "stages": {
+      "adapter": {
+        "evidence": "The probe calls no Watchdog adapter.",
+        "failure_category": null,
+        "starts": 0,
+        "state": "not_invoked"
+      },
+      "callbacks": {
+        "evidence": "Minimum expected count per event; input shapes are in capabilities.",
+        "expected": 1,
+        "missing": 0,
+        "missing_attribution": "not_applicable",
+        "observed": 1
+      },
+      "end_to_end_delivery": {
+        "evidence": "Read back from the stream-json output of the same run.",
+        "expected": 1,
+        "failure_attribution": "not_applicable",
+        "failure_detail": null,
+        "persisted": 1,
+        "read_back": 1,
+        "state": "confirmed"
+      },
+      "persistence": {
+        "accepted": 0,
+        "evidence": "Not applicable: the probe does not exercise Watchdog persistence.",
+        "losses": []
+      },
+      "provider_dispatch": {
+        "attempts": 1,
+        "detail": null,
+        "evidence": "Claude emitted a result event",
+        "state": "confirmed"
+      },
+      "retries": {
+        "count": 0,
+        "evidence": "One run per case.",
+        "outcome": "not_attempted",
+        "reason": null,
+        "scopes": []
+      }
+    },
+    "started_at": "2026-10-06T21:42:14.757701Z"
+  },
+  {
+    "capabilities": {
+      "subagent-stop-block": {
+        "callbacks": {
+          "SubagentStop": {
+            "input_fields": [
+              "agent_id",
+              "agent_transcript_path",
+              "agent_type",
+              "background_tasks",
+              "cwd",
+              "hook_event_name",
+              "last_assistant_message",
+              "permission_mode",
+              "prompt_id",
+              "session_crons",
+              "session_id",
+              "stop_hook_active",
+              "transcript_path"
+            ],
+            "observed": 2,
+            "tool_names": []
+          }
+        },
+        "models": [
+          "claude-haiku-4-5-20251001"
+        ],
+        "response_shape": "decision=block",
+        "state": "supported"
+      }
+    },
+    "classification": "live_provider",
+    "cleanup": {
+      "complete": true,
+      "remaining_state": null,
+      "resources": [
+        {
+          "action": "removed",
+          "alias": "temporary-claude-settings",
+          "detail": "Passed with --settings; user and project settings were not loaded.",
+          "evidence": "Scratch directory check",
+          "failure_attribution": "not_applicable",
+          "kind": "hook_installation",
+          "state": "confirmed"
+        },
+        {
+          "action": "removed",
+          "alias": "scratch-repository",
+          "detail": null,
+          "evidence": "Scratch directory check",
+          "failure_attribution": "not_applicable",
+          "kind": "temporary_state",
+          "state": "confirmed"
+        },
+        {
+          "action": "removed",
+          "alias": "claude-project-state",
+          "detail": "Claude's per-directory state for the scratch repository.",
+          "evidence": "Directory check",
+          "failure_attribution": "not_applicable",
+          "kind": "temporary_state",
+          "state": "confirmed"
+        }
+      ]
+    },
+    "finished_at": "2026-10-06T21:42:56.552523Z",
+    "format_version": "watchdog.probe-result.v1",
+    "provenance": {
+      "adapter": {
+        "invocation": "provider",
+        "name": "none",
+        "version": null
+      },
+      "harness": {
+        "name": "claude-cli",
+        "version": "2.1.292"
+      },
+      "os": {
+        "architecture": "AMD64",
+        "name": "Windows",
+        "version": null
+      },
+      "provider": {
+        "name": "claude",
+        "surface": "cli",
+        "version": "2.1.292"
+      },
+      "source": {
+        "kind": "generated-workload",
+        "sanitized_reference": "wd139-subagent-stop-block"
+      }
+    },
+    "record_id": "wd139-claude-cli-subagent-stop-block-2026-10-06-attempt-1",
+    "result": {
+      "limitations": [
+        "One Windows Claude Code CLI version, haiku main model, one scripted prompt."
+      ],
+      "state": "passed"
+    },
+    "scope": {
+      "expected_callback_kinds": [
+        "SubagentStop"
+      ],
+      "expected_deliveries": 1,
+      "isolation": "scratch Git repository outside registered projects and a --settings file",
+      "notes": "One capability per run; hook inputs and outputs stayed in scratch."
+    },
+    "stages": {
+      "adapter": {
+        "evidence": "The probe calls no Watchdog adapter.",
+        "failure_category": null,
+        "starts": 0,
+        "state": "not_invoked"
+      },
+      "callbacks": {
+        "evidence": "Minimum expected count per event; input shapes are in capabilities.",
+        "expected": 1,
+        "missing": 0,
+        "missing_attribution": "not_applicable",
+        "observed": 1
+      },
+      "end_to_end_delivery": {
+        "evidence": "Read back from the stream-json output of the same run.",
+        "expected": 1,
+        "failure_attribution": "not_applicable",
+        "failure_detail": null,
+        "persisted": 1,
+        "read_back": 1,
+        "state": "confirmed"
+      },
+      "persistence": {
+        "accepted": 0,
+        "evidence": "Not applicable: the probe does not exercise Watchdog persistence.",
+        "losses": []
+      },
+      "provider_dispatch": {
+        "attempts": 1,
+        "detail": null,
+        "evidence": "Claude emitted a result event",
+        "state": "confirmed"
+      },
+      "retries": {
+        "count": 0,
+        "evidence": "One run per case.",
+        "outcome": "not_attempted",
+        "reason": null,
+        "scopes": []
+      }
+    },
+    "started_at": "2026-10-06T21:42:29.211852Z"
+  },
+  {
+    "capabilities": {
+      "session-end-observe": {
+        "callbacks": {
+          "SessionEnd": {
+            "input_fields": [
+              "cwd",
+              "hook_event_name",
+              "prompt_id",
+              "reason",
+              "session_id",
+              "transcript_path"
+            ],
+            "observed": 1,
+            "tool_names": []
+          }
+        },
+        "models": [
+          "claude-haiku-4-5-20251001"
+        ],
+        "response_shape": "{}",
+        "state": "supported"
+      }
+    },
+    "classification": "live_provider",
+    "cleanup": {
+      "complete": true,
+      "remaining_state": null,
+      "resources": [
+        {
+          "action": "removed",
+          "alias": "temporary-claude-settings",
+          "detail": "Passed with --settings; user and project settings were not loaded.",
+          "evidence": "Scratch directory check",
+          "failure_attribution": "not_applicable",
+          "kind": "hook_installation",
+          "state": "confirmed"
+        },
+        {
+          "action": "removed",
+          "alias": "scratch-repository",
+          "detail": null,
+          "evidence": "Scratch directory check",
+          "failure_attribution": "not_applicable",
+          "kind": "temporary_state",
+          "state": "confirmed"
+        },
+        {
+          "action": "removed",
+          "alias": "claude-project-state",
+          "detail": "Claude's per-directory state for the scratch repository.",
+          "evidence": "Directory check",
+          "failure_attribution": "not_applicable",
+          "kind": "temporary_state",
+          "state": "confirmed"
+        }
+      ]
+    },
+    "finished_at": "2026-10-06T21:43:04.690965Z",
+    "format_version": "watchdog.probe-result.v1",
+    "provenance": {
+      "adapter": {
+        "invocation": "provider",
+        "name": "none",
+        "version": null
+      },
+      "harness": {
+        "name": "claude-cli",
+        "version": "2.1.292"
+      },
+      "os": {
+        "architecture": "AMD64",
+        "name": "Windows",
+        "version": null
+      },
+      "provider": {
+        "name": "claude",
+        "surface": "cli",
+        "version": "2.1.292"
+      },
+      "source": {
+        "kind": "generated-workload",
+        "sanitized_reference": "wd139-session-end-observe"
+      }
+    },
+    "record_id": "wd139-claude-cli-session-end-observe-2026-10-06-attempt-1",
+    "result": {
+      "limitations": [
+        "callback delivery only; the event defines no response field",
+        "One Windows Claude Code CLI version, haiku main model, one scripted prompt."
+      ],
+      "state": "passed"
+    },
+    "scope": {
+      "expected_callback_kinds": [
+        "SessionEnd"
+      ],
+      "expected_deliveries": 1,
+      "isolation": "scratch Git repository outside registered projects and a --settings file",
+      "notes": "One capability per run; hook inputs and outputs stayed in scratch."
+    },
+    "stages": {
+      "adapter": {
+        "evidence": "The probe calls no Watchdog adapter.",
+        "failure_category": null,
+        "starts": 0,
+        "state": "not_invoked"
+      },
+      "callbacks": {
+        "evidence": "Minimum expected count per event; input shapes are in capabilities.",
+        "expected": 1,
+        "missing": 0,
+        "missing_attribution": "not_applicable",
+        "observed": 1
+      },
+      "end_to_end_delivery": {
+        "evidence": "Read back from the stream-json output of the same run.",
+        "expected": 1,
+        "failure_attribution": "not_applicable",
+        "failure_detail": null,
+        "persisted": 1,
+        "read_back": 1,
+        "state": "confirmed"
+      },
+      "persistence": {
+        "accepted": 0,
+        "evidence": "Not applicable: the probe does not exercise Watchdog persistence.",
+        "losses": []
+      },
+      "provider_dispatch": {
+        "attempts": 1,
+        "detail": null,
+        "evidence": "Claude emitted a result event",
+        "state": "confirmed"
+      },
+      "retries": {
+        "count": 0,
+        "evidence": "One run per case.",
+        "outcome": "not_attempted",
+        "reason": null,
+        "scopes": []
+      }
+    },
+    "started_at": "2026-10-06T21:42:56.552523Z"
+  },
+  {
+    "capabilities": {
+      "pre-tool-ask": {
+        "callbacks": {
+          "PermissionRequest": {
+            "input_fields": [],
+            "observed": 0,
+            "tool_names": []
+          },
+          "PostToolUse": {
+            "input_fields": [],
+            "observed": 0,
+            "tool_names": []
+          },
+          "PreToolUse": {
+            "input_fields": [
+              "cwd",
+              "hook_event_name",
+              "permission_mode",
+              "prompt_id",
+              "session_id",
+              "tool_input",
+              "tool_name",
+              "tool_use_id",
+              "transcript_path"
+            ],
+            "observed": 1,
+            "tool_names": [
+              "Bash"
+            ]
+          }
+        },
+        "models": [
+          "claude-haiku-4-5-20251001"
+        ],
+        "response_shape": "hookSpecificOutput.permissionDecision=ask",
+        "state": "supported"
+      }
+    },
+    "classification": "live_provider",
+    "cleanup": {
+      "complete": true,
+      "remaining_state": null,
+      "resources": [
+        {
+          "action": "removed",
+          "alias": "temporary-claude-settings",
+          "detail": "Passed with --settings; user and project settings were not loaded.",
+          "evidence": "Scratch directory check",
+          "failure_attribution": "not_applicable",
+          "kind": "hook_installation",
+          "state": "confirmed"
+        },
+        {
+          "action": "removed",
+          "alias": "scratch-repository",
+          "detail": null,
+          "evidence": "Scratch directory check",
+          "failure_attribution": "not_applicable",
+          "kind": "temporary_state",
+          "state": "confirmed"
+        },
+        {
+          "action": "removed",
+          "alias": "claude-project-state",
+          "detail": "Claude's per-directory state for the scratch repository.",
+          "evidence": "Directory check",
+          "failure_attribution": "not_applicable",
+          "kind": "temporary_state",
+          "state": "confirmed"
+        }
+      ]
+    },
+    "finished_at": "2026-10-06T21:43:53.861811Z",
+    "format_version": "watchdog.probe-result.v1",
+    "provenance": {
+      "adapter": {
+        "invocation": "provider",
+        "name": "none",
+        "version": null
+      },
+      "harness": {
+        "name": "claude-cli",
+        "version": "2.1.292"
+      },
+      "os": {
+        "architecture": "AMD64",
+        "name": "Windows",
+        "version": null
+      },
+      "provider": {
+        "name": "claude",
+        "surface": "cli",
+        "version": "2.1.292"
+      },
+      "source": {
+        "kind": "generated-workload",
+        "sanitized_reference": "wd139-pre-tool-ask"
+      }
+    },
+    "record_id": "wd139-claude-cli-pre-tool-ask-2026-10-06-attempt-1",
+    "result": {
+      "limitations": [
+        "headless: ask refuses without a host and fires no PermissionRequest; an interactive prompt is not exercised",
+        "One Windows Claude Code CLI version, haiku main model, one scripted prompt."
+      ],
+      "state": "passed"
+    },
+    "scope": {
+      "expected_callback_kinds": [
+        "PreToolUse",
+        "PostToolUse",
+        "PermissionRequest"
+      ],
+      "expected_deliveries": 1,
+      "isolation": "scratch Git repository outside registered projects and a --settings file",
+      "notes": "One capability per run; hook inputs and outputs stayed in scratch."
+    },
+    "stages": {
+      "adapter": {
+        "evidence": "The probe calls no Watchdog adapter.",
+        "failure_category": null,
+        "starts": 0,
+        "state": "not_invoked"
+      },
+      "callbacks": {
+        "evidence": "Minimum expected count per event; input shapes are in capabilities.",
+        "expected": 1,
+        "missing": 0,
+        "missing_attribution": "not_applicable",
+        "observed": 1
+      },
+      "end_to_end_delivery": {
+        "evidence": "Read back from the stream-json output of the same run.",
+        "expected": 1,
+        "failure_attribution": "not_applicable",
+        "failure_detail": null,
+        "persisted": 1,
+        "read_back": 1,
+        "state": "confirmed"
+      },
+      "persistence": {
+        "accepted": 0,
+        "evidence": "Not applicable: the probe does not exercise Watchdog persistence.",
+        "losses": []
+      },
+      "provider_dispatch": {
+        "attempts": 1,
+        "detail": null,
+        "evidence": "Claude emitted a result event",
+        "state": "confirmed"
+      },
+      "retries": {
+        "count": 0,
+        "evidence": "One run per case.",
+        "outcome": "not_attempted",
+        "reason": null,
+        "scopes": []
+      }
+    },
+    "started_at": "2026-10-06T21:43:46.962892Z"
+  },
+  {
+    "capabilities": {
+      "session-start-context": {
+        "callbacks": {
+          "SessionStart": {
+            "input_fields": [
+              "cwd",
+              "hook_event_name",
+              "scratchpad_dir",
+              "session_id",
+              "source",
+              "transcript_path"
+            ],
+            "observed": 1,
+            "tool_names": []
+          }
+        },
+        "models": [
+          "claude-haiku-4-5-20251001"
+        ],
+        "response_shape": "hookSpecificOutput.additionalContext",
+        "state": "supported"
+      }
+    },
+    "classification": "live_provider",
+    "cleanup": {
+      "complete": true,
+      "remaining_state": "An empty scratch folder held open by the desktop app.",
+      "resources": [
+        {
+          "action": "removed",
+          "alias": "temporary-claude-settings",
+          "detail": "Project-local .claude/settings.local.json in the scratch folder. Contents removed; the emptied folder itself stayed open in the desktop app.",
+          "evidence": "Folder listing after cleanup",
+          "failure_attribution": "not_applicable",
+          "kind": "hook_installation",
+          "state": "confirmed"
+        },
+        {
+          "action": "removed",
+          "alias": "scratch-repository",
+          "detail": "Contents removed; the emptied folder itself stayed open in the desktop app.",
+          "evidence": "Folder listing after cleanup",
+          "failure_attribution": "not_applicable",
+          "kind": "temporary_state",
+          "state": "confirmed"
+        },
+        {
+          "action": "removed",
+          "alias": "claude-project-state",
+          "detail": "Claude's per-directory state for the scratch repository.",
+          "evidence": "Directory check",
+          "failure_attribution": "not_applicable",
+          "kind": "temporary_state",
+          "state": "confirmed"
+        }
+      ]
+    },
+    "finished_at": "2026-10-06T22:09:41.912249Z",
+    "format_version": "watchdog.probe-result.v1",
+    "provenance": {
+      "adapter": {
+        "invocation": "provider",
+        "name": "none",
+        "version": null
+      },
+      "harness": {
+        "name": "claude-desktop",
+        "version": null
+      },
+      "os": {
+        "architecture": "AMD64",
+        "name": "Windows",
+        "version": null
+      },
+      "provider": {
+        "name": "claude",
+        "surface": "desktop",
+        "version": "2.1.286"
+      },
+      "source": {
+        "kind": "manual-observation",
+        "sanitized_reference": "wd139-session-start-context"
+      }
+    },
+    "record_id": "wd139-claude-desktop-session-start-context-2026-10-06-attempt-1",
+    "result": {
+      "limitations": [
+        "One Windows desktop session, the model the user selected, one scripted prompt."
+      ],
+      "state": "passed"
+    },
+    "scope": {
+      "expected_callback_kinds": [
+        "SessionStart"
+      ],
+      "expected_deliveries": 1,
+      "isolation": "scratch Git repository outside registered projects with project-local hooks",
+      "notes": "One capability per run; hook inputs and outputs stayed in scratch."
+    },
+    "stages": {
+      "adapter": {
+        "evidence": "The probe calls no Watchdog adapter.",
+        "failure_category": null,
+        "starts": 0,
+        "state": "not_invoked"
+      },
+      "callbacks": {
+        "evidence": "Minimum expected count per event; input shapes are in capabilities.",
+        "expected": 1,
+        "missing": 0,
+        "missing_attribution": "not_applicable",
+        "observed": 1
+      },
+      "end_to_end_delivery": {
+        "evidence": "Read back from the session transcript.",
+        "expected": 1,
+        "failure_attribution": "not_applicable",
+        "failure_detail": null,
+        "persisted": 1,
+        "read_back": 1,
+        "state": "confirmed"
+      },
+      "persistence": {
+        "accepted": 0,
+        "evidence": "Not applicable: the probe does not exercise Watchdog persistence.",
+        "losses": []
+      },
+      "provider_dispatch": {
+        "attempts": 1,
+        "detail": null,
+        "evidence": "Claude emitted a result event",
+        "state": "confirmed"
+      },
+      "retries": {
+        "count": 0,
+        "evidence": "One run per case.",
+        "outcome": "not_attempted",
+        "reason": null,
+        "scopes": []
+      }
+    },
+    "started_at": "2026-10-06T21:48:21.457343Z"
+  },
+  {
+    "capabilities": {
+      "user-prompt-context": {
+        "callbacks": {
+          "UserPromptSubmit": {
+            "input_fields": [
+              "cwd",
+              "hook_event_name",
+              "permission_mode",
+              "prompt",
+              "prompt_id",
+              "scratchpad_dir",
+              "session_id",
+              "transcript_path"
+            ],
+            "observed": 1,
+            "tool_names": []
+          }
+        },
+        "models": [
+          "claude-haiku-4-5-20251001"
+        ],
+        "response_shape": "hookSpecificOutput.additionalContext",
+        "state": "supported"
+      }
+    },
+    "classification": "live_provider",
+    "cleanup": {
+      "complete": true,
+      "remaining_state": "An empty scratch folder held open by the desktop app.",
+      "resources": [
+        {
+          "action": "removed",
+          "alias": "temporary-claude-settings",
+          "detail": "Project-local .claude/settings.local.json in the scratch folder. Contents removed; the emptied folder itself stayed open in the desktop app.",
+          "evidence": "Folder listing after cleanup",
+          "failure_attribution": "not_applicable",
+          "kind": "hook_installation",
+          "state": "confirmed"
+        },
+        {
+          "action": "removed",
+          "alias": "scratch-repository",
+          "detail": "Contents removed; the emptied folder itself stayed open in the desktop app.",
+          "evidence": "Folder listing after cleanup",
+          "failure_attribution": "not_applicable",
+          "kind": "temporary_state",
+          "state": "confirmed"
+        },
+        {
+          "action": "removed",
+          "alias": "claude-project-state",
+          "detail": "Claude's per-directory state for the scratch repository.",
+          "evidence": "Directory check",
+          "failure_attribution": "not_applicable",
+          "kind": "temporary_state",
+          "state": "confirmed"
+        }
+      ]
+    },
+    "finished_at": "2026-10-06T22:09:41.912249Z",
+    "format_version": "watchdog.probe-result.v1",
+    "provenance": {
+      "adapter": {
+        "invocation": "provider",
+        "name": "none",
+        "version": null
+      },
+      "harness": {
+        "name": "claude-desktop",
+        "version": null
+      },
+      "os": {
+        "architecture": "AMD64",
+        "name": "Windows",
+        "version": null
+      },
+      "provider": {
+        "name": "claude",
+        "surface": "desktop",
+        "version": "2.1.286"
+      },
+      "source": {
+        "kind": "manual-observation",
+        "sanitized_reference": "wd139-user-prompt-context"
+      }
+    },
+    "record_id": "wd139-claude-desktop-user-prompt-context-2026-10-06-attempt-1",
+    "result": {
+      "limitations": [
+        "One Windows desktop session, the model the user selected, one scripted prompt."
+      ],
+      "state": "passed"
+    },
+    "scope": {
+      "expected_callback_kinds": [
+        "UserPromptSubmit"
+      ],
+      "expected_deliveries": 1,
+      "isolation": "scratch Git repository outside registered projects with project-local hooks",
+      "notes": "One capability per run; hook inputs and outputs stayed in scratch."
+    },
+    "stages": {
+      "adapter": {
+        "evidence": "The probe calls no Watchdog adapter.",
+        "failure_category": null,
+        "starts": 0,
+        "state": "not_invoked"
+      },
+      "callbacks": {
+        "evidence": "Minimum expected count per event; input shapes are in capabilities.",
+        "expected": 1,
+        "missing": 0,
+        "missing_attribution": "not_applicable",
+        "observed": 1
+      },
+      "end_to_end_delivery": {
+        "evidence": "Read back from the session transcript.",
+        "expected": 1,
+        "failure_attribution": "not_applicable",
+        "failure_detail": null,
+        "persisted": 1,
+        "read_back": 1,
+        "state": "confirmed"
+      },
+      "persistence": {
+        "accepted": 0,
+        "evidence": "Not applicable: the probe does not exercise Watchdog persistence.",
+        "losses": []
+      },
+      "provider_dispatch": {
+        "attempts": 1,
+        "detail": null,
+        "evidence": "Claude emitted a result event",
+        "state": "confirmed"
+      },
+      "retries": {
+        "count": 0,
+        "evidence": "One run per case.",
+        "outcome": "not_attempted",
+        "reason": null,
+        "scopes": []
+      }
+    },
+    "started_at": "2026-10-06T21:48:21.457343Z"
+  },
+  {
+    "capabilities": {
+      "pre-tool-context": {
+        "callbacks": {
+          "PostToolUse": {
+            "input_fields": [
+              "cwd",
+              "duration_ms",
+              "hook_event_name",
+              "permission_mode",
+              "prompt_id",
+              "scratchpad_dir",
+              "session_id",
+              "tool_input",
+              "tool_name",
+              "tool_response",
+              "tool_use_id",
+              "transcript_path"
+            ],
+            "observed": 1,
+            "tool_names": [
+              "Bash"
+            ]
+          },
+          "PreToolUse": {
+            "input_fields": [
+              "cwd",
+              "hook_event_name",
+              "permission_mode",
+              "prompt_id",
+              "scratchpad_dir",
+              "session_id",
+              "tool_input",
+              "tool_name",
+              "tool_use_id",
+              "transcript_path"
+            ],
+            "observed": 1,
+            "tool_names": [
+              "Bash"
+            ]
+          }
+        },
+        "models": [
+          "claude-haiku-4-5-20251001"
+        ],
+        "response_shape": "hookSpecificOutput.additionalContext",
+        "state": "supported"
+      }
+    },
+    "classification": "live_provider",
+    "cleanup": {
+      "complete": true,
+      "remaining_state": "An empty scratch folder held open by the desktop app.",
+      "resources": [
+        {
+          "action": "removed",
+          "alias": "temporary-claude-settings",
+          "detail": "Project-local .claude/settings.local.json in the scratch folder. Contents removed; the emptied folder itself stayed open in the desktop app.",
+          "evidence": "Folder listing after cleanup",
+          "failure_attribution": "not_applicable",
+          "kind": "hook_installation",
+          "state": "confirmed"
+        },
+        {
+          "action": "removed",
+          "alias": "scratch-repository",
+          "detail": "Contents removed; the emptied folder itself stayed open in the desktop app.",
+          "evidence": "Folder listing after cleanup",
+          "failure_attribution": "not_applicable",
+          "kind": "temporary_state",
+          "state": "confirmed"
+        },
+        {
+          "action": "removed",
+          "alias": "claude-project-state",
+          "detail": "Claude's per-directory state for the scratch repository.",
+          "evidence": "Directory check",
+          "failure_attribution": "not_applicable",
+          "kind": "temporary_state",
+          "state": "confirmed"
+        }
+      ]
+    },
+    "finished_at": "2026-10-06T22:09:41.912249Z",
+    "format_version": "watchdog.probe-result.v1",
+    "provenance": {
+      "adapter": {
+        "invocation": "provider",
+        "name": "none",
+        "version": null
+      },
+      "harness": {
+        "name": "claude-desktop",
+        "version": null
+      },
+      "os": {
+        "architecture": "AMD64",
+        "name": "Windows",
+        "version": null
+      },
+      "provider": {
+        "name": "claude",
+        "surface": "desktop",
+        "version": "2.1.286"
+      },
+      "source": {
+        "kind": "manual-observation",
+        "sanitized_reference": "wd139-pre-tool-context"
+      }
+    },
+    "record_id": "wd139-claude-desktop-pre-tool-context-2026-10-06-attempt-1",
+    "result": {
+      "limitations": [
+        "One Windows desktop session, the model the user selected, one scripted prompt."
+      ],
+      "state": "passed"
+    },
+    "scope": {
+      "expected_callback_kinds": [
+        "PreToolUse",
+        "PostToolUse"
+      ],
+      "expected_deliveries": 1,
+      "isolation": "scratch Git repository outside registered projects with project-local hooks",
+      "notes": "One capability per run; hook inputs and outputs stayed in scratch."
+    },
+    "stages": {
+      "adapter": {
+        "evidence": "The probe calls no Watchdog adapter.",
+        "failure_category": null,
+        "starts": 0,
+        "state": "not_invoked"
+      },
+      "callbacks": {
+        "evidence": "Minimum expected count per event; input shapes are in capabilities.",
+        "expected": 1,
+        "missing": 0,
+        "missing_attribution": "not_applicable",
+        "observed": 1
+      },
+      "end_to_end_delivery": {
+        "evidence": "Read back from the session transcript.",
+        "expected": 1,
+        "failure_attribution": "not_applicable",
+        "failure_detail": null,
+        "persisted": 1,
+        "read_back": 1,
+        "state": "confirmed"
+      },
+      "persistence": {
+        "accepted": 0,
+        "evidence": "Not applicable: the probe does not exercise Watchdog persistence.",
+        "losses": []
+      },
+      "provider_dispatch": {
+        "attempts": 1,
+        "detail": null,
+        "evidence": "Claude emitted a result event",
+        "state": "confirmed"
+      },
+      "retries": {
+        "count": 0,
+        "evidence": "One run per case.",
+        "outcome": "not_attempted",
+        "reason": null,
+        "scopes": []
+      }
+    },
+    "started_at": "2026-10-06T21:48:21.457343Z"
+  },
+  {
+    "capabilities": {
+      "post-tool-context": {
+        "callbacks": {
+          "PostToolUse": {
+            "input_fields": [
+              "cwd",
+              "duration_ms",
+              "hook_event_name",
+              "permission_mode",
+              "prompt_id",
+              "scratchpad_dir",
+              "session_id",
+              "tool_input",
+              "tool_name",
+              "tool_response",
+              "tool_use_id",
+              "transcript_path"
+            ],
+            "observed": 1,
+            "tool_names": [
+              "Bash"
+            ]
+          },
+          "PreToolUse": {
+            "input_fields": [
+              "cwd",
+              "hook_event_name",
+              "permission_mode",
+              "prompt_id",
+              "scratchpad_dir",
+              "session_id",
+              "tool_input",
+              "tool_name",
+              "tool_use_id",
+              "transcript_path"
+            ],
+            "observed": 1,
+            "tool_names": [
+              "Bash"
+            ]
+          }
+        },
+        "models": [
+          "claude-haiku-4-5-20251001"
+        ],
+        "response_shape": "hookSpecificOutput.additionalContext",
+        "state": "supported"
+      }
+    },
+    "classification": "live_provider",
+    "cleanup": {
+      "complete": true,
+      "remaining_state": "An empty scratch folder held open by the desktop app.",
+      "resources": [
+        {
+          "action": "removed",
+          "alias": "temporary-claude-settings",
+          "detail": "Project-local .claude/settings.local.json in the scratch folder. Contents removed; the emptied folder itself stayed open in the desktop app.",
+          "evidence": "Folder listing after cleanup",
+          "failure_attribution": "not_applicable",
+          "kind": "hook_installation",
+          "state": "confirmed"
+        },
+        {
+          "action": "removed",
+          "alias": "scratch-repository",
+          "detail": "Contents removed; the emptied folder itself stayed open in the desktop app.",
+          "evidence": "Folder listing after cleanup",
+          "failure_attribution": "not_applicable",
+          "kind": "temporary_state",
+          "state": "confirmed"
+        },
+        {
+          "action": "removed",
+          "alias": "claude-project-state",
+          "detail": "Claude's per-directory state for the scratch repository.",
+          "evidence": "Directory check",
+          "failure_attribution": "not_applicable",
+          "kind": "temporary_state",
+          "state": "confirmed"
+        }
+      ]
+    },
+    "finished_at": "2026-10-06T22:09:41.912249Z",
+    "format_version": "watchdog.probe-result.v1",
+    "provenance": {
+      "adapter": {
+        "invocation": "provider",
+        "name": "none",
+        "version": null
+      },
+      "harness": {
+        "name": "claude-desktop",
+        "version": null
+      },
+      "os": {
+        "architecture": "AMD64",
+        "name": "Windows",
+        "version": null
+      },
+      "provider": {
+        "name": "claude",
+        "surface": "desktop",
+        "version": "2.1.286"
+      },
+      "source": {
+        "kind": "manual-observation",
+        "sanitized_reference": "wd139-post-tool-context"
+      }
+    },
+    "record_id": "wd139-claude-desktop-post-tool-context-2026-10-06-attempt-1",
+    "result": {
+      "limitations": [
+        "One Windows desktop session, the model the user selected, one scripted prompt."
+      ],
+      "state": "passed"
+    },
+    "scope": {
+      "expected_callback_kinds": [
+        "PreToolUse",
+        "PostToolUse"
+      ],
+      "expected_deliveries": 1,
+      "isolation": "scratch Git repository outside registered projects with project-local hooks",
+      "notes": "One capability per run; hook inputs and outputs stayed in scratch."
+    },
+    "stages": {
+      "adapter": {
+        "evidence": "The probe calls no Watchdog adapter.",
+        "failure_category": null,
+        "starts": 0,
+        "state": "not_invoked"
+      },
+      "callbacks": {
+        "evidence": "Minimum expected count per event; input shapes are in capabilities.",
+        "expected": 1,
+        "missing": 0,
+        "missing_attribution": "not_applicable",
+        "observed": 1
+      },
+      "end_to_end_delivery": {
+        "evidence": "Read back from the session transcript.",
+        "expected": 1,
+        "failure_attribution": "not_applicable",
+        "failure_detail": null,
+        "persisted": 1,
+        "read_back": 1,
+        "state": "confirmed"
+      },
+      "persistence": {
+        "accepted": 0,
+        "evidence": "Not applicable: the probe does not exercise Watchdog persistence.",
+        "losses": []
+      },
+      "provider_dispatch": {
+        "attempts": 1,
+        "detail": null,
+        "evidence": "Claude emitted a result event",
+        "state": "confirmed"
+      },
+      "retries": {
+        "count": 0,
+        "evidence": "One run per case.",
+        "outcome": "not_attempted",
+        "reason": null,
+        "scopes": []
+      }
+    },
+    "started_at": "2026-10-06T21:48:21.457343Z"
+  },
+  {
+    "capabilities": {
+      "pre-tool-deny": {
+        "callbacks": {
+          "PostToolUse": {
+            "input_fields": [],
+            "observed": 0,
+            "tool_names": []
+          },
+          "PreToolUse": {
+            "input_fields": [
+              "cwd",
+              "hook_event_name",
+              "permission_mode",
+              "prompt_id",
+              "scratchpad_dir",
+              "session_id",
+              "tool_input",
+              "tool_name",
+              "tool_use_id",
+              "transcript_path"
+            ],
+            "observed": 1,
+            "tool_names": [
+              "Bash"
+            ]
+          }
+        },
+        "models": [
+          "claude-haiku-4-5-20251001"
+        ],
+        "response_shape": "hookSpecificOutput.permissionDecision=deny",
+        "state": "supported"
+      }
+    },
+    "classification": "live_provider",
+    "cleanup": {
+      "complete": true,
+      "remaining_state": "An empty scratch folder held open by the desktop app.",
+      "resources": [
+        {
+          "action": "removed",
+          "alias": "temporary-claude-settings",
+          "detail": "Project-local .claude/settings.local.json in the scratch folder. Contents removed; the emptied folder itself stayed open in the desktop app.",
+          "evidence": "Folder listing after cleanup",
+          "failure_attribution": "not_applicable",
+          "kind": "hook_installation",
+          "state": "confirmed"
+        },
+        {
+          "action": "removed",
+          "alias": "scratch-repository",
+          "detail": "Contents removed; the emptied folder itself stayed open in the desktop app.",
+          "evidence": "Folder listing after cleanup",
+          "failure_attribution": "not_applicable",
+          "kind": "temporary_state",
+          "state": "confirmed"
+        },
+        {
+          "action": "removed",
+          "alias": "claude-project-state",
+          "detail": "Claude's per-directory state for the scratch repository.",
+          "evidence": "Directory check",
+          "failure_attribution": "not_applicable",
+          "kind": "temporary_state",
+          "state": "confirmed"
+        }
+      ]
+    },
+    "finished_at": "2026-10-06T22:09:41.912249Z",
+    "format_version": "watchdog.probe-result.v1",
+    "provenance": {
+      "adapter": {
+        "invocation": "provider",
+        "name": "none",
+        "version": null
+      },
+      "harness": {
+        "name": "claude-desktop",
+        "version": null
+      },
+      "os": {
+        "architecture": "AMD64",
+        "name": "Windows",
+        "version": null
+      },
+      "provider": {
+        "name": "claude",
+        "surface": "desktop",
+        "version": "2.1.286"
+      },
+      "source": {
+        "kind": "manual-observation",
+        "sanitized_reference": "wd139-pre-tool-deny"
+      }
+    },
+    "record_id": "wd139-claude-desktop-pre-tool-deny-2026-10-06-attempt-1",
+    "result": {
+      "limitations": [
+        "One Windows desktop session, the model the user selected, one scripted prompt."
+      ],
+      "state": "passed"
+    },
+    "scope": {
+      "expected_callback_kinds": [
+        "PreToolUse",
+        "PostToolUse"
+      ],
+      "expected_deliveries": 1,
+      "isolation": "scratch Git repository outside registered projects with project-local hooks",
+      "notes": "One capability per run; hook inputs and outputs stayed in scratch."
+    },
+    "stages": {
+      "adapter": {
+        "evidence": "The probe calls no Watchdog adapter.",
+        "failure_category": null,
+        "starts": 0,
+        "state": "not_invoked"
+      },
+      "callbacks": {
+        "evidence": "Minimum expected count per event; input shapes are in capabilities.",
+        "expected": 1,
+        "missing": 0,
+        "missing_attribution": "not_applicable",
+        "observed": 1
+      },
+      "end_to_end_delivery": {
+        "evidence": "Read back from the session transcript.",
+        "expected": 1,
+        "failure_attribution": "not_applicable",
+        "failure_detail": null,
+        "persisted": 1,
+        "read_back": 1,
+        "state": "confirmed"
+      },
+      "persistence": {
+        "accepted": 0,
+        "evidence": "Not applicable: the probe does not exercise Watchdog persistence.",
+        "losses": []
+      },
+      "provider_dispatch": {
+        "attempts": 1,
+        "detail": null,
+        "evidence": "Claude emitted a result event",
+        "state": "confirmed"
+      },
+      "retries": {
+        "count": 0,
+        "evidence": "One run per case.",
+        "outcome": "not_attempted",
+        "reason": null,
+        "scopes": []
+      }
+    },
+    "started_at": "2026-10-06T21:48:21.457343Z"
+  },
+  {
+    "capabilities": {
+      "pre-tool-rewrite": {
+        "callbacks": {
+          "PostToolUse": {
+            "input_fields": [
+              "cwd",
+              "duration_ms",
+              "hook_event_name",
+              "permission_mode",
+              "prompt_id",
+              "scratchpad_dir",
+              "session_id",
+              "tool_input",
+              "tool_name",
+              "tool_response",
+              "tool_use_id",
+              "transcript_path"
+            ],
+            "observed": 1,
+            "tool_names": [
+              "Bash"
+            ]
+          },
+          "PreToolUse": {
+            "input_fields": [
+              "cwd",
+              "hook_event_name",
+              "permission_mode",
+              "prompt_id",
+              "scratchpad_dir",
+              "session_id",
+              "tool_input",
+              "tool_name",
+              "tool_use_id",
+              "transcript_path"
+            ],
+            "observed": 1,
+            "tool_names": [
+              "Bash"
+            ]
+          }
+        },
+        "models": [
+          "claude-haiku-4-5-20251001"
+        ],
+        "response_shape": "hookSpecificOutput.updatedInput",
+        "state": "supported"
+      }
+    },
+    "classification": "live_provider",
+    "cleanup": {
+      "complete": true,
+      "remaining_state": "An empty scratch folder held open by the desktop app.",
+      "resources": [
+        {
+          "action": "removed",
+          "alias": "temporary-claude-settings",
+          "detail": "Project-local .claude/settings.local.json in the scratch folder. Contents removed; the emptied folder itself stayed open in the desktop app.",
+          "evidence": "Folder listing after cleanup",
+          "failure_attribution": "not_applicable",
+          "kind": "hook_installation",
+          "state": "confirmed"
+        },
+        {
+          "action": "removed",
+          "alias": "scratch-repository",
+          "detail": "Contents removed; the emptied folder itself stayed open in the desktop app.",
+          "evidence": "Folder listing after cleanup",
+          "failure_attribution": "not_applicable",
+          "kind": "temporary_state",
+          "state": "confirmed"
+        },
+        {
+          "action": "removed",
+          "alias": "claude-project-state",
+          "detail": "Claude's per-directory state for the scratch repository.",
+          "evidence": "Directory check",
+          "failure_attribution": "not_applicable",
+          "kind": "temporary_state",
+          "state": "confirmed"
+        }
+      ]
+    },
+    "finished_at": "2026-10-06T22:09:41.912249Z",
+    "format_version": "watchdog.probe-result.v1",
+    "provenance": {
+      "adapter": {
+        "invocation": "provider",
+        "name": "none",
+        "version": null
+      },
+      "harness": {
+        "name": "claude-desktop",
+        "version": null
+      },
+      "os": {
+        "architecture": "AMD64",
+        "name": "Windows",
+        "version": null
+      },
+      "provider": {
+        "name": "claude",
+        "surface": "desktop",
+        "version": "2.1.286"
+      },
+      "source": {
+        "kind": "manual-observation",
+        "sanitized_reference": "wd139-pre-tool-rewrite"
+      }
+    },
+    "record_id": "wd139-claude-desktop-pre-tool-rewrite-2026-10-06-attempt-1",
+    "result": {
+      "limitations": [
+        "One Windows desktop session, the model the user selected, one scripted prompt."
+      ],
+      "state": "passed"
+    },
+    "scope": {
+      "expected_callback_kinds": [
+        "PreToolUse",
+        "PostToolUse"
+      ],
+      "expected_deliveries": 1,
+      "isolation": "scratch Git repository outside registered projects with project-local hooks",
+      "notes": "One capability per run; hook inputs and outputs stayed in scratch."
+    },
+    "stages": {
+      "adapter": {
+        "evidence": "The probe calls no Watchdog adapter.",
+        "failure_category": null,
+        "starts": 0,
+        "state": "not_invoked"
+      },
+      "callbacks": {
+        "evidence": "Minimum expected count per event; input shapes are in capabilities.",
+        "expected": 1,
+        "missing": 0,
+        "missing_attribution": "not_applicable",
+        "observed": 1
+      },
+      "end_to_end_delivery": {
+        "evidence": "Read back from the session transcript.",
+        "expected": 1,
+        "failure_attribution": "not_applicable",
+        "failure_detail": null,
+        "persisted": 1,
+        "read_back": 1,
+        "state": "confirmed"
+      },
+      "persistence": {
+        "accepted": 0,
+        "evidence": "Not applicable: the probe does not exercise Watchdog persistence.",
+        "losses": []
+      },
+      "provider_dispatch": {
+        "attempts": 1,
+        "detail": null,
+        "evidence": "Claude emitted a result event",
+        "state": "confirmed"
+      },
+      "retries": {
+        "count": 0,
+        "evidence": "One run per case.",
+        "outcome": "not_attempted",
+        "reason": null,
+        "scopes": []
+      }
+    },
+    "started_at": "2026-10-06T21:48:21.457343Z"
+  },
+  {
+    "capabilities": {
+      "permission-allow": {
+        "callbacks": {
+          "PermissionRequest": {
+            "input_fields": [
+              "cwd",
+              "hook_event_name",
+              "permission_mode",
+              "permission_suggestions",
+              "prompt_id",
+              "scratchpad_dir",
+              "session_id",
+              "tool_input",
+              "tool_name",
+              "transcript_path"
+            ],
+            "observed": 1,
+            "tool_names": [
+              "Bash"
+            ]
+          }
+        },
+        "models": [
+          "claude-haiku-4-5-20251001"
+        ],
+        "response_shape": "hookSpecificOutput.decision.behavior=allow",
+        "state": "supported"
+      }
+    },
+    "classification": "live_provider",
+    "cleanup": {
+      "complete": true,
+      "remaining_state": "An empty scratch folder held open by the desktop app.",
+      "resources": [
+        {
+          "action": "removed",
+          "alias": "temporary-claude-settings",
+          "detail": "Project-local .claude/settings.local.json in the scratch folder. Contents removed; the emptied folder itself stayed open in the desktop app.",
+          "evidence": "Folder listing after cleanup",
+          "failure_attribution": "not_applicable",
+          "kind": "hook_installation",
+          "state": "confirmed"
+        },
+        {
+          "action": "removed",
+          "alias": "scratch-repository",
+          "detail": "Contents removed; the emptied folder itself stayed open in the desktop app.",
+          "evidence": "Folder listing after cleanup",
+          "failure_attribution": "not_applicable",
+          "kind": "temporary_state",
+          "state": "confirmed"
+        },
+        {
+          "action": "removed",
+          "alias": "claude-project-state",
+          "detail": "Claude's per-directory state for the scratch repository.",
+          "evidence": "Directory check",
+          "failure_attribution": "not_applicable",
+          "kind": "temporary_state",
+          "state": "confirmed"
+        }
+      ]
+    },
+    "finished_at": "2026-10-06T22:09:41.912249Z",
+    "format_version": "watchdog.probe-result.v1",
+    "provenance": {
+      "adapter": {
+        "invocation": "provider",
+        "name": "none",
+        "version": null
+      },
+      "harness": {
+        "name": "claude-desktop",
+        "version": null
+      },
+      "os": {
+        "architecture": "AMD64",
+        "name": "Windows",
+        "version": null
+      },
+      "provider": {
+        "name": "claude",
+        "surface": "desktop",
+        "version": "2.1.286"
+      },
+      "source": {
+        "kind": "manual-observation",
+        "sanitized_reference": "wd139-permission-allow"
+      }
+    },
+    "record_id": "wd139-claude-desktop-permission-allow-2026-10-06-attempt-1",
+    "result": {
+      "limitations": [
+        "One Windows desktop session, the model the user selected, one scripted prompt."
+      ],
+      "state": "passed"
+    },
+    "scope": {
+      "expected_callback_kinds": [
+        "PermissionRequest"
+      ],
+      "expected_deliveries": 1,
+      "isolation": "scratch Git repository outside registered projects with project-local hooks",
+      "notes": "One capability per run; hook inputs and outputs stayed in scratch."
+    },
+    "stages": {
+      "adapter": {
+        "evidence": "The probe calls no Watchdog adapter.",
+        "failure_category": null,
+        "starts": 0,
+        "state": "not_invoked"
+      },
+      "callbacks": {
+        "evidence": "Minimum expected count per event; input shapes are in capabilities.",
+        "expected": 1,
+        "missing": 0,
+        "missing_attribution": "not_applicable",
+        "observed": 1
+      },
+      "end_to_end_delivery": {
+        "evidence": "Read back from the session transcript.",
+        "expected": 1,
+        "failure_attribution": "not_applicable",
+        "failure_detail": null,
+        "persisted": 1,
+        "read_back": 1,
+        "state": "confirmed"
+      },
+      "persistence": {
+        "accepted": 0,
+        "evidence": "Not applicable: the probe does not exercise Watchdog persistence.",
+        "losses": []
+      },
+      "provider_dispatch": {
+        "attempts": 1,
+        "detail": null,
+        "evidence": "Claude emitted a result event",
+        "state": "confirmed"
+      },
+      "retries": {
+        "count": 0,
+        "evidence": "One run per case.",
+        "outcome": "not_attempted",
+        "reason": null,
+        "scopes": []
+      }
+    },
+    "started_at": "2026-10-06T21:48:21.457343Z"
+  },
+  {
+    "capabilities": {
+      "permission-deny": {
+        "callbacks": {
+          "PermissionRequest": {
+            "input_fields": [
+              "cwd",
+              "hook_event_name",
+              "permission_mode",
+              "permission_suggestions",
+              "prompt_id",
+              "scratchpad_dir",
+              "session_id",
+              "tool_input",
+              "tool_name",
+              "transcript_path"
+            ],
+            "observed": 1,
+            "tool_names": [
+              "Bash"
+            ]
+          }
+        },
+        "models": [
+          "claude-haiku-4-5-20251001"
+        ],
+        "response_shape": "hookSpecificOutput.decision.behavior=deny",
+        "state": "supported"
+      }
+    },
+    "classification": "live_provider",
+    "cleanup": {
+      "complete": true,
+      "remaining_state": "An empty scratch folder held open by the desktop app.",
+      "resources": [
+        {
+          "action": "removed",
+          "alias": "temporary-claude-settings",
+          "detail": "Project-local .claude/settings.local.json in the scratch folder. Contents removed; the emptied folder itself stayed open in the desktop app.",
+          "evidence": "Folder listing after cleanup",
+          "failure_attribution": "not_applicable",
+          "kind": "hook_installation",
+          "state": "confirmed"
+        },
+        {
+          "action": "removed",
+          "alias": "scratch-repository",
+          "detail": "Contents removed; the emptied folder itself stayed open in the desktop app.",
+          "evidence": "Folder listing after cleanup",
+          "failure_attribution": "not_applicable",
+          "kind": "temporary_state",
+          "state": "confirmed"
+        },
+        {
+          "action": "removed",
+          "alias": "claude-project-state",
+          "detail": "Claude's per-directory state for the scratch repository.",
+          "evidence": "Directory check",
+          "failure_attribution": "not_applicable",
+          "kind": "temporary_state",
+          "state": "confirmed"
+        }
+      ]
+    },
+    "finished_at": "2026-10-06T22:09:41.912249Z",
+    "format_version": "watchdog.probe-result.v1",
+    "provenance": {
+      "adapter": {
+        "invocation": "provider",
+        "name": "none",
+        "version": null
+      },
+      "harness": {
+        "name": "claude-desktop",
+        "version": null
+      },
+      "os": {
+        "architecture": "AMD64",
+        "name": "Windows",
+        "version": null
+      },
+      "provider": {
+        "name": "claude",
+        "surface": "desktop",
+        "version": "2.1.286"
+      },
+      "source": {
+        "kind": "manual-observation",
+        "sanitized_reference": "wd139-permission-deny"
+      }
+    },
+    "record_id": "wd139-claude-desktop-permission-deny-2026-10-06-attempt-1",
+    "result": {
+      "limitations": [
+        "One Windows desktop session, the model the user selected, one scripted prompt."
+      ],
+      "state": "passed"
+    },
+    "scope": {
+      "expected_callback_kinds": [
+        "PermissionRequest"
+      ],
+      "expected_deliveries": 1,
+      "isolation": "scratch Git repository outside registered projects with project-local hooks",
+      "notes": "One capability per run; hook inputs and outputs stayed in scratch."
+    },
+    "stages": {
+      "adapter": {
+        "evidence": "The probe calls no Watchdog adapter.",
+        "failure_category": null,
+        "starts": 0,
+        "state": "not_invoked"
+      },
+      "callbacks": {
+        "evidence": "Minimum expected count per event; input shapes are in capabilities.",
+        "expected": 1,
+        "missing": 0,
+        "missing_attribution": "not_applicable",
+        "observed": 1
+      },
+      "end_to_end_delivery": {
+        "evidence": "Read back from the session transcript.",
+        "expected": 1,
+        "failure_attribution": "not_applicable",
+        "failure_detail": null,
+        "persisted": 1,
+        "read_back": 1,
+        "state": "confirmed"
+      },
+      "persistence": {
+        "accepted": 0,
+        "evidence": "Not applicable: the probe does not exercise Watchdog persistence.",
+        "losses": []
+      },
+      "provider_dispatch": {
+        "attempts": 1,
+        "detail": null,
+        "evidence": "Claude emitted a result event",
+        "state": "confirmed"
+      },
+      "retries": {
+        "count": 0,
+        "evidence": "One run per case.",
+        "outcome": "not_attempted",
+        "reason": null,
+        "scopes": []
+      }
+    },
+    "started_at": "2026-10-06T21:48:21.457343Z"
+  },
+  {
+    "capabilities": {
+      "stop-block": {
+        "callbacks": {
+          "Stop": {
+            "input_fields": [
+              "background_tasks",
+              "cwd",
+              "hook_event_name",
+              "last_assistant_message",
+              "permission_mode",
+              "prompt_id",
+              "scratchpad_dir",
+              "session_crons",
+              "session_id",
+              "stop_hook_active",
+              "transcript_path"
+            ],
+            "observed": 2,
+            "tool_names": []
+          }
+        },
+        "models": [
+          "claude-haiku-4-5-20251001"
+        ],
+        "response_shape": "decision=block",
+        "state": "supported"
+      }
+    },
+    "classification": "live_provider",
+    "cleanup": {
+      "complete": true,
+      "remaining_state": "An empty scratch folder held open by the desktop app.",
+      "resources": [
+        {
+          "action": "removed",
+          "alias": "temporary-claude-settings",
+          "detail": "Project-local .claude/settings.local.json in the scratch folder. Contents removed; the emptied folder itself stayed open in the desktop app.",
+          "evidence": "Folder listing after cleanup",
+          "failure_attribution": "not_applicable",
+          "kind": "hook_installation",
+          "state": "confirmed"
+        },
+        {
+          "action": "removed",
+          "alias": "scratch-repository",
+          "detail": "Contents removed; the emptied folder itself stayed open in the desktop app.",
+          "evidence": "Folder listing after cleanup",
+          "failure_attribution": "not_applicable",
+          "kind": "temporary_state",
+          "state": "confirmed"
+        },
+        {
+          "action": "removed",
+          "alias": "claude-project-state",
+          "detail": "Claude's per-directory state for the scratch repository.",
+          "evidence": "Directory check",
+          "failure_attribution": "not_applicable",
+          "kind": "temporary_state",
+          "state": "confirmed"
+        }
+      ]
+    },
+    "finished_at": "2026-10-06T22:09:41.912249Z",
+    "format_version": "watchdog.probe-result.v1",
+    "provenance": {
+      "adapter": {
+        "invocation": "provider",
+        "name": "none",
+        "version": null
+      },
+      "harness": {
+        "name": "claude-desktop",
+        "version": null
+      },
+      "os": {
+        "architecture": "AMD64",
+        "name": "Windows",
+        "version": null
+      },
+      "provider": {
+        "name": "claude",
+        "surface": "desktop",
+        "version": "2.1.286"
+      },
+      "source": {
+        "kind": "manual-observation",
+        "sanitized_reference": "wd139-stop-block"
+      }
+    },
+    "record_id": "wd139-claude-desktop-stop-block-2026-10-06-attempt-1",
+    "result": {
+      "limitations": [
+        "One Windows desktop session, the model the user selected, one scripted prompt."
+      ],
+      "state": "passed"
+    },
+    "scope": {
+      "expected_callback_kinds": [
+        "Stop"
+      ],
+      "expected_deliveries": 1,
+      "isolation": "scratch Git repository outside registered projects with project-local hooks",
+      "notes": "One capability per run; hook inputs and outputs stayed in scratch."
+    },
+    "stages": {
+      "adapter": {
+        "evidence": "The probe calls no Watchdog adapter.",
+        "failure_category": null,
+        "starts": 0,
+        "state": "not_invoked"
+      },
+      "callbacks": {
+        "evidence": "Minimum expected count per event; input shapes are in capabilities.",
+        "expected": 1,
+        "missing": 0,
+        "missing_attribution": "not_applicable",
+        "observed": 1
+      },
+      "end_to_end_delivery": {
+        "evidence": "Read back from the session transcript.",
+        "expected": 1,
+        "failure_attribution": "not_applicable",
+        "failure_detail": null,
+        "persisted": 1,
+        "read_back": 1,
+        "state": "confirmed"
+      },
+      "persistence": {
+        "accepted": 0,
+        "evidence": "Not applicable: the probe does not exercise Watchdog persistence.",
+        "losses": []
+      },
+      "provider_dispatch": {
+        "attempts": 1,
+        "detail": null,
+        "evidence": "Claude emitted a result event",
+        "state": "confirmed"
+      },
+      "retries": {
+        "count": 0,
+        "evidence": "One run per case.",
+        "outcome": "not_attempted",
+        "reason": null,
+        "scopes": []
+      }
+    },
+    "started_at": "2026-10-06T21:48:21.457343Z"
+  },
+  {
+    "capabilities": {
+      "pre-tool-ask": {
+        "callbacks": {
+          "PermissionRequest": {
+            "input_fields": [
+              "cwd",
+              "hook_event_name",
+              "permission_mode",
+              "prompt_id",
+              "scratchpad_dir",
+              "session_id",
+              "tool_input",
+              "tool_name",
+              "transcript_path"
+            ],
+            "observed": 1,
+            "tool_names": [
+              "Bash"
+            ]
+          },
+          "PostToolUse": {
+            "input_fields": [],
+            "observed": 0,
+            "tool_names": []
+          },
+          "PreToolUse": {
+            "input_fields": [
+              "cwd",
+              "hook_event_name",
+              "permission_mode",
+              "prompt_id",
+              "scratchpad_dir",
+              "session_id",
+              "tool_input",
+              "tool_name",
+              "tool_use_id",
+              "transcript_path"
+            ],
+            "observed": 1,
+            "tool_names": [
+              "Bash"
+            ]
+          }
+        },
+        "models": [
+          "claude-haiku-4-5-20251001"
+        ],
+        "response_shape": "hookSpecificOutput.permissionDecision=ask",
+        "state": "supported"
+      }
+    },
+    "classification": "live_provider",
+    "cleanup": {
+      "complete": true,
+      "remaining_state": "An empty scratch folder held open by the desktop app.",
+      "resources": [
+        {
+          "action": "removed",
+          "alias": "temporary-claude-settings",
+          "detail": "Project-local .claude/settings.local.json in the scratch folder. Contents removed; the emptied folder itself stayed open in the desktop app.",
+          "evidence": "Folder listing after cleanup",
+          "failure_attribution": "not_applicable",
+          "kind": "hook_installation",
+          "state": "confirmed"
+        },
+        {
+          "action": "removed",
+          "alias": "scratch-repository",
+          "detail": "Contents removed; the emptied folder itself stayed open in the desktop app.",
+          "evidence": "Folder listing after cleanup",
+          "failure_attribution": "not_applicable",
+          "kind": "temporary_state",
+          "state": "confirmed"
+        },
+        {
+          "action": "removed",
+          "alias": "claude-project-state",
+          "detail": "Claude's per-directory state for the scratch repository.",
+          "evidence": "Directory check",
+          "failure_attribution": "not_applicable",
+          "kind": "temporary_state",
+          "state": "confirmed"
+        }
+      ]
+    },
+    "finished_at": "2026-10-06T22:09:41.912249Z",
+    "format_version": "watchdog.probe-result.v1",
+    "provenance": {
+      "adapter": {
+        "invocation": "provider",
+        "name": "none",
+        "version": null
+      },
+      "harness": {
+        "name": "claude-desktop",
+        "version": null
+      },
+      "os": {
+        "architecture": "AMD64",
+        "name": "Windows",
+        "version": null
+      },
+      "provider": {
+        "name": "claude",
+        "surface": "desktop",
+        "version": "2.1.286"
+      },
+      "source": {
+        "kind": "manual-observation",
+        "sanitized_reference": "wd139-pre-tool-ask"
+      }
+    },
+    "record_id": "wd139-claude-desktop-pre-tool-ask-2026-10-06-attempt-1",
+    "result": {
+      "limitations": [
+        "ask handed the call to the permission flow (a PermissionRequest followed)",
+        "One Windows desktop session, the model the user selected, one scripted prompt."
+      ],
+      "state": "passed"
+    },
+    "scope": {
+      "expected_callback_kinds": [
+        "PreToolUse",
+        "PostToolUse",
+        "PermissionRequest"
+      ],
+      "expected_deliveries": 1,
+      "isolation": "scratch Git repository outside registered projects with project-local hooks",
+      "notes": "One capability per run; hook inputs and outputs stayed in scratch."
+    },
+    "stages": {
+      "adapter": {
+        "evidence": "The probe calls no Watchdog adapter.",
+        "failure_category": null,
+        "starts": 0,
+        "state": "not_invoked"
+      },
+      "callbacks": {
+        "evidence": "Minimum expected count per event; input shapes are in capabilities.",
+        "expected": 1,
+        "missing": 0,
+        "missing_attribution": "not_applicable",
+        "observed": 1
+      },
+      "end_to_end_delivery": {
+        "evidence": "Read back from the session transcript.",
+        "expected": 1,
+        "failure_attribution": "not_applicable",
+        "failure_detail": null,
+        "persisted": 1,
+        "read_back": 1,
+        "state": "confirmed"
+      },
+      "persistence": {
+        "accepted": 0,
+        "evidence": "Not applicable: the probe does not exercise Watchdog persistence.",
+        "losses": []
+      },
+      "provider_dispatch": {
+        "attempts": 1,
+        "detail": null,
+        "evidence": "Claude emitted a result event",
+        "state": "confirmed"
+      },
+      "retries": {
+        "count": 0,
+        "evidence": "One run per case.",
+        "outcome": "not_attempted",
+        "reason": null,
+        "scopes": []
+      }
+    },
+    "started_at": "2026-10-06T21:48:21.457343Z"
+  },
+  {
+    "capabilities": {
+      "post-tool-block": {
+        "callbacks": {
+          "PostToolUse": {
+            "input_fields": [
+              "cwd",
+              "duration_ms",
+              "hook_event_name",
+              "permission_mode",
+              "prompt_id",
+              "scratchpad_dir",
+              "session_id",
+              "tool_input",
+              "tool_name",
+              "tool_response",
+              "tool_use_id",
+              "transcript_path"
+            ],
+            "observed": 1,
+            "tool_names": [
+              "Bash"
+            ]
+          },
+          "PreToolUse": {
+            "input_fields": [
+              "cwd",
+              "hook_event_name",
+              "permission_mode",
+              "prompt_id",
+              "scratchpad_dir",
+              "session_id",
+              "tool_input",
+              "tool_name",
+              "tool_use_id",
+              "transcript_path"
+            ],
+            "observed": 1,
+            "tool_names": [
+              "Bash"
+            ]
+          }
+        },
+        "models": [
+          "claude-haiku-4-5-20251001"
+        ],
+        "response_shape": "decision=block",
+        "state": "supported"
+      }
+    },
+    "classification": "live_provider",
+    "cleanup": {
+      "complete": true,
+      "remaining_state": "An empty scratch folder held open by the desktop app.",
+      "resources": [
+        {
+          "action": "removed",
+          "alias": "temporary-claude-settings",
+          "detail": "Project-local .claude/settings.local.json in the scratch folder. Contents removed; the emptied folder itself stayed open in the desktop app.",
+          "evidence": "Folder listing after cleanup",
+          "failure_attribution": "not_applicable",
+          "kind": "hook_installation",
+          "state": "confirmed"
+        },
+        {
+          "action": "removed",
+          "alias": "scratch-repository",
+          "detail": "Contents removed; the emptied folder itself stayed open in the desktop app.",
+          "evidence": "Folder listing after cleanup",
+          "failure_attribution": "not_applicable",
+          "kind": "temporary_state",
+          "state": "confirmed"
+        },
+        {
+          "action": "removed",
+          "alias": "claude-project-state",
+          "detail": "Claude's per-directory state for the scratch repository.",
+          "evidence": "Directory check",
+          "failure_attribution": "not_applicable",
+          "kind": "temporary_state",
+          "state": "confirmed"
+        }
+      ]
+    },
+    "finished_at": "2026-10-06T22:09:41.912249Z",
+    "format_version": "watchdog.probe-result.v1",
+    "provenance": {
+      "adapter": {
+        "invocation": "provider",
+        "name": "none",
+        "version": null
+      },
+      "harness": {
+        "name": "claude-desktop",
+        "version": null
+      },
+      "os": {
+        "architecture": "AMD64",
+        "name": "Windows",
+        "version": null
+      },
+      "provider": {
+        "name": "claude",
+        "surface": "desktop",
+        "version": "2.1.286"
+      },
+      "source": {
+        "kind": "manual-observation",
+        "sanitized_reference": "wd139-post-tool-block"
+      }
+    },
+    "record_id": "wd139-claude-desktop-post-tool-block-2026-10-06-attempt-1",
+    "result": {
+      "limitations": [
+        "One Windows desktop session, the model the user selected, one scripted prompt."
+      ],
+      "state": "passed"
+    },
+    "scope": {
+      "expected_callback_kinds": [
+        "PreToolUse",
+        "PostToolUse"
+      ],
+      "expected_deliveries": 1,
+      "isolation": "scratch Git repository outside registered projects with project-local hooks",
+      "notes": "One capability per run; hook inputs and outputs stayed in scratch."
+    },
+    "stages": {
+      "adapter": {
+        "evidence": "The probe calls no Watchdog adapter.",
+        "failure_category": null,
+        "starts": 0,
+        "state": "not_invoked"
+      },
+      "callbacks": {
+        "evidence": "Minimum expected count per event; input shapes are in capabilities.",
+        "expected": 1,
+        "missing": 0,
+        "missing_attribution": "not_applicable",
+        "observed": 1
+      },
+      "end_to_end_delivery": {
+        "evidence": "Read back from the session transcript.",
+        "expected": 1,
+        "failure_attribution": "not_applicable",
+        "failure_detail": null,
+        "persisted": 1,
+        "read_back": 1,
+        "state": "confirmed"
+      },
+      "persistence": {
+        "accepted": 0,
+        "evidence": "Not applicable: the probe does not exercise Watchdog persistence.",
+        "losses": []
+      },
+      "provider_dispatch": {
+        "attempts": 1,
+        "detail": null,
+        "evidence": "Claude emitted a result event",
+        "state": "confirmed"
+      },
+      "retries": {
+        "count": 0,
+        "evidence": "One run per case.",
+        "outcome": "not_attempted",
+        "reason": null,
+        "scopes": []
+      }
+    },
+    "started_at": "2026-10-06T21:48:21.457343Z"
+  },
+  {
+    "capabilities": {
+      "post-tool-halt": {
+        "callbacks": {
+          "PostToolUse": {
+            "input_fields": [
+              "cwd",
+              "duration_ms",
+              "hook_event_name",
+              "permission_mode",
+              "prompt_id",
+              "scratchpad_dir",
+              "session_id",
+              "tool_input",
+              "tool_name",
+              "tool_response",
+              "tool_use_id",
+              "transcript_path"
+            ],
+            "observed": 1,
+            "tool_names": [
+              "Bash"
+            ]
+          },
+          "PreToolUse": {
+            "input_fields": [
+              "cwd",
+              "hook_event_name",
+              "permission_mode",
+              "prompt_id",
+              "scratchpad_dir",
+              "session_id",
+              "tool_input",
+              "tool_name",
+              "tool_use_id",
+              "transcript_path"
+            ],
+            "observed": 1,
+            "tool_names": [
+              "Bash"
+            ]
+          }
+        },
+        "models": [
+          "claude-haiku-4-5-20251001"
+        ],
+        "response_shape": "continue=false",
+        "state": "supported"
+      }
+    },
+    "classification": "live_provider",
+    "cleanup": {
+      "complete": true,
+      "remaining_state": "An empty scratch folder held open by the desktop app.",
+      "resources": [
+        {
+          "action": "removed",
+          "alias": "temporary-claude-settings",
+          "detail": "Project-local .claude/settings.local.json in the scratch folder. Contents removed; the emptied folder itself stayed open in the desktop app.",
+          "evidence": "Folder listing after cleanup",
+          "failure_attribution": "not_applicable",
+          "kind": "hook_installation",
+          "state": "confirmed"
+        },
+        {
+          "action": "removed",
+          "alias": "scratch-repository",
+          "detail": "Contents removed; the emptied folder itself stayed open in the desktop app.",
+          "evidence": "Folder listing after cleanup",
+          "failure_attribution": "not_applicable",
+          "kind": "temporary_state",
+          "state": "confirmed"
+        },
+        {
+          "action": "removed",
+          "alias": "claude-project-state",
+          "detail": "Claude's per-directory state for the scratch repository.",
+          "evidence": "Directory check",
+          "failure_attribution": "not_applicable",
+          "kind": "temporary_state",
+          "state": "confirmed"
+        }
+      ]
+    },
+    "finished_at": "2026-10-06T22:09:41.912249Z",
+    "format_version": "watchdog.probe-result.v1",
+    "provenance": {
+      "adapter": {
+        "invocation": "provider",
+        "name": "none",
+        "version": null
+      },
+      "harness": {
+        "name": "claude-desktop",
+        "version": null
+      },
+      "os": {
+        "architecture": "AMD64",
+        "name": "Windows",
+        "version": null
+      },
+      "provider": {
+        "name": "claude",
+        "surface": "desktop",
+        "version": "2.1.286"
+      },
+      "source": {
+        "kind": "manual-observation",
+        "sanitized_reference": "wd139-post-tool-halt"
+      }
+    },
+    "record_id": "wd139-claude-desktop-post-tool-halt-2026-10-06-attempt-1",
+    "result": {
+      "limitations": [
+        "evidence is the absence of the post-tool reply",
+        "One Windows desktop session, the model the user selected, one scripted prompt."
+      ],
+      "state": "passed"
+    },
+    "scope": {
+      "expected_callback_kinds": [
+        "PreToolUse",
+        "PostToolUse"
+      ],
+      "expected_deliveries": 1,
+      "isolation": "scratch Git repository outside registered projects with project-local hooks",
+      "notes": "One capability per run; hook inputs and outputs stayed in scratch."
+    },
+    "stages": {
+      "adapter": {
+        "evidence": "The probe calls no Watchdog adapter.",
+        "failure_category": null,
+        "starts": 0,
+        "state": "not_invoked"
+      },
+      "callbacks": {
+        "evidence": "Minimum expected count per event; input shapes are in capabilities.",
+        "expected": 1,
+        "missing": 0,
+        "missing_attribution": "not_applicable",
+        "observed": 1
+      },
+      "end_to_end_delivery": {
+        "evidence": "Read back from the session transcript.",
+        "expected": 1,
+        "failure_attribution": "not_applicable",
+        "failure_detail": null,
+        "persisted": 1,
+        "read_back": 1,
+        "state": "confirmed"
+      },
+      "persistence": {
+        "accepted": 0,
+        "evidence": "Not applicable: the probe does not exercise Watchdog persistence.",
+        "losses": []
+      },
+      "provider_dispatch": {
+        "attempts": 1,
+        "detail": null,
+        "evidence": "Claude emitted a result event",
+        "state": "confirmed"
+      },
+      "retries": {
+        "count": 0,
+        "evidence": "One run per case.",
+        "outcome": "not_attempted",
+        "reason": null,
+        "scopes": []
+      }
+    },
+    "started_at": "2026-10-06T21:48:21.457343Z"
+  },
+  {
+    "capabilities": {
+      "agent-deny": {
+        "callbacks": {
+          "PreToolUse": {
+            "input_fields": [
+              "cwd",
+              "hook_event_name",
+              "permission_mode",
+              "prompt_id",
+              "scratchpad_dir",
+              "session_id",
+              "tool_input",
+              "tool_name",
+              "tool_use_id",
+              "transcript_path"
+            ],
+            "observed": 1,
+            "tool_names": [
+              "Agent"
+            ]
+          },
+          "SubagentStart": {
+            "input_fields": [],
+            "observed": 0,
+            "tool_names": []
+          }
+        },
+        "models": [
+          "claude-haiku-4-5-20251001"
+        ],
+        "response_shape": "hookSpecificOutput.permissionDecision=deny",
+        "state": "supported"
+      }
+    },
+    "classification": "live_provider",
+    "cleanup": {
+      "complete": true,
+      "remaining_state": "An empty scratch folder held open by the desktop app.",
+      "resources": [
+        {
+          "action": "removed",
+          "alias": "temporary-claude-settings",
+          "detail": "Project-local .claude/settings.local.json in the scratch folder. Contents removed; the emptied folder itself stayed open in the desktop app.",
+          "evidence": "Folder listing after cleanup",
+          "failure_attribution": "not_applicable",
+          "kind": "hook_installation",
+          "state": "confirmed"
+        },
+        {
+          "action": "removed",
+          "alias": "scratch-repository",
+          "detail": "Contents removed; the emptied folder itself stayed open in the desktop app.",
+          "evidence": "Folder listing after cleanup",
+          "failure_attribution": "not_applicable",
+          "kind": "temporary_state",
+          "state": "confirmed"
+        },
+        {
+          "action": "removed",
+          "alias": "claude-project-state",
+          "detail": "Claude's per-directory state for the scratch repository.",
+          "evidence": "Directory check",
+          "failure_attribution": "not_applicable",
+          "kind": "temporary_state",
+          "state": "confirmed"
+        }
+      ]
+    },
+    "finished_at": "2026-10-06T22:09:41.912249Z",
+    "format_version": "watchdog.probe-result.v1",
+    "provenance": {
+      "adapter": {
+        "invocation": "provider",
+        "name": "none",
+        "version": null
+      },
+      "harness": {
+        "name": "claude-desktop",
+        "version": null
+      },
+      "os": {
+        "architecture": "AMD64",
+        "name": "Windows",
+        "version": null
+      },
+      "provider": {
+        "name": "claude",
+        "surface": "desktop",
+        "version": "2.1.286"
+      },
+      "source": {
+        "kind": "manual-observation",
+        "sanitized_reference": "wd139-agent-deny"
+      }
+    },
+    "record_id": "wd139-claude-desktop-agent-deny-2026-10-06-attempt-1",
+    "result": {
+      "limitations": [
+        "One Windows desktop session, the model the user selected, one scripted prompt."
+      ],
+      "state": "passed"
+    },
+    "scope": {
+      "expected_callback_kinds": [
+        "PreToolUse",
+        "SubagentStart"
+      ],
+      "expected_deliveries": 1,
+      "isolation": "scratch Git repository outside registered projects with project-local hooks",
+      "notes": "One capability per run; hook inputs and outputs stayed in scratch."
+    },
+    "stages": {
+      "adapter": {
+        "evidence": "The probe calls no Watchdog adapter.",
+        "failure_category": null,
+        "starts": 0,
+        "state": "not_invoked"
+      },
+      "callbacks": {
+        "evidence": "Minimum expected count per event; input shapes are in capabilities.",
+        "expected": 1,
+        "missing": 0,
+        "missing_attribution": "not_applicable",
+        "observed": 1
+      },
+      "end_to_end_delivery": {
+        "evidence": "Read back from the session transcript.",
+        "expected": 1,
+        "failure_attribution": "not_applicable",
+        "failure_detail": null,
+        "persisted": 1,
+        "read_back": 1,
+        "state": "confirmed"
+      },
+      "persistence": {
+        "accepted": 0,
+        "evidence": "Not applicable: the probe does not exercise Watchdog persistence.",
+        "losses": []
+      },
+      "provider_dispatch": {
+        "attempts": 1,
+        "detail": null,
+        "evidence": "Claude emitted a result event",
+        "state": "confirmed"
+      },
+      "retries": {
+        "count": 0,
+        "evidence": "One run per case.",
+        "outcome": "not_attempted",
+        "reason": null,
+        "scopes": []
+      }
+    },
+    "started_at": "2026-10-06T21:48:21.457343Z"
+  }
+]
