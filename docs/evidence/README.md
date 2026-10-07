@@ -6,6 +6,11 @@ direct local-adapter runs, and live-provider observations separate, and records
 dispatch, callback gaps, retries, losses, delivery, provenance, and cleanup.
 The record is a reporting requirement, not authorization for a live probe.
 
+`wd139c-codex-cli-control.json` contains the 18 isolated Windows Codex CLI
+control records for WD-139c. Later clean reruns replace incomplete records for
+the same capability; neither a callback alone nor a documentation entry enables
+an adapter action.
+
 `wd012-protocol.md` states the labelling rules for the WD-012 review: what each
 progress state, outcome, and finding verdict means, how one card is reviewed, and
 which judgements are refused when the retained evidence is insufficient. It

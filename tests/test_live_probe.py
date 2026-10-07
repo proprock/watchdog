@@ -202,6 +202,197 @@ def test_offline_helpers_never_launch_a_probe_subprocess(monkeypatch, tmp_path):
     forbidden.assert_not_called()
 
 
+def test_codex_control_cases_cover_the_requested_matrix_without_provider_access():
+    expected = {
+        "session-start-context",
+        "pre-tool-bash-context",
+        "pre-tool-bash-deny",
+        "pre-tool-bash-rewrite",
+        "pre-tool-apply-patch-context",
+        "pre-tool-apply-patch-deny",
+        "pre-tool-apply-patch-rewrite",
+        "permission-bash-allow",
+        "permission-bash-deny",
+        "post-tool-bash-context",
+        "post-tool-bash-block",
+        "post-tool-bash-halt",
+        "pre-compact-context",
+        "post-compact-context",
+        "subagent-start-context",
+        "subagent-stop-block",
+        "stop-block",
+        "interrupt-observe",
+    }
+
+    assert expected <= set(live_probe.CODEX_CASES)
+    assert all(case.prompts for case in live_probe.CODEX_CASES.values())
+
+
+@pytest.mark.parametrize(
+    ("name", "event", "expected"),
+    [
+        ("pre-tool-bash-deny", "PreToolUse", "permissionDecision"),
+        ("pre-tool-bash-rewrite", "PreToolUse", "updatedInput"),
+        ("permission-bash-allow", "PermissionRequest", "decision"),
+        ("post-tool-bash-block", "PostToolUse", "decision"),
+        ("post-tool-bash-halt", "PostToolUse", "continue"),
+        ("stop-block", "Stop", "decision"),
+    ],
+)
+def test_codex_handler_emits_the_case_control_envelope(
+    monkeypatch, capsys, tmp_path, name, event, expected
+):
+    log = tmp_path / "probe.ndjson"
+    payload = {"hook_event_name": event, "tool_input": {"command": "echo original"}}
+    monkeypatch.setattr(
+        live_probe.sys, "stdin", io.TextIOWrapper(io.BytesIO(json.dumps(payload).encode()))
+    )
+
+    assert live_probe.handle_codex(log, name) == 0
+
+    output = json.loads(capsys.readouterr().out)
+    assert expected in json.dumps(output)
+    assert json.loads(log.read_text(encoding="utf-8"))["event"] == event
+
+
+def test_codex_profile_contains_only_the_selected_case_hooks(tmp_path):
+    case = live_probe.CODEX_CASES["pre-tool-apply-patch-rewrite"]
+
+    profile = live_probe.codex_profile_configuration(
+        case, Path(r"C:\probe.py"), tmp_path / "probe.ndjson"
+    )
+
+    parsed = tomllib.loads(profile)
+    assert set(parsed["hooks"]) == {"PreToolUse"}
+    assert parsed["hooks"]["PreToolUse"][0]["matcher"] == "^apply_patch$"
+
+
+def test_codex_apply_patch_rewrite_preserves_the_tool_input_shape(monkeypatch, capsys, tmp_path):
+    log = tmp_path / "probe.ndjson"
+    payload = {
+        "hook_event_name": "PreToolUse",
+        "tool_input": {"patch": "*** Begin Patch\n*** End Patch", "other": "preserved"},
+    }
+    monkeypatch.setattr(
+        live_probe.sys, "stdin", io.TextIOWrapper(io.BytesIO(json.dumps(payload).encode()))
+    )
+
+    assert live_probe.handle_codex(log, "pre-tool-apply-patch-rewrite") == 0
+
+    output = json.loads(capsys.readouterr().out)["hookSpecificOutput"]["updatedInput"]
+    assert output["other"] == "preserved"
+    assert output["patch"] == live_probe._CODEX_APPLY_PATCH_REWRITTEN
+
+
+def test_codex_control_response_shapes_name_the_rewritten_input_field():
+    assert "updatedInput.command" in live_probe.CODEX_CASES["pre-tool-bash-rewrite"].response_shape
+    assert (
+        "updatedInput.patch"
+        in live_probe.CODEX_CASES["pre-tool-apply-patch-rewrite"].response_shape
+    )
+
+
+def test_codex_file_markers_only_reports_known_sentinel_tokens(tmp_path):
+    sentinel = tmp_path / live_probe.CODEX_SENTINEL
+    sentinel.write_text(f"untrusted {live_probe.CODEX_REWRITTEN}", encoding="utf-8")
+
+    assert live_probe._codex_file_markers(tmp_path) == {live_probe.CODEX_REWRITTEN}
+
+
+def test_codex_evaluation_requires_callback_and_observed_effect():
+    case = live_probe.CODEX_CASES["pre-tool-bash-rewrite"]
+    evidence = live_probe.CodexEvidence(
+        records=[{"event": "PreToolUse", "input": {"hook_event_name": "PreToolUse"}}],
+        stdout=live_probe.CODEX_REWRITTEN,
+        rollout=live_probe.CODEX_REWRITTEN,
+        files=frozenset(),
+        completed=True,
+    )
+
+    assert live_probe.evaluate_codex(case, evidence) == ("supported", [])
+
+
+def test_codex_subagent_stop_uses_its_own_continuation_callback():
+    case = live_probe.CODEX_CASES["subagent-stop-block"]
+    evidence = live_probe.CodexEvidence(
+        records=[
+            {"event": "SubagentStop", "input": {"stop_hook_active": False}},
+            {"event": "SubagentStop", "input": {"stop_hook_active": True}},
+        ],
+        stdout=live_probe.CODEX_STOP_ACK,
+        rollout=live_probe.CODEX_STOP_ACK,
+        files=frozenset(),
+        completed=True,
+    )
+
+    assert live_probe.evaluate_codex(case, evidence) == ("supported", [])
+
+
+def test_codex_scratch_cleanup_removes_a_completed_case_directory(tmp_path):
+    scratch = tmp_path / "watchdog-wd139c-codex-test"
+    scratch.mkdir()
+    (scratch / "probe.ndjson").write_text("{}\n", encoding="utf-8")
+
+    assert live_probe._remove_codex_scratch(scratch) is True
+    assert not scratch.exists()
+
+
+def test_codex_record_is_common_v1_and_sanitized():
+    case = live_probe.CODEX_CASES["pre-tool-bash-context"]
+    evidence = live_probe.CodexEvidence(
+        records=[
+            {
+                "event": "PreToolUse",
+                "input": {"hook_event_name": "PreToolUse", "tool_input": "secret"},
+            }
+        ],
+        stdout=live_probe.CODEX_CONTEXT_MARKER,
+        rollout=live_probe.CODEX_CONTEXT_MARKER,
+        files=frozenset(),
+        completed=True,
+    )
+
+    record = live_probe.codex_record(
+        case,
+        evidence,
+        verdict=live_probe.evaluate_codex(case, evidence),
+        version="codex-cli test",
+        started_at="2026-10-07T00:00:00Z",
+        finished_at="2026-10-07T00:01:00Z",
+        removed=True,
+    )
+
+    assert record["format_version"] == "watchdog.probe-result.v1"
+    assert record["capabilities"][case.name]["state"] == "supported"
+    assert "secret" not in json.dumps(record)
+    assert record["cleanup"]["complete"] is True
+
+
+def test_codex_record_marks_a_confirmed_unsupported_capability_as_failed():
+    case = live_probe.CODEX_CASES["pre-tool-apply-patch-rewrite"]
+    evidence = live_probe.CodexEvidence(
+        records=[{"event": "PreToolUse", "input": {"hook_event_name": "PreToolUse"}}],
+        stdout="",
+        rollout="",
+        files=frozenset({live_probe.CODEX_SENTINEL}),
+        file_markers=frozenset({live_probe.CODEX_ORIGINAL}),
+        completed=True,
+    )
+
+    record = live_probe.codex_record(
+        case,
+        evidence,
+        verdict=live_probe.evaluate_codex(case, evidence),
+        version="codex-cli test",
+        started_at="2026-10-07T00:00:00Z",
+        finished_at="2026-10-07T00:01:00Z",
+        removed=True,
+    )
+
+    assert record["capabilities"][case.name]["state"] == "unsupported"
+    assert record["result"]["state"] == "failed"
+
+
 def _stream(reply="", *, tool_results=(), models=(), error=False, compacted=False):
     events = []
     if compacted:

@@ -1,0 +1,2587 @@
+[
+  {
+    "capabilities": {
+      "interrupt-observe": {
+        "callbacks": {
+          "Interrupt": {
+            "input_fields": [],
+            "observed": 0,
+            "tool_names": []
+          }
+        },
+        "response_shape": "systemMessage",
+        "state": "inconclusive"
+      }
+    },
+    "classification": "live_provider",
+    "cleanup": {
+      "complete": false,
+      "remaining_state": "One Codex rollout retained outside the scratch directory.",
+      "resources": [
+        {
+          "action": "retained",
+          "alias": "temporary-codex-profile",
+          "detail": "The base user configuration was unchanged.",
+          "evidence": "Profile cleanup check",
+          "failure_attribution": "unknown",
+          "kind": "hook_installation",
+          "state": "unknown"
+        },
+        {
+          "action": "retained",
+          "alias": "scratch-repository",
+          "detail": null,
+          "evidence": "Temporary directory cleanup check",
+          "failure_attribution": "unknown",
+          "kind": "temporary_state",
+          "state": "unknown"
+        },
+        {
+          "action": "retained",
+          "alias": "provider-rollout",
+          "detail": "Retained by Codex for same-run read-back; path omitted.",
+          "evidence": "Probe read-back",
+          "failure_attribution": "not_applicable",
+          "kind": "temporary_state",
+          "state": "confirmed"
+        }
+      ]
+    },
+    "finished_at": "2026-10-07T05:12:44.763425Z",
+    "format_version": "watchdog.probe-result.v1",
+    "provenance": {
+      "adapter": {
+        "invocation": "provider",
+        "name": "none",
+        "version": null
+      },
+      "harness": {
+        "name": "codex-cli",
+        "version": "codex-cli 0.160.0"
+      },
+      "os": {
+        "architecture": "AMD64",
+        "name": "Windows",
+        "version": null
+      },
+      "provider": {
+        "name": "codex",
+        "surface": "cli",
+        "version": "codex-cli 0.160.0"
+      },
+      "source": {
+        "kind": "generated-workload",
+        "sanitized_reference": "wd139c-interrupt-observe"
+      }
+    },
+    "record_id": "wd139c-codex-cli-interrupt-observe-2026-10-07-attempt-1",
+    "result": {
+      "limitations": [
+        "Requires an operator to interrupt the active standalone CLI turn.",
+        "missing callback: Interrupt",
+        "One Windows Codex CLI version and one scripted prompt."
+      ],
+      "state": "incomplete"
+    },
+    "scope": {
+      "expected_callback_kinds": [
+        "Interrupt"
+      ],
+      "expected_deliveries": 1,
+      "isolation": "scratch Git repository outside registered projects and a temporary Codex profile",
+      "notes": "One isolated capability; raw hook values and model output remain in scratch only."
+    },
+    "stages": {
+      "adapter": {
+        "evidence": "The probe calls no Watchdog adapter.",
+        "failure_category": null,
+        "starts": 0,
+        "state": "not_invoked"
+      },
+      "callbacks": {
+        "evidence": "Expected callback counts and sanitized input shapes are in capabilities.",
+        "expected": 1,
+        "missing": 1,
+        "missing_attribution": "unknown",
+        "observed": 0
+      },
+      "end_to_end_delivery": {
+        "evidence": "Read back from the model output and retained rollout of the same isolated run.",
+        "expected": 1,
+        "failure_attribution": "not_applicable",
+        "failure_detail": null,
+        "persisted": 0,
+        "read_back": 0,
+        "state": "incomplete"
+      },
+      "persistence": {
+        "accepted": 0,
+        "evidence": "Not applicable: the probe does not exercise Watchdog persistence.",
+        "losses": []
+      },
+      "provider_dispatch": {
+        "attempts": 1,
+        "detail": null,
+        "evidence": "Codex process completion",
+        "state": "confirmed"
+      },
+      "retries": {
+        "count": 0,
+        "evidence": "One run per case.",
+        "outcome": "not_attempted",
+        "reason": null,
+        "scopes": []
+      }
+    },
+    "started_at": "2026-10-07T05:11:21.600549Z"
+  },
+  {
+    "capabilities": {
+      "permission-bash-allow": {
+        "callbacks": {
+          "PermissionRequest": {
+            "input_fields": [],
+            "observed": 0,
+            "tool_names": []
+          }
+        },
+        "response_shape": "hookSpecificOutput.decision.behavior=allow",
+        "state": "inconclusive"
+      }
+    },
+    "classification": "live_provider",
+    "cleanup": {
+      "complete": false,
+      "remaining_state": "One Codex rollout retained outside the scratch directory.",
+      "resources": [
+        {
+          "action": "retained",
+          "alias": "temporary-codex-profile",
+          "detail": "The base user configuration was unchanged.",
+          "evidence": "Profile cleanup check",
+          "failure_attribution": "unknown",
+          "kind": "hook_installation",
+          "state": "unknown"
+        },
+        {
+          "action": "retained",
+          "alias": "scratch-repository",
+          "detail": null,
+          "evidence": "Temporary directory cleanup check",
+          "failure_attribution": "unknown",
+          "kind": "temporary_state",
+          "state": "unknown"
+        },
+        {
+          "action": "retained",
+          "alias": "provider-rollout",
+          "detail": "Retained by Codex for same-run read-back; path omitted.",
+          "evidence": "Probe read-back",
+          "failure_attribution": "not_applicable",
+          "kind": "temporary_state",
+          "state": "confirmed"
+        }
+      ]
+    },
+    "finished_at": "2026-10-07T05:13:23.65066Z",
+    "format_version": "watchdog.probe-result.v1",
+    "provenance": {
+      "adapter": {
+        "invocation": "provider",
+        "name": "none",
+        "version": null
+      },
+      "harness": {
+        "name": "codex-cli",
+        "version": "codex-cli 0.160.0"
+      },
+      "os": {
+        "architecture": "AMD64",
+        "name": "Windows",
+        "version": null
+      },
+      "provider": {
+        "name": "codex",
+        "surface": "cli",
+        "version": "codex-cli 0.160.0"
+      },
+      "source": {
+        "kind": "generated-workload",
+        "sanitized_reference": "wd139c-permission-bash-allow"
+      }
+    },
+    "record_id": "wd139c-codex-cli-permission-bash-allow-2026-10-07-attempt-1",
+    "result": {
+      "limitations": [
+        "missing callback: PermissionRequest",
+        "One Windows Codex CLI version and one scripted prompt."
+      ],
+      "state": "incomplete"
+    },
+    "scope": {
+      "expected_callback_kinds": [
+        "PermissionRequest"
+      ],
+      "expected_deliveries": 1,
+      "isolation": "scratch Git repository outside registered projects and a temporary Codex profile",
+      "notes": "One isolated capability; raw hook values and model output remain in scratch only."
+    },
+    "stages": {
+      "adapter": {
+        "evidence": "The probe calls no Watchdog adapter.",
+        "failure_category": null,
+        "starts": 0,
+        "state": "not_invoked"
+      },
+      "callbacks": {
+        "evidence": "Expected callback counts and sanitized input shapes are in capabilities.",
+        "expected": 1,
+        "missing": 1,
+        "missing_attribution": "unknown",
+        "observed": 0
+      },
+      "end_to_end_delivery": {
+        "evidence": "Read back from the model output and retained rollout of the same isolated run.",
+        "expected": 1,
+        "failure_attribution": "not_applicable",
+        "failure_detail": null,
+        "persisted": 0,
+        "read_back": 0,
+        "state": "incomplete"
+      },
+      "persistence": {
+        "accepted": 0,
+        "evidence": "Not applicable: the probe does not exercise Watchdog persistence.",
+        "losses": []
+      },
+      "provider_dispatch": {
+        "attempts": 1,
+        "detail": null,
+        "evidence": "Codex process completion",
+        "state": "confirmed"
+      },
+      "retries": {
+        "count": 0,
+        "evidence": "One run per case.",
+        "outcome": "not_attempted",
+        "reason": null,
+        "scopes": []
+      }
+    },
+    "started_at": "2026-10-07T05:12:44.818891Z"
+  },
+  {
+    "capabilities": {
+      "permission-bash-deny": {
+        "callbacks": {
+          "PermissionRequest": {
+            "input_fields": [],
+            "observed": 0,
+            "tool_names": []
+          }
+        },
+        "response_shape": "hookSpecificOutput.decision.behavior=deny",
+        "state": "inconclusive"
+      }
+    },
+    "classification": "live_provider",
+    "cleanup": {
+      "complete": true,
+      "remaining_state": "One Codex rollout retained outside the scratch directory.",
+      "resources": [
+        {
+          "action": "removed",
+          "alias": "temporary-codex-profile",
+          "detail": "The base user configuration was unchanged.",
+          "evidence": "Profile cleanup check",
+          "failure_attribution": "not_applicable",
+          "kind": "hook_installation",
+          "state": "confirmed"
+        },
+        {
+          "action": "removed",
+          "alias": "scratch-repository",
+          "detail": null,
+          "evidence": "Temporary directory cleanup check",
+          "failure_attribution": "not_applicable",
+          "kind": "temporary_state",
+          "state": "confirmed"
+        },
+        {
+          "action": "retained",
+          "alias": "provider-rollout",
+          "detail": "Retained by Codex for same-run read-back; path omitted.",
+          "evidence": "Probe read-back",
+          "failure_attribution": "not_applicable",
+          "kind": "temporary_state",
+          "state": "confirmed"
+        }
+      ]
+    },
+    "finished_at": "2026-10-07T05:13:53.574709Z",
+    "format_version": "watchdog.probe-result.v1",
+    "provenance": {
+      "adapter": {
+        "invocation": "provider",
+        "name": "none",
+        "version": null
+      },
+      "harness": {
+        "name": "codex-cli",
+        "version": "codex-cli 0.160.0"
+      },
+      "os": {
+        "architecture": "AMD64",
+        "name": "Windows",
+        "version": null
+      },
+      "provider": {
+        "name": "codex",
+        "surface": "cli",
+        "version": "codex-cli 0.160.0"
+      },
+      "source": {
+        "kind": "generated-workload",
+        "sanitized_reference": "wd139c-permission-bash-deny"
+      }
+    },
+    "record_id": "wd139c-codex-cli-permission-bash-deny-2026-10-07-attempt-1",
+    "result": {
+      "limitations": [
+        "missing callback: PermissionRequest",
+        "One Windows Codex CLI version and one scripted prompt."
+      ],
+      "state": "incomplete"
+    },
+    "scope": {
+      "expected_callback_kinds": [
+        "PermissionRequest"
+      ],
+      "expected_deliveries": 1,
+      "isolation": "scratch Git repository outside registered projects and a temporary Codex profile",
+      "notes": "One isolated capability; raw hook values and model output remain in scratch only."
+    },
+    "stages": {
+      "adapter": {
+        "evidence": "The probe calls no Watchdog adapter.",
+        "failure_category": null,
+        "starts": 0,
+        "state": "not_invoked"
+      },
+      "callbacks": {
+        "evidence": "Expected callback counts and sanitized input shapes are in capabilities.",
+        "expected": 1,
+        "missing": 1,
+        "missing_attribution": "unknown",
+        "observed": 0
+      },
+      "end_to_end_delivery": {
+        "evidence": "Read back from the model output and retained rollout of the same isolated run.",
+        "expected": 1,
+        "failure_attribution": "not_applicable",
+        "failure_detail": null,
+        "persisted": 0,
+        "read_back": 0,
+        "state": "incomplete"
+      },
+      "persistence": {
+        "accepted": 0,
+        "evidence": "Not applicable: the probe does not exercise Watchdog persistence.",
+        "losses": []
+      },
+      "provider_dispatch": {
+        "attempts": 1,
+        "detail": null,
+        "evidence": "Codex process completion",
+        "state": "confirmed"
+      },
+      "retries": {
+        "count": 0,
+        "evidence": "One run per case.",
+        "outcome": "not_attempted",
+        "reason": null,
+        "scopes": []
+      }
+    },
+    "started_at": "2026-10-07T05:13:23.65066Z"
+  },
+  {
+    "capabilities": {
+      "post-compact-context": {
+        "callbacks": {
+          "PostCompact": {
+            "input_fields": [],
+            "observed": 0,
+            "tool_names": []
+          }
+        },
+        "response_shape": "hookSpecificOutput.additionalContext",
+        "state": "inconclusive"
+      }
+    },
+    "classification": "live_provider",
+    "cleanup": {
+      "complete": false,
+      "remaining_state": "One Codex rollout retained outside the scratch directory.",
+      "resources": [
+        {
+          "action": "retained",
+          "alias": "temporary-codex-profile",
+          "detail": "The base user configuration was unchanged.",
+          "evidence": "Profile cleanup check",
+          "failure_attribution": "unknown",
+          "kind": "hook_installation",
+          "state": "unknown"
+        },
+        {
+          "action": "retained",
+          "alias": "scratch-repository",
+          "detail": null,
+          "evidence": "Temporary directory cleanup check",
+          "failure_attribution": "unknown",
+          "kind": "temporary_state",
+          "state": "unknown"
+        },
+        {
+          "action": "retained",
+          "alias": "provider-rollout",
+          "detail": "Retained by Codex for same-run read-back; path omitted.",
+          "evidence": "Probe read-back",
+          "failure_attribution": "not_applicable",
+          "kind": "temporary_state",
+          "state": "confirmed"
+        }
+      ]
+    },
+    "finished_at": "2026-10-07T05:14:07.885013Z",
+    "format_version": "watchdog.probe-result.v1",
+    "provenance": {
+      "adapter": {
+        "invocation": "provider",
+        "name": "none",
+        "version": null
+      },
+      "harness": {
+        "name": "codex-cli",
+        "version": "codex-cli 0.160.0"
+      },
+      "os": {
+        "architecture": "AMD64",
+        "name": "Windows",
+        "version": null
+      },
+      "provider": {
+        "name": "codex",
+        "surface": "cli",
+        "version": "codex-cli 0.160.0"
+      },
+      "source": {
+        "kind": "generated-workload",
+        "sanitized_reference": "wd139c-post-compact-context"
+      }
+    },
+    "record_id": "wd139c-codex-cli-post-compact-context-2026-10-07-attempt-1",
+    "result": {
+      "limitations": [
+        "The non-interactive runner may not expose manual compaction.",
+        "missing callback: PostCompact",
+        "One Windows Codex CLI version and one scripted prompt."
+      ],
+      "state": "incomplete"
+    },
+    "scope": {
+      "expected_callback_kinds": [
+        "PostCompact"
+      ],
+      "expected_deliveries": 1,
+      "isolation": "scratch Git repository outside registered projects and a temporary Codex profile",
+      "notes": "One isolated capability; raw hook values and model output remain in scratch only."
+    },
+    "stages": {
+      "adapter": {
+        "evidence": "The probe calls no Watchdog adapter.",
+        "failure_category": null,
+        "starts": 0,
+        "state": "not_invoked"
+      },
+      "callbacks": {
+        "evidence": "Expected callback counts and sanitized input shapes are in capabilities.",
+        "expected": 1,
+        "missing": 1,
+        "missing_attribution": "unknown",
+        "observed": 0
+      },
+      "end_to_end_delivery": {
+        "evidence": "Read back from the model output and retained rollout of the same isolated run.",
+        "expected": 1,
+        "failure_attribution": "not_applicable",
+        "failure_detail": null,
+        "persisted": 0,
+        "read_back": 0,
+        "state": "incomplete"
+      },
+      "persistence": {
+        "accepted": 0,
+        "evidence": "Not applicable: the probe does not exercise Watchdog persistence.",
+        "losses": []
+      },
+      "provider_dispatch": {
+        "attempts": 1,
+        "detail": null,
+        "evidence": "Codex process completion",
+        "state": "confirmed"
+      },
+      "retries": {
+        "count": 0,
+        "evidence": "One run per case.",
+        "outcome": "not_attempted",
+        "reason": null,
+        "scopes": []
+      }
+    },
+    "started_at": "2026-10-07T05:13:53.574709Z"
+  },
+  {
+    "capabilities": {
+      "post-tool-bash-block": {
+        "callbacks": {
+          "PostToolUse": {
+            "input_fields": [
+              "cwd",
+              "hook_event_name",
+              "model",
+              "permission_mode",
+              "session_id",
+              "tool_input",
+              "tool_name",
+              "tool_response",
+              "tool_use_id",
+              "transcript_path",
+              "turn_id"
+            ],
+            "observed": 1,
+            "tool_names": [
+              "Bash"
+            ]
+          }
+        },
+        "response_shape": "decision=block",
+        "state": "inconclusive"
+      }
+    },
+    "classification": "live_provider",
+    "cleanup": {
+      "complete": true,
+      "remaining_state": "One Codex rollout retained outside the scratch directory.",
+      "resources": [
+        {
+          "action": "removed",
+          "alias": "temporary-codex-profile",
+          "detail": "The base user configuration was unchanged.",
+          "evidence": "Profile cleanup check",
+          "failure_attribution": "not_applicable",
+          "kind": "hook_installation",
+          "state": "confirmed"
+        },
+        {
+          "action": "removed",
+          "alias": "scratch-repository",
+          "detail": null,
+          "evidence": "Temporary directory cleanup check",
+          "failure_attribution": "not_applicable",
+          "kind": "temporary_state",
+          "state": "confirmed"
+        },
+        {
+          "action": "retained",
+          "alias": "provider-rollout",
+          "detail": "Retained by Codex for same-run read-back; path omitted.",
+          "evidence": "Probe read-back",
+          "failure_attribution": "not_applicable",
+          "kind": "temporary_state",
+          "state": "confirmed"
+        }
+      ]
+    },
+    "finished_at": "2026-10-07T05:46:33.551507Z",
+    "format_version": "watchdog.probe-result.v1",
+    "provenance": {
+      "adapter": {
+        "invocation": "provider",
+        "name": "none",
+        "version": null
+      },
+      "harness": {
+        "name": "codex-cli",
+        "version": "codex-cli 0.160.0"
+      },
+      "os": {
+        "architecture": "AMD64",
+        "name": "Windows",
+        "version": null
+      },
+      "provider": {
+        "name": "codex",
+        "surface": "cli",
+        "version": "codex-cli 0.160.0"
+      },
+      "source": {
+        "kind": "generated-workload",
+        "sanitized_reference": "wd139c-post-tool-bash-block"
+      }
+    },
+    "record_id": "wd139c-codex-cli-post-tool-bash-block-2026-10-07-attempt-1",
+    "result": {
+      "limitations": [
+        "PostToolUse runs after the tool; it cannot roll back the side effect.",
+        "the post-tool probe could not confirm its isolated side effect",
+        "One Windows Codex CLI version and one scripted prompt."
+      ],
+      "state": "incomplete"
+    },
+    "scope": {
+      "expected_callback_kinds": [
+        "PostToolUse"
+      ],
+      "expected_deliveries": 1,
+      "isolation": "scratch Git repository outside registered projects and a temporary Codex profile",
+      "notes": "One isolated capability; raw hook values and model output remain in scratch only."
+    },
+    "stages": {
+      "adapter": {
+        "evidence": "The probe calls no Watchdog adapter.",
+        "failure_category": null,
+        "starts": 0,
+        "state": "not_invoked"
+      },
+      "callbacks": {
+        "evidence": "Expected callback counts and sanitized input shapes are in capabilities.",
+        "expected": 1,
+        "missing": 0,
+        "missing_attribution": "not_applicable",
+        "observed": 1
+      },
+      "end_to_end_delivery": {
+        "evidence": "Read back from the model output and retained rollout of the same isolated run.",
+        "expected": 1,
+        "failure_attribution": "not_applicable",
+        "failure_detail": null,
+        "persisted": 0,
+        "read_back": 0,
+        "state": "incomplete"
+      },
+      "persistence": {
+        "accepted": 0,
+        "evidence": "Not applicable: the probe does not exercise Watchdog persistence.",
+        "losses": []
+      },
+      "provider_dispatch": {
+        "attempts": 1,
+        "detail": null,
+        "evidence": "Codex process completion",
+        "state": "confirmed"
+      },
+      "retries": {
+        "count": 0,
+        "evidence": "One run per case.",
+        "outcome": "not_attempted",
+        "reason": null,
+        "scopes": []
+      }
+    },
+    "started_at": "2026-10-07T05:46:12.336243Z"
+  },
+  {
+    "capabilities": {
+      "post-tool-bash-context": {
+        "callbacks": {
+          "PostToolUse": {
+            "input_fields": [
+              "cwd",
+              "hook_event_name",
+              "model",
+              "permission_mode",
+              "session_id",
+              "tool_input",
+              "tool_name",
+              "tool_response",
+              "tool_use_id",
+              "transcript_path",
+              "turn_id"
+            ],
+            "observed": 1,
+            "tool_names": [
+              "Bash"
+            ]
+          }
+        },
+        "response_shape": "hookSpecificOutput.additionalContext",
+        "state": "supported"
+      }
+    },
+    "classification": "live_provider",
+    "cleanup": {
+      "complete": true,
+      "remaining_state": "One Codex rollout retained outside the scratch directory.",
+      "resources": [
+        {
+          "action": "removed",
+          "alias": "temporary-codex-profile",
+          "detail": "The base user configuration was unchanged.",
+          "evidence": "Profile cleanup check",
+          "failure_attribution": "not_applicable",
+          "kind": "hook_installation",
+          "state": "confirmed"
+        },
+        {
+          "action": "removed",
+          "alias": "scratch-repository",
+          "detail": null,
+          "evidence": "Temporary directory cleanup check",
+          "failure_attribution": "not_applicable",
+          "kind": "temporary_state",
+          "state": "confirmed"
+        },
+        {
+          "action": "retained",
+          "alias": "provider-rollout",
+          "detail": "Retained by Codex for same-run read-back; path omitted.",
+          "evidence": "Probe read-back",
+          "failure_attribution": "not_applicable",
+          "kind": "temporary_state",
+          "state": "confirmed"
+        }
+      ]
+    },
+    "finished_at": "2026-10-07T05:14:57.708381Z",
+    "format_version": "watchdog.probe-result.v1",
+    "provenance": {
+      "adapter": {
+        "invocation": "provider",
+        "name": "none",
+        "version": null
+      },
+      "harness": {
+        "name": "codex-cli",
+        "version": "codex-cli 0.160.0"
+      },
+      "os": {
+        "architecture": "AMD64",
+        "name": "Windows",
+        "version": null
+      },
+      "provider": {
+        "name": "codex",
+        "surface": "cli",
+        "version": "codex-cli 0.160.0"
+      },
+      "source": {
+        "kind": "generated-workload",
+        "sanitized_reference": "wd139c-post-tool-bash-context"
+      }
+    },
+    "record_id": "wd139c-codex-cli-post-tool-bash-context-2026-10-07-attempt-1",
+    "result": {
+      "limitations": [
+        "One Windows Codex CLI version and one scripted prompt."
+      ],
+      "state": "passed"
+    },
+    "scope": {
+      "expected_callback_kinds": [
+        "PostToolUse"
+      ],
+      "expected_deliveries": 1,
+      "isolation": "scratch Git repository outside registered projects and a temporary Codex profile",
+      "notes": "One isolated capability; raw hook values and model output remain in scratch only."
+    },
+    "stages": {
+      "adapter": {
+        "evidence": "The probe calls no Watchdog adapter.",
+        "failure_category": null,
+        "starts": 0,
+        "state": "not_invoked"
+      },
+      "callbacks": {
+        "evidence": "Expected callback counts and sanitized input shapes are in capabilities.",
+        "expected": 1,
+        "missing": 0,
+        "missing_attribution": "not_applicable",
+        "observed": 1
+      },
+      "end_to_end_delivery": {
+        "evidence": "Read back from the model output and retained rollout of the same isolated run.",
+        "expected": 1,
+        "failure_attribution": "not_applicable",
+        "failure_detail": null,
+        "persisted": 1,
+        "read_back": 1,
+        "state": "confirmed"
+      },
+      "persistence": {
+        "accepted": 0,
+        "evidence": "Not applicable: the probe does not exercise Watchdog persistence.",
+        "losses": []
+      },
+      "provider_dispatch": {
+        "attempts": 1,
+        "detail": null,
+        "evidence": "Codex process completion",
+        "state": "confirmed"
+      },
+      "retries": {
+        "count": 0,
+        "evidence": "One run per case.",
+        "outcome": "not_attempted",
+        "reason": null,
+        "scopes": []
+      }
+    },
+    "started_at": "2026-10-07T05:14:33.075568Z"
+  },
+  {
+    "capabilities": {
+      "post-tool-bash-halt": {
+        "callbacks": {
+          "PostToolUse": {
+            "input_fields": [
+              "cwd",
+              "hook_event_name",
+              "model",
+              "permission_mode",
+              "session_id",
+              "tool_input",
+              "tool_name",
+              "tool_response",
+              "tool_use_id",
+              "transcript_path",
+              "turn_id"
+            ],
+            "observed": 1,
+            "tool_names": [
+              "Bash"
+            ]
+          }
+        },
+        "response_shape": "continue=false",
+        "state": "unsupported"
+      }
+    },
+    "classification": "live_provider",
+    "cleanup": {
+      "complete": false,
+      "remaining_state": "One Codex rollout retained outside the scratch directory.",
+      "resources": [
+        {
+          "action": "retained",
+          "alias": "temporary-codex-profile",
+          "detail": "The base user configuration was unchanged.",
+          "evidence": "Profile cleanup check",
+          "failure_attribution": "unknown",
+          "kind": "hook_installation",
+          "state": "unknown"
+        },
+        {
+          "action": "retained",
+          "alias": "scratch-repository",
+          "detail": null,
+          "evidence": "Temporary directory cleanup check",
+          "failure_attribution": "unknown",
+          "kind": "temporary_state",
+          "state": "unknown"
+        },
+        {
+          "action": "retained",
+          "alias": "provider-rollout",
+          "detail": "Retained by Codex for same-run read-back; path omitted.",
+          "evidence": "Probe read-back",
+          "failure_attribution": "not_applicable",
+          "kind": "temporary_state",
+          "state": "confirmed"
+        }
+      ]
+    },
+    "finished_at": "2026-10-07T05:15:21.145188Z",
+    "format_version": "watchdog.probe-result.v1",
+    "provenance": {
+      "adapter": {
+        "invocation": "provider",
+        "name": "none",
+        "version": null
+      },
+      "harness": {
+        "name": "codex-cli",
+        "version": "codex-cli 0.160.0"
+      },
+      "os": {
+        "architecture": "AMD64",
+        "name": "Windows",
+        "version": null
+      },
+      "provider": {
+        "name": "codex",
+        "surface": "cli",
+        "version": "codex-cli 0.160.0"
+      },
+      "source": {
+        "kind": "generated-workload",
+        "sanitized_reference": "wd139c-post-tool-bash-halt"
+      }
+    },
+    "record_id": "wd139c-codex-cli-post-tool-bash-halt-2026-10-07-attempt-1",
+    "result": {
+      "limitations": [
+        "the model completed its final reply after continue:false",
+        "One Windows Codex CLI version and one scripted prompt."
+      ],
+      "state": "incomplete"
+    },
+    "scope": {
+      "expected_callback_kinds": [
+        "PostToolUse"
+      ],
+      "expected_deliveries": 1,
+      "isolation": "scratch Git repository outside registered projects and a temporary Codex profile",
+      "notes": "One isolated capability; raw hook values and model output remain in scratch only."
+    },
+    "stages": {
+      "adapter": {
+        "evidence": "The probe calls no Watchdog adapter.",
+        "failure_category": null,
+        "starts": 0,
+        "state": "not_invoked"
+      },
+      "callbacks": {
+        "evidence": "Expected callback counts and sanitized input shapes are in capabilities.",
+        "expected": 1,
+        "missing": 0,
+        "missing_attribution": "not_applicable",
+        "observed": 1
+      },
+      "end_to_end_delivery": {
+        "evidence": "Read back from the model output and retained rollout of the same isolated run.",
+        "expected": 1,
+        "failure_attribution": "attributed",
+        "failure_detail": "the model completed its final reply after continue:false",
+        "persisted": 0,
+        "read_back": 0,
+        "state": "failed"
+      },
+      "persistence": {
+        "accepted": 0,
+        "evidence": "Not applicable: the probe does not exercise Watchdog persistence.",
+        "losses": []
+      },
+      "provider_dispatch": {
+        "attempts": 1,
+        "detail": null,
+        "evidence": "Codex process completion",
+        "state": "confirmed"
+      },
+      "retries": {
+        "count": 0,
+        "evidence": "One run per case.",
+        "outcome": "not_attempted",
+        "reason": null,
+        "scopes": []
+      }
+    },
+    "started_at": "2026-10-07T05:14:57.708381Z"
+  },
+  {
+    "capabilities": {
+      "pre-compact-context": {
+        "callbacks": {
+          "PreCompact": {
+            "input_fields": [],
+            "observed": 0,
+            "tool_names": []
+          }
+        },
+        "response_shape": "hookSpecificOutput.additionalContext",
+        "state": "inconclusive"
+      }
+    },
+    "classification": "live_provider",
+    "cleanup": {
+      "complete": false,
+      "remaining_state": "One Codex rollout retained outside the scratch directory.",
+      "resources": [
+        {
+          "action": "retained",
+          "alias": "temporary-codex-profile",
+          "detail": "The base user configuration was unchanged.",
+          "evidence": "Profile cleanup check",
+          "failure_attribution": "unknown",
+          "kind": "hook_installation",
+          "state": "unknown"
+        },
+        {
+          "action": "retained",
+          "alias": "scratch-repository",
+          "detail": null,
+          "evidence": "Temporary directory cleanup check",
+          "failure_attribution": "unknown",
+          "kind": "temporary_state",
+          "state": "unknown"
+        },
+        {
+          "action": "retained",
+          "alias": "provider-rollout",
+          "detail": "Retained by Codex for same-run read-back; path omitted.",
+          "evidence": "Probe read-back",
+          "failure_attribution": "not_applicable",
+          "kind": "temporary_state",
+          "state": "confirmed"
+        }
+      ]
+    },
+    "finished_at": "2026-10-07T05:15:35.320607Z",
+    "format_version": "watchdog.probe-result.v1",
+    "provenance": {
+      "adapter": {
+        "invocation": "provider",
+        "name": "none",
+        "version": null
+      },
+      "harness": {
+        "name": "codex-cli",
+        "version": "codex-cli 0.160.0"
+      },
+      "os": {
+        "architecture": "AMD64",
+        "name": "Windows",
+        "version": null
+      },
+      "provider": {
+        "name": "codex",
+        "surface": "cli",
+        "version": "codex-cli 0.160.0"
+      },
+      "source": {
+        "kind": "generated-workload",
+        "sanitized_reference": "wd139c-pre-compact-context"
+      }
+    },
+    "record_id": "wd139c-codex-cli-pre-compact-context-2026-10-07-attempt-1",
+    "result": {
+      "limitations": [
+        "The non-interactive runner may not expose manual compaction.",
+        "missing callback: PreCompact",
+        "One Windows Codex CLI version and one scripted prompt."
+      ],
+      "state": "incomplete"
+    },
+    "scope": {
+      "expected_callback_kinds": [
+        "PreCompact"
+      ],
+      "expected_deliveries": 1,
+      "isolation": "scratch Git repository outside registered projects and a temporary Codex profile",
+      "notes": "One isolated capability; raw hook values and model output remain in scratch only."
+    },
+    "stages": {
+      "adapter": {
+        "evidence": "The probe calls no Watchdog adapter.",
+        "failure_category": null,
+        "starts": 0,
+        "state": "not_invoked"
+      },
+      "callbacks": {
+        "evidence": "Expected callback counts and sanitized input shapes are in capabilities.",
+        "expected": 1,
+        "missing": 1,
+        "missing_attribution": "unknown",
+        "observed": 0
+      },
+      "end_to_end_delivery": {
+        "evidence": "Read back from the model output and retained rollout of the same isolated run.",
+        "expected": 1,
+        "failure_attribution": "not_applicable",
+        "failure_detail": null,
+        "persisted": 0,
+        "read_back": 0,
+        "state": "incomplete"
+      },
+      "persistence": {
+        "accepted": 0,
+        "evidence": "Not applicable: the probe does not exercise Watchdog persistence.",
+        "losses": []
+      },
+      "provider_dispatch": {
+        "attempts": 1,
+        "detail": null,
+        "evidence": "Codex process completion",
+        "state": "confirmed"
+      },
+      "retries": {
+        "count": 0,
+        "evidence": "One run per case.",
+        "outcome": "not_attempted",
+        "reason": null,
+        "scopes": []
+      }
+    },
+    "started_at": "2026-10-07T05:15:21.145188Z"
+  },
+  {
+    "capabilities": {
+      "pre-tool-apply-patch-context": {
+        "callbacks": {
+          "PreToolUse": {
+            "input_fields": [
+              "cwd",
+              "hook_event_name",
+              "model",
+              "permission_mode",
+              "session_id",
+              "tool_input",
+              "tool_name",
+              "tool_use_id",
+              "transcript_path",
+              "turn_id"
+            ],
+            "observed": 1,
+            "tool_names": [
+              "apply_patch"
+            ]
+          }
+        },
+        "response_shape": "hookSpecificOutput.additionalContext",
+        "state": "supported"
+      }
+    },
+    "classification": "live_provider",
+    "cleanup": {
+      "complete": false,
+      "remaining_state": "One Codex rollout retained outside the scratch directory.",
+      "resources": [
+        {
+          "action": "retained",
+          "alias": "temporary-codex-profile",
+          "detail": "The base user configuration was unchanged.",
+          "evidence": "Profile cleanup check",
+          "failure_attribution": "unknown",
+          "kind": "hook_installation",
+          "state": "unknown"
+        },
+        {
+          "action": "retained",
+          "alias": "scratch-repository",
+          "detail": null,
+          "evidence": "Temporary directory cleanup check",
+          "failure_attribution": "unknown",
+          "kind": "temporary_state",
+          "state": "unknown"
+        },
+        {
+          "action": "retained",
+          "alias": "provider-rollout",
+          "detail": "Retained by Codex for same-run read-back; path omitted.",
+          "evidence": "Probe read-back",
+          "failure_attribution": "not_applicable",
+          "kind": "temporary_state",
+          "state": "confirmed"
+        }
+      ]
+    },
+    "finished_at": "2026-10-07T05:15:58.69774Z",
+    "format_version": "watchdog.probe-result.v1",
+    "provenance": {
+      "adapter": {
+        "invocation": "provider",
+        "name": "none",
+        "version": null
+      },
+      "harness": {
+        "name": "codex-cli",
+        "version": "codex-cli 0.160.0"
+      },
+      "os": {
+        "architecture": "AMD64",
+        "name": "Windows",
+        "version": null
+      },
+      "provider": {
+        "name": "codex",
+        "surface": "cli",
+        "version": "codex-cli 0.160.0"
+      },
+      "source": {
+        "kind": "generated-workload",
+        "sanitized_reference": "wd139c-pre-tool-apply-patch-context"
+      }
+    },
+    "record_id": "wd139c-codex-cli-pre-tool-apply-patch-context-2026-10-07-attempt-1",
+    "result": {
+      "limitations": [
+        "One Windows Codex CLI version and one scripted prompt."
+      ],
+      "state": "incomplete"
+    },
+    "scope": {
+      "expected_callback_kinds": [
+        "PreToolUse"
+      ],
+      "expected_deliveries": 1,
+      "isolation": "scratch Git repository outside registered projects and a temporary Codex profile",
+      "notes": "One isolated capability; raw hook values and model output remain in scratch only."
+    },
+    "stages": {
+      "adapter": {
+        "evidence": "The probe calls no Watchdog adapter.",
+        "failure_category": null,
+        "starts": 0,
+        "state": "not_invoked"
+      },
+      "callbacks": {
+        "evidence": "Expected callback counts and sanitized input shapes are in capabilities.",
+        "expected": 1,
+        "missing": 0,
+        "missing_attribution": "not_applicable",
+        "observed": 1
+      },
+      "end_to_end_delivery": {
+        "evidence": "Read back from the model output and retained rollout of the same isolated run.",
+        "expected": 1,
+        "failure_attribution": "not_applicable",
+        "failure_detail": null,
+        "persisted": 1,
+        "read_back": 1,
+        "state": "confirmed"
+      },
+      "persistence": {
+        "accepted": 0,
+        "evidence": "Not applicable: the probe does not exercise Watchdog persistence.",
+        "losses": []
+      },
+      "provider_dispatch": {
+        "attempts": 1,
+        "detail": null,
+        "evidence": "Codex process completion",
+        "state": "confirmed"
+      },
+      "retries": {
+        "count": 0,
+        "evidence": "One run per case.",
+        "outcome": "not_attempted",
+        "reason": null,
+        "scopes": []
+      }
+    },
+    "started_at": "2026-10-07T05:15:35.320607Z"
+  },
+  {
+    "capabilities": {
+      "pre-tool-apply-patch-deny": {
+        "callbacks": {
+          "PreToolUse": {
+            "input_fields": [
+              "cwd",
+              "hook_event_name",
+              "model",
+              "permission_mode",
+              "session_id",
+              "tool_input",
+              "tool_name",
+              "tool_use_id",
+              "transcript_path",
+              "turn_id"
+            ],
+            "observed": 1,
+            "tool_names": [
+              "apply_patch"
+            ]
+          }
+        },
+        "response_shape": "hookSpecificOutput.permissionDecision=deny",
+        "state": "supported"
+      }
+    },
+    "classification": "live_provider",
+    "cleanup": {
+      "complete": false,
+      "remaining_state": "One Codex rollout retained outside the scratch directory.",
+      "resources": [
+        {
+          "action": "retained",
+          "alias": "temporary-codex-profile",
+          "detail": "The base user configuration was unchanged.",
+          "evidence": "Profile cleanup check",
+          "failure_attribution": "unknown",
+          "kind": "hook_installation",
+          "state": "unknown"
+        },
+        {
+          "action": "retained",
+          "alias": "scratch-repository",
+          "detail": null,
+          "evidence": "Temporary directory cleanup check",
+          "failure_attribution": "unknown",
+          "kind": "temporary_state",
+          "state": "unknown"
+        },
+        {
+          "action": "retained",
+          "alias": "provider-rollout",
+          "detail": "Retained by Codex for same-run read-back; path omitted.",
+          "evidence": "Probe read-back",
+          "failure_attribution": "not_applicable",
+          "kind": "temporary_state",
+          "state": "confirmed"
+        }
+      ]
+    },
+    "finished_at": "2026-10-07T05:16:24.195315Z",
+    "format_version": "watchdog.probe-result.v1",
+    "provenance": {
+      "adapter": {
+        "invocation": "provider",
+        "name": "none",
+        "version": null
+      },
+      "harness": {
+        "name": "codex-cli",
+        "version": "codex-cli 0.160.0"
+      },
+      "os": {
+        "architecture": "AMD64",
+        "name": "Windows",
+        "version": null
+      },
+      "provider": {
+        "name": "codex",
+        "surface": "cli",
+        "version": "codex-cli 0.160.0"
+      },
+      "source": {
+        "kind": "generated-workload",
+        "sanitized_reference": "wd139c-pre-tool-apply-patch-deny"
+      }
+    },
+    "record_id": "wd139c-codex-cli-pre-tool-apply-patch-deny-2026-10-07-attempt-1",
+    "result": {
+      "limitations": [
+        "One Windows Codex CLI version and one scripted prompt."
+      ],
+      "state": "incomplete"
+    },
+    "scope": {
+      "expected_callback_kinds": [
+        "PreToolUse"
+      ],
+      "expected_deliveries": 1,
+      "isolation": "scratch Git repository outside registered projects and a temporary Codex profile",
+      "notes": "One isolated capability; raw hook values and model output remain in scratch only."
+    },
+    "stages": {
+      "adapter": {
+        "evidence": "The probe calls no Watchdog adapter.",
+        "failure_category": null,
+        "starts": 0,
+        "state": "not_invoked"
+      },
+      "callbacks": {
+        "evidence": "Expected callback counts and sanitized input shapes are in capabilities.",
+        "expected": 1,
+        "missing": 0,
+        "missing_attribution": "not_applicable",
+        "observed": 1
+      },
+      "end_to_end_delivery": {
+        "evidence": "Read back from the model output and retained rollout of the same isolated run.",
+        "expected": 1,
+        "failure_attribution": "not_applicable",
+        "failure_detail": null,
+        "persisted": 1,
+        "read_back": 1,
+        "state": "confirmed"
+      },
+      "persistence": {
+        "accepted": 0,
+        "evidence": "Not applicable: the probe does not exercise Watchdog persistence.",
+        "losses": []
+      },
+      "provider_dispatch": {
+        "attempts": 1,
+        "detail": null,
+        "evidence": "Codex process completion",
+        "state": "confirmed"
+      },
+      "retries": {
+        "count": 0,
+        "evidence": "One run per case.",
+        "outcome": "not_attempted",
+        "reason": null,
+        "scopes": []
+      }
+    },
+    "started_at": "2026-10-07T05:15:58.69774Z"
+  },
+  {
+    "capabilities": {
+      "pre-tool-apply-patch-rewrite": {
+        "callbacks": {
+          "PreToolUse": {
+            "input_fields": [
+              "cwd",
+              "hook_event_name",
+              "model",
+              "permission_mode",
+              "session_id",
+              "tool_input",
+              "tool_name",
+              "tool_use_id",
+              "transcript_path",
+              "turn_id"
+            ],
+            "observed": 1,
+            "tool_names": [
+              "apply_patch"
+            ]
+          }
+        },
+        "response_shape": "hookSpecificOutput.permissionDecision=allow,updatedInput.patch",
+        "state": "unsupported"
+      }
+    },
+    "classification": "live_provider",
+    "cleanup": {
+      "complete": true,
+      "remaining_state": "One Codex rollout retained outside the scratch directory.",
+      "resources": [
+        {
+          "action": "removed",
+          "alias": "temporary-codex-profile",
+          "detail": "The base user configuration was unchanged.",
+          "evidence": "Profile cleanup check",
+          "failure_attribution": "not_applicable",
+          "kind": "hook_installation",
+          "state": "confirmed"
+        },
+        {
+          "action": "removed",
+          "alias": "scratch-repository",
+          "detail": null,
+          "evidence": "Temporary directory cleanup check",
+          "failure_attribution": "not_applicable",
+          "kind": "temporary_state",
+          "state": "confirmed"
+        },
+        {
+          "action": "retained",
+          "alias": "provider-rollout",
+          "detail": "Retained by Codex for same-run read-back; path omitted.",
+          "evidence": "Probe read-back",
+          "failure_attribution": "not_applicable",
+          "kind": "temporary_state",
+          "state": "confirmed"
+        }
+      ]
+    },
+    "finished_at": "2026-10-07T05:46:12.289375Z",
+    "format_version": "watchdog.probe-result.v1",
+    "provenance": {
+      "adapter": {
+        "invocation": "provider",
+        "name": "none",
+        "version": null
+      },
+      "harness": {
+        "name": "codex-cli",
+        "version": "codex-cli 0.160.0"
+      },
+      "os": {
+        "architecture": "AMD64",
+        "name": "Windows",
+        "version": null
+      },
+      "provider": {
+        "name": "codex",
+        "surface": "cli",
+        "version": "codex-cli 0.160.0"
+      },
+      "source": {
+        "kind": "generated-workload",
+        "sanitized_reference": "wd139c-pre-tool-apply-patch-rewrite"
+      }
+    },
+    "record_id": "wd139c-codex-cli-pre-tool-apply-patch-rewrite-2026-10-07-attempt-1",
+    "result": {
+      "limitations": [
+        "the original input ran; updatedInput was ignored",
+        "One Windows Codex CLI version and one scripted prompt."
+      ],
+      "state": "failed"
+    },
+    "scope": {
+      "expected_callback_kinds": [
+        "PreToolUse"
+      ],
+      "expected_deliveries": 1,
+      "isolation": "scratch Git repository outside registered projects and a temporary Codex profile",
+      "notes": "One isolated capability; raw hook values and model output remain in scratch only."
+    },
+    "stages": {
+      "adapter": {
+        "evidence": "The probe calls no Watchdog adapter.",
+        "failure_category": null,
+        "starts": 0,
+        "state": "not_invoked"
+      },
+      "callbacks": {
+        "evidence": "Expected callback counts and sanitized input shapes are in capabilities.",
+        "expected": 1,
+        "missing": 0,
+        "missing_attribution": "not_applicable",
+        "observed": 1
+      },
+      "end_to_end_delivery": {
+        "evidence": "Read back from the model output and retained rollout of the same isolated run.",
+        "expected": 1,
+        "failure_attribution": "attributed",
+        "failure_detail": "the original input ran; updatedInput was ignored",
+        "persisted": 0,
+        "read_back": 0,
+        "state": "failed"
+      },
+      "persistence": {
+        "accepted": 0,
+        "evidence": "Not applicable: the probe does not exercise Watchdog persistence.",
+        "losses": []
+      },
+      "provider_dispatch": {
+        "attempts": 1,
+        "detail": null,
+        "evidence": "Codex process completion",
+        "state": "confirmed"
+      },
+      "retries": {
+        "count": 0,
+        "evidence": "One run per case.",
+        "outcome": "not_attempted",
+        "reason": null,
+        "scopes": []
+      }
+    },
+    "started_at": "2026-10-07T05:45:50.301182Z"
+  },
+  {
+    "capabilities": {
+      "pre-tool-bash-context": {
+        "callbacks": {
+          "PreToolUse": {
+            "input_fields": [
+              "cwd",
+              "hook_event_name",
+              "model",
+              "permission_mode",
+              "session_id",
+              "tool_input",
+              "tool_name",
+              "tool_use_id",
+              "transcript_path",
+              "turn_id"
+            ],
+            "observed": 1,
+            "tool_names": [
+              "Bash"
+            ]
+          }
+        },
+        "response_shape": "hookSpecificOutput.additionalContext",
+        "state": "supported"
+      }
+    },
+    "classification": "live_provider",
+    "cleanup": {
+      "complete": false,
+      "remaining_state": "One Codex rollout retained outside the scratch directory.",
+      "resources": [
+        {
+          "action": "retained",
+          "alias": "temporary-codex-profile",
+          "detail": "The base user configuration was unchanged.",
+          "evidence": "Profile cleanup check",
+          "failure_attribution": "unknown",
+          "kind": "hook_installation",
+          "state": "unknown"
+        },
+        {
+          "action": "retained",
+          "alias": "scratch-repository",
+          "detail": null,
+          "evidence": "Temporary directory cleanup check",
+          "failure_attribution": "unknown",
+          "kind": "temporary_state",
+          "state": "unknown"
+        },
+        {
+          "action": "retained",
+          "alias": "provider-rollout",
+          "detail": "Retained by Codex for same-run read-back; path omitted.",
+          "evidence": "Probe read-back",
+          "failure_attribution": "not_applicable",
+          "kind": "temporary_state",
+          "state": "confirmed"
+        }
+      ]
+    },
+    "finished_at": "2026-10-07T05:17:53.533665Z",
+    "format_version": "watchdog.probe-result.v1",
+    "provenance": {
+      "adapter": {
+        "invocation": "provider",
+        "name": "none",
+        "version": null
+      },
+      "harness": {
+        "name": "codex-cli",
+        "version": "codex-cli 0.160.0"
+      },
+      "os": {
+        "architecture": "AMD64",
+        "name": "Windows",
+        "version": null
+      },
+      "provider": {
+        "name": "codex",
+        "surface": "cli",
+        "version": "codex-cli 0.160.0"
+      },
+      "source": {
+        "kind": "generated-workload",
+        "sanitized_reference": "wd139c-pre-tool-bash-context"
+      }
+    },
+    "record_id": "wd139c-codex-cli-pre-tool-bash-context-2026-10-07-attempt-1",
+    "result": {
+      "limitations": [
+        "One Windows Codex CLI version and one scripted prompt."
+      ],
+      "state": "incomplete"
+    },
+    "scope": {
+      "expected_callback_kinds": [
+        "PreToolUse"
+      ],
+      "expected_deliveries": 1,
+      "isolation": "scratch Git repository outside registered projects and a temporary Codex profile",
+      "notes": "One isolated capability; raw hook values and model output remain in scratch only."
+    },
+    "stages": {
+      "adapter": {
+        "evidence": "The probe calls no Watchdog adapter.",
+        "failure_category": null,
+        "starts": 0,
+        "state": "not_invoked"
+      },
+      "callbacks": {
+        "evidence": "Expected callback counts and sanitized input shapes are in capabilities.",
+        "expected": 1,
+        "missing": 0,
+        "missing_attribution": "not_applicable",
+        "observed": 1
+      },
+      "end_to_end_delivery": {
+        "evidence": "Read back from the model output and retained rollout of the same isolated run.",
+        "expected": 1,
+        "failure_attribution": "not_applicable",
+        "failure_detail": null,
+        "persisted": 1,
+        "read_back": 1,
+        "state": "confirmed"
+      },
+      "persistence": {
+        "accepted": 0,
+        "evidence": "Not applicable: the probe does not exercise Watchdog persistence.",
+        "losses": []
+      },
+      "provider_dispatch": {
+        "attempts": 1,
+        "detail": null,
+        "evidence": "Codex process completion",
+        "state": "confirmed"
+      },
+      "retries": {
+        "count": 0,
+        "evidence": "One run per case.",
+        "outcome": "not_attempted",
+        "reason": null,
+        "scopes": []
+      }
+    },
+    "started_at": "2026-10-07T05:17:33.492083Z"
+  },
+  {
+    "capabilities": {
+      "pre-tool-bash-deny": {
+        "callbacks": {
+          "PreToolUse": {
+            "input_fields": [
+              "cwd",
+              "hook_event_name",
+              "model",
+              "permission_mode",
+              "session_id",
+              "tool_input",
+              "tool_name",
+              "tool_use_id",
+              "transcript_path",
+              "turn_id"
+            ],
+            "observed": 1,
+            "tool_names": [
+              "Bash"
+            ]
+          }
+        },
+        "response_shape": "hookSpecificOutput.permissionDecision=deny",
+        "state": "supported"
+      }
+    },
+    "classification": "live_provider",
+    "cleanup": {
+      "complete": true,
+      "remaining_state": "One Codex rollout retained outside the scratch directory.",
+      "resources": [
+        {
+          "action": "removed",
+          "alias": "temporary-codex-profile",
+          "detail": "The base user configuration was unchanged.",
+          "evidence": "Profile cleanup check",
+          "failure_attribution": "not_applicable",
+          "kind": "hook_installation",
+          "state": "confirmed"
+        },
+        {
+          "action": "removed",
+          "alias": "scratch-repository",
+          "detail": null,
+          "evidence": "Temporary directory cleanup check",
+          "failure_attribution": "not_applicable",
+          "kind": "temporary_state",
+          "state": "confirmed"
+        },
+        {
+          "action": "retained",
+          "alias": "provider-rollout",
+          "detail": "Retained by Codex for same-run read-back; path omitted.",
+          "evidence": "Probe read-back",
+          "failure_attribution": "not_applicable",
+          "kind": "temporary_state",
+          "state": "confirmed"
+        }
+      ]
+    },
+    "finished_at": "2026-10-07T05:18:11.780324Z",
+    "format_version": "watchdog.probe-result.v1",
+    "provenance": {
+      "adapter": {
+        "invocation": "provider",
+        "name": "none",
+        "version": null
+      },
+      "harness": {
+        "name": "codex-cli",
+        "version": "codex-cli 0.160.0"
+      },
+      "os": {
+        "architecture": "AMD64",
+        "name": "Windows",
+        "version": null
+      },
+      "provider": {
+        "name": "codex",
+        "surface": "cli",
+        "version": "codex-cli 0.160.0"
+      },
+      "source": {
+        "kind": "generated-workload",
+        "sanitized_reference": "wd139c-pre-tool-bash-deny"
+      }
+    },
+    "record_id": "wd139c-codex-cli-pre-tool-bash-deny-2026-10-07-attempt-1",
+    "result": {
+      "limitations": [
+        "One Windows Codex CLI version and one scripted prompt."
+      ],
+      "state": "passed"
+    },
+    "scope": {
+      "expected_callback_kinds": [
+        "PreToolUse"
+      ],
+      "expected_deliveries": 1,
+      "isolation": "scratch Git repository outside registered projects and a temporary Codex profile",
+      "notes": "One isolated capability; raw hook values and model output remain in scratch only."
+    },
+    "stages": {
+      "adapter": {
+        "evidence": "The probe calls no Watchdog adapter.",
+        "failure_category": null,
+        "starts": 0,
+        "state": "not_invoked"
+      },
+      "callbacks": {
+        "evidence": "Expected callback counts and sanitized input shapes are in capabilities.",
+        "expected": 1,
+        "missing": 0,
+        "missing_attribution": "not_applicable",
+        "observed": 1
+      },
+      "end_to_end_delivery": {
+        "evidence": "Read back from the model output and retained rollout of the same isolated run.",
+        "expected": 1,
+        "failure_attribution": "not_applicable",
+        "failure_detail": null,
+        "persisted": 1,
+        "read_back": 1,
+        "state": "confirmed"
+      },
+      "persistence": {
+        "accepted": 0,
+        "evidence": "Not applicable: the probe does not exercise Watchdog persistence.",
+        "losses": []
+      },
+      "provider_dispatch": {
+        "attempts": 1,
+        "detail": null,
+        "evidence": "Codex process completion",
+        "state": "confirmed"
+      },
+      "retries": {
+        "count": 0,
+        "evidence": "One run per case.",
+        "outcome": "not_attempted",
+        "reason": null,
+        "scopes": []
+      }
+    },
+    "started_at": "2026-10-07T05:17:53.533665Z"
+  },
+  {
+    "capabilities": {
+      "pre-tool-bash-rewrite": {
+        "callbacks": {
+          "PreToolUse": {
+            "input_fields": [
+              "cwd",
+              "hook_event_name",
+              "model",
+              "permission_mode",
+              "session_id",
+              "tool_input",
+              "tool_name",
+              "tool_use_id",
+              "transcript_path",
+              "turn_id"
+            ],
+            "observed": 1,
+            "tool_names": [
+              "Bash"
+            ]
+          }
+        },
+        "response_shape": "hookSpecificOutput.permissionDecision=allow,updatedInput.command",
+        "state": "supported"
+      }
+    },
+    "classification": "live_provider",
+    "cleanup": {
+      "complete": true,
+      "remaining_state": "One Codex rollout retained outside the scratch directory.",
+      "resources": [
+        {
+          "action": "removed",
+          "alias": "temporary-codex-profile",
+          "detail": "The base user configuration was unchanged.",
+          "evidence": "Profile cleanup check",
+          "failure_attribution": "not_applicable",
+          "kind": "hook_installation",
+          "state": "confirmed"
+        },
+        {
+          "action": "removed",
+          "alias": "scratch-repository",
+          "detail": null,
+          "evidence": "Temporary directory cleanup check",
+          "failure_attribution": "not_applicable",
+          "kind": "temporary_state",
+          "state": "confirmed"
+        },
+        {
+          "action": "retained",
+          "alias": "provider-rollout",
+          "detail": "Retained by Codex for same-run read-back; path omitted.",
+          "evidence": "Probe read-back",
+          "failure_attribution": "not_applicable",
+          "kind": "temporary_state",
+          "state": "confirmed"
+        }
+      ]
+    },
+    "finished_at": "2026-10-07T05:18:32.908849Z",
+    "format_version": "watchdog.probe-result.v1",
+    "provenance": {
+      "adapter": {
+        "invocation": "provider",
+        "name": "none",
+        "version": null
+      },
+      "harness": {
+        "name": "codex-cli",
+        "version": "codex-cli 0.160.0"
+      },
+      "os": {
+        "architecture": "AMD64",
+        "name": "Windows",
+        "version": null
+      },
+      "provider": {
+        "name": "codex",
+        "surface": "cli",
+        "version": "codex-cli 0.160.0"
+      },
+      "source": {
+        "kind": "generated-workload",
+        "sanitized_reference": "wd139c-pre-tool-bash-rewrite"
+      }
+    },
+    "record_id": "wd139c-codex-cli-pre-tool-bash-rewrite-2026-10-07-attempt-1",
+    "result": {
+      "limitations": [
+        "One Windows Codex CLI version and one scripted prompt."
+      ],
+      "state": "passed"
+    },
+    "scope": {
+      "expected_callback_kinds": [
+        "PreToolUse"
+      ],
+      "expected_deliveries": 1,
+      "isolation": "scratch Git repository outside registered projects and a temporary Codex profile",
+      "notes": "One isolated capability; raw hook values and model output remain in scratch only."
+    },
+    "stages": {
+      "adapter": {
+        "evidence": "The probe calls no Watchdog adapter.",
+        "failure_category": null,
+        "starts": 0,
+        "state": "not_invoked"
+      },
+      "callbacks": {
+        "evidence": "Expected callback counts and sanitized input shapes are in capabilities.",
+        "expected": 1,
+        "missing": 0,
+        "missing_attribution": "not_applicable",
+        "observed": 1
+      },
+      "end_to_end_delivery": {
+        "evidence": "Read back from the model output and retained rollout of the same isolated run.",
+        "expected": 1,
+        "failure_attribution": "not_applicable",
+        "failure_detail": null,
+        "persisted": 1,
+        "read_back": 1,
+        "state": "confirmed"
+      },
+      "persistence": {
+        "accepted": 0,
+        "evidence": "Not applicable: the probe does not exercise Watchdog persistence.",
+        "losses": []
+      },
+      "provider_dispatch": {
+        "attempts": 1,
+        "detail": null,
+        "evidence": "Codex process completion",
+        "state": "confirmed"
+      },
+      "retries": {
+        "count": 0,
+        "evidence": "One run per case.",
+        "outcome": "not_attempted",
+        "reason": null,
+        "scopes": []
+      }
+    },
+    "started_at": "2026-10-07T05:18:11.780324Z"
+  },
+  {
+    "capabilities": {
+      "session-start-context": {
+        "callbacks": {
+          "SessionStart": {
+            "input_fields": [
+              "cwd",
+              "hook_event_name",
+              "model",
+              "permission_mode",
+              "session_id",
+              "source",
+              "transcript_path"
+            ],
+            "observed": 1,
+            "tool_names": []
+          }
+        },
+        "response_shape": "hookSpecificOutput.additionalContext",
+        "state": "supported"
+      }
+    },
+    "classification": "live_provider",
+    "cleanup": {
+      "complete": true,
+      "remaining_state": "One Codex rollout retained outside the scratch directory.",
+      "resources": [
+        {
+          "action": "removed",
+          "alias": "temporary-codex-profile",
+          "detail": "The base user configuration was unchanged.",
+          "evidence": "Profile cleanup check",
+          "failure_attribution": "not_applicable",
+          "kind": "hook_installation",
+          "state": "confirmed"
+        },
+        {
+          "action": "removed",
+          "alias": "scratch-repository",
+          "detail": null,
+          "evidence": "Temporary directory cleanup check",
+          "failure_attribution": "not_applicable",
+          "kind": "temporary_state",
+          "state": "confirmed"
+        },
+        {
+          "action": "retained",
+          "alias": "provider-rollout",
+          "detail": "Retained by Codex for same-run read-back; path omitted.",
+          "evidence": "Probe read-back",
+          "failure_attribution": "not_applicable",
+          "kind": "temporary_state",
+          "state": "confirmed"
+        }
+      ]
+    },
+    "finished_at": "2026-10-07T05:18:48.533505Z",
+    "format_version": "watchdog.probe-result.v1",
+    "provenance": {
+      "adapter": {
+        "invocation": "provider",
+        "name": "none",
+        "version": null
+      },
+      "harness": {
+        "name": "codex-cli",
+        "version": "codex-cli 0.160.0"
+      },
+      "os": {
+        "architecture": "AMD64",
+        "name": "Windows",
+        "version": null
+      },
+      "provider": {
+        "name": "codex",
+        "surface": "cli",
+        "version": "codex-cli 0.160.0"
+      },
+      "source": {
+        "kind": "generated-workload",
+        "sanitized_reference": "wd139c-session-start-context"
+      }
+    },
+    "record_id": "wd139c-codex-cli-session-start-context-2026-10-07-attempt-1",
+    "result": {
+      "limitations": [
+        "One Windows Codex CLI version and one scripted prompt."
+      ],
+      "state": "passed"
+    },
+    "scope": {
+      "expected_callback_kinds": [
+        "SessionStart"
+      ],
+      "expected_deliveries": 1,
+      "isolation": "scratch Git repository outside registered projects and a temporary Codex profile",
+      "notes": "One isolated capability; raw hook values and model output remain in scratch only."
+    },
+    "stages": {
+      "adapter": {
+        "evidence": "The probe calls no Watchdog adapter.",
+        "failure_category": null,
+        "starts": 0,
+        "state": "not_invoked"
+      },
+      "callbacks": {
+        "evidence": "Expected callback counts and sanitized input shapes are in capabilities.",
+        "expected": 1,
+        "missing": 0,
+        "missing_attribution": "not_applicable",
+        "observed": 1
+      },
+      "end_to_end_delivery": {
+        "evidence": "Read back from the model output and retained rollout of the same isolated run.",
+        "expected": 1,
+        "failure_attribution": "not_applicable",
+        "failure_detail": null,
+        "persisted": 1,
+        "read_back": 1,
+        "state": "confirmed"
+      },
+      "persistence": {
+        "accepted": 0,
+        "evidence": "Not applicable: the probe does not exercise Watchdog persistence.",
+        "losses": []
+      },
+      "provider_dispatch": {
+        "attempts": 1,
+        "detail": null,
+        "evidence": "Codex process completion",
+        "state": "confirmed"
+      },
+      "retries": {
+        "count": 0,
+        "evidence": "One run per case.",
+        "outcome": "not_attempted",
+        "reason": null,
+        "scopes": []
+      }
+    },
+    "started_at": "2026-10-07T05:18:32.908849Z"
+  },
+  {
+    "capabilities": {
+      "stop-block": {
+        "callbacks": {
+          "Stop": {
+            "input_fields": [
+              "cwd",
+              "hook_event_name",
+              "last_assistant_message",
+              "model",
+              "permission_mode",
+              "session_id",
+              "stop_hook_active",
+              "transcript_path",
+              "turn_id"
+            ],
+            "observed": 2,
+            "tool_names": []
+          }
+        },
+        "response_shape": "decision=block",
+        "state": "supported"
+      }
+    },
+    "classification": "live_provider",
+    "cleanup": {
+      "complete": false,
+      "remaining_state": "One Codex rollout retained outside the scratch directory.",
+      "resources": [
+        {
+          "action": "retained",
+          "alias": "temporary-codex-profile",
+          "detail": "The base user configuration was unchanged.",
+          "evidence": "Profile cleanup check",
+          "failure_attribution": "unknown",
+          "kind": "hook_installation",
+          "state": "unknown"
+        },
+        {
+          "action": "retained",
+          "alias": "scratch-repository",
+          "detail": null,
+          "evidence": "Temporary directory cleanup check",
+          "failure_attribution": "unknown",
+          "kind": "temporary_state",
+          "state": "unknown"
+        },
+        {
+          "action": "retained",
+          "alias": "provider-rollout",
+          "detail": "Retained by Codex for same-run read-back; path omitted.",
+          "evidence": "Probe read-back",
+          "failure_attribution": "not_applicable",
+          "kind": "temporary_state",
+          "state": "confirmed"
+        }
+      ]
+    },
+    "finished_at": "2026-10-07T05:19:05.163448Z",
+    "format_version": "watchdog.probe-result.v1",
+    "provenance": {
+      "adapter": {
+        "invocation": "provider",
+        "name": "none",
+        "version": null
+      },
+      "harness": {
+        "name": "codex-cli",
+        "version": "codex-cli 0.160.0"
+      },
+      "os": {
+        "architecture": "AMD64",
+        "name": "Windows",
+        "version": null
+      },
+      "provider": {
+        "name": "codex",
+        "surface": "cli",
+        "version": "codex-cli 0.160.0"
+      },
+      "source": {
+        "kind": "generated-workload",
+        "sanitized_reference": "wd139c-stop-block"
+      }
+    },
+    "record_id": "wd139c-codex-cli-stop-block-2026-10-07-attempt-1",
+    "result": {
+      "limitations": [
+        "One Windows Codex CLI version and one scripted prompt."
+      ],
+      "state": "incomplete"
+    },
+    "scope": {
+      "expected_callback_kinds": [
+        "Stop"
+      ],
+      "expected_deliveries": 2,
+      "isolation": "scratch Git repository outside registered projects and a temporary Codex profile",
+      "notes": "One isolated capability; raw hook values and model output remain in scratch only."
+    },
+    "stages": {
+      "adapter": {
+        "evidence": "The probe calls no Watchdog adapter.",
+        "failure_category": null,
+        "starts": 0,
+        "state": "not_invoked"
+      },
+      "callbacks": {
+        "evidence": "Expected callback counts and sanitized input shapes are in capabilities.",
+        "expected": 2,
+        "missing": 0,
+        "missing_attribution": "not_applicable",
+        "observed": 2
+      },
+      "end_to_end_delivery": {
+        "evidence": "Read back from the model output and retained rollout of the same isolated run.",
+        "expected": 1,
+        "failure_attribution": "not_applicable",
+        "failure_detail": null,
+        "persisted": 1,
+        "read_back": 1,
+        "state": "confirmed"
+      },
+      "persistence": {
+        "accepted": 0,
+        "evidence": "Not applicable: the probe does not exercise Watchdog persistence.",
+        "losses": []
+      },
+      "provider_dispatch": {
+        "attempts": 1,
+        "detail": null,
+        "evidence": "Codex process completion",
+        "state": "confirmed"
+      },
+      "retries": {
+        "count": 0,
+        "evidence": "One run per case.",
+        "outcome": "not_attempted",
+        "reason": null,
+        "scopes": []
+      }
+    },
+    "started_at": "2026-10-07T05:18:48.533505Z"
+  },
+  {
+    "capabilities": {
+      "subagent-start-context": {
+        "callbacks": {
+          "SubagentStart": {
+            "input_fields": [
+              "agent_id",
+              "agent_type",
+              "cwd",
+              "hook_event_name",
+              "model",
+              "permission_mode",
+              "session_id",
+              "transcript_path",
+              "turn_id"
+            ],
+            "observed": 1,
+            "tool_names": []
+          }
+        },
+        "response_shape": "hookSpecificOutput.additionalContext",
+        "state": "supported"
+      }
+    },
+    "classification": "live_provider",
+    "cleanup": {
+      "complete": false,
+      "remaining_state": "One Codex rollout retained outside the scratch directory.",
+      "resources": [
+        {
+          "action": "retained",
+          "alias": "temporary-codex-profile",
+          "detail": "The base user configuration was unchanged.",
+          "evidence": "Profile cleanup check",
+          "failure_attribution": "unknown",
+          "kind": "hook_installation",
+          "state": "unknown"
+        },
+        {
+          "action": "retained",
+          "alias": "scratch-repository",
+          "detail": null,
+          "evidence": "Temporary directory cleanup check",
+          "failure_attribution": "unknown",
+          "kind": "temporary_state",
+          "state": "unknown"
+        },
+        {
+          "action": "retained",
+          "alias": "provider-rollout",
+          "detail": "Retained by Codex for same-run read-back; path omitted.",
+          "evidence": "Probe read-back",
+          "failure_attribution": "not_applicable",
+          "kind": "temporary_state",
+          "state": "confirmed"
+        }
+      ]
+    },
+    "finished_at": "2026-10-07T05:19:34.894647Z",
+    "format_version": "watchdog.probe-result.v1",
+    "provenance": {
+      "adapter": {
+        "invocation": "provider",
+        "name": "none",
+        "version": null
+      },
+      "harness": {
+        "name": "codex-cli",
+        "version": "codex-cli 0.160.0"
+      },
+      "os": {
+        "architecture": "AMD64",
+        "name": "Windows",
+        "version": null
+      },
+      "provider": {
+        "name": "codex",
+        "surface": "cli",
+        "version": "codex-cli 0.160.0"
+      },
+      "source": {
+        "kind": "generated-workload",
+        "sanitized_reference": "wd139c-subagent-start-context"
+      }
+    },
+    "record_id": "wd139c-codex-cli-subagent-start-context-2026-10-07-attempt-1",
+    "result": {
+      "limitations": [
+        "One Windows Codex CLI version and one scripted prompt."
+      ],
+      "state": "incomplete"
+    },
+    "scope": {
+      "expected_callback_kinds": [
+        "SubagentStart"
+      ],
+      "expected_deliveries": 1,
+      "isolation": "scratch Git repository outside registered projects and a temporary Codex profile",
+      "notes": "One isolated capability; raw hook values and model output remain in scratch only."
+    },
+    "stages": {
+      "adapter": {
+        "evidence": "The probe calls no Watchdog adapter.",
+        "failure_category": null,
+        "starts": 0,
+        "state": "not_invoked"
+      },
+      "callbacks": {
+        "evidence": "Expected callback counts and sanitized input shapes are in capabilities.",
+        "expected": 1,
+        "missing": 0,
+        "missing_attribution": "not_applicable",
+        "observed": 1
+      },
+      "end_to_end_delivery": {
+        "evidence": "Read back from the model output and retained rollout of the same isolated run.",
+        "expected": 1,
+        "failure_attribution": "not_applicable",
+        "failure_detail": null,
+        "persisted": 1,
+        "read_back": 1,
+        "state": "confirmed"
+      },
+      "persistence": {
+        "accepted": 0,
+        "evidence": "Not applicable: the probe does not exercise Watchdog persistence.",
+        "losses": []
+      },
+      "provider_dispatch": {
+        "attempts": 1,
+        "detail": null,
+        "evidence": "Codex process completion",
+        "state": "confirmed"
+      },
+      "retries": {
+        "count": 0,
+        "evidence": "One run per case.",
+        "outcome": "not_attempted",
+        "reason": null,
+        "scopes": []
+      }
+    },
+    "started_at": "2026-10-07T05:19:05.163448Z"
+  },
+  {
+    "capabilities": {
+      "subagent-stop-block": {
+        "callbacks": {
+          "SubagentStop": {
+            "input_fields": [
+              "agent_id",
+              "agent_transcript_path",
+              "agent_type",
+              "cwd",
+              "hook_event_name",
+              "last_assistant_message",
+              "model",
+              "permission_mode",
+              "session_id",
+              "stop_hook_active",
+              "transcript_path",
+              "turn_id"
+            ],
+            "observed": 2,
+            "tool_names": []
+          }
+        },
+        "response_shape": "decision=block",
+        "state": "supported"
+      }
+    },
+    "classification": "live_provider",
+    "cleanup": {
+      "complete": true,
+      "remaining_state": "One Codex rollout retained outside the scratch directory.",
+      "resources": [
+        {
+          "action": "removed",
+          "alias": "temporary-codex-profile",
+          "detail": "The base user configuration was unchanged.",
+          "evidence": "Profile cleanup check",
+          "failure_attribution": "not_applicable",
+          "kind": "hook_installation",
+          "state": "confirmed"
+        },
+        {
+          "action": "removed",
+          "alias": "scratch-repository",
+          "detail": null,
+          "evidence": "Temporary directory cleanup check",
+          "failure_attribution": "not_applicable",
+          "kind": "temporary_state",
+          "state": "confirmed"
+        },
+        {
+          "action": "retained",
+          "alias": "provider-rollout",
+          "detail": "Retained by Codex for same-run read-back; path omitted.",
+          "evidence": "Probe read-back",
+          "failure_attribution": "not_applicable",
+          "kind": "temporary_state",
+          "state": "confirmed"
+        }
+      ]
+    },
+    "finished_at": "2026-10-07T05:39:21.455469Z",
+    "format_version": "watchdog.probe-result.v1",
+    "provenance": {
+      "adapter": {
+        "invocation": "provider",
+        "name": "none",
+        "version": null
+      },
+      "harness": {
+        "name": "codex-cli",
+        "version": "codex-cli 0.160.0"
+      },
+      "os": {
+        "architecture": "AMD64",
+        "name": "Windows",
+        "version": null
+      },
+      "provider": {
+        "name": "codex",
+        "surface": "cli",
+        "version": "codex-cli 0.160.0"
+      },
+      "source": {
+        "kind": "generated-workload",
+        "sanitized_reference": "wd139c-subagent-stop-block"
+      }
+    },
+    "record_id": "wd139c-codex-cli-subagent-stop-block-2026-10-07-attempt-1",
+    "result": {
+      "limitations": [
+        "One Windows Codex CLI version and one scripted prompt."
+      ],
+      "state": "passed"
+    },
+    "scope": {
+      "expected_callback_kinds": [
+        "SubagentStop"
+      ],
+      "expected_deliveries": 2,
+      "isolation": "scratch Git repository outside registered projects and a temporary Codex profile",
+      "notes": "One isolated capability; raw hook values and model output remain in scratch only."
+    },
+    "stages": {
+      "adapter": {
+        "evidence": "The probe calls no Watchdog adapter.",
+        "failure_category": null,
+        "starts": 0,
+        "state": "not_invoked"
+      },
+      "callbacks": {
+        "evidence": "Expected callback counts and sanitized input shapes are in capabilities.",
+        "expected": 2,
+        "missing": 0,
+        "missing_attribution": "not_applicable",
+        "observed": 2
+      },
+      "end_to_end_delivery": {
+        "evidence": "Read back from the model output and retained rollout of the same isolated run.",
+        "expected": 1,
+        "failure_attribution": "not_applicable",
+        "failure_detail": null,
+        "persisted": 1,
+        "read_back": 1,
+        "state": "confirmed"
+      },
+      "persistence": {
+        "accepted": 0,
+        "evidence": "Not applicable: the probe does not exercise Watchdog persistence.",
+        "losses": []
+      },
+      "provider_dispatch": {
+        "attempts": 1,
+        "detail": null,
+        "evidence": "Codex process completion",
+        "state": "confirmed"
+      },
+      "retries": {
+        "count": 0,
+        "evidence": "One run per case.",
+        "outcome": "not_attempted",
+        "reason": null,
+        "scopes": []
+      }
+    },
+    "started_at": "2026-10-07T05:38:45.939342Z"
+  }
+]

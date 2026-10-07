@@ -18,6 +18,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import time
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -374,6 +375,772 @@ def run_codex_context(args: argparse.Namespace) -> dict[str, object]:
             )
         finally:
             profile.unlink(missing_ok=True)
+
+
+# --- Codex CLI control probes -------------------------------------------------
+#
+# The older `codex-context` command above is retained for its historical record.
+# WD-139c uses the data-driven `codex-control` command below.  Each case gets a
+# new temporary profile and scratch repository, so one callback or decision
+# shape cannot be mistaken for another capability.
+
+CODEX_CONTEXT_MARKER = "WD139C_CONTEXT"
+CODEX_DENY_REASON = "WD139C_DENY"
+CODEX_REWRITTEN = "WD139C_REWRITTEN"
+CODEX_ORIGINAL = "WD139C_ORIGINAL"
+CODEX_SIDE_EFFECT = "WD139C_SIDE_EFFECT"
+CODEX_FINISHED = "WD139C_FINISHED"
+CODEX_STOP_ACK = "WD139C_STOP_ACK"
+CODEX_SENTINEL = "wd139c_sentinel.txt"
+
+CodexResponse = Callable[[Mapping[str, object]], dict[str, object]]
+CodexVerdict = tuple[str, list[str]]
+
+
+@dataclass(frozen=True)
+class CodexEvidence:
+    """Sanitized facts collected for one Codex CLI capability run."""
+
+    records: Sequence[Mapping[str, object]]
+    stdout: str
+    rollout: str
+    files: frozenset[str]
+    completed: bool
+    timed_out: bool = False
+    file_markers: frozenset[str] = frozenset()
+
+    def calls(self, event: str) -> list[Mapping[str, object]]:
+        found: list[Mapping[str, object]] = []
+        for record in self.records:
+            payload = record.get("input")
+            if record.get("event") == event and isinstance(payload, dict):
+                found.append(payload)
+        return found
+
+    def saw(self, marker: str) -> bool:
+        return marker in self.stdout or marker in self.rollout or marker in self.file_markers
+
+
+@dataclass(frozen=True)
+class CodexCase:
+    """One isolated Codex CLI hook capability and its expected evidence."""
+
+    name: str
+    events: tuple[tuple[str, str | None], ...]
+    expected: Mapping[str, int]
+    responses: Mapping[str, CodexResponse]
+    response_shape: str
+    prompts: tuple[str, ...]
+    judge: Callable[[CodexEvidence], CodexVerdict]
+    sandbox: str = "read-only"
+    limitations: tuple[str, ...] = ()
+
+
+def _codex_context(event: str, marker: str) -> CodexResponse:
+    def respond(_payload: Mapping[str, object]) -> dict[str, object]:
+        return {"hookSpecificOutput": {"hookEventName": event, "additionalContext": marker}}
+
+    return respond
+
+
+def _codex_pre_tool(decision: str, reason: str, **updated: str) -> CodexResponse:
+    def respond(payload: Mapping[str, object]) -> dict[str, object]:
+        output: dict[str, object] = {
+            "hookEventName": "PreToolUse",
+            "permissionDecision": decision,
+            "permissionDecisionReason": reason,
+        }
+        if updated:
+            original = payload.get("tool_input")
+            output["updatedInput"] = {
+                **(original if isinstance(original, dict) else {}),
+                **updated,
+            }
+        return {"hookSpecificOutput": output}
+
+    return respond
+
+
+def _codex_permission(behavior: str) -> CodexResponse:
+    def respond(_payload: Mapping[str, object]) -> dict[str, object]:
+        decision: dict[str, object] = {"behavior": behavior}
+        if behavior == "deny":
+            decision["message"] = CODEX_DENY_REASON
+        return {"hookSpecificOutput": {"hookEventName": "PermissionRequest", "decision": decision}}
+
+    return respond
+
+
+def _codex_block(reason: str) -> CodexResponse:
+    def respond(_payload: Mapping[str, object]) -> dict[str, object]:
+        return {"decision": "block", "reason": reason}
+
+    return respond
+
+
+def _codex_block_once(reason: str) -> CodexResponse:
+    def respond(payload: Mapping[str, object]) -> dict[str, object]:
+        return (
+            {}
+            if payload.get("stop_hook_active") is True
+            else {"decision": "block", "reason": reason}
+        )
+
+    return respond
+
+
+def _codex_halt(_payload: Mapping[str, object]) -> dict[str, object]:
+    return {"continue": False, "stopReason": "WD139C_HALT"}
+
+
+def _codex_context_verdict(marker: str, event: str) -> Callable[[CodexEvidence], CodexVerdict]:
+    def judge(evidence: CodexEvidence) -> CodexVerdict:
+        if evidence.saw(marker):
+            return "supported", []
+        return "unsupported", [f"{event} ran but its context marker was not model-visible"]
+
+    return judge
+
+
+def _codex_deny_verdict(evidence: CodexEvidence) -> CodexVerdict:
+    if CODEX_SENTINEL in evidence.files:
+        return "unsupported", ["the guarded operation ran despite the deny response"]
+    if evidence.saw(CODEX_DENY_REASON):
+        return "supported", []
+    return "inconclusive", ["the operation did not run but the deny reason was not read back"]
+
+
+def _codex_rewrite_verdict(evidence: CodexEvidence) -> CodexVerdict:
+    if evidence.saw(CODEX_REWRITTEN):
+        return "supported", []
+    if evidence.saw(CODEX_ORIGINAL):
+        return "unsupported", ["the original input ran; updatedInput was ignored"]
+    return "inconclusive", ["neither rewritten nor original output was read back"]
+
+
+def _codex_permission_allow_verdict(evidence: CodexEvidence) -> CodexVerdict:
+    if CODEX_SENTINEL in evidence.files:
+        return "supported", []
+    return "unsupported", ["PermissionRequest allowed the operation, but it did not run"]
+
+
+def _codex_post_block_verdict(evidence: CodexEvidence) -> CodexVerdict:
+    if CODEX_SENTINEL not in evidence.files:
+        return "inconclusive", ["the post-tool probe could not confirm its isolated side effect"]
+    if evidence.saw(CODEX_CONTEXT_MARKER):
+        return "supported", []
+    return "unsupported", ["the tool ran but the post-tool block feedback was not model-visible"]
+
+
+def _codex_halt_verdict(evidence: CodexEvidence) -> CodexVerdict:
+    if evidence.saw(CODEX_FINISHED):
+        return "unsupported", ["the model completed its final reply after continue:false"]
+    return "supported", ["evidence is the absence of the final reply after the callback"]
+
+
+def _codex_stop_verdict(event: str) -> Callable[[CodexEvidence], CodexVerdict]:
+    def judge(evidence: CodexEvidence) -> CodexVerdict:
+        stops = evidence.calls(event)
+        if not any(stop.get("stop_hook_active") is True for stop in stops):
+            return "inconclusive", [f"no continuation {event} callback carried stop_hook_active"]
+        if evidence.saw(CODEX_STOP_ACK):
+            return "supported", []
+        return "inconclusive", ["the continuation reason was not read back"]
+
+    return judge
+
+
+def _remove_codex_scratch(path: Path) -> bool:
+    """Retry cleanup briefly while a just-finished Codex child releases its cwd."""
+    for _attempt in range(6):
+        shutil.rmtree(path, ignore_errors=True)
+        if not path.exists():
+            return True
+        time.sleep(1)
+    return not path.exists()
+
+
+def _codex_file_markers(work: Path) -> frozenset[str]:
+    """Read only known harmless markers from the isolated sentinel file."""
+    sentinel = work / CODEX_SENTINEL
+    if not sentinel.is_file():
+        return frozenset()
+    try:
+        content = sentinel.read_text(encoding="utf-8", errors="replace")[:4096]
+    except OSError:
+        return frozenset()
+    return frozenset(
+        marker
+        for marker in (CODEX_ORIGINAL, CODEX_REWRITTEN, CODEX_SIDE_EFFECT)
+        if marker in content
+    )
+
+
+def _codex_observe_verdict(event: str) -> Callable[[CodexEvidence], CodexVerdict]:
+    def judge(_evidence: CodexEvidence) -> CodexVerdict:
+        return "supported", [f"{event} callback delivery only; this event has no control effect"]
+
+    return judge
+
+
+_CODEX_TOKEN_ASK = (
+    f"Reply with exactly {CODEX_CONTEXT_MARKER} if and only if a hook supplied it; "
+    "otherwise reply with NONE. Do not guess."
+)
+_CODEX_BASH_SIDE_EFFECT = (
+    f'python -c "from pathlib import Path; '
+    f"Path('{CODEX_SENTINEL}').write_text('{CODEX_SIDE_EFFECT}', encoding='utf-8')\""
+)
+_CODEX_APPLY_PATCH_REWRITTEN = "\n".join(
+    (
+        "*** Begin Patch",
+        f"*** Add File: {CODEX_SENTINEL}",
+        f"+{CODEX_REWRITTEN}",
+        "*** End Patch",
+    )
+)
+_CODEX_APPLY_PATCH = (
+    f"Use only the apply_patch tool to create {CODEX_SENTINEL} containing {CODEX_ORIGINAL}. "
+    "Do not use Bash. Then report exactly what happened."
+)
+_CODEX_SUBAGENT = (
+    "Start exactly one general-purpose subagent and ask it to reply with the token it receives. "
+    "Then relay its exact reply."
+)
+
+
+def _codex_cases() -> list[CodexCase]:
+    pre_bash = (("PreToolUse", "^Bash$"),)
+    pre_patch = (("PreToolUse", "^apply_patch$"),)
+    post_bash = (("PostToolUse", "^Bash$"),)
+    permission_bash = (("PermissionRequest", "^Bash$"),)
+    cases = [
+        CodexCase(
+            "session-start-context",
+            (("SessionStart", "^startup$"),),
+            {"SessionStart": 1},
+            {"SessionStart": _codex_context("SessionStart", CODEX_CONTEXT_MARKER)},
+            "hookSpecificOutput.additionalContext",
+            (_CODEX_TOKEN_ASK,),
+            _codex_context_verdict(CODEX_CONTEXT_MARKER, "SessionStart"),
+        ),
+        CodexCase(
+            "pre-tool-bash-context",
+            pre_bash,
+            {"PreToolUse": 1},
+            {"PreToolUse": _codex_context("PreToolUse", CODEX_CONTEXT_MARKER)},
+            "hookSpecificOutput.additionalContext",
+            (f"Run exactly one Bash command: echo {CODEX_SIDE_EFFECT}. {_CODEX_TOKEN_ASK}",),
+            _codex_context_verdict(CODEX_CONTEXT_MARKER, "PreToolUse"),
+        ),
+        CodexCase(
+            "pre-tool-bash-deny",
+            pre_bash,
+            {"PreToolUse": 1},
+            {"PreToolUse": _codex_pre_tool("deny", CODEX_DENY_REASON)},
+            "hookSpecificOutput.permissionDecision=deny",
+            (f"Run exactly one Bash command: {_CODEX_BASH_SIDE_EFFECT}. Quote any refusal.",),
+            _codex_deny_verdict,
+            sandbox="workspace-write",
+        ),
+        CodexCase(
+            "pre-tool-bash-rewrite",
+            pre_bash,
+            {"PreToolUse": 1},
+            {
+                "PreToolUse": _codex_pre_tool(
+                    "allow", "WD139C rewrite", command=f"echo {CODEX_REWRITTEN}"
+                )
+            },
+            "hookSpecificOutput.permissionDecision=allow,updatedInput.command",
+            (f"Run exactly one Bash command: echo {CODEX_ORIGINAL}. Quote its output.",),
+            _codex_rewrite_verdict,
+        ),
+        CodexCase(
+            "pre-tool-apply-patch-context",
+            pre_patch,
+            {"PreToolUse": 1},
+            {"PreToolUse": _codex_context("PreToolUse", CODEX_CONTEXT_MARKER)},
+            "hookSpecificOutput.additionalContext",
+            (_CODEX_APPLY_PATCH + " " + _CODEX_TOKEN_ASK,),
+            _codex_context_verdict(CODEX_CONTEXT_MARKER, "PreToolUse"),
+            sandbox="workspace-write",
+        ),
+        CodexCase(
+            "pre-tool-apply-patch-deny",
+            pre_patch,
+            {"PreToolUse": 1},
+            {"PreToolUse": _codex_pre_tool("deny", CODEX_DENY_REASON)},
+            "hookSpecificOutput.permissionDecision=deny",
+            (_CODEX_APPLY_PATCH,),
+            _codex_deny_verdict,
+            sandbox="workspace-write",
+        ),
+        CodexCase(
+            "pre-tool-apply-patch-rewrite",
+            pre_patch,
+            {"PreToolUse": 1},
+            {
+                "PreToolUse": _codex_pre_tool(
+                    "allow", "WD139C rewrite", patch=_CODEX_APPLY_PATCH_REWRITTEN
+                )
+            },
+            "hookSpecificOutput.permissionDecision=allow,updatedInput.patch",
+            (_CODEX_APPLY_PATCH,),
+            _codex_rewrite_verdict,
+            sandbox="workspace-write",
+        ),
+        CodexCase(
+            "permission-bash-allow",
+            permission_bash,
+            {"PermissionRequest": 1},
+            {"PermissionRequest": _codex_permission("allow")},
+            "hookSpecificOutput.decision.behavior=allow",
+            (
+                f"Run exactly one Bash command: {_CODEX_BASH_SIDE_EFFECT}. "
+                "Then report whether it ran.",
+            ),
+            _codex_permission_allow_verdict,
+            sandbox="read-only",
+        ),
+        CodexCase(
+            "permission-bash-deny",
+            permission_bash,
+            {"PermissionRequest": 1},
+            {"PermissionRequest": _codex_permission("deny")},
+            "hookSpecificOutput.decision.behavior=deny",
+            (f"Run exactly one Bash command: {_CODEX_BASH_SIDE_EFFECT}. Quote any refusal.",),
+            _codex_deny_verdict,
+            sandbox="read-only",
+        ),
+        CodexCase(
+            "post-tool-bash-context",
+            post_bash,
+            {"PostToolUse": 1},
+            {"PostToolUse": _codex_context("PostToolUse", CODEX_CONTEXT_MARKER)},
+            "hookSpecificOutput.additionalContext",
+            (f"Run exactly one Bash command: echo {CODEX_SIDE_EFFECT}. {_CODEX_TOKEN_ASK}",),
+            _codex_context_verdict(CODEX_CONTEXT_MARKER, "PostToolUse"),
+        ),
+        CodexCase(
+            "post-tool-bash-block",
+            post_bash,
+            {"PostToolUse": 1},
+            {"PostToolUse": _codex_block(CODEX_CONTEXT_MARKER)},
+            "decision=block",
+            (f"Run exactly one Bash command: {_CODEX_BASH_SIDE_EFFECT}. Then reply normally.",),
+            _codex_post_block_verdict,
+            sandbox="workspace-write",
+            limitations=("PostToolUse runs after the tool; it cannot roll back the side effect.",),
+        ),
+        CodexCase(
+            "post-tool-bash-halt",
+            post_bash,
+            {"PostToolUse": 1},
+            {"PostToolUse": _codex_halt},
+            "continue=false",
+            (
+                f"Run exactly one Bash command: echo {CODEX_SIDE_EFFECT}. "
+                f"Then reply {CODEX_FINISHED}.",
+            ),
+            _codex_halt_verdict,
+        ),
+        CodexCase(
+            "pre-compact-context",
+            (("PreCompact", "^manual$"),),
+            {"PreCompact": 1},
+            {"PreCompact": _codex_context("PreCompact", CODEX_CONTEXT_MARKER)},
+            "hookSpecificOutput.additionalContext",
+            ("Compact this session, then " + _CODEX_TOKEN_ASK,),
+            _codex_context_verdict(CODEX_CONTEXT_MARKER, "PreCompact"),
+            limitations=("The non-interactive runner may not expose manual compaction.",),
+        ),
+        CodexCase(
+            "post-compact-context",
+            (("PostCompact", "^manual$"),),
+            {"PostCompact": 1},
+            {"PostCompact": _codex_context("PostCompact", CODEX_CONTEXT_MARKER)},
+            "hookSpecificOutput.additionalContext",
+            ("Compact this session, then " + _CODEX_TOKEN_ASK,),
+            _codex_context_verdict(CODEX_CONTEXT_MARKER, "PostCompact"),
+            limitations=("The non-interactive runner may not expose manual compaction.",),
+        ),
+        CodexCase(
+            "subagent-start-context",
+            (("SubagentStart", None),),
+            {"SubagentStart": 1},
+            {"SubagentStart": _codex_context("SubagentStart", CODEX_CONTEXT_MARKER)},
+            "hookSpecificOutput.additionalContext",
+            (_CODEX_SUBAGENT,),
+            _codex_context_verdict(CODEX_CONTEXT_MARKER, "SubagentStart"),
+        ),
+        CodexCase(
+            "subagent-stop-block",
+            (("SubagentStop", None),),
+            {"SubagentStop": 2},
+            {"SubagentStop": _codex_block_once(f"Reply exactly {CODEX_STOP_ACK}.")},
+            "decision=block",
+            (_CODEX_SUBAGENT,),
+            _codex_stop_verdict("SubagentStop"),
+        ),
+        CodexCase(
+            "stop-block",
+            (("Stop", None),),
+            {"Stop": 2},
+            {"Stop": _codex_block_once(f"Reply exactly {CODEX_STOP_ACK}.")},
+            "decision=block",
+            ("Reply with exactly READY.",),
+            _codex_stop_verdict("Stop"),
+        ),
+        CodexCase(
+            "interrupt-observe",
+            (("Interrupt", None),),
+            {"Interrupt": 1},
+            {},
+            "systemMessage",
+            ("Run a long harmless Bash sleep so this CLI run can be interrupted by its owner.",),
+            _codex_observe_verdict("Interrupt"),
+            limitations=("Requires an operator to interrupt the active standalone CLI turn.",),
+        ),
+    ]
+    return cases
+
+
+CODEX_CASES: dict[str, CodexCase] = {case.name: case for case in _codex_cases()}
+
+
+def codex_hook_response(
+    case: CodexCase, event: str, payload: Mapping[str, object]
+) -> dict[str, object]:
+    return case.responses.get(event, lambda _payload: {})(payload)
+
+
+def handle_codex(log: Path, case_name: str) -> int:
+    """Record one scratch callback and answer it for the selected Codex case."""
+    try:
+        payload, event = _read_hook_input()
+        response = codex_hook_response(CODEX_CASES[case_name], event, payload)
+        _append_log(log, {"event": event, "input": payload, "output": response})
+        print(json.dumps(response, sort_keys=True))
+    except (OSError, KeyError, TypeError, ValueError) as error:
+        _append_log(log, {"error": type(error).__name__})
+        print("{}")
+    return 0
+
+
+def codex_profile_configuration(case: CodexCase, handler: Path, log: Path) -> str:
+    """Render only the hooks required by one Codex control case."""
+    command = shlex.join(
+        [sys.executable, str(handler), "codex-handler", "--log", str(log), "--case", case.name]
+    )
+    windows_command = ""
+    # commandWindows must receive the same action and case selector as the portable command.
+    if os.name == "nt":
+        arguments = [
+            str(Path(sys.executable)),
+            str(handler),
+            "codex-handler",
+            "--log",
+            str(log),
+            "--case",
+            case.name,
+        ]
+        windows_command = "& " + " ".join(
+            "'" + argument.replace("'", "''") + "'" for argument in arguments
+        )
+    fields = [
+        'type = "command"',
+        f"command = {json.dumps(command)}",
+        "timeout = 30",
+        "additionalContextLimit = 128",
+    ]
+    if os.name == "nt":
+        fields.insert(2, f"commandWindows = {json.dumps(windows_command)}")
+    chunks: list[str] = []
+    for event, matcher in case.events:
+        chunks.extend([f"[[hooks.{event}]]"])
+        if matcher is not None:
+            chunks.append(f"matcher = {json.dumps(matcher)}")
+        chunks.extend(["", f"[[hooks.{event}.hooks]]", *fields, ""])
+    return "\n".join(chunks)
+
+
+def codex_case_command(codex: str, profile_name: str, work: Path, case: CodexCase) -> list[str]:
+    return [
+        codex,
+        "exec",
+        "--enable",
+        "hooks",
+        "--profile",
+        profile_name,
+        "--dangerously-bypass-hook-trust",
+        "--sandbox",
+        case.sandbox,
+        "-C",
+        str(work),
+        case.prompts[0],
+    ]
+
+
+def _codex_problems(case: CodexCase, evidence: CodexEvidence) -> list[str]:
+    reasons: list[str] = []
+    if evidence.timed_out:
+        reasons.append("Codex timed out before the probe completed")
+    if not evidence.completed:
+        reasons.append("Codex did not complete the probe")
+    for event, minimum in case.expected.items():
+        if len(evidence.calls(event)) < minimum:
+            reasons.append(f"missing callback: {event}")
+    return reasons
+
+
+def evaluate_codex(case: CodexCase, evidence: CodexEvidence) -> CodexVerdict:
+    """Classify a live case only from its callback and isolated read-back evidence."""
+    reasons = _codex_problems(case, evidence)
+    if reasons:
+        return "inconclusive", reasons
+    return case.judge(evidence)
+
+
+def codex_record(
+    case: CodexCase,
+    evidence: CodexEvidence,
+    *,
+    verdict: CodexVerdict,
+    version: str | None,
+    started_at: str,
+    finished_at: str,
+    removed: bool,
+) -> dict[str, object]:
+    """Build one sanitized `watchdog.probe-result.v1` Codex result record."""
+    state, notes = verdict
+    expected = sum(case.expected.values())
+    observed = sum(min(len(evidence.calls(event)), count) for event, count in case.expected.items())
+    callbacks: dict[str, object] = {}
+    for event, _matcher in case.events:
+        inputs = evidence.calls(event)
+        callbacks[event] = {
+            "observed": len(inputs),
+            "input_fields": sorted({key for item in inputs for key in item}),
+            "tool_names": sorted(
+                {name for item in inputs if isinstance(name := item.get("tool_name"), str)}
+            ),
+        }
+    complete = removed
+    delivery = {"supported": "confirmed", "unsupported": "failed"}.get(state, "incomplete")
+    return {
+        "format_version": "watchdog.probe-result.v1",
+        "record_id": f"wd139c-codex-cli-{case.name}-{finished_at[:10]}-attempt-1",
+        "classification": "live_provider",
+        "started_at": started_at,
+        "finished_at": finished_at,
+        "provenance": {
+            "provider": {"name": "codex", "version": version, "surface": "cli"},
+            "harness": {"name": "codex-cli", "version": version},
+            "adapter": {"name": "none", "version": None, "invocation": "provider"},
+            "os": {"name": platform.system(), "version": None, "architecture": platform.machine()},
+            "source": {"kind": "generated-workload", "sanitized_reference": f"wd139c-{case.name}"},
+        },
+        "scope": {
+            "isolation": (
+                "scratch Git repository outside registered projects and a temporary Codex profile"
+            ),
+            "expected_callback_kinds": [event for event, _matcher in case.events],
+            "expected_deliveries": expected,
+            "notes": (
+                "One isolated capability; raw hook values and model output remain in scratch only."
+            ),
+        },
+        "stages": {
+            "provider_dispatch": {
+                "state": "confirmed" if evidence.completed and not evidence.timed_out else "failed",
+                "attempts": 1,
+                "evidence": "Codex process completion"
+                if evidence.completed
+                else "No completed Codex process",
+                "detail": None,
+            },
+            "adapter": {
+                "state": "not_invoked",
+                "starts": 0,
+                "failure_category": None,
+                "evidence": "The probe calls no Watchdog adapter.",
+            },
+            "callbacks": {
+                "expected": expected,
+                "observed": observed,
+                "missing": expected - observed,
+                "missing_attribution": "unknown" if observed < expected else "not_applicable",
+                "evidence": (
+                    "Expected callback counts and sanitized input shapes are in capabilities."
+                ),
+            },
+            "retries": {
+                "count": 0,
+                "scopes": [],
+                "reason": None,
+                "outcome": "not_attempted",
+                "evidence": "One run per case.",
+            },
+            "persistence": {
+                "accepted": 0,
+                "losses": [],
+                "evidence": "Not applicable: the probe does not exercise Watchdog persistence.",
+            },
+            "end_to_end_delivery": {
+                "expected": 1,
+                "persisted": 1 if state == "supported" else 0,
+                "read_back": 1 if state == "supported" else 0,
+                "state": delivery,
+                "failure_attribution": "attributed" if state == "unsupported" else "not_applicable",
+                "failure_detail": notes[0] if state == "unsupported" else None,
+                "evidence": (
+                    "Read back from the model output and retained rollout of the same isolated run."
+                ),
+            },
+        },
+        "capabilities": {
+            case.name: {
+                "state": state,
+                "response_shape": case.response_shape,
+                "callbacks": callbacks,
+            }
+        },
+        "cleanup": {
+            "resources": [
+                {
+                    "kind": "hook_installation",
+                    "alias": "temporary-codex-profile",
+                    "action": "removed" if removed else "retained",
+                    "state": "confirmed" if removed else "unknown",
+                    "failure_attribution": "not_applicable" if removed else "unknown",
+                    "detail": "The base user configuration was unchanged.",
+                    "evidence": "Profile cleanup check",
+                },
+                {
+                    "kind": "temporary_state",
+                    "alias": "scratch-repository",
+                    "action": "removed" if removed else "retained",
+                    "state": "confirmed" if removed else "unknown",
+                    "failure_attribution": "not_applicable" if removed else "unknown",
+                    "detail": None,
+                    "evidence": "Temporary directory cleanup check",
+                },
+                {
+                    "kind": "temporary_state",
+                    "alias": "provider-rollout",
+                    "action": "retained",
+                    "state": "confirmed",
+                    "failure_attribution": "not_applicable",
+                    "detail": "Retained by Codex for same-run read-back; path omitted.",
+                    "evidence": "Probe read-back",
+                },
+            ],
+            "complete": complete,
+            "remaining_state": "One Codex rollout retained outside the scratch directory.",
+        },
+        "result": {
+            "state": "failed"
+            if state == "unsupported"
+            else "incomplete"
+            if state == "inconclusive" or not complete
+            else "passed",
+            "limitations": [
+                *case.limitations,
+                *notes,
+                "One Windows Codex CLI version and one scripted prompt.",
+            ],
+        },
+    }
+
+
+def run_codex_case(
+    case: CodexCase, args: argparse.Namespace, codex: str, version: str, roots: Sequence[Path]
+) -> dict[str, object]:
+    started_at = datetime.now(UTC).isoformat().replace("+00:00", "Z")
+    scratch: Path | None = None
+    removed = False
+    home = Path(os.environ.get("CODEX_HOME", Path.home() / ".codex"))
+    profile_name = f"watchdog-wd139c-{uuid4().hex}"
+    profile = home / f"{profile_name}.config.toml"
+    try:
+        with tempfile.TemporaryDirectory(
+            prefix="watchdog-wd139c-codex-", ignore_cleanup_errors=True
+        ) as temporary:
+            scratch = Path(temporary)
+            ensure_scratch_outside_roots(scratch, roots)
+            work = scratch / "work"
+            control = scratch / "control"
+            work.mkdir()
+            control.mkdir()
+            log = control / "probe.ndjson"
+            profile.write_text(
+                codex_profile_configuration(case, Path(__file__).resolve(), log),
+                encoding="utf-8",
+                newline="\n",
+            )
+            subprocess.run(
+                ["git", "init", str(work)],
+                capture_output=True,
+                text=True,
+                check=True,
+                creationflags=hidden_creationflags(),
+            )
+            stdout = ""
+            completed = False
+            timed_out = False
+            try:
+                process = subprocess.run(
+                    codex_case_command(codex, profile_name, work, case),
+                    capture_output=True,
+                    text=True,
+                    timeout=args.timeout,
+                    creationflags=hidden_creationflags(),
+                )
+                stdout = process.stdout
+                completed = process.returncode == 0
+            except subprocess.TimeoutExpired as error:
+                timed_out = True
+                partial = error.stdout
+                stdout = (
+                    partial.decode("utf-8", "replace")
+                    if isinstance(partial, bytes)
+                    else partial or ""
+                )
+            evidence = CodexEvidence(
+                records=_read_records(log),
+                stdout=stdout,
+                rollout=_read_rollout(_rollout_path(_read_records(log))),
+                files=frozenset(entry.name for entry in work.iterdir() if entry.name != ".git"),
+                completed=completed,
+                timed_out=timed_out,
+                file_markers=_codex_file_markers(work),
+            )
+        if scratch is not None and scratch.exists():
+            removed = _remove_codex_scratch(scratch)
+        else:
+            removed = True
+    finally:
+        profile.unlink(missing_ok=True)
+    return codex_record(
+        case,
+        evidence,
+        verdict=evaluate_codex(case, evidence),
+        version=version,
+        started_at=started_at,
+        finished_at=datetime.now(UTC).isoformat().replace("+00:00", "Z"),
+        removed=removed,
+    )
+
+
+def run_codex_control(args: argparse.Namespace) -> list[dict[str, object]]:
+    require_standalone_cli()
+    roots = registered_roots(args.config)
+    ensure_scratch_outside_roots(Path(tempfile.gettempdir()), roots)
+    codex = resolve_codex(args.codex)
+    version = codex_version(codex)
+    names = sorted(CODEX_CASES) if args.all else args.case
+    return [run_codex_case(CODEX_CASES[name], args, codex, version, roots) for name in names]
 
 
 # --- Claude Code control probes ---------------------------------------------------
@@ -1553,10 +2320,22 @@ def main() -> int:
     commands = parser.add_subparsers(dest="action", required=True)
     handler = commands.add_parser("handler", help="internal Codex hook handler")
     handler.add_argument("--log", type=Path, required=True)
+    codex_handler = commands.add_parser("codex-handler", help="internal Codex control hook handler")
+    codex_handler.add_argument("--log", type=Path, required=True)
+    codex_handler.add_argument("--case", required=True, choices=sorted(CODEX_CASES))
     probe = commands.add_parser("codex-context", help="run the isolated Codex context probe")
     probe.add_argument("--codex", default="codex")
     probe.add_argument("--config", type=Path)
     probe.add_argument("--timeout", type=float, default=90)
+    codex_control = commands.add_parser(
+        "codex-control", help="run isolated Codex CLI hook-control probes"
+    )
+    codex_selection = codex_control.add_mutually_exclusive_group(required=True)
+    codex_selection.add_argument("--case", action="append", choices=sorted(CODEX_CASES))
+    codex_selection.add_argument("--all", action="store_true")
+    codex_control.add_argument("--codex", default="codex")
+    codex_control.add_argument("--config", type=Path)
+    codex_control.add_argument("--timeout", type=float, default=90)
     claude_handler = commands.add_parser("claude-handler", help="internal Claude hook handler")
     claude_handler.add_argument("--log", type=Path, required=True)
     claude_handler.add_argument("--case", required=True, choices=sorted(CLAUDE_CASES))
@@ -1581,6 +2360,8 @@ def main() -> int:
     args = parser.parse_args()
     if args.action == "handler":
         return handle(args.log)
+    if args.action == "codex-handler":
+        return handle_codex(args.log, args.case)
     if args.action == "claude-handler":
         return handle_claude(args.log, args.case)
     if args.action == "claude-routed-handler":
@@ -1592,6 +2373,8 @@ def main() -> int:
             print(json.dumps(collect_desktop(args.dir, clean=args.clean), indent=2, sort_keys=True))
         elif args.action == "claude-control":
             print(json.dumps(run_claude_control(args), indent=2, sort_keys=True))
+        elif args.action == "codex-control":
+            print(json.dumps(run_codex_control(args), indent=2, sort_keys=True))
         else:
             print(json.dumps(run_codex_context(args), sort_keys=True))
     except (OSError, RuntimeError, ValueError, subprocess.SubprocessError) as error:

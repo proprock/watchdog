@@ -222,8 +222,46 @@ All three used the remembered 800000-token budget with nothing truncated. Sessio
 
 - **Result.** `UserPromptSubmit` and `PostToolUse` matched as `Bash` each fired once. Each hook's `hookSpecificOutput.additionalContext` alias appeared in both the final model response and the retained Codex rollout, so both capabilities are **supported** for this CLI/version.
 - **Safety and cleanup.** The temporary profile and scratch repository were removed; the base user configuration was unchanged. The Codex rollout was intentionally retained only long enough to prove read-back; its path and content are not recorded.
-- **Limitation.** This proves two context-delivery events on one Windows CLI build and one harmless Bash command. It does not prove Codex desktop behavior, decision controls, other hook events, or any Claude Code case. The remaining Codex cases are WD-139c (CLI matrix) and WD-153 (desktop).
+- **Limitation.** This proves two context-delivery events on one Windows CLI build and one harmless Bash command. The broader CLI matrix is recorded in WD-139c above; Codex desktop remains WD-153.
 - **Evidence.** [wd139-hook-control.json](evidence/wd139-hook-control.json) follows `watchdog.probe-result.v1` and retains only event aliases, field names, counts, versions, and cleanup state.
+
+### WD-139c Codex CLI control matrix
+
+2026-10-07, Windows AMD64, Codex CLI 0.160.0. The opt-in `codex-control`
+probe ran 18 isolated cases: each used a temporary profile and scratch Git
+repository outside registered projects, and did not invoke the Watchdog adapter.
+Raw hook values, paths, prompts, commands, and model output were discarded.
+
+| Capability | Expected / observed callbacks | Result |
+|---|---:|---|
+| `SessionStart` context | 1 / 1 | Supported; cleanup confirmed. |
+| `PreToolUse`/`Bash` context | 1 / 1 | Callback and read-back observed, but cleanup incomplete. |
+| `PreToolUse`/`Bash` deny | 1 / 1 | Supported; guarded operation did not run and denial was read back. |
+| `PreToolUse`/`Bash` rewrite | 1 / 1 | Supported; rewritten command was read back. |
+| `PreToolUse`/`apply_patch` context or deny | 1 / 1 each | Callback/control observed, but cleanup incomplete. |
+| `PreToolUse`/`apply_patch` rewrite | 1 / 1 | Unsupported: the original patch ran; `updatedInput.patch` was ignored. |
+| `PermissionRequest` allow or deny | 1 / 0 each | Inconclusive: the headless execution path emitted no callback. |
+| `PostToolUse`/`Bash` context | 1 / 1 | Supported; context was read back. |
+| `PostToolUse`/`Bash` block | 1 / 1 | Inconclusive: callback arrived, but the isolated side effect was not confirmed. It cannot establish rollback. |
+| `PostToolUse`/`Bash` `continue: false` | 1 / 1 | Inconclusive: the model completed its final reply; cleanup was incomplete. |
+| `PreCompact` or `PostCompact` context | 1 / 0 each | Inconclusive: the non-interactive runner did not expose manual compaction. |
+| `SubagentStart` context | 1 / 1 | Callback/read-back observed, but cleanup incomplete. |
+| `SubagentStop` block | 2 / 2 | Supported; the continuation callback carried `stop_hook_active: true` and the reason was read back. |
+| `Stop` block | 2 / 2 | Callback/read-back observed, but cleanup incomplete. |
+| `Interrupt` observation | 1 / 0 | Inconclusive: the owner did not interrupt the standalone turn. |
+
+Only the clean `supported` rows are usable as Codex CLI control evidence;
+incomplete observations, the unsupported `apply_patch` rewrite, and every
+inconclusive cell keep the adapter fail-open. A `PostToolUse` callback happens
+after a tool call and therefore cannot demonstrate rollback.
+
+The [sanitized evidence](evidence/wd139c-codex-cli-control.json) is an array
+of 18 `watchdog.probe-result.v1` records. It retains callback counts, field
+names, tool names, provider version, verdict, and cleanup state. Two clean
+reruns replace the original records for `apply_patch` rewrite and
+`SubagentStop`; the later retry also retained `PostToolUse` block as
+inconclusive. Offline coverage is in `tests/test_live_probe.py`; it never
+launches a provider.
 
 ### WD-139 Claude Code hook-control live probe
 
