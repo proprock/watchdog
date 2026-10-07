@@ -48,15 +48,60 @@ Without overrides, locations come from platformdirs. No login service is install
   acknowledged request ID, and up to 32 project error IDs. Start acknowledgment is
   published by the core; stop completion is the persistent pause plus released
   ownership. Corrupt or future-version control files are not overwritten.
-- `data/policy/socket.json` (WD-022b) publishes the loopback-only port and a
-  per-instance random token for the daemon's WD-014 `intervene` decision
-  socket, the same discovery-file pattern as `spool/limits.json`. A background
-  thread answers exactly one bounded, token-checked request per connection; a
-  bind or publish failure degrades to no policy socket at all (a WARNING, not
-  a daemon crash — this optional capability must never take down the shared
-  daemon Codex observation also depends on). Removed on every exit path, clean
-  or not, so a stale file left by an unclean exit is at worst a dead port a
-  later process might reuse, caught by the token check.
+- `data/policy/socket.json` (WD-022b, schema 2 since WD-140) is the discovery
+  file for the **decision channel**: the loopback-only `port`, a per-instance
+  random `token`, the adapter's wait budget `timeout_ms` (300), the request
+  size budget `max_request_bytes`, and the `subscriptions` the adapter may ask
+  about (`{provider, hook_event_name, tool_name?}`; today only Claude
+  `PreToolUse` on `Agent`). It is the same discovery-file pattern as
+  `spool/limits.json`. A background thread answers exactly one bounded,
+  token-checked request per connection; a bind or publish failure degrades to
+  no decision channel at all (a WARNING, not a daemon crash — this optional
+  capability must never take down the shared daemon Codex observation also
+  depends on). Removed on every exit path, clean or not, so a stale file left
+  by an unclean exit is at worst a dead port a later process might reuse,
+  caught by the token check.
+
+  **Protocol.** The request is one JSON line,
+  `{schema_version: 2, token, provider, event_id, input}`, where `input` is the
+  complete hook input and `event_id` is the id the adapter gives the spooled
+  hook event. The answer is
+  `{schema_version: 2, action, reason?, updated_input?, context?}` with
+  `action` one of `allow|deny|ask|rewrite|context|block`; `allow` means "no
+  opinion" and the adapter renders nothing for it. `agent_watchdog.rules.engine`
+  hosts the rules (today only the WD-014 same-model-subagent rule, unchanged,
+  as `subagent_same_model`); the first non-`allow` action the adapter can
+  render for that provider and event wins. Codex always gets `allow` until
+  WD-151.
+
+  **Fail open.** Anything wrong — unreadable, oversized, or malformed request,
+  wrong schema version (a schema 1 adapter against this daemon, or the
+  reverse), bad token, unreadable config, a rule that raises — closes the
+  connection without an answer, and the adapter reads that as "no opinion".
+  A mixed install therefore silently loses the deny rather than ever denying
+  by mistake; upgrade the adapter and the daemon together. The request size
+  budget is the spool payload limit plus a fixed overhead, so a maximal
+  subagent prompt still reaches the rule; it is computed when the daemon starts
+  and is not republished on a config change, so raising `payload_bytes`
+  needs a daemon restart for the larger requests to be answered.
+
+  **Control events.** Every non-`allow` action the daemon sent is recorded as a
+  `control` event (`source = "daemon"`,
+  `payload.<provider> = {rule, action, reason, evidence_ids}`, where
+  `evidence_ids` holds the hook event's id). The daemon cannot see whether the
+  adapter rendered the answer: "delivered" means "sent". If the adapter's
+  deadline expired first, the event still exists although the model never saw
+  the action. If the adapter's spool write then fails (quota or I/O), the
+  `evidence_ids` entry points at a hook event that was never stored. The event
+  is published to the project inbox from the handler thread (never through a
+  `Store`, which the poll thread owns) and recording failures are only logged;
+  the answer has already been sent. Like `observation.gap`, a `control` event
+  is an ordinary stored event: it counts in per-session and per-project event
+  totals, coverage and pipeline telemetry, and (because it is created
+  immediately after the hook it answers) moves a session's first or last
+  timestamp by no more than that hook's own latency. The findings and reports
+  that measure turns, tools, usage and subagents select their event kinds
+  explicitly and ignore it.
 - `config.toml` is re-read on every poll tick and every policy-socket request
   (no explicit reload command exists or is planned; an edit takes effect on
   the very next tick/request). `agent_watchdog.daemon._ConfigCache` skips the

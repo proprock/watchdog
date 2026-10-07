@@ -29,7 +29,6 @@ from agent_watchdog.daemon import (
     _drain_spool,
     _policy_server,
     _record_enrichment_failures,
-    _resolve_policy_decision,
     enqueue,
     launch,
     mutate_registry,
@@ -41,7 +40,8 @@ from agent_watchdog.daemon import (
 from agent_watchdog.events import Envelope
 from agent_watchdog.registry import Registry
 from agent_watchdog.resources import losses
-from agent_watchdog.storage import Inbox, Store, WriterBusy, writer_lock
+from agent_watchdog.rules.engine import decide
+from agent_watchdog.storage import Inbox, StorageError, Store, WriterBusy, writer_lock
 from agent_watchdog.transcripts import FAILURE_CODES
 
 
@@ -427,21 +427,38 @@ def _seed_coordinator_usage(paths, project, *, session_id, model):
         )
 
 
-def test_resolve_policy_decision_denies_a_same_family_subagent_spawn(paths, tmp_path):
+def _agent_input(root, *, session_id="session-1", model="opus", **fields):
+    tool_input = {"subagent_type": "general-purpose", "prompt": "p"}
+    if model is not None:
+        tool_input["model"] = model
+    return {
+        "cwd": str(root),
+        "session_id": session_id,
+        "hook_event_name": "PreToolUse",
+        "tool_name": "Agent",
+        "tool_input": tool_input,
+        **fields,
+    }
+
+
+def _decide(paths, hook_input, provider="claude"):
+    return decide(paths, load_config(paths.config), provider, hook_input)
+
+
+def test_decide_denies_a_same_family_subagent_spawn(paths, tmp_path):
     root = tmp_path / "project"
     root.mkdir()
     mutate_registry(paths, lambda registry: registry.add(root))
     project = load_config(paths.config).projects[0]
     _seed_coordinator_usage(paths, project, session_id="session-1", model="claude-opus-5-5")
-    assert (
-        _resolve_policy_decision(
-            paths, cwd=str(root), session_id="session-1", candidate_model="opus"
-        )
-        == "deny"
-    )
+    decision = _decide(paths, _agent_input(root, model="opus"))
+    assert decision.action == "deny"
+    assert decision.rule == "subagent_same_model"
+    assert decision.project_id == project.id
+    assert "(opus)" in decision.reason
 
 
-def test_resolve_policy_decision_respects_the_global_kill_switch(paths, tmp_path):
+def test_decide_respects_the_global_kill_switch(paths, tmp_path):
     root = tmp_path / "project"
     root.mkdir()
     project = Project(id=uuid4(), root=root)
@@ -452,15 +469,10 @@ def test_resolve_policy_decision_respects_the_global_kill_switch(paths, tmp_path
         ),
     )
     _seed_coordinator_usage(paths, project, session_id="session-1", model="claude-opus-5-5")
-    assert (
-        _resolve_policy_decision(
-            paths, cwd=str(root), session_id="session-1", candidate_model="opus"
-        )
-        == "allow"
-    )
+    assert _decide(paths, _agent_input(root, model="opus")).action == "allow"
 
 
-def test_resolve_policy_decision_respects_the_per_project_kill_switch(paths, tmp_path):
+def test_decide_respects_the_per_project_kill_switch(paths, tmp_path):
     root = tmp_path / "project"
     root.mkdir()
     project = Project(
@@ -468,29 +480,19 @@ def test_resolve_policy_decision_respects_the_per_project_kill_switch(paths, tmp
     )
     save_config(paths.config, Config(projects=(project,)))
     _seed_coordinator_usage(paths, project, session_id="session-1", model="claude-opus-5-5")
-    assert (
-        _resolve_policy_decision(
-            paths, cwd=str(root), session_id="session-1", candidate_model="opus"
-        )
-        == "allow"
-    )
+    assert _decide(paths, _agent_input(root, model="opus")).action == "allow"
 
 
-def test_resolve_policy_decision_allows_a_different_family_subagent_spawn(paths, tmp_path):
+def test_decide_allows_a_different_family_subagent_spawn(paths, tmp_path):
     root = tmp_path / "project"
     root.mkdir()
     mutate_registry(paths, lambda registry: registry.add(root))
     project = load_config(paths.config).projects[0]
     _seed_coordinator_usage(paths, project, session_id="session-1", model="claude-opus-5-5")
-    assert (
-        _resolve_policy_decision(
-            paths, cwd=str(root), session_id="session-1", candidate_model="haiku"
-        )
-        == "allow"
-    )
+    assert _decide(paths, _agent_input(root, model="haiku")).action == "allow"
 
 
-def test_resolve_policy_decision_never_denies_the_lowest_tier(paths, tmp_path):
+def test_decide_never_denies_the_lowest_tier(paths, tmp_path):
     """Denying asks the caller to downgrade the model; a haiku spawn already
     has nowhere lower to go, so it is never denied even when it matches the
     coordinator's own (also haiku) model."""
@@ -501,67 +503,287 @@ def test_resolve_policy_decision_never_denies_the_lowest_tier(paths, tmp_path):
     _seed_coordinator_usage(
         paths, project, session_id="session-1", model="claude-haiku-4-5-20251001"
     )
-    assert (
-        _resolve_policy_decision(
-            paths, cwd=str(root), session_id="session-1", candidate_model="haiku"
-        )
-        == "allow"
-    )
+    assert _decide(paths, _agent_input(root, model="haiku")).action == "allow"
 
 
-def test_resolve_policy_decision_allows_when_cwd_is_unregistered(paths, tmp_path):
+def test_decide_allows_when_cwd_is_unregistered(paths, tmp_path):
     root = tmp_path / "project"
     root.mkdir()
     mutate_registry(paths, lambda registry: registry.add(root))
     other = tmp_path / "elsewhere"
     other.mkdir()
-    assert (
-        _resolve_policy_decision(
-            paths, cwd=str(other), session_id="session-1", candidate_model="opus"
-        )
-        == "allow"
-    )
+    assert _decide(paths, _agent_input(other, model="opus")).action == "allow"
 
 
-def test_resolve_policy_decision_allows_when_no_coordinator_usage_observed(paths, tmp_path):
+def test_decide_allows_when_no_coordinator_usage_observed(paths, tmp_path):
     root = tmp_path / "project"
     root.mkdir()
     mutate_registry(paths, lambda registry: registry.add(root))
-    assert (
-        _resolve_policy_decision(
-            paths, cwd=str(root), session_id="session-1", candidate_model="opus"
-        )
-        == "allow"
-    )
+    assert _decide(paths, _agent_input(root, model="opus")).action == "allow"
 
 
-def _policy_request(port, **fields):
-    with socket.create_connection(("127.0.0.1", port), timeout=2) as connection:
-        connection.sendall((json.dumps(fields) + "\n").encode("utf-8"))
-        connection.shutdown(socket.SHUT_WR)
-        return connection.recv(4096)
-
-
-def test_policy_server_answers_over_the_loopback_socket(paths, tmp_path):
+def _same_model_setup(paths, tmp_path):
     root = tmp_path / "project"
     root.mkdir()
     mutate_registry(paths, lambda registry: registry.add(root))
     project = load_config(paths.config).projects[0]
-    _seed_coordinator_usage(paths, project, session_id="session-1", model="claude-sonnet-5")
+    _seed_coordinator_usage(paths, project, session_id="session-1", model="claude-opus-5-5")
+    return root, project
+
+
+@pytest.mark.parametrize(
+    "variant",
+    [
+        pytest.param({"model": None}, id="no-model-override"),
+        pytest.param({"tool_name": "Bash"}, id="other-tool"),
+        pytest.param({"hook_event_name": "PostToolUse"}, id="other-event"),
+        pytest.param({"session_id": None}, id="no-session"),
+        pytest.param({"cwd": None}, id="no-cwd"),
+    ],
+)
+def test_decide_only_judges_a_claude_agent_spawn_with_a_model(paths, tmp_path, variant):
+    root, _ = _same_model_setup(paths, tmp_path)
+    variant = dict(variant)
+    model = variant.pop("model", "opus")
+    hook_input = _agent_input(root, model=model, **variant)
+    hook_input = {key: value for key, value in hook_input.items() if value is not None}
+    assert _decide(paths, hook_input).action == "allow"
+
+
+def test_decide_never_returns_an_action_for_codex(paths, tmp_path):
+    """Nothing is returned to Codex without live evidence (WD-151)."""
+    root, _ = _same_model_setup(paths, tmp_path)
+    assert _decide(paths, _agent_input(root, model="opus"), provider="codex").action == "allow"
+
+
+def test_decide_only_returns_actions_the_adapter_can_render(paths, tmp_path, monkeypatch):
+    import agent_watchdog.rules.engine as engine
+    from agent_watchdog.rules.api import Decision
+
+    root, _ = _same_model_setup(paths, tmp_path)
+
+    def block_everything(*_args):
+        return Decision(action="block", rule="test", reason="x")
+
+    monkeypatch.setattr(engine, "_RULES", (block_everything,))
+    # `block` is renderable for Stop, but not for PreToolUse.
+    assert _decide(paths, _agent_input(root)).action == "allow"
+    assert _decide(paths, {"cwd": str(root), "hook_event_name": "Stop"}).action == "block"
+
+
+def test_decide_never_blocks_a_stop_that_is_already_continuing(paths, tmp_path, monkeypatch):
+    import agent_watchdog.rules.engine as engine
+    from agent_watchdog.rules.api import Decision
+
+    root, _ = _same_model_setup(paths, tmp_path)
+    monkeypatch.setattr(
+        engine, "_RULES", (lambda *_args: Decision(action="block", rule="test", reason="x"),)
+    )
+    hook_input = {"cwd": str(root), "hook_event_name": "Stop", "stop_hook_active": True}
+    assert _decide(paths, hook_input).action == "allow"
+
+
+def _policy_request(port, **fields):
+    with socket.create_connection(("127.0.0.1", port), timeout=5) as connection:
+        connection.sendall((json.dumps(fields) + "\n").encode("utf-8"))
+        connection.shutdown(socket.SHUT_WR)
+        chunks = []
+        while chunk := connection.recv(65536):
+            chunks.append(chunk)
+        return b"".join(chunks)
+
+
+def _decision_request(discovery, root, event_id=None, **fields):
+    return {
+        "schema_version": 2,
+        "token": discovery["token"],
+        "provider": "claude",
+        "event_id": str(event_id or uuid4()),
+        "input": _agent_input(root, **fields),
+    }
+
+
+def _control_events(paths, project):
+    inbox = paths.project_data(project.id) / "inbox"
+    return [json.loads(path.read_text(encoding="utf-8")) for path in inbox.glob("*.json")]
+
+
+def test_policy_server_answers_over_the_loopback_socket(paths, tmp_path):
+    root, project = _same_model_setup(paths, tmp_path)
     socket_path = paths.data / "policy" / "socket.json"
     with _policy_server(paths):
         discovery = json.loads(socket_path.read_text(encoding="utf-8"))
-        assert discovery["schema_version"] == 1
+        assert discovery["schema_version"] == 2
+        assert discovery["timeout_ms"] == 300
+        assert discovery["max_request_bytes"] > Limits().payload_bytes
+        assert discovery["subscriptions"] == [
+            {"provider": "claude", "hook_event_name": "PreToolUse", "tool_name": "Agent"}
+        ]
+        raw = _policy_request(discovery["port"], **_decision_request(discovery, root))
+        answer = json.loads(raw)
+        assert answer["schema_version"] == 2
+        assert answer["action"] == "deny"
+        assert "Downgrade" in answer["reason"]
+    assert not socket_path.exists()
+
+
+def test_policy_server_allows_with_a_bare_action(paths, tmp_path):
+    root, _ = _same_model_setup(paths, tmp_path)
+    with _policy_server(paths):
+        discovery = json.loads((paths.data / "policy" / "socket.json").read_text())
+        raw = _policy_request(
+            discovery["port"], **_decision_request(discovery, root, model="haiku")
+        )
+    assert json.loads(raw) == {"schema_version": 2, "action": "allow"}
+
+
+def test_policy_server_still_denies_a_spawn_with_a_very_long_prompt(paths, tmp_path):
+    """The request carries the whole hook input; a long subagent prompt must
+    not make the channel fail open and silently disable the rule."""
+    root, _ = _same_model_setup(paths, tmp_path)
+    with _policy_server(paths):
+        discovery = json.loads((paths.data / "policy" / "socket.json").read_text())
+        request = _decision_request(discovery, root)
+        request["input"]["tool_input"]["prompt"] = "x" * (Limits().payload_bytes - 4096)
+        raw = _policy_request(discovery["port"], **request)
+    assert json.loads(raw)["action"] == "deny"
+
+
+def test_policy_server_answers_nothing_beyond_the_request_budget(paths, tmp_path):
+    root, _ = _same_model_setup(paths, tmp_path)
+    with _policy_server(paths):
+        discovery = json.loads((paths.data / "policy" / "socket.json").read_text())
+        request = _decision_request(discovery, root)
+        request["input"]["tool_input"]["prompt"] = "x" * discovery["max_request_bytes"]
+        raw = _policy_request(discovery["port"], **request)
+    assert raw == b""
+
+
+def test_policy_server_records_a_control_event_for_a_delivered_action(paths, tmp_path):
+    root, project = _same_model_setup(paths, tmp_path)
+    event_id = uuid4()
+    with _policy_server(paths):
+        discovery = json.loads((paths.data / "policy" / "socket.json").read_text())
+        raw = _policy_request(
+            discovery["port"], **_decision_request(discovery, root, event_id=event_id)
+        )
+        assert json.loads(raw)["action"] == "deny"
+        wait_for(lambda: _control_events(paths, project))
+    (control,) = _control_events(paths, project)
+    assert control["kind"] == "control"
+    assert control["source"] == "daemon"
+    assert control["provider"] == "claude"
+    assert control["session_id"] == "session-1"
+    assert control["project_id"] == str(project.id)
+    recorded = control["payload"]["claude"]
+    assert recorded["rule"] == "subagent_same_model"
+    assert recorded["action"] == "deny"
+    assert recorded["evidence_ids"] == [str(event_id)]
+    assert "Downgrade" in recorded["reason"]
+
+
+def test_a_control_event_is_stored_and_projected_like_any_other(paths, tmp_path):
+    root, project = _same_model_setup(paths, tmp_path)
+    with _policy_server(paths):
+        discovery = json.loads((paths.data / "policy" / "socket.json").read_text())
+        _policy_request(discovery["port"], **_decision_request(discovery, root))
+        wait_for(lambda: _control_events(paths, project))
+    with Store(paths.project_data(project.id), project.id) as store:
+        Inbox(paths.project_data(project.id)).drain(store)
+        row = store.connection.execute(
+            "SELECT kind, source, provider, session_id FROM event_facts WHERE kind='control'"
+        ).fetchone()
+    assert tuple(row) == ("control", "daemon", "claude", "session-1")
+
+
+def test_policy_server_records_no_control_event_for_allow(paths, tmp_path):
+    root, project = _same_model_setup(paths, tmp_path)
+    with _policy_server(paths):
+        discovery = json.loads((paths.data / "policy" / "socket.json").read_text())
+        _policy_request(discovery["port"], **_decision_request(discovery, root, model="haiku"))
+        time.sleep(0.3)
+    assert _control_events(paths, project) == []
+
+
+def test_policy_server_still_answers_when_recording_the_control_event_fails(
+    paths, tmp_path, monkeypatch
+):
+    import agent_watchdog.daemon as daemon_module
+
+    def refuse(*_args, **_kwargs):
+        raise StorageError("inbox full")
+
+    monkeypatch.setattr(daemon_module, "_admit", refuse)
+    root, project = _same_model_setup(paths, tmp_path)
+    with _policy_server(paths):
+        discovery = json.loads((paths.data / "policy" / "socket.json").read_text())
+        raw = _policy_request(discovery["port"], **_decision_request(discovery, root))
+        time.sleep(0.3)
+    assert json.loads(raw)["action"] == "deny"
+    assert _control_events(paths, project) == []
+
+
+def test_policy_server_closes_without_an_answer_when_a_rule_raises(paths, tmp_path, monkeypatch):
+    import agent_watchdog.daemon as daemon_module
+
+    def explode(*_args, **_kwargs):
+        raise RuntimeError("rule bug")
+
+    monkeypatch.setattr(daemon_module, "decide", explode)
+    root, project = _same_model_setup(paths, tmp_path)
+    with _policy_server(paths):
+        discovery = json.loads((paths.data / "policy" / "socket.json").read_text())
+        raw = _policy_request(discovery["port"], **_decision_request(discovery, root))
+    assert raw == b""
+    assert _control_events(paths, project) == []
+
+
+def test_policy_server_closes_without_an_answer_when_the_config_is_unreadable(paths, tmp_path):
+    root, _ = _same_model_setup(paths, tmp_path)
+    with _policy_server(paths):
+        discovery = json.loads((paths.data / "policy" / "socket.json").read_text())
+        paths.config.write_text("this is = not [valid toml", encoding="utf-8")
+        raw = _policy_request(discovery["port"], **_decision_request(discovery, root))
+    assert raw == b""
+
+
+@pytest.mark.parametrize(
+    "mutate",
+    [
+        pytest.param(lambda request: request.update(schema_version=1), id="schema-1"),
+        pytest.param(lambda request: request.update(schema_version=3), id="future-schema"),
+        pytest.param(lambda request: request.pop("provider"), id="no-provider"),
+        pytest.param(lambda request: request.update(provider="gemini"), id="unknown-provider"),
+        pytest.param(lambda request: request.pop("input"), id="no-input"),
+        pytest.param(lambda request: request.update(input="text"), id="input-not-an-object"),
+        pytest.param(lambda request: request.pop("event_id"), id="no-event-id"),
+        pytest.param(lambda request: request.update(event_id="not-a-uuid"), id="bad-event-id"),
+    ],
+)
+def test_policy_server_closes_without_an_answer_to_a_malformed_request(paths, tmp_path, mutate):
+    root, _ = _same_model_setup(paths, tmp_path)
+    with _policy_server(paths):
+        discovery = json.loads((paths.data / "policy" / "socket.json").read_text())
+        request = _decision_request(discovery, root)
+        mutate(request)
+        raw = _policy_request(discovery["port"], **request)
+    assert raw == b""
+
+
+def test_policy_server_ignores_a_schema_1_request(paths, tmp_path):
+    """A mixed install (older adapter, newer daemon) fails open, never denies."""
+    root, _ = _same_model_setup(paths, tmp_path)
+    with _policy_server(paths):
+        discovery = json.loads((paths.data / "policy" / "socket.json").read_text())
         raw = _policy_request(
             discovery["port"],
             schema_version=1,
             token=discovery["token"],
             cwd=str(root),
             session_id="session-1",
-            candidate_model="sonnet",
+            candidate_model="opus",
         )
-        assert json.loads(raw) == {"schema_version": 1, "decision": "deny"}
-    assert not socket_path.exists()
+    assert raw == b""
 
 
 def test_policy_server_bind_failure_degrades_without_crashing(paths, monkeypatch):
@@ -597,14 +819,9 @@ def test_policy_server_rejects_a_wrong_token(paths, tmp_path):
     with _policy_server(paths):
         socket_path = paths.data / "policy" / "socket.json"
         discovery = json.loads(socket_path.read_text(encoding="utf-8"))
-        raw = _policy_request(
-            discovery["port"],
-            schema_version=1,
-            token="wrong-token",
-            cwd=str(tmp_path),
-            session_id="session-1",
-            candidate_model="opus",
-        )
+        request = _decision_request(discovery, tmp_path)
+        request["token"] = "wrong-token"
+        raw = _policy_request(discovery["port"], **request)
     assert raw == b""
 
 

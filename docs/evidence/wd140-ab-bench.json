@@ -1,0 +1,44 @@
+{
+  "schema_version": 1,
+  "ticket": "WD-140",
+  "date": "2026-10-07",
+  "scope": "Unsubscribed (zero-cost) path: scripts/benchmark_hooks.py --provider claude --shell direct --samples 20 --idle-seconds 3, alternating the adapter built from the parent commit (base, 9ea22f7) with the WD-140 adapter (new), same host, same session. The benchmark event is Stop, which is never subscribed, so it measures the one extra bounded read of policy/socket.json and nothing else.",
+  "host": "Windows 11 Pro 10.0.22621, Python 3.12.13",
+  "wd027_reference": {
+    "file": "docs/evidence/wd027-spool-bench.json",
+    "provider": "codex",
+    "sequential_p50_ms": 29.414,
+    "sequential_p95_ms": 35.644,
+    "concurrent_four_p95_ms": 65.155,
+    "first_ms": 33.356,
+    "note": "Not reproducible on the host as measured today: the unmodified parent-commit adapter measures 35.6 ms sequential p50 here, so absolute WD-027 numbers cannot be used as a regression bar on this host."
+  },
+  "runs": [
+    {"adapter": "base", "round": 1, "first_ms": 84.6, "seq_p50_ms": 35.6, "seq_p95_ms": 44.1, "c4_p50_ms": 62.1, "c4_p95_ms": 83.0, "host_cpu_percent": 12.9},
+    {"adapter": "new",  "round": 1, "first_ms": 48.2, "seq_p50_ms": 35.4, "seq_p95_ms": 40.5, "c4_p50_ms": 88.4, "c4_p95_ms": 104.8, "host_cpu_percent": 17.4},
+    {"adapter": "base", "round": 2, "first_ms": 39.5, "seq_p50_ms": 35.6, "seq_p95_ms": 45.3, "c4_p50_ms": 77.1, "c4_p95_ms": 125.3, "host_cpu_percent": 12.0},
+    {"adapter": "new",  "round": 2, "first_ms": 48.8, "seq_p50_ms": 32.2, "seq_p95_ms": 39.9, "c4_p50_ms": 69.6, "c4_p95_ms": 91.9, "host_cpu_percent": 16.5},
+    {"adapter": "base", "round": 3, "first_ms": 41.8, "seq_p50_ms": 38.5, "seq_p95_ms": 400.2, "c4_p50_ms": 69.5, "c4_p95_ms": 99.0, "host_cpu_percent": 19.8},
+    {"adapter": "new",  "round": 3, "first_ms": 48.3, "seq_p50_ms": 54.6, "seq_p95_ms": 94.9, "c4_p50_ms": 125.9, "c4_p95_ms": 145.7, "host_cpu_percent": 22.5}
+  ],
+  "same_directory_runs": {
+    "note": "Re-run after review because the first_ms gap in the table above looked consistent. Both executables copied into one directory (base-hook.exe, new-hook.exe), alternating, 4 rounds. Round 1 was disturbed for both (host CPU 22-27 %).",
+    "base": [
+      {"round": 1, "first_ms": 89.5, "seq_p50_ms": 35.4, "seq_p95_ms": 79.2, "c4_p50_ms": 98.9, "c4_p95_ms": 543.2, "host_cpu_percent": 22.1},
+      {"round": 2, "first_ms": 48.4, "seq_p50_ms": 34.0, "seq_p95_ms": 41.2, "c4_p50_ms": 59.9, "c4_p95_ms": 81.8, "host_cpu_percent": 15.0},
+      {"round": 3, "first_ms": 45.9, "seq_p50_ms": 37.7, "seq_p95_ms": 45.9, "c4_p50_ms": 67.3, "c4_p95_ms": 138.9, "host_cpu_percent": 23.4},
+      {"round": 4, "first_ms": 42.8, "seq_p50_ms": 35.6, "seq_p95_ms": 41.7, "c4_p50_ms": 64.4, "c4_p95_ms": 101.7, "host_cpu_percent": 16.8}
+    ],
+    "new": [
+      {"round": 1, "first_ms": 110.7, "seq_p50_ms": 257.7, "seq_p95_ms": 440.7, "c4_p50_ms": 83.7, "c4_p95_ms": 99.0, "host_cpu_percent": 27.2},
+      {"round": 2, "first_ms": 50.6, "seq_p50_ms": 36.3, "seq_p95_ms": 42.6, "c4_p50_ms": 66.1, "c4_p95_ms": 85.5, "host_cpu_percent": 14.0},
+      {"round": 3, "first_ms": 51.1, "seq_p50_ms": 37.7, "seq_p95_ms": 41.4, "c4_p50_ms": 74.2, "c4_p95_ms": 85.9, "host_cpu_percent": 11.3},
+      {"round": 4, "first_ms": 56.8, "seq_p50_ms": 36.3, "seq_p95_ms": 39.0, "c4_p50_ms": 68.2, "c4_p95_ms": 100.3, "host_cpu_percent": 15.0}
+    ]
+  },
+  "reading": "Warm path: sequential p50 is 34-38 ms for both adapters in the undisturbed rounds (base 34.0-37.7, new 36.3-37.7), sequential p95 is 39-46 ms for both, and concurrent-four p95 overlaps (base 82-139 ms, new 85-100 ms); no difference is distinguishable from host noise. First call (the cold process): the new adapter is consistently about 5-8 ms slower in undisturbed rounds (new 48.2-56.8 ms against base 42.8-48.4 ms, both with the binaries in one directory and in two), so the one extra discovery-file read plus the larger binary shows up on a cold start. That is a small measured cost, not a null result; WD-154 re-measures it on a quiet host. The host cannot reproduce the WD-027 absolute numbers (29.4 ms sequential p50).",
+  "single_runs": [
+    "docs/evidence/wd140-spool-bench-codex.json",
+    "docs/evidence/wd140-spool-bench-claude.json"
+  ]
+}

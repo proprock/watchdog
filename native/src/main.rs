@@ -3,9 +3,10 @@ mod disk;
 use chrono::{SecondsFormat, Utc};
 use serde_json::{Value, json};
 use std::fs::File;
-use std::io::Read;
+use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
+use std::time::{Duration, Instant};
 use uuid::Uuid;
 
 type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;
@@ -126,24 +127,44 @@ fn utc_now() -> String {
     Utc::now().to_rfc3339_opts(SecondsFormat::Micros, true)
 }
 
-/// Discovery record for the daemon's WD-014 policy socket (loopback-only,
-/// started only while the daemon runs). Absent or unreadable -> no query is
-/// attempted; every `PreToolUse` call proceeds exactly as it does today.
+/// One hook the daemon wants to be asked about.
+struct Subscription {
+    provider: String,
+    event: String,
+    tool: Option<String>,
+}
+
+/// Discovery record for the daemon's decision channel (loopback-only, started
+/// only while the daemon runs). Absent, unreadable, or any other schema -> no
+/// query is attempted and every hook proceeds exactly as an unsubscribed one.
 struct PolicySocket {
     port: u16,
     token: String,
+    timeout: Duration,
+    max_request_bytes: u64,
+    subscriptions: Vec<Subscription>,
 }
+
+/// Discovery file read cap. Generous so the subscription list can grow.
+const DISCOVERY_BYTES: u64 = 16 * 1024;
+const DEFAULT_DECISION_TIMEOUT_MS: u64 = 300;
+/// The installed hook entries time out at two seconds; the whole round trip
+/// must finish well inside that, whatever the daemon publishes.
+const MAX_DECISION_TIMEOUT_MS: u64 = 1500;
 
 impl PolicySocket {
     fn read(data: &Path) -> Option<Self> {
         let mut bytes = Vec::new();
         File::open(data.join("policy").join("socket.json"))
             .ok()?
-            .take(4096)
+            .take(DISCOVERY_BYTES + 1)
             .read_to_end(&mut bytes)
             .ok()?;
+        if bytes.len() as u64 > DISCOVERY_BYTES {
+            return None;
+        }
         let value: Value = serde_json::from_slice(&bytes).ok()?;
-        if value["schema_version"].as_u64() != Some(1) {
+        if value["schema_version"].as_u64() != Some(2) {
             return None;
         }
         let port = u16::try_from(value["port"].as_u64()?).ok()?;
@@ -151,57 +172,172 @@ impl PolicySocket {
         if token.is_empty() || token.len() > 128 {
             return None;
         }
+        let max_request_bytes = value["max_request_bytes"].as_u64().filter(|n| *n > 0)?;
+        let timeout_ms = value["timeout_ms"]
+            .as_u64()
+            .unwrap_or(DEFAULT_DECISION_TIMEOUT_MS)
+            .clamp(1, MAX_DECISION_TIMEOUT_MS);
+        let mut subscriptions = Vec::new();
+        for entry in value["subscriptions"].as_array()? {
+            subscriptions.push(Subscription {
+                provider: entry["provider"].as_str()?.to_owned(),
+                event: entry["hook_event_name"].as_str()?.to_owned(),
+                tool: match &entry["tool_name"] {
+                    Value::Null => None,
+                    other => Some(other.as_str()?.to_owned()),
+                },
+            });
+        }
         Some(PolicySocket {
             port,
             token: token.to_owned(),
+            timeout: Duration::from_millis(timeout_ms),
+            max_request_bytes,
+            subscriptions,
+        })
+    }
+
+    fn subscribed(&self, provider: &str, event: &str, tool: Option<&str>) -> bool {
+        self.subscriptions.iter().any(|s| {
+            s.provider == provider
+                && s.event == event
+                && s.tool.as_deref().is_none_or(|wanted| Some(wanted) == tool)
         })
     }
 }
 
-const POLICY_TIMEOUT: std::time::Duration = std::time::Duration::from_millis(150);
+/// The daemon's answer to one hook call. `allow` is "no opinion".
+struct Decision {
+    action: String,
+    reason: Option<String>,
+    updated_input: Option<Value>,
+    context: Option<String>,
+}
 
-/// Ask the running daemon, synchronously and with a strict bounded timeout,
-/// whether a same-model subagent spawn should be denied. `None` on any
-/// failure (no socket file, refused/timed-out connection, malformed
-/// response) always means "do not deny" -- a false deny is the one Watchdog
-/// failure that would actually stop the harness, so every error path here
-/// fails open, never closed.
-fn ask_policy(data: &Path, cwd: &str, session_id: &str, candidate_model: &str) -> bool {
-    let Some(socket) = PolicySocket::read(data) else {
-        return false;
+/// Ask the running daemon, synchronously and inside one strict deadline,
+/// what to do about this hook call. `None` on any failure (refused or
+/// timed-out connection, oversized request, malformed or unknown response)
+/// always means "no opinion": a false deny is the one Watchdog failure that
+/// would actually stop the harness, so every error path fails open.
+fn ask_decision(
+    socket: &PolicySocket,
+    provider: &str,
+    input: &Value,
+    event_id: &Uuid,
+) -> Option<Decision> {
+    let deadline = Instant::now() + socket.timeout;
+    let remaining = || {
+        deadline
+            .checked_duration_since(Instant::now())
+            .filter(|left| !left.is_zero())
     };
-    let address = std::net::SocketAddr::from(([127, 0, 0, 1], socket.port));
-    let Ok(mut stream) = std::net::TcpStream::connect_timeout(&address, POLICY_TIMEOUT) else {
-        return false;
-    };
-    if stream.set_write_timeout(Some(POLICY_TIMEOUT)).is_err()
-        || stream.set_read_timeout(Some(POLICY_TIMEOUT)).is_err()
-    {
-        return false;
-    }
     let request = json!({
-        "schema_version": 1,
+        "schema_version": 2,
         "token": socket.token,
-        "cwd": cwd,
-        "session_id": session_id,
-        "candidate_model": candidate_model,
+        "provider": provider,
+        "event_id": event_id,
+        "input": input,
     });
-    let Ok(mut payload) = serde_json::to_vec(&request) else {
-        return false;
-    };
+    let mut payload = serde_json::to_vec(&request).ok()?;
     payload.push(b'\n');
-    use std::io::Write;
-    if stream.write_all(&payload).is_err() || stream.shutdown(std::net::Shutdown::Write).is_err() {
-        return false;
+    if payload.len() as u64 > socket.max_request_bytes {
+        return None;
     }
+    let address = std::net::SocketAddr::from(([127, 0, 0, 1], socket.port));
+    let mut stream = std::net::TcpStream::connect_timeout(&address, remaining()?).ok()?;
+    stream.set_write_timeout(Some(remaining()?)).ok()?;
+    stream.write_all(&payload).ok()?;
+    stream.shutdown(std::net::Shutdown::Write).ok()?;
     let mut response = Vec::new();
-    if stream.take(4096).read_to_end(&mut response).is_err() {
-        return false;
+    let mut chunk = [0_u8; 4096];
+    loop {
+        stream.set_read_timeout(Some(remaining()?)).ok()?;
+        match stream.read(&mut chunk).ok()? {
+            0 => break,
+            read => response.extend_from_slice(&chunk[..read]),
+        }
+        if response.len() as u64 > socket.max_request_bytes {
+            return None;
+        }
     }
-    let Ok(value) = serde_json::from_slice::<Value>(&response) else {
-        return false;
+    let value: Value = serde_json::from_slice(&response).ok()?;
+    if value["schema_version"].as_u64() != Some(2) {
+        return None;
+    }
+    let action = value["action"].as_str()?;
+    if !["allow", "deny", "ask", "rewrite", "context", "block"].contains(&action) {
+        return None;
+    }
+    let text = |key: &str| value[key].as_str().map(str::to_owned);
+    Some(Decision {
+        action: action.to_owned(),
+        reason: text("reason"),
+        updated_input: value["updated_input"]
+            .is_object()
+            .then(|| value["updated_input"].clone()),
+        context: text("context"),
+    })
+}
+
+/// Render a decision as the hook's stdout. Only the Claude cells WD-139
+/// confirmed live are rendered; every other combination is `None` (silence),
+/// and `allow` is always silence -- an explicit `permissionDecision: "allow"`
+/// would auto-approve the tool and bypass the user's permission rules. Codex
+/// is never rendered here (WD-151). Keep in step with `_RENDERABLE` in
+/// `agent_watchdog/rules/api.py`.
+fn render(provider: &str, input: &Value, decision: &Decision) -> Option<Value> {
+    if provider != "claude" {
+        return None;
+    }
+    let event = identifier(input, "hook_event_name")?;
+    let reason = || {
+        decision
+            .reason
+            .clone()
+            .unwrap_or_else(|| "Blocked by a Watchdog rule.".to_owned())
     };
-    value["schema_version"].as_u64() == Some(1) && value["decision"].as_str() == Some("deny")
+    match (event, decision.action.as_str()) {
+        ("PreToolUse", "deny" | "ask") => Some(json!({
+            "hookSpecificOutput": {
+                "hookEventName": event,
+                "permissionDecision": decision.action,
+                "permissionDecisionReason": reason(),
+            }
+        })),
+        // Claude Code treats a rewrite as an approval: it carries
+        // `permissionDecision: "allow"` with the full replacement input.
+        ("PreToolUse", "rewrite") => Some(json!({
+            "hookSpecificOutput": {
+                "hookEventName": event,
+                "permissionDecision": "allow",
+                "permissionDecisionReason": reason(),
+                "updatedInput": decision.updated_input.clone()?,
+            }
+        })),
+        (
+            "PreToolUse" | "PostToolUse" | "UserPromptSubmit" | "SessionStart" | "PreCompact",
+            "context",
+        ) => Some(json!({
+            "hookSpecificOutput": {
+                "hookEventName": event,
+                "additionalContext": decision.context.clone()?,
+            }
+        })),
+        ("PostToolUse" | "Stop" | "SubagentStop", "block") if !stop_continuing(event, input) => {
+            Some(json!({ "decision": "block", "reason": reason() }))
+        }
+        _ => None,
+    }
+}
+
+/// A `Stop`/`SubagentStop` already continuing from an earlier block carries
+/// `stop_hook_active`; blocking it again would loop the harness. Anything but
+/// an explicit `false` counts as continuing, so the guard fails safe.
+fn stop_continuing(event: &str, input: &Value) -> bool {
+    matches!(event, "Stop" | "SubagentStop")
+        && input
+            .get("stop_hook_active")
+            .is_some_and(|active| active.as_bool() != Some(false))
 }
 
 fn identifier<'a>(input: &'a Value, key: &str) -> Option<&'a str> {
@@ -259,9 +395,9 @@ fn ensure_daemon(paths: &Paths) -> Result<()> {
 /// verbatim to resolve the checkout; all semantic projection happens at drain.
 ///
 /// Returns the stdout to print in place of the per-provider default, when the
-/// WD-014 same-model-subagent-spawn policy rule denies this call (Claude
-/// `PreToolUse` only). The event is spooled unconditionally either way -- the
-/// `log` half of the rule's `both` action always fires.
+/// daemon's decision channel answers a subscribed hook with an action this
+/// adapter can render for the provider (see `render`). The event is spooled
+/// unconditionally either way -- the `log` half of every rule always fires.
 fn observe(
     paths: &Paths,
     provider: &str,
@@ -294,42 +430,27 @@ fn observe(
         return Err("relative cwd".into());
     }
 
-    // Cheap checks first, so every other hook stays on the unchanged,
-    // zero-cost path: only Claude PreToolUse on the Agent tool, with an
-    // explicit model override in tool_input, ever touches the policy socket.
-    // A subagent spawned without an explicit override (the common case) has
-    // no model visible here at all -- an accepted, documented recall gap, not
-    // a bug.
-    let deny_reason = if provider == "claude"
-        && identifier(&input, "hook_event_name") == Some("PreToolUse")
-        && identifier(&input, "tool_name") == Some("Agent")
-    {
-        match (
-            identifier(&input, "session_id"),
-            input["tool_input"]["model"].as_str(),
-        ) {
-            (Some(session_id), Some(candidate_model))
-                if ask_policy(&paths.data, &cwd, session_id, candidate_model) =>
-            {
-                Some(format!(
-                    "Watchdog: this subagent would run on the same model tier ({candidate_model}) \
-                     as its coordinating conversation. Downgrade the subagent's model."
-                ))
-            }
-            _ => None,
+    // The spool record and any control event the daemon records for this call
+    // share one id, so a control event can point at the hook event it answered.
+    let event_id = Uuid::new_v4();
+
+    // Unsubscribed events (and every call while no daemon publishes a
+    // discovery file) never connect: the cost is one bounded file read. A
+    // `Stop` already continuing from a block (`stop_hook_active`) is never
+    // asked about, so a block cannot loop the harness.
+    let stdout = match (
+        identifier(&input, "hook_event_name"),
+        PolicySocket::read(&paths.data),
+    ) {
+        (Some(event), Some(socket))
+            if socket.subscribed(provider, event, identifier(&input, "tool_name"))
+                && !stop_continuing(event, &input) =>
+        {
+            ask_decision(&socket, provider, &input, &event_id)
+                .and_then(|decision| render(provider, &input, &decision))
         }
-    } else {
-        None
+        _ => None,
     };
-    let stdout = deny_reason.map(|reason| {
-        json!({
-            "hookSpecificOutput": {
-                "hookEventName": "PreToolUse",
-                "permissionDecision": "deny",
-                "permissionDecisionReason": reason,
-            }
-        })
-    });
 
     let mut forwarded = input;
     forwarded
@@ -338,7 +459,7 @@ fn observe(
         .remove("cwd");
     let mut record = json!({
         "schema_version": 1,
-        "event_id": Uuid::new_v4(),
+        "event_id": event_id,
         "received_at": utc_now(),
         "provider": provider,
         "cwd": cwd,
@@ -428,8 +549,8 @@ fn main() {
         }
     }
     if let Some(value) = deny_stdout {
-        // The one case where Claude gets meaningful stdout: a WD-014
-        // same-model-subagent-spawn deny on PreToolUse.
+        // The only case where Claude gets meaningful stdout: a rendered
+        // decision-channel action for a subscribed hook.
         println!("{value}");
         return;
     }

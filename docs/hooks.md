@@ -171,9 +171,51 @@ synthetic concurrent four-caller p95 from 96 ms to 65 ms
 ([evidence](evidence/wd027-spool-bench.json)). Do not treat zero loss counters as
 proof that a provider invoked every hook.
 
+**Decision channel (WD-140).** After the payload is parsed, the adapter reads
+`<data>/policy/socket.json` (one bounded read, 16 KiB cap). Only when that file is
+schema 2 and the hook matches one of its `subscriptions` — provider, event name,
+and optionally tool name — does the adapter connect to the daemon's loopback
+socket, send the complete hook input with the spooled `event_id`, and wait at
+most the published `timeout_ms` (default 300 ms, clamped to 1500 ms so the
+whole round trip stays inside the fixed two-second hook timeout). An
+unsubscribed hook, or any hook while no daemon is publishing the file, never
+connects; the only added cost is that one file read. Measured against the
+previous adapter on the same host
+([A/B evidence](evidence/wd140-ab-bench.json)), the warm sequential and
+four-caller figures are indistinguishable from host noise, but the cold first
+call is consistently about 5-8 ms slower. A `Stop`/`SubagentStop` whose input carries
+`stop_hook_active` (anything but an explicit `false`) is never asked about. The
+event is spooled whatever the answer, and the answer is rendered after the
+spool write is attempted, so a quota or I/O failure still delivers it.
+
+Every failure — no file, another schema version, a stale port, a refused or
+slow connection, a request over the published `max_request_bytes`, an empty,
+oversized, malformed or unknown-action answer — means "no opinion" and prints
+the normal default. Each path has a test in `tests/test_rust_adapter.py`. A
+mismatched adapter and daemon (schema 1 against schema 2) therefore fails open;
+upgrade both together.
+
+Rendering is per provider and limited to the cells WD-139 confirmed live on
+Claude Code (see "Control capability" in
+[provider-compatibility.md](provider-compatibility.md)); every other
+combination, and `allow`, prints nothing:
+
+| Event | Action | Claude stdout |
+|---|---|---|
+| `PreToolUse` | `deny`, `ask` | `{"hookSpecificOutput": {"hookEventName": "PreToolUse", "permissionDecision": "deny"\|"ask", "permissionDecisionReason": …}}` |
+| `PreToolUse` | `rewrite` | same envelope with `"permissionDecision": "allow"` and `"updatedInput"` (the complete replacement `tool_input`). **A rewrite also approves the call**, bypassing the user's permission prompt for it. |
+| `PreToolUse`, `PostToolUse`, `UserPromptSubmit`, `SessionStart`, `PreCompact` | `context` | `{"hookSpecificOutput": {"hookEventName": …, "additionalContext": …}}` |
+| `PostToolUse`, `Stop`, `SubagentStop` | `block` | `{"decision": "block", "reason": …}` (`PreCompact` block is only weakly evidenced, so it is not rendered) |
+
+`allow` is never rendered as `permissionDecision: "allow"`: that would
+auto-approve the tool. Codex is never rendered (it prints `{}` as before) until
+WD-151 records live evidence. The daemon only answers with actions that are
+renderable for the provider and event, so the `control` events it records do not
+claim actions the adapter would drop.
+
 Normal completion and handled failures emit exactly `{}` (codex) or nothing
-(claude) and exit zero. The adapter returns no continuation, denial, context, or
-other control field. Missing-daemon recovery is detached and does not wait for
+(claude) and exit zero, unless the decision channel answered a subscribed hook
+as above. Missing-daemon recovery is detached and does not wait for
 readiness. Persistent pause prevents spooling and restart. Invalid input,
 registry/config errors, and spool-write failures are ignored by the hook. An
 internal failure increments the `invalid` counter and appends one content-free
@@ -243,13 +285,15 @@ continue a turn or inject context. The adapter therefore prints **nothing** for
 JSON, oversized payload, pause, and internal failure — and always exits 0. The
 Rust adapter makes the same choice by scanning its raw arguments for the `claude`
 token, so a parse failure is also silent. Codex still receives `{}`. The one
-exception (WD-022b) is the narrow `intervene` capability: a `PreToolUse` call on
-the `Agent` tool that the same-model-subagent-spawn policy rule denies prints the
-Claude deny contract (`{"hookSpecificOutput": {"hookEventName": "PreToolUse",
-"permissionDecision": "deny", "permissionDecisionReason": "..."}}`) instead of
-staying silent — see "M4 LLM/control design" in `docs/architecture.md`.
+exception is the decision channel (WD-022b, generalized by WD-140): a Claude hook
+the daemon has subscribed to, and answers with a renderable action, prints that
+action's contract instead of staying silent (today the subscription is only the
+same-model-subagent-spawn rule on `PreToolUse`/`Agent`). See "Decision channel"
+above and "M4 LLM/control design" in `docs/architecture.md`.
 
-**Twelve native events map to existing envelope kinds:**
+**Twelve native events map to existing envelope kinds** (the `control` kind is
+not hook-derived: the daemon records it, with `source = "daemon"`, for each
+action its decision channel sends — see `docs/daemon.md`):
 
 | Native | Kind | Native | Kind |
 |---|---|---|---|

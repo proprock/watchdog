@@ -23,6 +23,7 @@ EventKind = Literal[
     "interrupt",
     "usage",
     "observation.gap",
+    "control",
     "unknown",
 ]
 Availability = Literal["observed", "inferred", "unknown", "unavailable"]
@@ -43,7 +44,7 @@ class Envelope(Versioned):
     kind: EventKind
     occurred_at: AwareDatetime | None = None
     received_at: AwareDatetime = Field(default_factory=lambda: datetime.now(UTC))
-    source: Literal["hook", "transcript", "manual"]
+    source: Literal["hook", "transcript", "manual", "daemon"]
     payload: dict[str, JsonValue] = Field(default_factory=dict)
     availability: dict[str, Availability] = Field(default_factory=dict)
     # Operational timestamps and bounded queue samples.  They are optional so

@@ -5,6 +5,7 @@ import socket
 import subprocess
 import sys
 import threading
+import time
 from datetime import UTC, datetime
 from pathlib import Path
 from uuid import uuid4
@@ -651,57 +652,114 @@ def test_native_claude_shares_pause_and_payload_limit_paths(rust_adapter, native
     assert not inbox_files(paths, project)
 
 
-class _FakePolicyServer:
-    """Stands in for the daemon's WD-014 policy socket in adapter-only tests."""
+AGENT_SUBSCRIPTION = {"provider": "claude", "hook_event_name": "PreToolUse", "tool_name": "Agent"}
+ALL_CLAUDE_EVENTS = [
+    {"provider": "claude", "hook_event_name": name}
+    for name in (
+        "PreToolUse",
+        "PostToolUse",
+        "UserPromptSubmit",
+        "SessionStart",
+        "PreCompact",
+        "Stop",
+        "SubagentStop",
+    )
+]
 
-    def __init__(self, paths, *, token="0" * 32):
+
+class _FakePolicyServer:
+    """Stands in for the daemon's decision channel in adapter-only tests.
+
+    Serves every connection until closed, so a test can assert both what was
+    answered and that an unsubscribed hook never connected at all.
+    """
+
+    def __init__(self, paths, *, token="0" * 32, discovery=None, subscriptions=None):
         self.token = token
+        self.connections = 0
+        self.requests = []
+        self._reply = b""
+        self._hang = False
+        self._closed = threading.Event()
         self._socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self._socket.bind(("127.0.0.1", 0))
-        self._socket.listen(1)
+        self._socket.listen(8)
+        self._socket.settimeout(0.1)
         self.port = self._socket.getsockname()[1]
         policy = paths.data / "policy"
         policy.mkdir(parents=True, exist_ok=True)
-        (policy / "socket.json").write_text(
-            json.dumps({"schema_version": 1, "pid": 0, "port": self.port, "token": self.token}),
-            encoding="utf-8",
-        )
+        document = {
+            "schema_version": 2,
+            "pid": 0,
+            "port": self.port,
+            "token": self.token,
+            "timeout_ms": 300,
+            "max_request_bytes": 1024**2 + 64 * 1024,
+            "subscriptions": [AGENT_SUBSCRIPTION] if subscriptions is None else subscriptions,
+        }
+        document.update(discovery or {})
+        (policy / "socket.json").write_text(json.dumps(document), encoding="utf-8")
+        threading.Thread(target=self._serve, daemon=True).start()
 
-    def respond(self, decision):
-        """Accept exactly one connection and answer with a decision, then stop."""
-
-        def handle():
+    def _serve(self):
+        while not self._closed.is_set():
             try:
                 connection, _ = self._socket.accept()
+            except TimeoutError:
+                continue
             except OSError:
                 return
+            self.connections += 1
             with connection:
                 connection.settimeout(1)
+                data = b""
                 try:
-                    while not connection.recv(4096).endswith(b"\n"):
-                        pass
+                    while not data.endswith(b"\n"):
+                        chunk = connection.recv(65536)
+                        if not chunk:
+                            break
+                        data += chunk
                 except OSError:
-                    return
-                connection.sendall(
-                    json.dumps({"schema_version": 1, "decision": decision}).encode("utf-8")
-                )
+                    continue
+                try:
+                    self.requests.append(json.loads(data))
+                except ValueError:
+                    self.requests.append(None)
+                if self._hang:
+                    # Hold the connection open until the test ends: closing it
+                    # early would hand the adapter an EOF, which also fails
+                    # open and would hide a missing read deadline.
+                    self._closed.wait()
+                    continue
+                try:
+                    connection.sendall(self._reply)
+                except OSError:
+                    continue
 
-        threading.Thread(target=handle, daemon=True).start()
+    def respond(self, action="allow", **fields):
+        """Answer every request with one decision (schema 2 by default)."""
+        body = {"schema_version": 2, "action": action, **fields}
+        self._reply = json.dumps(body).encode("utf-8")
+        return self
+
+    def respond_raw(self, payload):
+        self._reply = payload
         return self
 
     def respond_malformed(self):
-        def handle():
-            try:
-                connection, _ = self._socket.accept()
-            except OSError:
-                return
-            with connection:
-                connection.sendall(b"not json")
+        return self.respond_raw(b"not json")
 
-        threading.Thread(target=handle, daemon=True).start()
+    def hang(self):
+        self._hang = True
         return self
 
+    def connected(self):
+        """Connection count after the accept loop has had time to see any."""
+        time.sleep(0.3)
+        return self.connections
+
     def close(self):
+        self._closed.set()
         self._socket.close()
 
 
@@ -765,7 +823,17 @@ def test_native_fails_open_on_a_stale_socket_file(rust_adapter, native_setup):
     policy = paths.data / "policy"
     policy.mkdir(parents=True, exist_ok=True)
     (policy / "socket.json").write_text(
-        json.dumps({"schema_version": 1, "pid": 0, "port": port, "token": "x" * 32}),
+        json.dumps(
+            {
+                "schema_version": 2,
+                "pid": 0,
+                "port": port,
+                "token": "x" * 32,
+                "timeout_ms": 300,
+                "max_request_bytes": 1024**2,
+                "subscriptions": [AGENT_SUBSCRIPTION],
+            }
+        ),
         encoding="utf-8",
     )
     result = invoke(rust_adapter, paths, agent_pretooluse(project, model="opus"), provider="claude")
@@ -788,27 +856,388 @@ def test_native_fails_open_on_a_malformed_response(rust_adapter, native_setup):
     assert spool_files(paths)
 
 
-def test_native_never_queries_without_an_explicit_model_override(rust_adapter, native_setup):
-    """A server that would always deny must never be reached: a subagent spawned
-    without an explicit tool_input.model override has no model visible at
-    PreToolUse time (WD-022b's documented recall gap), so the adapter's cheap
-    gate must exclude it before ever touching the policy socket."""
+def hook_input(project, event, **extra):
+    return {"cwd": str(project.root), "session_id": "session-1", "hook_event_name": event, **extra}
+
+
+def test_native_sends_the_full_hook_input_and_the_spooled_event_id(rust_adapter, native_setup):
     paths, project = native_setup
-    server = _FakePolicyServer(paths).respond("deny")
+    server = _FakePolicyServer(paths).respond("allow")
     try:
-        payload = {
-            "cwd": str(project.root),
-            "session_id": "session-1",
-            "hook_event_name": "PreToolUse",
-            "tool_name": "Agent",
-            "tool_input": {"subagent_type": "general-purpose", "prompt": "p"},
-        }
-        result = invoke(rust_adapter, paths, payload, provider="claude")
+        payload = agent_pretooluse(project, model="opus")
+        invoke(rust_adapter, paths, payload, provider="claude")
+        assert server.connected() == 1
+    finally:
+        server.close()
+    request = server.requests[0]
+    assert request["schema_version"] == 2
+    assert request["token"] == server.token
+    assert request["provider"] == "claude"
+    assert request["input"] == payload
+    (spooled,) = spool_files(paths)
+    assert request["event_id"] == json.loads(spooled.read_text(encoding="utf-8"))["event_id"]
+
+
+RENDERED_CASES = [
+    pytest.param(
+        "PreToolUse",
+        {"tool_name": "Bash", "tool_input": {"command": "ls"}},
+        {"action": "deny", "reason": "no"},
+        {
+            "hookSpecificOutput": {
+                "hookEventName": "PreToolUse",
+                "permissionDecision": "deny",
+                "permissionDecisionReason": "no",
+            }
+        },
+        id="pretooluse-deny",
+    ),
+    pytest.param(
+        "PreToolUse",
+        {"tool_name": "Bash", "tool_input": {"command": "ls"}},
+        {"action": "ask", "reason": "sure?"},
+        {
+            "hookSpecificOutput": {
+                "hookEventName": "PreToolUse",
+                "permissionDecision": "ask",
+                "permissionDecisionReason": "sure?",
+            }
+        },
+        id="pretooluse-ask",
+    ),
+    pytest.param(
+        "PreToolUse",
+        {"tool_name": "Agent", "tool_input": {"prompt": "p", "model": "opus"}},
+        {
+            "action": "rewrite",
+            "reason": "downgraded",
+            "updated_input": {"prompt": "p", "model": "sonnet"},
+        },
+        {
+            "hookSpecificOutput": {
+                "hookEventName": "PreToolUse",
+                "permissionDecision": "allow",
+                "permissionDecisionReason": "downgraded",
+                "updatedInput": {"prompt": "p", "model": "sonnet"},
+            }
+        },
+        id="pretooluse-rewrite",
+    ),
+    *[
+        pytest.param(
+            event,
+            {},
+            {"action": "context", "context": "TOKEN"},
+            {"hookSpecificOutput": {"hookEventName": event, "additionalContext": "TOKEN"}},
+            id=f"{event.lower()}-context",
+        )
+        for event in ("PostToolUse", "UserPromptSubmit", "SessionStart", "PreCompact")
+    ],
+    *[
+        pytest.param(
+            event,
+            {},
+            {"action": "block", "reason": "again"},
+            {"decision": "block", "reason": "again"},
+            id=f"{event.lower()}-block",
+        )
+        for event in ("PostToolUse", "Stop", "SubagentStop")
+    ],
+]
+
+
+@pytest.mark.parametrize(("event", "extra", "answer", "expected"), RENDERED_CASES)
+def test_native_renders_each_confirmed_claude_action(
+    rust_adapter, native_setup, event, extra, answer, expected
+):
+    paths, project = native_setup
+    server = _FakePolicyServer(paths, subscriptions=ALL_CLAUDE_EVENTS).respond(**answer)
+    try:
+        result = invoke(rust_adapter, paths, hook_input(project, event, **extra), provider="claude")
+    finally:
+        server.close()
+    assert result.returncode == 0
+    assert json.loads(result.stdout) == expected
+    assert spool_files(paths)
+
+
+@pytest.mark.parametrize(
+    ("event", "answer"),
+    [
+        pytest.param("PreToolUse", {"action": "block", "reason": "x"}, id="pretooluse-block"),
+        # Only weakly evidenced live (WD-139: absence of an effect), so not rendered.
+        pytest.param("PreCompact", {"action": "block", "reason": "x"}, id="precompact-block"),
+        pytest.param("Stop", {"action": "context", "context": "x"}, id="stop-context"),
+        pytest.param("Stop", {"action": "deny", "reason": "x"}, id="stop-deny"),
+        pytest.param("UserPromptSubmit", {"action": "block", "reason": "x"}, id="prompt-block"),
+        pytest.param("SessionStart", {"action": "deny", "reason": "x"}, id="start-deny"),
+        pytest.param("PreToolUse", {"action": "context"}, id="context-without-text"),
+        pytest.param("PreToolUse", {"action": "rewrite"}, id="rewrite-without-input"),
+        pytest.param("PreToolUse", {"action": "allow"}, id="allow-is-silence"),
+    ],
+)
+def test_native_renders_nothing_for_an_unsupported_combination(
+    rust_adapter, native_setup, event, answer
+):
+    paths, project = native_setup
+    server = _FakePolicyServer(paths, subscriptions=ALL_CLAUDE_EVENTS).respond(**answer)
+    try:
+        result = invoke(rust_adapter, paths, hook_input(project, event), provider="claude")
+        assert server.connected() == 1
     finally:
         server.close()
     assert result.returncode == 0
     assert result.stdout == ""
     assert spool_files(paths)
+
+
+@pytest.mark.parametrize("event", ["Stop", "SubagentStop"])
+@pytest.mark.parametrize("active", [True, "yes", 1])
+def test_native_never_asks_about_a_stop_that_is_already_continuing(
+    rust_adapter, native_setup, event, active
+):
+    paths, project = native_setup
+    server = _FakePolicyServer(paths, subscriptions=ALL_CLAUDE_EVENTS).respond(
+        "block", reason="again"
+    )
+    try:
+        result = invoke(
+            rust_adapter,
+            paths,
+            hook_input(project, event, stop_hook_active=active),
+            provider="claude",
+        )
+        assert server.connected() == 0
+    finally:
+        server.close()
+    assert result.stdout == ""
+    assert spool_files(paths)
+
+
+def test_native_asks_about_a_stop_that_is_not_continuing(rust_adapter, native_setup):
+    paths, project = native_setup
+    server = _FakePolicyServer(paths, subscriptions=ALL_CLAUDE_EVENTS).respond(
+        "block", reason="again"
+    )
+    try:
+        result = invoke(
+            rust_adapter,
+            paths,
+            hook_input(project, "Stop", stop_hook_active=False),
+            provider="claude",
+        )
+    finally:
+        server.close()
+    assert json.loads(result.stdout) == {"decision": "block", "reason": "again"}
+
+
+def test_native_never_connects_for_an_unsubscribed_event(rust_adapter, native_setup):
+    """A server that would always deny must never be reached for a hook outside
+    `subscriptions`: another tool, another event, another provider."""
+    paths, project = native_setup
+    server = _FakePolicyServer(paths).respond("deny", reason="no")
+    try:
+        bash = hook_input(project, "PreToolUse", tool_name="Bash", tool_input={"command": "ls"})
+        results = [
+            invoke(rust_adapter, paths, bash, provider="claude"),
+            invoke(rust_adapter, paths, hook_input(project, "Stop"), provider="claude"),
+            invoke(rust_adapter, paths, agent_pretooluse(project, model="opus")),
+        ]
+        connections = server.connected()
+    finally:
+        server.close()
+    assert connections == 0
+    assert [result.stdout for result in results] == ["", "", "{}\n"]
+    assert len(spool_files(paths)) == 3
+
+
+def test_native_asks_about_an_agent_spawn_without_a_model_override(rust_adapter, native_setup):
+    """The adapter no longer pre-filters on `tool_input.model`; the daemon's rule
+    decides, so a model-less spawn costs one loopback round trip and nothing
+    else."""
+    paths, project = native_setup
+    server = _FakePolicyServer(paths).respond("allow")
+    try:
+        payload = agent_pretooluse(project, model="opus")
+        del payload["tool_input"]["model"]
+        result = invoke(rust_adapter, paths, payload, provider="claude")
+        assert server.connected() == 1
+    finally:
+        server.close()
+    assert result.stdout == ""
+
+
+RENDER_EVENTS = (
+    "PreToolUse",
+    "PostToolUse",
+    "UserPromptSubmit",
+    "SessionStart",
+    "PreCompact",
+    "Stop",
+    "SubagentStop",
+)
+RENDER_ACTIONS = ("deny", "ask", "rewrite", "context", "block")
+
+
+@pytest.mark.parametrize("action", RENDER_ACTIONS)
+@pytest.mark.parametrize("event", RENDER_EVENTS)
+def test_native_renders_exactly_the_cells_the_daemon_may_return(
+    rust_adapter, native_setup, event, action
+):
+    """The adapter's `render` and the daemon's `rules.api.renderable` are two
+    tables for one fact; this keeps them equal, cell by cell."""
+    from agent_watchdog.rules.api import renderable
+
+    paths, project = native_setup
+    server = _FakePolicyServer(paths, subscriptions=ALL_CLAUDE_EVENTS).respond(
+        action, reason="r", context="c", updated_input={"command": "ls"}
+    )
+    try:
+        result = invoke(rust_adapter, paths, hook_input(project, event), provider="claude")
+    finally:
+        server.close()
+    assert (result.stdout != "") == renderable("claude", event, action)
+
+
+def test_native_never_renders_a_decision_for_codex(rust_adapter, native_setup):
+    paths, project = native_setup
+    subscriptions = [{"provider": "codex", "hook_event_name": "PreToolUse"}]
+    server = _FakePolicyServer(paths, subscriptions=subscriptions).respond("deny", reason="no")
+    try:
+        payload = hook_input(project, "PreToolUse", tool_name="Bash", tool_input={"command": "ls"})
+        result = invoke(rust_adapter, paths, payload, provider="codex")
+    finally:
+        server.close()
+    assert result.stdout == "{}\n"
+    assert spool_files(paths)
+
+
+@pytest.mark.parametrize(
+    "configure",
+    [
+        pytest.param(lambda server: server.respond_malformed(), id="malformed-response"),
+        pytest.param(lambda server: server.respond_raw(b""), id="empty-response"),
+        pytest.param(
+            lambda server: server.respond_raw(
+                json.dumps({"schema_version": 1, "decision": "deny"}).encode()
+            ),
+            id="schema-1-response",
+        ),
+        pytest.param(lambda server: server.respond("explode"), id="unknown-action"),
+        pytest.param(
+            lambda server: server.respond_raw(
+                json.dumps(
+                    {"schema_version": 2, "action": "deny", "reason": "x" * 2_000_000}
+                ).encode()
+            ),
+            id="oversized-response",
+        ),
+        pytest.param(lambda server: server.respond("deny", reason="no").hang(), id="timeout"),
+    ],
+)
+def test_native_fails_open_on_a_bad_decision(rust_adapter, native_setup, configure):
+    paths, project = native_setup
+    server = configure(_FakePolicyServer(paths))
+    started = time.monotonic()
+    try:
+        result = invoke(
+            rust_adapter, paths, agent_pretooluse(project, model="opus"), provider="claude"
+        )
+    finally:
+        server.close()
+    assert result.returncode == 0
+    assert result.stdout == ""
+    assert spool_files(paths)
+    assert time.monotonic() - started < 1.9
+
+
+def test_native_gives_up_on_a_silent_daemon_after_the_published_budget(rust_adapter, native_setup):
+    """The 300 ms budget, not the 1500 ms clamp or the two-second hook timeout,
+    bounds a daemon that accepts the connection and never answers."""
+    paths, project = native_setup
+    server = _FakePolicyServer(paths).respond("deny", reason="no").hang()
+    started = time.monotonic()
+    try:
+        result = invoke(
+            rust_adapter, paths, agent_pretooluse(project, model="opus"), provider="claude"
+        )
+    finally:
+        server.close()
+    assert result.stdout == ""
+    assert spool_files(paths)
+    assert time.monotonic() - started < 1.0
+
+
+@pytest.mark.parametrize(
+    "discovery",
+    [
+        pytest.param({"schema_version": 1}, id="schema-1"),
+        pytest.param({"schema_version": 3}, id="future-schema"),
+        pytest.param({"token": ""}, id="empty-token"),
+        pytest.param({"port": 70000}, id="port-out-of-range"),
+        pytest.param({"max_request_bytes": 0}, id="no-request-budget"),
+        pytest.param({"subscriptions": "everything"}, id="subscriptions-not-a-list"),
+        pytest.param({"subscriptions": [{"provider": "claude"}]}, id="subscription-incomplete"),
+        pytest.param({"max_request_bytes": 10}, id="request-over-budget"),
+    ],
+)
+def test_native_fails_open_on_an_unusable_discovery_file(rust_adapter, native_setup, discovery):
+    paths, project = native_setup
+    server = _FakePolicyServer(paths, discovery=discovery).respond("deny", reason="no")
+    try:
+        result = invoke(
+            rust_adapter, paths, agent_pretooluse(project, model="opus"), provider="claude"
+        )
+        assert server.connected() == 0
+    finally:
+        server.close()
+    assert result.returncode == 0
+    assert result.stdout == ""
+    assert spool_files(paths)
+
+
+def test_native_fails_open_on_an_oversized_discovery_file(rust_adapter, native_setup):
+    paths, project = native_setup
+    server = _FakePolicyServer(paths, discovery={"padding": "x" * 20_000}).respond(
+        "deny", reason="no"
+    )
+    try:
+        result = invoke(
+            rust_adapter, paths, agent_pretooluse(project, model="opus"), provider="claude"
+        )
+        assert server.connected() == 0
+    finally:
+        server.close()
+    assert result.stdout == ""
+    assert spool_files(paths)
+
+
+def test_native_clamps_a_huge_published_timeout(rust_adapter, native_setup):
+    """The published timeout may never push a hang past the two-second hook timeout."""
+    paths, project = native_setup
+    server = _FakePolicyServer(paths, discovery={"timeout_ms": 600_000}).respond("deny").hang()
+    started = time.monotonic()
+    try:
+        result = invoke(
+            rust_adapter, paths, agent_pretooluse(project, model="opus"), provider="claude"
+        )
+    finally:
+        server.close()
+    assert result.stdout == ""
+    assert time.monotonic() - started < 1.9
+
+
+def test_native_sends_a_large_request_within_the_published_budget(rust_adapter, native_setup):
+    paths, project = native_setup
+    server = _FakePolicyServer(paths).respond("deny", reason="no")
+    try:
+        payload = agent_pretooluse(project, model="opus")
+        payload["tool_input"]["prompt"] = "x" * 500_000
+        result = invoke(rust_adapter, paths, payload, provider="claude")
+    finally:
+        server.close()
+    assert json.loads(result.stdout)["hookSpecificOutput"]["permissionDecision"] == "deny"
+    assert len(server.requests[0]["input"]["tool_input"]["prompt"]) == 500_000
 
 
 def test_native_deny_round_trips_through_a_real_running_daemon(rust_adapter, tmp_path):
@@ -887,6 +1316,66 @@ def test_native_deny_round_trips_through_a_real_running_daemon(rust_adapter, tmp
         stop(paths)
         wait(lambda: not status(paths)["alive"])
     assert not (paths.data / "policy" / "socket.json").exists()
+
+
+def test_native_denies_a_very_long_prompt_and_records_a_control_event_with_a_real_daemon(
+    rust_adapter, tmp_path
+):
+    """A long subagent prompt must still reach the daemon (the request budget
+    follows the adapter's own stdin cap), and the delivered deny is recorded as
+    a `control` event."""
+    from agent_watchdog.daemon import status, stop
+    from agent_watchdog.inspection import database
+    from agent_watchdog.registry import Registry
+
+    root = tmp_path / "project"
+    root.mkdir()
+    registry = Registry()
+    project = registry.add(root)
+    paths = UserPaths(tmp_path / "config.toml", tmp_path / "data", tmp_path / "runtime")
+    save_config(paths.config, registry.config)
+
+    def wait(predicate, timeout=30):
+        deadline = time.monotonic() + timeout
+        while not predicate():
+            assert time.monotonic() < deadline, "Daemon did not settle"
+            time.sleep(0.05)
+
+    with Store(paths.project_data(project.id), project.id) as store:
+        store.put(
+            Envelope(
+                provider="claude",
+                project_id=project.id,
+                session_id="session-1",
+                kind="usage",
+                source="transcript",
+                received_at=datetime.now(UTC),
+                payload={"claude": {"model": "claude-opus-5-5"}},
+            )
+        )
+
+    def control_rows():
+        # Read-only: the running daemon holds the writer lock.
+        with database(paths, project) as db:
+            return db.execute("SELECT event_id FROM event_facts WHERE kind='control'").fetchall()
+
+    try:
+        invoke(rust_adapter, paths, {"cwd": str(root), "hook_event_name": "SessionStart"})
+        wait(lambda: status(paths)["state"] == "running")
+        wait(lambda: (paths.data / "policy" / "socket.json").is_file())
+        payload = {
+            "cwd": str(root),
+            "session_id": "session-1",
+            "hook_event_name": "PreToolUse",
+            "tool_name": "Agent",
+            "tool_input": {"prompt": "x" * 900_000, "model": "opus"},
+        }
+        denied = invoke(rust_adapter, paths, payload, provider="claude")
+        assert json.loads(denied.stdout)["hookSpecificOutput"]["permissionDecision"] == "deny"
+        wait(lambda: control_rows())
+    finally:
+        stop(paths)
+        wait(lambda: not status(paths)["alive"])
 
 
 def test_native_never_queries_a_non_agent_tool(rust_adapter, native_setup):

@@ -3,6 +3,7 @@
 import json
 import os
 import secrets
+import socket
 import socketserver
 import sqlite3
 import subprocess
@@ -13,17 +14,18 @@ from collections.abc import Callable, Iterator, Mapping
 from contextlib import ExitStack, contextmanager
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
-from uuid import UUID, uuid4
+from uuid import NAMESPACE_URL, UUID, uuid4, uuid5
 
 from pydantic import ValidationError
 
 from agent_watchdog import resources
 from agent_watchdog._proc import hidden_creationflags
-from agent_watchdog.analysis import model_family_matches
 from agent_watchdog.config import Config, ConfigError, Limits, UserPaths, load_config, save_config
 from agent_watchdog.diagnostics import Level, emit, error_code
 from agent_watchdog.events import Envelope
 from agent_watchdog.registry import Registry, Resolution
+from agent_watchdog.rules.api import Decision
+from agent_watchdog.rules.engine import decide
 from agent_watchdog.storage import (
     Inbox,
     QuotaExceeded,
@@ -926,80 +928,111 @@ def _drain_spool(
     return activity
 
 
-_POLICY_SCHEMA_VERSION = 1
-_POLICY_LINE_BYTES = 4096
+_POLICY_SCHEMA_VERSION = 2
 _POLICY_TIMEOUT_SECONDS = 1.0
+# What the adapter waits for one decision. It must stay well inside the fixed
+# two-second hook timeout the installer writes.
+_POLICY_DECISION_TIMEOUT_MS = 300
+# The request carries the adapter's whole stdin (capped at the spool payload
+# limit) plus a token, ids, and a re-encoding of the same input. The slack
+# covers that envelope so a maximal prompt is still answered, not silently
+# dropped (which would fail open and disable the rule).
+_POLICY_REQUEST_OVERHEAD_BYTES = 64 * 1024
+# The hook events the adapter may ask about. Static until the rule registry
+# (WD-141/WD-142) derives it from the approved rules.
+_POLICY_SUBSCRIPTIONS: tuple[dict[str, str], ...] = (
+    {"provider": "claude", "hook_event_name": "PreToolUse", "tool_name": "Agent"},
+)
 
 
-# The rule's deny reason tells the caller to downgrade the subagent's model;
-# denying a spawn that is already at the lowest tier would ask for a
-# downgrade with nowhere to go, contradicting the rule's own advice. Anthropic
-# ranks opus > sonnet > haiku; the Agent tool's fourth alias, "fable", has no
-# established public rank relative to the other three, so it is intentionally
-# left out of this floor rather than guessed.
-_LOWEST_TIER_ALIASES = frozenset({"haiku"})
+def _policy_request_bytes(paths: UserPaths) -> int:
+    try:
+        payload_bytes = spool_payload_bytes(load_config(paths.config))
+    except (ConfigError, OSError):
+        payload_bytes = Limits().payload_bytes
+    return payload_bytes + _POLICY_REQUEST_OVERHEAD_BYTES
 
 
-def _resolve_policy_decision(
-    paths: UserPaths, *, cwd: str, session_id: str, candidate_model: str
-) -> str:
-    """Decide the WD-014 same-model-subagent-spawn rule for one PreToolUse call.
+def _record_control(
+    paths: UserPaths,
+    provider: str,
+    hook_input: Mapping[str, object],
+    event_id: UUID,
+    decision: Decision,
+) -> None:
+    """Record one action the channel answered with, as a ``control`` event.
 
-    Every failure path -- unreadable config, unresolved project, no database,
-    no observed coordinator model -- returns ``"allow"``. A false deny is the
-    one Watchdog failure that would actually stop the harness, so this never
-    fails closed. A candidate already at the lowest known tier is never
-    denied either, for the same reason: there is nothing lower to downgrade
-    to (see ``_LOWEST_TIER_ALIASES``). The resolved project's
-    ``policy_intervene_same_model_subagent_spawn`` (default ``True``,
-    per-project overridable) is this rule's own kill switch -- set false to
-    disable only this rule's `intervene` without pausing the daemon or
-    affecting any other policy rule or the rule's own `log` half.
+    Runs on a handler thread, so it never opens a ``Store`` (the poll thread
+    holds the writer lock); ``_admit`` publishes to the project inbox, which
+    ``_poll`` drains. The daemon cannot see whether the adapter rendered the
+    answer in time, so "delivered" means "sent", and a failure here is only
+    logged: the decision was already returned.
     """
-    if candidate_model.strip().lower() in _LOWEST_TIER_ALIASES:
-        return "allow"
-    from agent_watchdog.inspection import database
-
+    if decision.action == "allow" or decision.project_id is None:
+        return
+    session_id = hook_input.get("session_id")
+    control_id = uuid5(
+        NAMESPACE_URL, f"watchdog|control|{event_id}|{decision.rule}|{decision.action}"
+    )
     try:
         config = _config_cache.load(paths.config)
-    except ConfigError:
-        return "allow"
-    try:
-        resolution = Registry(config).resolve(Path(cwd), timeout=0.5)
-    except (OSError, ValueError):
-        return "allow"
-    if resolution is None:
-        return "allow"
-    project = next((item for item in config.projects if item.id == resolution.project_id), None)
-    if project is None:
-        return "allow"
-    limits = project.overrides.apply(config.defaults)
-    if not limits.policy_intervene_same_model_subagent_spawn:
-        return "allow"
-    try:
-        with database(paths, project) as db:
-            row = db.execute(
-                "SELECT model FROM event_facts WHERE provider='claude' AND kind='usage' "
-                "AND session_id=? AND agent_id IS NULL AND model IS NOT NULL "
-                "ORDER BY COALESCE(occurred_at_us, received_at_us) DESC, event_id DESC LIMIT 1",
-                (session_id,),
-            ).fetchone()
-    except (StorageError, sqlite3.Error, OSError):
-        return "allow"
-    if row is None or not isinstance(row[0], str):
-        return "allow"
-    return "deny" if model_family_matches(candidate_model, row[0]) else "allow"
+        envelope = Envelope(
+            event_id=control_id,
+            provider=provider,
+            project_id=decision.project_id,
+            session_id=session_id if isinstance(session_id, str) and session_id else None,
+            native_event_id=f"control:{control_id.hex}",
+            kind="control",
+            source="daemon",
+            payload={
+                provider: {
+                    "rule": decision.rule,
+                    "action": decision.action,
+                    "reason": decision.reason,
+                    "evidence_ids": [str(event_id)],
+                }
+            },
+        )
+        _admit(paths, envelope, config)
+    except (ConfigError, ValidationError, StorageError, OSError) as error:
+        _log(
+            paths,
+            None,
+            "WARNING",
+            event="control",
+            decision="unrecorded",
+            error_type=error_code(error),
+        )
+
+
+def _decision_response(decision: Decision) -> dict[str, object]:
+    response: dict[str, object] = {
+        "schema_version": _POLICY_SCHEMA_VERSION,
+        "action": decision.action,
+    }
+    if decision.reason is not None:
+        response["reason"] = decision.reason
+    if decision.updated_input is not None:
+        response["updated_input"] = decision.updated_input
+    if decision.context is not None:
+        response["context"] = decision.context
+    return response
 
 
 class _PolicyRequestHandler(socketserver.StreamRequestHandler):
-    """Handles exactly one bounded request per connection, then closes it."""
+    """Handles exactly one bounded request per connection, then closes it.
+
+    Every failure -- unreadable, oversized, malformed, wrong version or token,
+    a rule that raises -- closes the connection without a response, which the
+    adapter reads as "no opinion". The channel never fails closed.
+    """
 
     server: "_PolicyServer"
 
     def handle(self) -> None:
         self.connection.settimeout(_POLICY_TIMEOUT_SECONDS)
         try:
-            line = self.rfile.readline(_POLICY_LINE_BYTES)
+            line = self.rfile.readline(self.server.watchdog_request_bytes)
         except OSError:
             return
         try:
@@ -1010,27 +1043,37 @@ class _PolicyRequestHandler(socketserver.StreamRequestHandler):
             return
         if not secrets.compare_digest(str(request.get("token", "")), self.server.watchdog_token):
             return
-        cwd = request.get("cwd")
-        session_id = request.get("session_id")
-        candidate_model = request.get("candidate_model")
-        if not all(
-            isinstance(value, str) and value for value in (cwd, session_id, candidate_model)
-        ):
+        provider, hook_input = request.get("provider"), request.get("input")
+        if provider not in {"claude", "codex"} or not isinstance(hook_input, dict):
             return
-        decision = _resolve_policy_decision(
-            self.server.watchdog_paths,
-            cwd=cwd,
-            session_id=session_id,
-            candidate_model=candidate_model,
-        )
         try:
-            self.wfile.write(
-                json.dumps(
-                    {"schema_version": _POLICY_SCHEMA_VERSION, "decision": decision}
-                ).encode()
+            event_id = UUID(str(request.get("event_id")))
+        except ValueError:
+            return
+        paths = self.server.watchdog_paths
+        try:
+            config = _config_cache.load(paths.config)
+            decision = decide(paths, config, str(provider), hook_input)
+        except ConfigError:
+            return
+        except Exception as error:  # noqa: BLE001 - a rule bug must fail open, not kill the handler
+            _log(
+                paths,
+                None,
+                "WARNING",
+                event="control",
+                decision="rule_error",
+                error_type=error_code(error),
             )
+            return
+        try:
+            self.wfile.write(json.dumps(_decision_response(decision)).encode())
+            # The adapter reads to end-of-stream; signal it now so recording the
+            # control event below never adds to its wait.
+            self.connection.shutdown(socket.SHUT_WR)
         except OSError:
             return
+        _record_control(paths, str(provider), hook_input, event_id, decision)
 
 
 class _PolicyServer(socketserver.ThreadingTCPServer):
@@ -1042,6 +1085,7 @@ class _PolicyServer(socketserver.ThreadingTCPServer):
     daemon_threads = True
     watchdog_paths: UserPaths
     watchdog_token: str
+    watchdog_request_bytes: int
 
 
 @contextmanager
@@ -1081,6 +1125,7 @@ def _policy_server(paths: UserPaths) -> Iterator[None]:
         return
     server.watchdog_paths = paths
     server.watchdog_token = secrets.token_hex(16)
+    server.watchdog_request_bytes = _policy_request_bytes(paths)
     thread = threading.Thread(target=server.serve_forever, daemon=True)
     thread.start()
     try:
@@ -1093,6 +1138,9 @@ def _policy_server(paths: UserPaths) -> Iterator[None]:
                     "pid": os.getpid(),
                     "port": server.server_address[1],
                     "token": server.watchdog_token,
+                    "timeout_ms": _POLICY_DECISION_TIMEOUT_MS,
+                    "max_request_bytes": server.watchdog_request_bytes,
+                    "subscriptions": list(_POLICY_SUBSCRIPTIONS),
                 }
             ).encode(),
         )
