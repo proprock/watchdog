@@ -11,6 +11,7 @@ Milestones: ROADMAP.md
 # Workflow
 
 - Read `git status --short` and preserve unrelated user changes.
+- Treat `TENETS.md` as governing policy. Change it only when the user directly identifies this file and explicitly authorizes the rule change, even when the change appears corrective.
 - Features: when a new task branch is needed, name it `feature/<name>`; write a failing behavioral test, implement the smallest solution, then refactor.
 - Debugging: reproduce, form a hypothesis, apply a minimal fix, run a focused test and relevant broader checks. Do not repeat an expensive failed run without changing the conditions.
 - Docs/config: review content and run `git diff --check`; do not write tests that merely assert that strings exist in documentation or source files.
@@ -29,7 +30,7 @@ Milestones: ROADMAP.md
 - Write tests with pytest, using pytest fixtures, parametrization, and plain assertions where appropriate. Keep live provider probes explicit and separate from the offline pytest suite.
 - Checks: CI runs `uv run pytest`, `uv run ruff check .`, `uv run ruff format --check .`, `uv run ty check`, and `uv build`. Locally, run applicable static and package checks once on the stable final diff; repeat only when their inputs change or their result is invalidated. Local pytest uses the impact-guided workflow below unless it falls back to `uv run pytest`. Commit uv.lock.
 - Before the first pytest session in a task, build the native adapter with `cargo build --release --locked --manifest-path native/Cargo.toml`; rebuild it only when native sources or Cargo inputs change. Cross-language behavioral tests remain in pytest; they never invoke providers. Run `cargo fmt --manifest-path native/Cargo.toml --check` and `cargo clippy --locked --manifest-path native/Cargo.toml -- -D warnings` when native sources or Cargo inputs change. Commit native/Cargo.lock; keep native binaries separate from the portable Python wheel.
-- Agent-runner commands may return after roughly 30–35 seconds while pytest children continue running. Keep runner-launched pytest groups below that window, give each group a fresh external `--basetemp` under a writable temporary root that only the user and the sandbox group can modify (on this host, `$env:USERPROFILE\.pytest-tmp`; never `C:\tmp`, which every local account can modify, and never the checkout), and require the final pytest summary and exit status. Treat partial dot output as inconclusive; run the full suite from a normal terminal when one command cannot fit the runner window.
+- Agent-runner commands may return after roughly 30–35 seconds while pytest children continue running. Keep runner-launched pytest groups below that window, give each group a fresh external `--basetemp` under a writable temporary root that only the user and the sandbox group can modify (on this host, `$env:TEMP`; never `C:\tmp`, which every local account can modify, and never the checkout), and require the final pytest summary and exit status. Treat partial dot output as inconclusive; run the full suite from a normal terminal when one command cannot fit the runner window.
 - Unit/contract tests require neither network access nor live accounts. Keep ty enabled in CI.
 - Use UTF-8 without BOM and LF; isolate platform-specific code.
 
@@ -62,7 +63,7 @@ Use this workflow only for local, non-doc code changes. It reduces feedback time
    for ($offset = 0; $offset -lt $tests.Count; $offset += 5) {
        $last = [Math]::Min($offset + 4, $tests.Count - 1)
        $group = @($tests[$offset..$last])
-       $baseTemp = Join-Path $env:USERPROFILE ".pytest-tmp\watchdog-pytest-$PID-$offset"
+       $baseTemp = Join-Path $env:TEMP "watchdog-pytest-$PID-$offset"
        uv run pytest --basetemp $baseTemp @group
        if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
    }
@@ -72,6 +73,7 @@ Use `uv run pytest` for a stable final diff when graph/index validation is unrel
 
 # Known environment issues
 
+- When a sandbox permission, cache, toolchain, or other environment limitation is encountered, immediately report it to the user and request the required escalation or configuration change to address the root cause. Do not silently redirect work to an alternate path, cache, or workaround.
 - The managed sandbox can deny creation of `.git\\index.lock`. When staging is needed, request the approved elevated `git add` execution first; do not waste a normal staging attempt.
 - The managed sandbox can deny `Get-CimInstance Win32_Process`. For a justified owned-process or live-daemon check, request elevated read-only process inspection first; never use it to stop an unverified process.
 
