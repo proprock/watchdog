@@ -579,3 +579,88 @@ fn prevent_stdio_inheritance() {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn decision(action: &str) -> Decision {
+        Decision {
+            action: action.to_owned(),
+            reason: Some("because".to_owned()),
+            updated_input: None,
+            context: Some("note".to_owned()),
+        }
+    }
+
+    #[test]
+    fn render_denies_a_claude_pretooluse_with_the_reason() {
+        let input = json!({"hook_event_name": "PreToolUse"});
+        let output = render("claude", &input, &decision("deny")).unwrap();
+        assert_eq!(output["hookSpecificOutput"]["permissionDecision"], "deny");
+        assert_eq!(
+            output["hookSpecificOutput"]["permissionDecisionReason"],
+            "because"
+        );
+    }
+
+    #[test]
+    fn render_keeps_allow_and_codex_silent() {
+        let input = json!({"hook_event_name": "PreToolUse"});
+        assert!(render("claude", &input, &decision("allow")).is_none());
+        assert!(render("codex", &input, &decision("deny")).is_none());
+    }
+
+    #[test]
+    fn render_never_blocks_a_stop_that_is_already_continuing() {
+        let continuing = json!({"hook_event_name": "Stop", "stop_hook_active": true});
+        let first = json!({"hook_event_name": "Stop", "stop_hook_active": false});
+        assert!(render("claude", &continuing, &decision("block")).is_none());
+        assert_eq!(
+            render("claude", &first, &decision("block")).unwrap()["decision"],
+            "block"
+        );
+    }
+
+    #[test]
+    fn render_needs_an_object_to_rewrite() {
+        let input = json!({"hook_event_name": "PreToolUse"});
+        assert!(render("claude", &input, &decision("rewrite")).is_none());
+        let mut with_input = decision("rewrite");
+        with_input.updated_input = Some(json!({"command": "ls"}));
+        let output = render("claude", &input, &with_input).unwrap();
+        assert_eq!(output["hookSpecificOutput"]["permissionDecision"], "allow");
+        assert_eq!(
+            output["hookSpecificOutput"]["updatedInput"]["command"],
+            "ls"
+        );
+    }
+
+    #[test]
+    fn stop_guard_fails_safe_on_anything_but_an_explicit_false() {
+        let active = |value: Value| json!({"stop_hook_active": value});
+        assert!(!stop_continuing("Stop", &json!({})));
+        assert!(!stop_continuing("Stop", &active(json!(false))));
+        assert!(stop_continuing("Stop", &active(json!(true))));
+        assert!(stop_continuing("SubagentStop", &active(json!("yes"))));
+        assert!(!stop_continuing("PreToolUse", &active(json!(true))));
+    }
+
+    #[test]
+    fn identifier_rejects_blank_and_overlong_values() {
+        let input = json!({"a": "  ", "b": "x".repeat(257), "c": "ok", "d": 7});
+        assert_eq!(identifier(&input, "a"), None);
+        assert_eq!(identifier(&input, "b"), None);
+        assert_eq!(identifier(&input, "c"), Some("ok"));
+        assert_eq!(identifier(&input, "d"), None);
+    }
+
+    #[test]
+    fn fault_category_is_content_free() {
+        let known: Box<dyn std::error::Error> = "relative cwd".into();
+        assert_eq!(fault_category(&*known), "cwd-relative");
+        let secret: Box<dyn std::error::Error> = r"C:\Users\someone\secret".into();
+        assert_eq!(fault_category(&*secret), "other");
+        assert_eq!(fault_category(&std::io::Error::other("x")), "io-error");
+    }
+}

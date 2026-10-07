@@ -180,3 +180,60 @@ pub fn loss(root: &Path, reason: usize) {
         Ok(())
     })();
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    struct Scratch(std::path::PathBuf);
+
+    impl Scratch {
+        fn new() -> Self {
+            let path = std::env::temp_dir().join(format!("watchdog-disk-{}", Uuid::new_v4()));
+            fs::create_dir_all(&path).unwrap();
+            Scratch(path)
+        }
+    }
+
+    impl Drop for Scratch {
+        fn drop(&mut self) {
+            let _ = fs::remove_dir_all(&self.0);
+        }
+    }
+
+    #[test]
+    fn spool_footprint_counts_records_and_skips_the_limits_snapshot() {
+        let dir = Scratch::new();
+        fs::write(dir.0.join("a.json"), b"12345").unwrap();
+        fs::write(dir.0.join("b.json"), b"123").unwrap();
+        fs::write(dir.0.join("limits.json"), b"ignored").unwrap();
+        fs::write(dir.0.join("c.tmp"), b"ignored").unwrap();
+        assert_eq!(spool_footprint(&dir.0).unwrap(), (2, 8));
+    }
+
+    #[test]
+    fn spool_footprint_of_a_missing_directory_is_zero() {
+        let dir = Scratch::new();
+        assert_eq!(spool_footprint(&dir.0.join("absent")).unwrap(), (0, 0));
+    }
+
+    #[test]
+    fn atomic_replaces_the_file_and_leaves_no_temporary() {
+        let dir = Scratch::new();
+        let target = dir.0.join("out").join("record.json");
+        atomic(&target, b"first").unwrap();
+        atomic(&target, b"second").unwrap();
+        assert_eq!(fs::read(&target).unwrap(), b"second");
+        assert_eq!(fs::read_dir(target.parent().unwrap()).unwrap().count(), 1);
+    }
+
+    #[test]
+    fn lock_is_exclusive_until_released() {
+        let dir = Scratch::new();
+        let path = dir.0.join("x.lock");
+        let held = lock(&path, Duration::from_millis(200)).unwrap();
+        assert!(lock(&path, Duration::from_millis(50)).is_err());
+        drop(held);
+        assert!(lock(&path, Duration::from_millis(200)).is_ok());
+    }
+}
