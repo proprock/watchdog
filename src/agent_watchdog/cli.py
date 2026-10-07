@@ -22,6 +22,7 @@ from agent_watchdog.diagnostics import Level, emit, error_code
 from agent_watchdog.hook_install import change
 from agent_watchdog.hooks import observe
 from agent_watchdog.registry import RegistryError
+from agent_watchdog.rules.manage import RulesError
 from agent_watchdog.storage import StorageError
 
 
@@ -59,6 +60,27 @@ def _project_record(project: Project, aliases: dict[UUID, str]) -> dict:
 def _with_project_alias(result: dict, alias: str) -> dict:
     result.pop("project_id", None)
     return {"project": alias, **result}
+
+
+def _approve_rule(paths: UserPaths, name: str, confirmed: bool) -> dict:
+    """Show a user rule, ask for an explicit yes, and approve the exact bytes shown."""
+    from agent_watchdog.rules import manage
+
+    entry = manage.find(paths, load_config(paths.config), name)
+    manage.check_approvable(entry)
+    print(
+        f"Rule {entry.name} ({entry.source}), SHA-256 {entry.digest}\n\n{entry.text}",
+        file=sys.stderr,
+    )
+    if not confirmed:
+        print("Type 'yes' to approve exactly this file: ", end="", file=sys.stderr, flush=True)
+        try:
+            answer = input("")
+        except EOFError:
+            answer = ""
+        if answer.strip() != "yes":
+            raise manage.RulesError("Approval was not confirmed")
+    return manage.approve(paths, name, str(entry.digest))
 
 
 def _since(value: str) -> datetime:
@@ -123,6 +145,24 @@ def main() -> int:
     relocate = actions.add_parser("relocate")
     relocate.add_argument("project")
     relocate.add_argument("path", type=Path)
+    rules = commands.add_parser("rules", help="List, review, approve and measure decision rules")
+    rule_actions = rules.add_subparsers(dest="action", required=True)
+    rule_actions.add_parser("list", help="Every rule with its status and firing count")
+    for action, summary in (
+        ("show", "Print one rule's body, status and the hash approval would record"),
+        ("approve", "Approve the exact file shown (user rules only)"),
+        ("reject", "Revoke a rule's approval and keep it off"),
+        ("disable", "Switch a rule off"),
+        ("enable", "Switch a rule on; a user rule still needs approve"),
+    ):
+        rule_action = rule_actions.add_parser(action, help=summary)
+        rule_action.add_argument("name")
+        if action == "approve":
+            rule_action.add_argument(
+                "--yes", action="store_true", help="Skip the confirmation prompt"
+            )
+    rule_stats = rule_actions.add_parser("stats", help="Firings, verdicts and precision per rule")
+    rule_stats.add_argument("--since", type=_since, help="ISO-8601 timestamp with a UTC offset")
     commands.add_parser("doctor", help="Inspect configuration, storage, and daemon health")
     readiness = commands.add_parser(
         "readiness", help="Check per stage whether provider events reach the project store"
@@ -357,6 +397,22 @@ def main() -> int:
                 daemon.mutate_registry(paths, mutate)
             print(json.dumps(result))
             return 0
+        if args.command == "rules":
+            from agent_watchdog.rules import manage
+
+            config = load_config(paths.config)
+            if args.action == "list":
+                result = {"rules": manage.listing(paths, config)}
+            elif args.action == "show":
+                result = manage.show(paths, config, args.name)
+            elif args.action == "approve":
+                result = _approve_rule(paths, args.name, args.yes)
+            elif args.action == "stats":
+                result = {"rules": manage.stats(paths, config, since=args.since)}
+            else:
+                result = getattr(manage, args.action)(paths, args.name)
+            print(json.dumps(result))
+            return 0
         if args.command == "readiness":
             from agent_watchdog import readiness
 
@@ -585,7 +641,7 @@ def main() -> int:
                 print(json.dumps(report | {"error": "Daemon control timed out"}))
                 return 1
             time.sleep(0.05)
-    except (StorageError, RegistryError) as error:
+    except (StorageError, RegistryError, RulesError) as error:
         _log(
             paths,
             "WARNING",

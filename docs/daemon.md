@@ -52,8 +52,13 @@ Without overrides, locations come from platformdirs. No login service is install
   file for the **decision channel**: the loopback-only `port`, a per-instance
   random `token`, the adapter's wait budget `timeout_ms` (300), the request
   size budget `max_request_bytes`, and the `subscriptions` the adapter may ask
-  about (`{provider, hook_event_name, tool_name?}`; today only Claude
-  `PreToolUse` on `Agent`). It is the same discovery-file pattern as
+  about (`{provider, hook_event_name, tool_name?}`). Since WD-142 the daemon
+  derives them from the enabled, approved rules and rewrites only the
+  `subscriptions` field, at the next poll tick, when that set changes (a rule
+  approved, edited, enabled or disabled); `[defaults] policy_intervene = false`
+  publishes none. The port and token stay valid. With the
+  built-ins they are Claude `PreToolUse` on `Agent` and on `Bash`, and
+  `PostToolUse` on every tool. It is the same discovery-file pattern as
   `spool/limits.json`. A background thread answers exactly one bounded,
   token-checked request per connection; a bind or publish failure degrades to
   no decision channel at all (a WARNING, not a daemon crash — this optional
@@ -69,10 +74,14 @@ Without overrides, locations come from platformdirs. No login service is install
   `{schema_version: 2, action, reason?, updated_input?, context?}` with
   `action` one of `allow|deny|ask|rewrite|context|block`; `allow` means "no
   opinion" and the adapter renders nothing for it. `agent_watchdog.rules.engine`
-  hosts the rules (today only the WD-014 same-model-subagent rule, unchanged,
-  as `subagent_same_model`); the first non-`allow` action the adapter can
-  render for that provider and event wins. Codex always gets `allow` until
-  WD-151.
+  hosts the rules (declarative TOML rules and the four built-ins, see
+  [rules.md](rules.md)); the first non-`allow` action the adapter can render for
+  that provider and event wins. A rule whose `log` action matches answers
+  `allow` on the wire and is only recorded, and it is recorded only when no
+  earlier rule delivered an action. Codex always gets `allow` until WD-151.
+  The answer is `allow` when the project cannot be resolved from `cwd`, and
+  while either kill switch (`[defaults] policy_intervene`, or the project's own)
+  is off; the global one cannot be switched back on by a project.
 
   **Fail open.** Anything wrong — unreadable, oversized, or malformed request,
   wrong schema version (a schema 1 adapter against this daemon, or the
@@ -87,8 +96,10 @@ Without overrides, locations come from platformdirs. No login service is install
 
   **Control events.** Every non-`allow` action the daemon sent is recorded as a
   `control` event (`source = "daemon"`,
-  `payload.<provider> = {rule, action, reason, evidence_ids}`, where
-  `evidence_ids` holds the hook event's id). The daemon cannot see whether the
+  `payload.<provider> = {rule, rule_version, action, reason, text, evidence_ids,
+  delivered_at}`, where `evidence_ids` holds the hook event's id, `text` is the
+  reason or context the model was sent, and `delivered_at` is when the daemon
+  sent it). The daemon cannot see whether the
   adapter rendered the answer: "delivered" means "sent". If the adapter's
   deadline expired first, the event still exists although the model never saw
   the action. If the adapter's spool write then fails (quota or I/O), the

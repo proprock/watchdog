@@ -8,7 +8,7 @@ from uuid import uuid4
 from agent_watchdog.config import Limits
 from agent_watchdog.hooks import build_envelope
 from agent_watchdog.registry import Resolution
-from agent_watchdog.state import SessionState, apply, fold, initial
+from agent_watchdog.state import SessionState, apply, fold, initial, trailing_repeats
 
 FIXTURE = Path(__file__).parent / "fixtures" / "hooks" / "claude.json"
 START = datetime(2026, 10, 1, 12, 0, tzinfo=UTC)
@@ -96,6 +96,85 @@ def test_edits_accumulate_until_a_non_edit_call_finishes():
     state = apply(state, _envelope(_bash("pytest")))
 
     assert state.edits_since_last_call == 0
+
+
+def _edit(**fields: object) -> dict:
+    return _hook("PostToolUse", tool_name="Edit", tool_input={"file_path": "a.py"}, **fields)
+
+
+def test_a_test_run_after_an_edit_verifies_it_and_a_later_edit_unverifies_it():
+    state = initial("claude", "s1", "")
+    assert state.edited_without_verification is False
+
+    state = apply(state, _envelope(_edit(prompt_id="p1")))
+    assert (state.edits_in_turn, state.edited_without_verification) == (1, True)
+
+    # A command that is not a test runner does not verify anything.
+    state = apply(state, _envelope(_bash("git status", prompt_id="p1"), at=1))
+    assert state.edited_without_verification is True
+
+    # A failing run still ran the tests.
+    state = apply(state, _envelope(_bash("uv run pytest -q", exit_code=1, prompt_id="p1"), at=2))
+    assert (state.edits_in_turn, state.edited_without_verification) == (1, False)
+
+    state = apply(state, _envelope(_edit(prompt_id="p1"), at=3))
+    assert (state.edits_in_turn, state.edited_without_verification) == (2, True)
+
+
+def test_a_new_turn_forgets_the_previous_turns_edits():
+    state = apply(initial("claude", "s1", ""), _envelope(_edit(prompt_id="p1")))
+
+    state = apply(state, _envelope(_hook("UserPromptSubmit", prompt="next", prompt_id="p2"), at=1))
+
+    assert (state.edits_in_turn, state.edited_without_verification) == (0, False)
+
+
+def test_verification_state_never_keeps_the_command_text():
+    state = apply(initial("claude", "s1", ""), _envelope(_edit()))
+    state = apply(state, _envelope(_bash("cargo test --secret-flag"), at=1))
+
+    assert "secret-flag" not in state.to_json()
+
+
+def test_an_uncaptured_shell_command_may_have_been_the_test_run():
+    state = apply(initial("claude", "s1", ""), _envelope(_edit()))
+
+    state = apply(state, _envelope(_bash("anything"), capture_content=False, at=1))
+
+    assert state.edited_without_verification is False
+
+
+def test_state_stored_before_the_verification_fields_loads_with_safe_defaults():
+    stored = json.loads(initial("claude", "s1", "").to_json())
+    del stored["edits_in_turn"], stored["verified_since_edit"]
+
+    state = SessionState.from_json(json.dumps(stored))
+
+    assert state.edited_without_verification is False
+
+
+def test_trailing_repeats_counts_identical_calls_at_the_end_only():
+    state = initial("claude", "s1", "")
+    assert trailing_repeats(state) == 0
+
+    for index, command in enumerate(("a", "b", "b", "b")):
+        state = apply(state, _envelope(_bash(command), at=index))
+    assert trailing_repeats(state) == 3
+
+    state = apply(state, _envelope(_bash("c"), at=9))
+    assert trailing_repeats(state) == 1
+
+
+def test_trailing_repeats_needs_known_hashes_and_the_same_outcome():
+    state = initial("claude", "s1", "")
+    for index in range(3):
+        state = apply(state, _envelope(_bash("same"), capture_content=False, at=index))
+    assert trailing_repeats(state) == 0
+
+    state = initial("claude", "s1", "")
+    for index, code in enumerate((0, 1, 0)):
+        state = apply(state, _envelope(_bash("same", exit_code=code), at=index))
+    assert trailing_repeats(state) == 1
 
 
 def test_usage_without_an_agent_id_sets_the_coordinator_model():

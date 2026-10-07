@@ -290,8 +290,9 @@ Rust adapter makes the same choice by scanning its raw arguments for the `claude
 token, so a parse failure is also silent. Codex still receives `{}`. The one
 exception is the decision channel (WD-022b, generalized by WD-140): a Claude hook
 the daemon has subscribed to, and answers with a renderable action, prints that
-action's contract instead of staying silent (today the subscription is only the
-same-model-subagent-spawn rule on `PreToolUse`/`Agent`). See "Decision channel"
+action's contract instead of staying silent (with the built-in rules: `PreToolUse`
+on `Agent` and `Bash`, and `PostToolUse` on every tool, plus `Stop` once
+`stop_without_verification` is enabled; user rules add their own). See "Decision channel"
 above and "M4 LLM/control design" in `docs/architecture.md`.
 
 **Twelve native events map to existing envelope kinds** (the `control` kind is

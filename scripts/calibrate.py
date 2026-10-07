@@ -131,6 +131,14 @@ def observed_failure(event) -> bool:
     return "tool_response" in content and tool_outcome(content["tool_response"]) == "failure"
 
 
+def is_observation(finding: dict) -> bool:
+    """A policy or control finding records what Watchdog did or saw; it carries an
+    ``action`` and is not a statistical shadow finding, so it never enters the
+    session precision gate (its precision is reported apart, under ``action_rules``).
+    """
+    return "action" in finding
+
+
 def split_findings(findings: list[dict]) -> tuple[list[dict], list[dict]]:
     session_scoped = [f for f in findings if f["rule"] not in CHECKOUT_SCOPED_RULES]
     checkout_scoped = [f for f in findings if f["rule"] in CHECKOUT_SCOPED_RULES]
@@ -176,8 +184,12 @@ def build_sample(paths: UserPaths, args: argparse.Namespace) -> dict:
                 {"provider": provider, "session_id": session_id, **summary}
                 | {"findings": session_scoped}
             )
-    with_findings = [record for record in records if record["findings"]]
-    without = [record for record in records if not record["findings"]]
+
+    def statistical(record: dict) -> bool:
+        return any(not is_observation(finding) for finding in record["findings"])
+
+    with_findings = [record for record in records if statistical(record)]
+    without = [record for record in records if not statistical(record)]
     # Every session that fired keeps precision measurable. By default a seeded
     # draw limits review work; the explicit all-eligible mode includes every
     # silent session so false negatives can be counted over the full cohort.
@@ -1181,6 +1193,8 @@ def build_report(paths: UserPaths, args: argparse.Namespace) -> dict:
     project = inspection.project_at(paths, args.project)
     observed: Counter[str] = Counter()
     verdicts: Counter[tuple[str, str]] = Counter()
+    action_observed: Counter[str] = Counter()
+    action_verdicts: Counter[tuple[str, str]] = Counter()
     states: Counter[str] = Counter()
     outcomes: Counter[str] = Counter()
     confusion: Counter[tuple[str, str]] = Counter()
@@ -1196,11 +1210,12 @@ def build_report(paths: UserPaths, args: argparse.Namespace) -> dict:
             progress = label["progress_state"]
             states[progress or "unlabeled"] += 1
             outcomes[label["task_outcome"]] += 1
-            fired = "finding" if record["findings"] else "no_finding"
+            shadow = [item for item in record["findings"] if not is_observation(item)]
+            fired = "finding" if shadow else "no_finding"
             confusion[(progress or "unlabeled", fired)] += 1
             if progress is None:
                 unreviewed.append(record["session_id"])
-            if progress in ("slow", "stuck") and not record["findings"]:
+            if progress in ("slow", "stuck") and not shadow:
                 false_negatives.append(
                     {
                         "provider": record["provider"],
@@ -1210,8 +1225,13 @@ def build_report(paths: UserPaths, args: argparse.Namespace) -> dict:
                     }
                 )
             for finding in record["findings"]:
-                observed[finding["rule"]] += 1
                 verdict = recorded.get(finding["fingerprint"])
+                if is_observation(finding):
+                    action_observed[finding["rule"]] += 1
+                    if verdict is not None:
+                        action_verdicts[(finding["rule"], verdict)] += 1
+                    continue
+                observed[finding["rule"]] += 1
                 if verdict is not None:
                     verdicts[(finding["rule"], verdict)] += 1
         checkout = {row["fingerprint"]: row for row in inspection.checkout_verdicts(db)}
@@ -1262,6 +1282,13 @@ def build_report(paths: UserPaths, args: argparse.Namespace) -> dict:
                 "attributable to one session and are excluded from session precision."
             ),
             "rules": checkout_stats,
+        },
+        "action_rules": {
+            "note": (
+                "Policy and control findings record an action Watchdog took or logged. "
+                "They are reviewed here but never enter the session precision gate."
+            ),
+            "rules": rule_precision((), action_observed, action_verdicts),
         },
         "false_negatives": {
             "definition": "sessions judged slow or stuck with no session-scoped finding",

@@ -149,6 +149,43 @@ def test_rejects_bad_digest_or_frozen_evidence(report_tool, tmp_path, mutate):
         report_tool.build_report(baseline_path, sample_path, review_path)
 
 
+def test_a_control_finding_is_an_observation_not_an_m2_rule(report_tool, tmp_path):
+    document = sample()
+    document["sessions"][0]["findings"].append(
+        {
+            "rule": "destructive_command",
+            "fingerprint": "control-finding",
+            "evidence_ids": ["event-6"],
+            "action": "ask",
+        }
+    )
+    sample_path = tmp_path / "sample.json"
+    sample_bytes = json.dumps(document, sort_keys=True).encode()
+    sample_path.write_bytes(sample_bytes)
+    baseline_path = tmp_path / "baseline.json"
+    baseline_path.write_text(json.dumps(baseline()), encoding="utf-8")
+    review_path = tmp_path / "review.json"
+    review_path.write_text(json.dumps(review(sample_bytes)), encoding="utf-8")
+
+    report = report_tool.build_report(baseline_path, sample_path, review_path)
+
+    assert "destructive_command" not in report["session_scoped_rules"]
+    assert report["policy_findings"]["destructive_command"] == {"observed": 1}
+
+    verdict = review(sample_bytes)
+    verdict["findings"].append(
+        {
+            "fingerprint": "control-finding",
+            "verdict": "true_positive",
+            "reason": "Reviewed.",
+            "evidence_ids": ["event-6"],
+        }
+    )
+    review_path.write_text(json.dumps(verdict), encoding="utf-8")
+    with pytest.raises(ValueError, match="observations"):
+        report_tool.build_report(baseline_path, sample_path, review_path)
+
+
 def test_zero_observations_and_markdown_are_explicit(report_tool, tmp_path):
     baseline_path, sample_path, review_path = write_inputs(tmp_path)
     report = report_tool.build_report(baseline_path, sample_path, review_path)

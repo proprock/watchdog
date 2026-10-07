@@ -46,6 +46,25 @@ def hook_invocation(shell: str, arguments: list[str]) -> list[str] | str:
     return [shell, "-NoLogo", "-NoProfile", "-NonInteractive", "-Command", quoted]
 
 
+EVENTS = ("Stop", "PostToolUse", "PreToolUse")
+
+
+def hook_payload(event: str, cwd: str, session_id: str, index: int) -> dict:
+    """One synthetic hook input.
+
+    `Stop` is never subscribed to the daemon's decision channel, so it measures the
+    zero path. `PostToolUse` and `PreToolUse` (a Bash call) are subscribed by the
+    built-in rules, so they measure the adapter's round trip to the daemon on a call
+    no rule matches. The command differs per call so the repeat rule cannot fire.
+    """
+    payload: dict = {"cwd": cwd, "session_id": session_id, "hook_event_name": event}
+    if event != "Stop":
+        payload |= {"tool_name": "Bash", "tool_input": {"command": f"echo benchmark {index}"}}
+    if event == "PostToolUse":
+        payload["tool_response"] = {"stdout": f"benchmark {index}", "exit_code": 0}
+    return payload
+
+
 def warm_up(hook, count: int) -> int:
     """Run untimed hook calls, sequential then four-way, so caches and the daemon settle."""
     for index in range(count):
@@ -145,6 +164,13 @@ def main() -> None:
     parser.add_argument(
         "--settle-timeout", type=float, default=60, help="Seconds to wait for --max-host-cpu"
     )
+    parser.add_argument(
+        "--event",
+        choices=EVENTS,
+        default="Stop",
+        help="Hook event to send: Stop is unsubscribed (the zero path); PostToolUse and "
+        "PreToolUse (Bash) are subscribed by the built-in rules",
+    )
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--adapter-executable", type=Path)
     parser.add_argument("--provider", choices=("codex", "claude"), default="codex")
@@ -213,11 +239,12 @@ def main() -> None:
             wait_for_daemon(command)
 
             def hook(index: int) -> float:
-                payload = {
-                    "cwd": str(root if index % 2 else worktree),
-                    "session_id": f"benchmark-{index % 2}",
-                    "hook_event_name": "Stop",
-                }
+                payload = hook_payload(
+                    args.event,
+                    str(root if index % 2 else worktree),
+                    f"benchmark-{index % 2}",
+                    index,
+                )
                 start = time.perf_counter()
                 result = run(hook_command, input=json.dumps(payload))
                 elapsed = (time.perf_counter() - start) * 1000
@@ -299,6 +326,7 @@ def main() -> None:
                 "process_timeout_seconds": 15,
                 "adapter": "rust" if args.adapter_executable else "python",
                 "provider": args.provider,
+                "event": args.event,
                 "launch": args.shell,
                 "first_ms": first,
                 "warmup_calls": warmup_calls,

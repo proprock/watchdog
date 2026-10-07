@@ -6,6 +6,7 @@ canonical form as ``analysis`` signatures, so a repeat seen here is a repeat the
 """
 
 import json
+import re
 from collections.abc import Iterable, Mapping
 from dataclasses import asdict, dataclass, replace
 from datetime import datetime
@@ -17,6 +18,8 @@ from agent_watchdog.facts import observed_model, turn_of
 SIGNATURE_LIMIT = 16
 # Tools that change files.  Codex edits through `apply_patch`.
 EDIT_TOOLS = frozenset({"Edit", "Write", "MultiEdit", "NotebookEdit", "apply_patch"})
+# A fixed list of test runners: the verification predicate is deliberately not configurable.
+_TEST_RUNNER = re.compile(r"\b(pytest|cargo\s+test|npm\s+(run\s+)?test|go\s+test)\b")
 
 StateKey = tuple[str, str, str]
 
@@ -49,8 +52,17 @@ class SessionState:
     last_signatures: tuple[Signature, ...] = ()
     # Edit-class calls finished since the last other call finished.
     edits_since_last_call: int = 0
+    # Edit-class calls finished in the current turn, and whether a test runner
+    # finished after the latest of them.  Booleans and counts only: the command
+    # text that proved the verification is not kept.
+    edits_in_turn: int = 0
+    verified_since_edit: bool = False
     last_activity: str | None = None
     ended_at: str | None = None
+
+    @property
+    def edited_without_verification(self) -> bool:
+        return self.edits_in_turn > 0 and not self.verified_since_edit
 
     def to_json(self) -> str:
         return json.dumps(asdict(self), sort_keys=True, separators=(",", ":"))
@@ -98,15 +110,17 @@ def apply(state: SessionState, envelope: Mapping[str, Any]) -> SessionState:
     changes: dict[str, Any] = {"last_activity": _later(state.last_activity, received_at)}
 
     turn_id = None if kind == "usage" else turn_of(dict(envelope))[0]
+    new_turn = {
+        "turn_started_at": received_at,
+        "failures_in_turn": 0,
+        "compactions_in_turn": 0,
+        "edits_in_turn": 0,
+        "verified_since_edit": False,
+    }
     if turn_id is not None and turn_id != state.turn_id:
-        changes |= {
-            "turn_id": turn_id,
-            "turn_started_at": received_at,
-            "failures_in_turn": 0,
-            "compactions_in_turn": 0,
-        }
+        changes |= {"turn_id": turn_id, **new_turn}
     elif kind == "turn.start":
-        changes |= {"turn_started_at": received_at, "failures_in_turn": 0, "compactions_in_turn": 0}
+        changes |= new_turn
 
     if kind in ("tool.start", "tool.finish", "turn.start", "turn.end", "session.end"):
         changes["open_permission_prompt_since"] = None
@@ -152,13 +166,58 @@ def _finished_call(
     failed = int(outcome == "failure")
     in_turn = pending.get("failures_in_turn", state.failures_in_turn)
     edited = tool in EDIT_TOOLS
+    edits_in_turn = pending.get("edits_in_turn", state.edits_in_turn)
+    verified = pending.get("verified_since_edit", state.verified_since_edit)
+    if edited:
+        edits_in_turn, verified = edits_in_turn + 1, False
+    elif _may_have_run_tests(tool, content.get("tool_input")):
+        verified = True
     return {
         "calls": state.calls + 1,
         "failures": state.failures + failed,
         "failures_in_turn": in_turn + failed,
         "last_signatures": (*state.last_signatures, signature)[-SIGNATURE_LIMIT:],
         "edits_since_last_call": state.edits_since_last_call + 1 if edited else 0,
+        "edits_in_turn": edits_in_turn,
+        "verified_since_edit": verified,
     }
+
+
+def _may_have_run_tests(tool: object, tool_input: object) -> bool:
+    """Whether a finished shell call ran, or may have run, a test suite.
+
+    A shell call whose command was not captured counts: unknown is not "no
+    tests ran", and a rule must not act on a claim the state cannot support.
+    """
+    if tool != "Bash":
+        return False
+    if not isinstance(tool_input, Mapping) or not isinstance(tool_input.get("command"), str):
+        return True
+    return _TEST_RUNNER.search(tool_input["command"]) is not None
+
+
+def trailing_repeats(state: SessionState) -> int:
+    """How many of the latest calls are identical in tool, input, output and outcome.
+
+    Zero when the newest call has an unknown hash: an unknown repeat is not one.
+    """
+    signatures = state.last_signatures
+    if not signatures:
+        return 0
+    newest = signatures[-1]
+    if newest.input_hash is None or newest.output_hash is None:
+        return 0
+    run = 0
+    for item in reversed(signatures):
+        if (item.tool, item.input_hash, item.output_hash, item.outcome) != (
+            newest.tool,
+            newest.input_hash,
+            newest.output_hash,
+            newest.outcome,
+        ):
+            break
+        run += 1
+    return run
 
 
 def fold(envelopes: Iterable[Mapping[str, Any]]) -> dict[StateKey, SessionState]:

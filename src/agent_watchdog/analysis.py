@@ -417,6 +417,52 @@ def same_model_subagent_spawn(events: Iterable[Envelope]) -> list[dict[str, Any]
     return findings
 
 
+def control_findings(events: Iterable[Envelope]) -> list[dict[str, Any]]:
+    """One finding per action the decision channel sent (WD-142).
+
+    The daemon records every action as a ``control`` event; this projects it into
+    the finding shape so a manual verdict, ``calibrate.py annotate`` and
+    ``rules stats`` handle control findings like any other. Evidence is the control
+    event plus the hook event it answered, so each firing has its own fingerprint
+    and a replay reproduces it. A payload that lacks a rule, version or action is
+    skipped: a finding without them cannot carry a verdict.
+    """
+    findings = []
+    for event in sorted(events, key=lambda item: (item.received_at, str(item.event_id))):
+        if event.kind != "control":
+            continue
+        recorded = _provider(event)
+        rule, version, action = (recorded.get(key) for key in ("rule", "rule_version", "action"))
+        answered = recorded.get("evidence_ids", [])
+        if not (
+            isinstance(rule, str)
+            and isinstance(version, str)
+            and isinstance(action, str)
+            and rule
+            and version
+            and action
+            and isinstance(answered, list)
+        ):
+            continue
+        evidence = sorted(
+            {str(event.event_id), *(item for item in answered if isinstance(item, str))}
+        )
+        text = recorded.get("text") or recorded.get("reason")
+        findings.append(
+            {
+                "rule": rule,
+                "rule_version": version,
+                "evidence_ids": evidence,
+                "count": 1,
+                "fingerprint": finding_fingerprint(rule, version, evidence),
+                "attribution": "observed",
+                "explanation": text[:1000] if isinstance(text, str) else f"{rule}: {action}",
+                "action": action,
+            }
+        )
+    return findings
+
+
 def model_family_matches(alias: str, resolved_model: str) -> bool:
     """Whether a Claude model alias (``sonnet``/``opus``/``haiku``/``fable``) names
     the same family as a fully resolved model id (e.g. ``claude-opus-5-5``).
@@ -797,6 +843,7 @@ def analyze(
             continue
         findings.append(oscillation)
     findings.extend(same_model_subagent_spawn(ordered))
+    findings.extend(control_findings(ordered))
     findings.sort(key=lambda finding: (str(finding["rule"]), list(finding["evidence_ids"])))
 
     gaps = ["task_outcome_unknown"]

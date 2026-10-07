@@ -12,6 +12,7 @@ from agent_watchdog.config import (
     Limits,
     Overrides,
     Project,
+    Rules,
     load_config,
     save_config,
     user_paths,
@@ -143,6 +144,41 @@ def test_policy_intervene_kill_switch_defaults_true_and_is_project_overridable(t
     assert not overridden_off.overrides.apply(
         config.defaults
     ).policy_intervene_same_model_subagent_spawn
+
+
+def test_the_all_rules_kill_switch_defaults_true_and_is_project_overridable(tmp_path):
+    inherits = Project(id=uuid4(), root=tmp_path / "one")
+    off = Project(id=uuid4(), root=tmp_path / "two", overrides=Overrides(policy_intervene=False))
+    config = Config(projects=(inherits, off))
+
+    assert config.defaults.policy_intervene is True
+    assert inherits.overrides.apply(config.defaults).policy_intervene is True
+    assert off.overrides.apply(config.defaults).policy_intervene is False
+    assert Config(defaults=Limits(policy_intervene=False)).defaults.policy_intervene is False
+
+
+def test_rules_configuration_round_trips_and_validates(tmp_path):
+    digest = "a" * 64
+    config = Config(
+        rules=Rules(
+            approved={"my_rule": digest}, disabled=["destructive_command"], tiers=["a", "b"]
+        )
+    )
+    path = tmp_path / "config.toml"
+    save_config(path, config)
+
+    assert load_config(path).rules == config.rules
+    assert Config().rules.tiers == ["haiku", "sonnet", "opus", "fable"]
+    for bad in (
+        {"approved": {"Not A Name": digest}},
+        {"approved": {"ok_name": "deadbeef"}},
+        {"disabled": ["../escape"]},
+        {"enabled": ["BAD"]},
+        {"tiers": []},
+        {"tiers": ["haiku", "haiku"]},
+    ):
+        with pytest.raises(ValidationError):
+            Rules.model_validate(bad)
 
 
 def test_save_refuses_unsupported_existing_config(tmp_path):

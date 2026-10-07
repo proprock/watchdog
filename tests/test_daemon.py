@@ -19,6 +19,7 @@ from agent_watchdog.config import (
     Limits,
     Overrides,
     Project,
+    Rules,
     UserPaths,
     load_config,
     save_config,
@@ -29,6 +30,7 @@ from agent_watchdog.daemon import (
     _drain_spool,
     _policy_server,
     _record_enrichment_failures,
+    _SessionTracker,
     enqueue,
     launch,
     mutate_registry,
@@ -41,6 +43,7 @@ from agent_watchdog.events import Envelope
 from agent_watchdog.registry import Registry
 from agent_watchdog.resources import losses
 from agent_watchdog.rules.engine import decide
+from agent_watchdog.state import SessionState, Signature
 from agent_watchdog.storage import Inbox, StorageError, Store, WriterBusy, writer_lock
 from agent_watchdog.transcripts import FAILURE_CODES
 
@@ -412,19 +415,15 @@ def test_write_spool_limits_uses_largest_project_payload(paths, tmp_path):
     assert published["spool_files"] > 0 and published["spool_bytes"] > 0
 
 
-def _seed_coordinator_usage(paths, project, *, session_id, model):
-    with Store(paths.project_data(project.id), project.id) as store:
-        store.put(
-            Envelope(
-                provider="claude",
-                project_id=project.id,
-                session_id=session_id,
-                kind="usage",
-                source="transcript",
-                received_at=datetime.now(UTC),
-                payload={"claude": {"model": model}},
-            )
-        )
+def _coordinator(model="claude-opus-5-5", session_id="session-1"):
+    """The daemon's in-memory state of a conversation whose model was observed."""
+    return SessionState("claude", session_id, "", coordinator_model=model)
+
+
+def _tracker(model="claude-opus-5-5", session_id="session-1"):
+    tracker = _SessionTracker()
+    tracker.absorb("p", {("claude", session_id, ""): _coordinator(model, session_id)})
+    return tracker
 
 
 def _agent_input(root, *, session_id="session-1", model="opus", **fields):
@@ -441,21 +440,26 @@ def _agent_input(root, *, session_id="session-1", model="opus", **fields):
     }
 
 
-def _decide(paths, hook_input, provider="claude"):
-    return decide(paths, load_config(paths.config), provider, hook_input)
+def _decide(paths, hook_input, provider="claude", session=None):
+    return decide(paths, load_config(paths.config), provider, hook_input, session=session)
 
 
-def test_decide_denies_a_same_family_subagent_spawn(paths, tmp_path):
+def test_decide_moves_a_same_family_subagent_one_tier_down(paths, tmp_path):
     root = tmp_path / "project"
     root.mkdir()
     mutate_registry(paths, lambda registry: registry.add(root))
     project = load_config(paths.config).projects[0]
-    _seed_coordinator_usage(paths, project, session_id="session-1", model="claude-opus-5-5")
-    decision = _decide(paths, _agent_input(root, model="opus"))
-    assert decision.action == "deny"
+    decision = _decide(paths, _agent_input(root, model="opus"), session=_coordinator())
+    assert decision.action == "rewrite"
     assert decision.rule == "subagent_same_model"
+    assert decision.rule_version == "1"
     assert decision.project_id == project.id
-    assert "(opus)" in decision.reason
+    assert decision.updated_input == {
+        "subagent_type": "general-purpose",
+        "prompt": "p",
+        "model": "sonnet",
+    }
+    assert "(opus)" in decision.reason and "sonnet" in decision.reason
 
 
 def test_decide_respects_the_global_kill_switch(paths, tmp_path):
@@ -464,46 +468,78 @@ def test_decide_respects_the_global_kill_switch(paths, tmp_path):
     project = Project(id=uuid4(), root=root)
     save_config(
         paths.config,
-        Config(
-            defaults=Limits(policy_intervene_same_model_subagent_spawn=False), projects=(project,)
-        ),
+        Config(defaults=Limits(policy_intervene=False), projects=(project,)),
     )
-    _seed_coordinator_usage(paths, project, session_id="session-1", model="claude-opus-5-5")
-    assert _decide(paths, _agent_input(root, model="opus")).action == "allow"
+    assert _decide(paths, _agent_input(root), session=_coordinator()).action == "allow"
 
 
 def test_decide_respects_the_per_project_kill_switch(paths, tmp_path):
     root = tmp_path / "project"
     root.mkdir()
-    project = Project(
-        id=uuid4(), root=root, overrides=Overrides(policy_intervene_same_model_subagent_spawn=False)
-    )
-    save_config(paths.config, Config(projects=(project,)))
-    _seed_coordinator_usage(paths, project, session_id="session-1", model="claude-opus-5-5")
-    assert _decide(paths, _agent_input(root, model="opus")).action == "allow"
+    other = tmp_path / "other"
+    other.mkdir()
+    off = Project(id=uuid4(), root=root, overrides=Overrides(policy_intervene=False))
+    on = Project(id=uuid4(), root=other)
+    save_config(paths.config, Config(projects=(off, on)))
+    assert _decide(paths, _agent_input(root), session=_coordinator()).action == "allow"
+    assert _decide(paths, _agent_input(other), session=_coordinator()).action == "rewrite"
+
+
+def test_a_project_cannot_switch_the_channel_back_on_once_the_global_switch_is_off(paths, tmp_path):
+    """Each switch stops every action on its own; neither is an override of the other."""
+    root = tmp_path / "project"
+    root.mkdir()
+    project = Project(id=uuid4(), root=root, overrides=Overrides(policy_intervene=True))
+    save_config(paths.config, Config(defaults=Limits(policy_intervene=False), projects=(project,)))
+    assert _decide(paths, _agent_input(root), session=_coordinator()).action == "allow"
+
+
+def test_nothing_is_subscribed_while_the_global_switch_is_off(paths, tmp_path):
+    _same_model_setup(paths, tmp_path)
+    with _policy_server(paths, _tracker()) as channel:
+        assert _published(paths)["subscriptions"]
+        config = load_config(paths.config)
+        off = config.model_copy(update={"defaults": Limits(policy_intervene=False)})
+
+        channel.sync(off)
+        assert _published(paths)["subscriptions"] == []
+
+        channel.sync(config)
+        assert _published(paths)["subscriptions"]
+
+
+@pytest.mark.parametrize("scope", ["global", "project"])
+def test_the_legacy_same_model_switch_still_turns_the_rule_off(paths, tmp_path, scope):
+    root = tmp_path / "project"
+    root.mkdir()
+    off = Overrides(policy_intervene_same_model_subagent_spawn=False)
+    if scope == "global":
+        config = Config(
+            defaults=Limits(policy_intervene_same_model_subagent_spawn=False),
+            projects=(Project(id=uuid4(), root=root),),
+        )
+    else:
+        config = Config(projects=(Project(id=uuid4(), root=root, overrides=off),))
+    save_config(paths.config, config)
+    assert _decide(paths, _agent_input(root), session=_coordinator()).action == "allow"
 
 
 def test_decide_allows_a_different_family_subagent_spawn(paths, tmp_path):
     root = tmp_path / "project"
     root.mkdir()
     mutate_registry(paths, lambda registry: registry.add(root))
-    project = load_config(paths.config).projects[0]
-    _seed_coordinator_usage(paths, project, session_id="session-1", model="claude-opus-5-5")
-    assert _decide(paths, _agent_input(root, model="haiku")).action == "allow"
+    assert (
+        _decide(paths, _agent_input(root, model="haiku"), session=_coordinator()).action == "allow"
+    )
 
 
-def test_decide_never_denies_the_lowest_tier(paths, tmp_path):
-    """Denying asks the caller to downgrade the model; a haiku spawn already
-    has nowhere lower to go, so it is never denied even when it matches the
-    coordinator's own (also haiku) model."""
+def test_decide_never_lowers_the_lowest_tier(paths, tmp_path):
+    """A haiku spawn has nowhere lower to go, even when the coordinator is also haiku."""
     root = tmp_path / "project"
     root.mkdir()
     mutate_registry(paths, lambda registry: registry.add(root))
-    project = load_config(paths.config).projects[0]
-    _seed_coordinator_usage(
-        paths, project, session_id="session-1", model="claude-haiku-4-5-20251001"
-    )
-    assert _decide(paths, _agent_input(root, model="haiku")).action == "allow"
+    session = _coordinator("claude-haiku-4-5-20251001")
+    assert _decide(paths, _agent_input(root, model="haiku"), session=session).action == "allow"
 
 
 def test_decide_allows_when_cwd_is_unregistered(paths, tmp_path):
@@ -512,14 +548,15 @@ def test_decide_allows_when_cwd_is_unregistered(paths, tmp_path):
     mutate_registry(paths, lambda registry: registry.add(root))
     other = tmp_path / "elsewhere"
     other.mkdir()
-    assert _decide(paths, _agent_input(other, model="opus")).action == "allow"
+    assert _decide(paths, _agent_input(other), session=_coordinator()).action == "allow"
 
 
-def test_decide_allows_when_no_coordinator_usage_observed(paths, tmp_path):
+def test_decide_allows_when_no_coordinator_model_is_known(paths, tmp_path):
     root = tmp_path / "project"
     root.mkdir()
     mutate_registry(paths, lambda registry: registry.add(root))
-    assert _decide(paths, _agent_input(root, model="opus")).action == "allow"
+    assert _decide(paths, _agent_input(root), session=None).action == "allow"
+    assert _decide(paths, _agent_input(root), session=_coordinator(None)).action == "allow"
 
 
 def _same_model_setup(paths, tmp_path):
@@ -527,7 +564,6 @@ def _same_model_setup(paths, tmp_path):
     root.mkdir()
     mutate_registry(paths, lambda registry: registry.add(root))
     project = load_config(paths.config).projects[0]
-    _seed_coordinator_usage(paths, project, session_id="session-1", model="claude-opus-5-5")
     return root, project
 
 
@@ -537,7 +573,6 @@ def _same_model_setup(paths, tmp_path):
         pytest.param({"model": None}, id="no-model-override"),
         pytest.param({"tool_name": "Bash"}, id="other-tool"),
         pytest.param({"hook_event_name": "PostToolUse"}, id="other-event"),
-        pytest.param({"session_id": None}, id="no-session"),
         pytest.param({"cwd": None}, id="no-cwd"),
     ],
 )
@@ -547,40 +582,109 @@ def test_decide_only_judges_a_claude_agent_spawn_with_a_model(paths, tmp_path, v
     model = variant.pop("model", "opus")
     hook_input = _agent_input(root, model=model, **variant)
     hook_input = {key: value for key, value in hook_input.items() if value is not None}
-    assert _decide(paths, hook_input).action == "allow"
+    assert _decide(paths, hook_input, session=_coordinator()).action == "allow"
 
 
 def test_decide_never_returns_an_action_for_codex(paths, tmp_path):
     """Nothing is returned to Codex without live evidence (WD-151)."""
     root, _ = _same_model_setup(paths, tmp_path)
-    assert _decide(paths, _agent_input(root, model="opus"), provider="codex").action == "allow"
+    session = SessionState("codex", "session-1", "", coordinator_model="claude-opus-5-5")
+    decision = _decide(paths, _agent_input(root, model="opus"), provider="codex", session=session)
+    assert decision.action == "allow"
 
 
-def test_decide_only_returns_actions_the_adapter_can_render(paths, tmp_path, monkeypatch):
-    import agent_watchdog.rules.engine as engine
-    from agent_watchdog.rules.api import Decision
+def _edited_state(**fields):
+    return SessionState("claude", "session-1", "", turn_id="t1", edits_in_turn=2, **fields)
 
+
+def test_a_default_off_builtin_blocks_a_stop_only_once_enabled(paths, tmp_path):
     root, _ = _same_model_setup(paths, tmp_path)
+    stop = {"cwd": str(root), "session_id": "session-1", "hook_event_name": "Stop"}
+    assert _decide(paths, stop, session=_edited_state()).action == "allow"
 
-    def block_everything(*_args):
-        return Decision(action="block", rule="test", reason="x")
-
-    monkeypatch.setattr(engine, "_RULES", (block_everything,))
-    # `block` is renderable for Stop, but not for PreToolUse.
-    assert _decide(paths, _agent_input(root)).action == "allow"
-    assert _decide(paths, {"cwd": str(root), "hook_event_name": "Stop"}).action == "block"
-
-
-def test_decide_never_blocks_a_stop_that_is_already_continuing(paths, tmp_path, monkeypatch):
-    import agent_watchdog.rules.engine as engine
-    from agent_watchdog.rules.api import Decision
-
-    root, _ = _same_model_setup(paths, tmp_path)
-    monkeypatch.setattr(
-        engine, "_RULES", (lambda *_args: Decision(action="block", rule="test", reason="x"),)
+    config = load_config(paths.config)
+    save_config(
+        paths.config,
+        config.model_copy(update={"rules": Rules(enabled=["stop_without_verification"])}),
     )
-    hook_input = {"cwd": str(root), "hook_event_name": "Stop", "stop_hook_active": True}
-    assert _decide(paths, hook_input).action == "allow"
+    decision = _decide(paths, stop, session=_edited_state())
+    assert (decision.action, decision.rule) == ("block", "stop_without_verification")
+
+
+def test_decide_never_blocks_a_stop_that_is_already_continuing(paths, tmp_path):
+    root, _ = _same_model_setup(paths, tmp_path)
+    config = load_config(paths.config)
+    save_config(
+        paths.config,
+        config.model_copy(update={"rules": Rules(enabled=["stop_without_verification"])}),
+    )
+    hook_input = {
+        "cwd": str(root),
+        "session_id": "session-1",
+        "hook_event_name": "Stop",
+        "stop_hook_active": True,
+    }
+    assert _decide(paths, hook_input, session=_edited_state()).action == "allow"
+
+
+def test_a_rule_that_raises_is_skipped_and_reported_without_silencing_the_rest(
+    paths, tmp_path, monkeypatch
+):
+    import agent_watchdog.rules.engine as engine
+
+    root, _ = _same_model_setup(paths, tmp_path)
+    real = engine.evaluate
+
+    def flaky(rule, ctx, *, now):
+        if rule.name == "subagent_same_model":
+            raise RuntimeError("rule bug")
+        return real(rule, ctx, now=now)
+
+    monkeypatch.setattr(engine, "evaluate", flaky)
+    failures = []
+    command = {
+        "cwd": str(root),
+        "session_id": "session-1",
+        "hook_event_name": "PreToolUse",
+        "tool_name": "Bash",
+        "tool_input": {"command": "rm -rf build"},
+    }
+    config = load_config(paths.config)
+
+    agent = decide(
+        paths,
+        config,
+        "claude",
+        _agent_input(root),
+        session=_coordinator(),
+        on_error=lambda name, error: failures.append((name, type(error))),
+    )
+    destructive = decide(paths, config, "claude", command, session=_coordinator())
+
+    assert agent.action == "allow"
+    assert failures == [("subagent_same_model", RuntimeError)]
+    assert (destructive.action, destructive.rule) == ("ask", "destructive_command")
+
+
+def test_a_cooldown_and_the_per_turn_cap_silence_a_repeated_context(paths, tmp_path):
+    root, _ = _same_model_setup(paths, tmp_path)
+    same = Signature("Bash", "i", "o", "success", "2026-10-07T12:00:00Z")
+    repeated = SessionState("claude", "session-1", "", turn_id="t1", last_signatures=(same,) * 3)
+    post = {
+        "cwd": str(root),
+        "session_id": "session-1",
+        "hook_event_name": "PostToolUse",
+        "tool_name": "Bash",
+    }
+
+    first = _decide(paths, post, session=repeated)
+    second = _decide(paths, post, session=repeated)
+    other_session = _decide(paths, {**post, "session_id": "session-2"}, session=repeated)
+
+    assert (first.action, first.rule) == ("context", "repeat_same_input_same_output")
+    assert "3 times" in first.context
+    assert second.action == "allow"
+    assert other_session.action == "context"
 
 
 def _policy_request(port, **fields):
@@ -611,25 +715,125 @@ def _control_events(paths, project):
 def test_policy_server_answers_over_the_loopback_socket(paths, tmp_path):
     root, project = _same_model_setup(paths, tmp_path)
     socket_path = paths.data / "policy" / "socket.json"
-    with _policy_server(paths):
+    with _policy_server(paths, _tracker()):
         discovery = json.loads(socket_path.read_text(encoding="utf-8"))
         assert discovery["schema_version"] == 2
         assert discovery["timeout_ms"] == 300
         assert discovery["max_request_bytes"] > Limits().payload_bytes
+        # The approved built-ins; the default-off stop rule is not subscribed.
         assert discovery["subscriptions"] == [
-            {"provider": "claude", "hook_event_name": "PreToolUse", "tool_name": "Agent"}
+            {"provider": "claude", "hook_event_name": "PostToolUse", "tool_name": None},
+            {"provider": "claude", "hook_event_name": "PreToolUse", "tool_name": "Agent"},
+            {"provider": "claude", "hook_event_name": "PreToolUse", "tool_name": "Bash"},
         ]
         raw = _policy_request(discovery["port"], **_decision_request(discovery, root))
         answer = json.loads(raw)
         assert answer["schema_version"] == 2
-        assert answer["action"] == "deny"
-        assert "Downgrade" in answer["reason"]
+        assert answer["action"] == "rewrite"
+        assert answer["updated_input"]["model"] == "sonnet"
+        assert answer["updated_input"]["prompt"] == "p"
+        assert "sonnet" in answer["reason"]
     assert not socket_path.exists()
+
+
+def _published(paths):
+    return json.loads((paths.data / "policy" / "socket.json").read_text(encoding="utf-8"))
+
+
+def _approve_user_rule(paths, name="watch_prompts"):
+    """Write a user rule on UserPromptSubmit and approve its exact bytes."""
+    import hashlib
+
+    path = paths.config.parent / "rules" / f"{name}.toml"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
+        f'schema_version = 1\nname = "{name}"\nversion = "1"\norigin = "user"\n'
+        'provider = ["claude"]\nevent = "UserPromptSubmit"\n'
+        '[action]\nkind = "context"\nmessage = "Watchdog: noted."\n',
+        encoding="utf-8",
+    )
+    config = load_config(paths.config)
+    digest = hashlib.sha256(path.read_bytes()).hexdigest()
+    approved = {**config.rules.approved, name: digest}
+    save_config(
+        paths.config,
+        config.model_copy(update={"rules": config.rules.model_copy(update={"approved": approved})}),
+    )
+    return path
+
+
+def test_an_approved_rule_is_subscribed_at_the_next_sync_without_a_restart(paths, tmp_path):
+    _same_model_setup(paths, tmp_path)
+    with _policy_server(paths, _tracker()) as channel:
+        first = _published(paths)
+        assert not any(
+            item["hook_event_name"] == "UserPromptSubmit" for item in first["subscriptions"]
+        )
+
+        _approve_user_rule(paths)
+        channel.sync(load_config(paths.config))
+
+        after = _published(paths)
+        assert {
+            "provider": "claude",
+            "hook_event_name": "UserPromptSubmit",
+            "tool_name": None,
+        } in after["subscriptions"]
+        # Only the subscriptions change: the adapter's token and port stay valid.
+        keep = ("port", "token", "pid", "timeout_ms", "max_request_bytes")
+        assert {key: after[key] for key in keep} == {key: first[key] for key in keep}
+
+
+def test_editing_an_approved_rule_unsubscribes_it_at_the_next_sync(paths, tmp_path):
+    _same_model_setup(paths, tmp_path)
+    path = _approve_user_rule(paths)
+    with _policy_server(paths, _tracker()) as channel:
+        assert any(
+            item["hook_event_name"] == "UserPromptSubmit"
+            for item in _published(paths)["subscriptions"]
+        )
+
+        path.write_text(path.read_text(encoding="utf-8") + "\n# edited after approval\n")
+        channel.sync(load_config(paths.config))
+
+        assert not any(
+            item["hook_event_name"] == "UserPromptSubmit"
+            for item in _published(paths)["subscriptions"]
+        )
+
+
+def test_sync_leaves_the_file_alone_when_nothing_changed(paths, tmp_path, monkeypatch):
+    import agent_watchdog.daemon as daemon_module
+
+    _same_model_setup(paths, tmp_path)
+    with _policy_server(paths, _tracker()) as channel:
+        monkeypatch.setattr(
+            daemon_module, "atomic_write", lambda *_a, **_k: pytest.fail("rewrote the file")
+        )
+        channel.sync(load_config(paths.config))
+
+
+def test_a_failed_sync_keeps_the_previous_file_and_logs_once(paths, tmp_path, monkeypatch):
+    import agent_watchdog.daemon as daemon_module
+
+    _same_model_setup(paths, tmp_path)
+    logged = []
+    with _policy_server(paths, _tracker()) as channel:
+        previous = _published(paths)
+        monkeypatch.setattr(daemon_module, "_log", lambda *args, **fields: logged.append(fields))
+        monkeypatch.setattr(
+            daemon_module, "atomic_write", lambda *_a, **_k: (_ for _ in ()).throw(OSError("full"))
+        )
+        _approve_user_rule(paths)
+        for _ in range(3):
+            channel.sync(load_config(paths.config))
+        assert _published(paths) == previous
+    assert [item["decision"] for item in logged] == ["degraded"]
 
 
 def test_policy_server_allows_with_a_bare_action(paths, tmp_path):
     root, _ = _same_model_setup(paths, tmp_path)
-    with _policy_server(paths):
+    with _policy_server(paths, _tracker()):
         discovery = json.loads((paths.data / "policy" / "socket.json").read_text())
         raw = _policy_request(
             discovery["port"], **_decision_request(discovery, root, model="haiku")
@@ -637,21 +841,21 @@ def test_policy_server_allows_with_a_bare_action(paths, tmp_path):
     assert json.loads(raw) == {"schema_version": 2, "action": "allow"}
 
 
-def test_policy_server_still_denies_a_spawn_with_a_very_long_prompt(paths, tmp_path):
+def test_policy_server_still_rewrites_a_spawn_with_a_very_long_prompt(paths, tmp_path):
     """The request carries the whole hook input; a long subagent prompt must
     not make the channel fail open and silently disable the rule."""
     root, _ = _same_model_setup(paths, tmp_path)
-    with _policy_server(paths):
+    with _policy_server(paths, _tracker()):
         discovery = json.loads((paths.data / "policy" / "socket.json").read_text())
         request = _decision_request(discovery, root)
         request["input"]["tool_input"]["prompt"] = "x" * (Limits().payload_bytes - 4096)
         raw = _policy_request(discovery["port"], **request)
-    assert json.loads(raw)["action"] == "deny"
+    assert json.loads(raw)["action"] == "rewrite"
 
 
 def test_policy_server_answers_nothing_beyond_the_request_budget(paths, tmp_path):
     root, _ = _same_model_setup(paths, tmp_path)
-    with _policy_server(paths):
+    with _policy_server(paths, _tracker()):
         discovery = json.loads((paths.data / "policy" / "socket.json").read_text())
         request = _decision_request(discovery, root)
         request["input"]["tool_input"]["prompt"] = "x" * discovery["max_request_bytes"]
@@ -662,12 +866,12 @@ def test_policy_server_answers_nothing_beyond_the_request_budget(paths, tmp_path
 def test_policy_server_records_a_control_event_for_a_delivered_action(paths, tmp_path):
     root, project = _same_model_setup(paths, tmp_path)
     event_id = uuid4()
-    with _policy_server(paths):
+    with _policy_server(paths, _tracker()):
         discovery = json.loads((paths.data / "policy" / "socket.json").read_text())
         raw = _policy_request(
             discovery["port"], **_decision_request(discovery, root, event_id=event_id)
         )
-        assert json.loads(raw)["action"] == "deny"
+        assert json.loads(raw)["action"] == "rewrite"
         wait_for(lambda: _control_events(paths, project))
     (control,) = _control_events(paths, project)
     assert control["kind"] == "control"
@@ -677,14 +881,16 @@ def test_policy_server_records_a_control_event_for_a_delivered_action(paths, tmp
     assert control["project_id"] == str(project.id)
     recorded = control["payload"]["claude"]
     assert recorded["rule"] == "subagent_same_model"
-    assert recorded["action"] == "deny"
+    assert recorded["rule_version"] == "1"
+    assert recorded["action"] == "rewrite"
     assert recorded["evidence_ids"] == [str(event_id)]
-    assert "Downgrade" in recorded["reason"]
+    assert "sonnet" in recorded["reason"] and recorded["text"] == recorded["reason"]
+    assert datetime.fromisoformat(recorded["delivered_at"]).tzinfo is not None
 
 
 def test_a_control_event_is_stored_and_projected_like_any_other(paths, tmp_path):
     root, project = _same_model_setup(paths, tmp_path)
-    with _policy_server(paths):
+    with _policy_server(paths, _tracker()):
         discovery = json.loads((paths.data / "policy" / "socket.json").read_text())
         _policy_request(discovery["port"], **_decision_request(discovery, root))
         wait_for(lambda: _control_events(paths, project))
@@ -698,7 +904,7 @@ def test_a_control_event_is_stored_and_projected_like_any_other(paths, tmp_path)
 
 def test_policy_server_records_no_control_event_for_allow(paths, tmp_path):
     root, project = _same_model_setup(paths, tmp_path)
-    with _policy_server(paths):
+    with _policy_server(paths, _tracker()):
         discovery = json.loads((paths.data / "policy" / "socket.json").read_text())
         _policy_request(discovery["port"], **_decision_request(discovery, root, model="haiku"))
         time.sleep(0.3)
@@ -715,11 +921,11 @@ def test_policy_server_still_answers_when_recording_the_control_event_fails(
 
     monkeypatch.setattr(daemon_module, "_admit", refuse)
     root, project = _same_model_setup(paths, tmp_path)
-    with _policy_server(paths):
+    with _policy_server(paths, _tracker()):
         discovery = json.loads((paths.data / "policy" / "socket.json").read_text())
         raw = _policy_request(discovery["port"], **_decision_request(discovery, root))
         time.sleep(0.3)
-    assert json.loads(raw)["action"] == "deny"
+    assert json.loads(raw)["action"] == "rewrite"
     assert _control_events(paths, project) == []
 
 

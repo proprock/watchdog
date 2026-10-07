@@ -5,7 +5,7 @@ import tomllib
 from collections.abc import Iterable
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Literal, Self
+from typing import Annotated, Literal, Self
 from uuid import UUID
 
 import tomli_w
@@ -40,16 +40,16 @@ class Limits(StrictModel):
     log_bytes: Positive = 10 * 1024**2
     log_level: Literal["DEBUG", "INFO", "WARNING", "ERROR"] = "INFO"
     log_detail: bool = False
-    # Per-rule `intervene` kill switches for the WD-014 deterministic policy
-    # rules (`agent_watchdog.analysis.POLICY_RULES`). Each rule gets its own
-    # flag, named `policy_intervene_<rule_id>`, so a future second rule adds a
-    # field here rather than sharing one switch with this one. This never
-    # gates the rule's `log` half, which stays unconditional and always safe
-    # per the WD-014 decision text; only the tool-call-blocking behavior is
-    # switchable. Setting it false is a full off switch, not a narrower one:
-    # the daemon never denies for that rule in that project, regardless of
-    # any match.
+    # Legacy per-rule kill switch for the WD-014 same-model-subagent rule, kept
+    # since WD-142 as an alias that turns off the built-in `subagent_same_model`
+    # rule alone. New rules have no flag of their own: `policy_intervene` below
+    # stops every rule, and `[rules] disabled` turns one off by name. The rule's
+    # finding (the `log` half) is not gated by either.
     policy_intervene_same_model_subagent_spawn: bool = True
+    # Kill switch for every control action of the decision channel (WD-142):
+    # false means the daemon answers "no opinion" to every hook call for the
+    # project. Set it in [defaults] to switch the channel off globally.
+    policy_intervene: bool = True
     # Kill switch for `insights`, the only path that sends a project's evidence to a
     # model. The explicit command is the opt-in; false refuses the call (a dry run,
     # which sends nothing, still works) for every project or just one.
@@ -72,6 +72,7 @@ class Overrides(StrictModel):
     inbox_bytes: Positive | None = None
     payload_bytes: Positive | None = None
     policy_intervene_same_model_subagent_spawn: bool | None = None
+    policy_intervene: bool | None = None
     insights_llm_enabled: bool | None = None
 
     def apply(self, defaults: Limits) -> Limits:
@@ -138,12 +139,40 @@ class Pricing(StrictModel):
         return expanded
 
 
+RuleName = Annotated[str, Field(pattern=r"^[a-z][a-z0-9_]{0,63}$")]
+Sha256 = Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]
+
+
+class Rules(StrictModel):
+    """Which decision-channel rules run (WD-142); the rule bodies live in files.
+
+    ``approved`` maps a user rule to the SHA-256 of the file the user approved: a
+    changed file no longer matches and is never applied. ``disabled`` turns any
+    rule off; ``enabled`` opts in a built-in that ships off. ``tiers`` ranks model
+    families from lowest to highest for rules that move a model down a tier.
+    """
+
+    approved: dict[RuleName, Sha256] = Field(default_factory=dict)
+    disabled: list[RuleName] = Field(default_factory=list)
+    enabled: list[RuleName] = Field(default_factory=list)
+    tiers: list[Annotated[str, Field(pattern=r"^[a-z][a-z0-9-]{0,31}$")]] = Field(
+        default_factory=lambda: ["haiku", "sonnet", "opus", "fable"], min_length=1
+    )
+
+    @model_validator(mode="after")
+    def unique_tiers(self) -> Self:
+        if len(set(self.tiers)) != len(self.tiers):
+            raise ValueError("Model tiers must be unique")
+        return self
+
+
 class Config(Versioned):
     defaults: Limits = Field(default_factory=Limits)
     projects: tuple[Project, ...] = ()
     auto_add_projects: bool = False
     pipeline_telemetry: bool = True
     pricing: Pricing = Field(default_factory=Pricing)
+    rules: Rules = Field(default_factory=Rules)
     trusted_projects_dir: Path | None = None
 
     @field_validator("trusted_projects_dir")

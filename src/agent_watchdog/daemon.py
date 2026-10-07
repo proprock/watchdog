@@ -25,7 +25,7 @@ from agent_watchdog.diagnostics import Level, emit, error_code
 from agent_watchdog.events import Envelope
 from agent_watchdog.registry import Registry, Resolution
 from agent_watchdog.rules.api import Decision
-from agent_watchdog.rules.engine import decide
+from agent_watchdog.rules.engine import decide, subscriptions
 from agent_watchdog.state import SessionState, StateKey
 from agent_watchdog.storage import (
     Inbox,
@@ -968,11 +968,6 @@ _POLICY_DECISION_TIMEOUT_MS = 300
 # covers that envelope so a maximal prompt is still answered, not silently
 # dropped (which would fail open and disable the rule).
 _POLICY_REQUEST_OVERHEAD_BYTES = 64 * 1024
-# The hook events the adapter may ask about. Static until the rule registry
-# (WD-142) derives it from the approved rules.
-_POLICY_SUBSCRIPTIONS: tuple[dict[str, str], ...] = (
-    {"provider": "claude", "hook_event_name": "PreToolUse", "tool_name": "Agent"},
-)
 
 
 def _policy_request_bytes(paths: UserPaths) -> int:
@@ -1017,9 +1012,13 @@ def _record_control(
             payload={
                 provider: {
                     "rule": decision.rule,
+                    "rule_version": decision.rule_version,
                     "action": decision.action,
                     "reason": decision.reason,
+                    # The text the model was sent: a reason, or injected context.
+                    "text": decision.reason or decision.context,
                     "evidence_ids": [str(event_id)],
+                    "delivered_at": datetime.now(UTC).isoformat(),
                 }
             },
         )
@@ -1036,10 +1035,13 @@ def _record_control(
 
 
 def _decision_response(decision: Decision) -> dict[str, object]:
+    # `log` is recorded by the daemon and means nothing to the adapter.
     response: dict[str, object] = {
         "schema_version": _POLICY_SCHEMA_VERSION,
-        "action": decision.action,
+        "action": "allow" if decision.action == "log" else decision.action,
     }
+    if decision.action == "log":
+        return response
     if decision.reason is not None:
         response["reason"] = decision.reason
     if decision.updated_input is not None:
@@ -1066,6 +1068,21 @@ class _PolicyRequestHandler(socketserver.StreamRequestHandler):
             return None
         return self.server.watchdog_sessions.session(
             provider, session_id, agent_id if isinstance(agent_id, str) else ""
+        )
+
+    def _rule_failed(self, name: str, error: Exception) -> None:
+        """Log a rule's failure once per daemon lifetime; the other rules still answer."""
+        if name in self.server.watchdog_failed_rules:
+            return
+        self.server.watchdog_failed_rules.add(name)
+        _log(
+            self.server.watchdog_paths,
+            None,
+            "WARNING",
+            event="control",
+            decision="rule_error",
+            error_type=error_code(error),
+            detail=name,
         )
 
     def handle(self) -> None:
@@ -1098,6 +1115,7 @@ class _PolicyRequestHandler(socketserver.StreamRequestHandler):
                 str(provider),
                 hook_input,
                 session=self._session(str(provider), hook_input),
+                on_error=self._rule_failed,
             )
         except ConfigError:
             return
@@ -1132,10 +1150,61 @@ class _PolicyServer(socketserver.ThreadingTCPServer):
     watchdog_token: str
     watchdog_request_bytes: int
     watchdog_sessions: "_SessionTracker | None"
+    watchdog_failed_rules: set[str]
+
+
+class _Channel:
+    """The published discovery file, kept in step with the rules that may run.
+
+    ``sync`` runs on every poll tick: it rewrites ``socket.json`` only when the
+    subscriptions changed, so approving, editing or disabling a rule takes
+    effect without a restart. A failed rewrite keeps the previous file, which
+    can only subscribe to more than is needed (the engine answers ``allow``
+    for it) and never to something an adapter would act on without a rule.
+    """
+
+    def __init__(self, paths: UserPaths, document: dict[str, object] | None = None) -> None:
+        self._paths = paths
+        self._document = document
+        self._failing = False
+
+    def sync(self, config: Config) -> None:
+        if self._document is None:
+            return
+        try:
+            wanted = subscriptions(self._paths, config)
+            if wanted == self._document["subscriptions"]:
+                self._failing = False
+                return
+            document = {**self._document, "subscriptions": wanted}
+            atomic_write(self._paths.data / "policy" / "socket.json", json.dumps(document).encode())
+        except Exception as error:  # noqa: BLE001 - a rule-loading bug must not stop the poll loop
+            if not self._failing:
+                _log(
+                    self._paths,
+                    config,
+                    "WARNING",
+                    event="lifecycle",
+                    decision="degraded",
+                    error_type=error_code(error),
+                )
+            self._failing = True
+            return
+        self._failing = False
+        self._document = document
+
+
+def _initial_subscriptions(paths: UserPaths) -> list[dict[str, str | None]]:
+    try:
+        return subscriptions(paths, load_config(paths.config))
+    except (ConfigError, OSError):
+        return []
 
 
 @contextmanager
-def _policy_server(paths: UserPaths, sessions: "_SessionTracker | None" = None) -> Iterator[None]:
+def _policy_server(
+    paths: UserPaths, sessions: "_SessionTracker | None" = None
+) -> Iterator[_Channel]:
     """Run the WD-014 ``intervene`` decision socket for one daemon lifetime.
 
     Loopback-only (binding wider triggers a Windows Firewall prompt for no
@@ -1167,30 +1236,27 @@ def _policy_server(paths: UserPaths, sessions: "_SessionTracker | None" = None) 
             decision="degraded",
             error_type=error_code(error),
         )
-        yield
+        yield _Channel(paths)
         return
     server.watchdog_paths = paths
     server.watchdog_sessions = sessions
+    server.watchdog_failed_rules = set()
     server.watchdog_token = secrets.token_hex(16)
     server.watchdog_request_bytes = _policy_request_bytes(paths)
     thread = threading.Thread(target=server.serve_forever, daemon=True)
     thread.start()
+    document: dict[str, object] = {
+        "schema_version": _POLICY_SCHEMA_VERSION,
+        "pid": os.getpid(),
+        "port": server.server_address[1],
+        "token": server.watchdog_token,
+        "timeout_ms": _POLICY_DECISION_TIMEOUT_MS,
+        "max_request_bytes": server.watchdog_request_bytes,
+        "subscriptions": _initial_subscriptions(paths),
+    }
     try:
         socket_path.parent.mkdir(parents=True, exist_ok=True)
-        atomic_write(
-            socket_path,
-            json.dumps(
-                {
-                    "schema_version": _POLICY_SCHEMA_VERSION,
-                    "pid": os.getpid(),
-                    "port": server.server_address[1],
-                    "token": server.watchdog_token,
-                    "timeout_ms": _POLICY_DECISION_TIMEOUT_MS,
-                    "max_request_bytes": server.watchdog_request_bytes,
-                    "subscriptions": list(_POLICY_SUBSCRIPTIONS),
-                }
-            ).encode(),
-        )
+        atomic_write(socket_path, json.dumps(document).encode())
     except OSError as error:
         _log(
             paths,
@@ -1207,10 +1273,10 @@ def _policy_server(paths: UserPaths, sessions: "_SessionTracker | None" = None) 
             socket_path.unlink(missing_ok=True)
         except OSError:
             pass
-        yield
+        yield _Channel(paths)
         return
     try:
-        yield
+        yield _Channel(paths, document)
     finally:
         try:
             socket_path.unlink(missing_ok=True)
@@ -1227,9 +1293,9 @@ def run(paths: UserPaths) -> int:
         with ExitStack() as owner:
             owner.enter_context(writer_lock(paths.data / "daemon.lock"))
             sessions = _SessionTracker()
-            owner.enter_context(_policy_server(paths, sessions))
+            channel = owner.enter_context(_policy_server(paths, sessions))
             _log(paths, None, "INFO", event="lifecycle", decision="started")
-            _poll(paths, owner, sessions)
+            _poll(paths, owner, sessions, channel)
     except WriterBusy:
         _log(paths, None, "DEBUG", event="lifecycle", decision="already_running")
         return 0
@@ -1321,8 +1387,14 @@ class _SessionTracker:
         return done, failures
 
 
-def _poll(paths: UserPaths, owner: ExitStack, sessions: _SessionTracker | None = None) -> None:
+def _poll(
+    paths: UserPaths,
+    owner: ExitStack,
+    sessions: _SessionTracker | None = None,
+    channel: _Channel | None = None,
+) -> None:
     sessions = sessions or _SessionTracker()
+    channel = channel or _Channel(paths)
     logged_findings_failures: set[tuple[str, str]] = set()
     instance_id = str(uuid4())
     delay = 0.25
@@ -1367,6 +1439,7 @@ def _poll(paths: UserPaths, owner: ExitStack, sessions: _SessionTracker | None =
                         detail=str(error),
                     )
                     pass
+            channel.sync(config)
             if _drain_spool(paths, config, logged_unknown_checkouts=logged_unknown_checkouts):
                 activity = True
             if _drain_controls(paths, config):

@@ -90,7 +90,7 @@ WD-101 closes practical offline test boundaries identified by the audit, and WD-
 **Outcome:** the daemon decides, through a fixed decision channel, which control action a hook returns, on Claude Code first and on Codex only where a live probe confirmed the capability. Open tasks and order are in [TODO.md](TODO.md); the design is in [architecture](docs/architecture.md).
 
 1. **WD-139 and WD-140 (complete 2026-10-07).** Live-probe the control capabilities of both providers' hooks, and replace the single-rule policy socket with a generic decision channel (an action vocabulary, per-provider rendering of only confirmed cells, fail-open).
-2. **WD-141 to WD-144.** Incremental session state in the daemon, declarative and built-in rules with a `rules` CLI, Python rules approved by content hash, and model-synthesized rule candidates that the user approves.
+2. **WD-141 (complete 2026-10-07) and WD-142 (complete 2026-10-08), then WD-143 and WD-144.** Incremental session state in the daemon, and declarative and built-in rules with a `rules` CLI ([rules](docs/rules.md)), are done; Python rules approved by content hash and model-synthesized rule candidates that the user approves remain.
 3. **WD-145 to WD-147.** The automatic semantic judge with a budget and kill switch, corrected statistical heuristics, and the calibration workflow that promotes a rule up the precision ladder of M3.
 4. **WD-148 to WD-151.** Revised project rules and documents, a simpler and faster pipeline, a faster test suite and CI, and Codex control parity.
 

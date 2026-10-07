@@ -1,0 +1,23 @@
+{
+  "schema_version": 1,
+  "ticket": "WD-142",
+  "date": "2026-10-08",
+  "scope": "Hook process wall time through the native adapter against a running daemon, scripts/benchmark_hooks.py --provider claude --shell direct --samples 20 --idle-seconds 3 --event <event> --adapter-executable native/target/release/agent-watchdog-hook.exe. Stop is never subscribed (the zero path: one bounded read of policy/socket.json). PostToolUse (all tools) and PreToolUse (a Bash call) are subscribed by the built-in rules, so each call makes a loopback round trip to the daemon and no rule matches (the command differs per call). Two rounds per event, run in the order Stop, PostToolUse, PreToolUse within a round.",
+  "host": "Windows 11 Pro 10.0.22621, Python 3.12.13",
+  "note": "The host was busier than during the WD-140 A/B (the unsubscribed Stop path had a 35.6 ms sequential p50 then and 49-59 ms now), so absolute figures are higher than WD-140's and only the comparison inside this file is meaningful. Every run delivered all 57 events with zero loss counters.",
+  "runs": [
+    {"event": "Stop", "subscribed": false, "round": 1, "first_ms": 59.5, "seq_p50_ms": 59.3, "seq_p95_ms": 78.4, "c4_p50_ms": 108.2, "c4_p95_ms": 122.9, "host_cpu_percent": 22.8},
+    {"event": "Stop", "subscribed": false, "round": 2, "first_ms": 61.6, "seq_p50_ms": 49.2, "seq_p95_ms": 106.6, "c4_p50_ms": 91.1, "c4_p95_ms": 121.2, "host_cpu_percent": 16.4},
+    {"event": "PostToolUse", "subscribed": true, "round": 1, "first_ms": 58.8, "seq_p50_ms": 47.9, "seq_p95_ms": 54.6, "c4_p50_ms": 104.4, "c4_p95_ms": 154.6, "host_cpu_percent": 12.3},
+    {"event": "PostToolUse", "subscribed": true, "round": 2, "first_ms": 75.4, "seq_p50_ms": 48.7, "seq_p95_ms": 61.1, "c4_p50_ms": 92.8, "c4_p95_ms": 113.9, "host_cpu_percent": 16.7},
+    {"event": "PreToolUse", "subscribed": true, "round": 1, "first_ms": 60.1, "seq_p50_ms": 49.2, "seq_p95_ms": 54.3, "c4_p50_ms": 92.9, "c4_p95_ms": 116.3, "host_cpu_percent": 29.3},
+    {"event": "PreToolUse", "subscribed": true, "round": 2, "first_ms": 67.0, "seq_p50_ms": 46.9, "seq_p95_ms": 59.6, "c4_p50_ms": 106.0, "c4_p95_ms": 135.0, "host_cpu_percent": 12.8}
+  ],
+  "summary": {
+    "sequential_p50_ms": {"Stop": "49.2-59.3", "PostToolUse": "47.9-48.7", "PreToolUse": "46.9-49.2"},
+    "sequential_p95_ms": {"Stop": "78.4-106.6", "PostToolUse": "54.6-61.1", "PreToolUse": "54.3-59.6"},
+    "concurrent_four_p95_ms": {"Stop": "121.2-122.9", "PostToolUse": "113.9-154.6", "PreToolUse": "116.3-135.0"},
+    "reading": "The subscribed paths are not distinguishable from the unsubscribed one inside the host's noise at this sample size (20 sequential and 20 four-way calls per run): sequential p50 and p95 are no higher, and the four-way p95 ranges overlap. This shows the round trip adds no cost larger than the run-to-run variation; it does not bound it below that."
+  },
+  "correctness_check": "The benchmark only proves the cost of calls no rule matches. That the subscribed path really reaches the daemon and renders an action is covered by tests/test_rust_adapter.py::test_native_asks_before_a_destructive_command_and_lets_others_pass_with_a_real_daemon and ::test_a_running_daemon_picks_up_a_rule_approved_while_it_runs."
+}

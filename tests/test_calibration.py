@@ -993,3 +993,139 @@ def test_the_suggest_key_prints_a_model_opinion_and_records_nothing(
     assert "next step  Read the failure before re-running." in printed
     (request,) = requests
     assert "Mode: session" in request.system_prompt
+
+
+@pytest.fixture
+def guarded(capture):
+    """The capture project plus a Claude session in which a control action fired."""
+    paths, config, project = capture
+    start = datetime.now(UTC) - timedelta(hours=20)
+    with Store(paths.project_data(project.id), project.id) as store:
+        for step in range(5):
+            store.put(
+                event(
+                    project.id,
+                    "guarded",
+                    "turn.start",
+                    start + timedelta(seconds=step),
+                    provider="claude",
+                )
+            )
+        store.put(
+            Envelope(
+                provider="claude",
+                project_id=project.id,
+                session_id="guarded",
+                kind="control",
+                source="daemon",
+                received_at=start + timedelta(seconds=10),
+                payload={
+                    "claude": {
+                        "rule": "destructive_command",
+                        "rule_version": "2",
+                        "action": "ask",
+                        "reason": "Watchdog: confirm.",
+                        "text": "Watchdog: confirm.",
+                        "evidence_ids": [str(uuid4())],
+                    }
+                },
+            )
+        )
+        store.put(
+            event(
+                project.id,
+                "guarded",
+                "session.end",
+                start + timedelta(minutes=1),
+                provider="claude",
+            )
+        )
+    return capture
+
+
+def test_a_control_finding_is_sampled_annotated_and_kept_out_of_the_precision_gate(
+    calibrate, guarded, tmp_path, monkeypatch
+):
+    paths, config, project = guarded
+    sample_path = tmp_path / "sample.json"
+    # A session whose only finding is a control action is not a shadow-finding
+    # session, so the seeded draw may skip it; take every eligible one.
+    sample = calibrate.build_sample(
+        paths, sample_args(calibrate, paths, sample_path, all_eligible=True)
+    )
+    calibrate.write_sample(sample, sample_path)
+    position = next(
+        index
+        for index, record in enumerate(sample["sessions"], start=1)
+        if record["session_id"] == "guarded"
+    )
+    record = sample["sessions"][position - 1]
+    (finding,) = record["findings"]
+    assert (finding["rule"], finding["action"], finding["rule_version"]) == (
+        "destructive_command",
+        "ask",
+        "2",
+    )
+
+    # j <n>: jump to the session, 1: its first finding, 1: true_positive, Enter: no note.
+    answers = iter(["j", str(position), "1", "1", "", "q"])
+    monkeypatch.setattr("builtins.input", lambda *_: next(answers))
+
+    def drain(_paths, request):
+        # Apply the control inbox directly: request_control would start a daemon.
+        request_id = str(uuid4())
+        directory = paths.data / "requests"
+        directory.mkdir(parents=True, exist_ok=True)
+        (directory / f"{request_id}.json").write_text(
+            json.dumps({"schema_version": 1, "request_id": request_id, **request}),
+            encoding="utf-8",
+        )
+        assert _drain_controls(paths, config) is True
+        return {"ok": True}
+
+    monkeypatch.setattr(calibrate.daemon, "request_control", drain)
+    args = calibrate.build_parser().parse_args(
+        [
+            "annotate",
+            "--home",
+            str(paths.config.parent),
+            "--project",
+            "checkout",
+            "--sample",
+            str(sample_path),
+        ]
+    )
+    assert calibrate.annotate(paths, args) == 0
+
+    with inspection.database(paths, project) as db:
+        (recorded,) = inspection.session_verdicts(db, "claude", "guarded")
+    assert (recorded["rule"], recorded["rule_version"], recorded["verdict"]) == (
+        "destructive_command",
+        "2",
+        "true_positive",
+    )
+    assert recorded["fingerprint"] == finding["fingerprint"]
+
+    report = calibrate.build_report(paths, report_args(calibrate, paths, sample_path, tmp_path))
+
+    assert "destructive_command" not in report["session_scoped_rules"]
+    assert not any("destructive_command" in line for line in report["recommendations"])
+    stats = report["action_rules"]["rules"]["destructive_command"]
+    assert (stats["observed"], stats["true_positive"], stats["precision"]) == (1, 1, 1.0)
+
+
+def test_a_session_with_only_a_control_finding_is_not_a_shadow_finding_session(
+    calibrate, guarded, tmp_path
+):
+    paths, _, _ = guarded
+    sample = calibrate.build_sample(
+        paths, sample_args(calibrate, paths, tmp_path / "sample.json", target=1, all_eligible=True)
+    )
+    sample_path = tmp_path / "sample.json"
+    calibrate.write_sample(sample, sample_path)
+
+    report = calibrate.build_report(paths, report_args(calibrate, paths, sample_path, tmp_path))
+
+    # Only the noisy session fired a shadow rule; the guarded one counts as silent.
+    assert report["confusion"].get("unlabeled/finding") == 1
+    assert report["confusion"].get("unlabeled/no_finding", 0) >= 1

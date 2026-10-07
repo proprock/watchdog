@@ -1,0 +1,19 @@
+schema_version = 1
+name = "subagent_same_model"
+version = "1"
+origin = "builtin"
+description = "A subagent that would run on the coordinator's model tier is moved one tier down."
+provider = ["claude"]
+event = "PreToolUse"
+priority = 100
+
+[match]
+tool_name = "Agent"
+
+[state]
+subagent_same_tier_as_coordinator = true
+
+[action]
+kind = "rewrite"
+message = "Watchdog: this subagent would run on the same model tier ({candidate_model}) as its coordinating conversation ({coordinator_model}); it runs on {lower_tier} instead."
+rewrite = { "tool_input.model" = "$lower_tier" }

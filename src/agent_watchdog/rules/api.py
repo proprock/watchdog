@@ -8,9 +8,10 @@ from uuid import UUID
 from agent_watchdog.config import Config, UserPaths
 from agent_watchdog.state import SessionState
 
-Action = Literal["allow", "deny", "ask", "rewrite", "context", "block"]
+# ``log`` records a finding and sends nothing: the adapter is told ``allow``.
+Action = Literal["allow", "log", "deny", "ask", "rewrite", "context", "block"]
 
-ACTIONS: frozenset[str] = frozenset({"allow", "deny", "ask", "rewrite", "context", "block"})
+ACTIONS: frozenset[str] = frozenset({"allow", "log", "deny", "ask", "rewrite", "context", "block"})
 
 # The provider/event/action cells the native adapter can render, limited to the
 # cells WD-139 confirmed live on Claude Code (docs/provider-compatibility.md,
@@ -55,6 +56,7 @@ class Decision:
 
     action: Action = "allow"
     rule: str | None = None
+    rule_version: str | None = None
     reason: str | None = None
     updated_input: Mapping[str, object] | None = None
     context: str | None = None

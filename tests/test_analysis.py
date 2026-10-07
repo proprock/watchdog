@@ -11,6 +11,7 @@ from agent_watchdog.analysis import (
     REPORT_SCHEMA_VERSION,
     CheckoutUnknown,
     analyze,
+    control_findings,
     diff_oscillations,
     finding_fingerprint,
     git_diff_fingerprint,
@@ -126,6 +127,89 @@ def test_same_model_subagent_spawn_is_logged():
     assert finding["fingerprint"] == finding_fingerprint(
         "same_model_subagent_spawn", POLICY_RULE_VERSION, finding["evidence_ids"]
     )
+
+
+def control_event(project, moment, *, rule="destructive_command", hook_event=None, **fields):
+    recorded = {
+        "rule": rule,
+        "rule_version": "3",
+        "action": "ask",
+        "reason": "Watchdog: confirm this.",
+        "text": "Watchdog: confirm this.",
+        "evidence_ids": [str(hook_event or uuid4())],
+        "delivered_at": moment.isoformat(),
+    } | fields
+    return Envelope(
+        provider="claude",
+        project_id=project,
+        session_id="session-1",
+        kind="control",
+        source="daemon",
+        received_at=moment,
+        payload={"claude": recorded},
+    )
+
+
+def test_a_control_action_is_a_finding_with_the_hook_event_as_evidence():
+    project, moment, hook_event = uuid4(), datetime(2026, 10, 7, tzinfo=UTC), uuid4()
+    event = control_event(project, moment, hook_event=hook_event)
+
+    (finding,) = control_findings([event])
+
+    assert finding["rule"] == "destructive_command"
+    assert finding["rule_version"] == "3"
+    assert finding["action"] == "ask"
+    assert finding["count"] == 1
+    assert finding["attribution"] == "observed"
+    assert finding["explanation"] == "Watchdog: confirm this."
+    assert sorted(finding["evidence_ids"]) == sorted([str(event.event_id), str(hook_event)])
+    assert finding["fingerprint"] == finding_fingerprint(
+        "destructive_command", "3", finding["evidence_ids"]
+    )
+
+
+def test_each_firing_is_its_own_finding_and_a_replay_keeps_the_fingerprint():
+    project, moment = uuid4(), datetime(2026, 10, 7, tzinfo=UTC)
+    events = [control_event(project, moment + timedelta(seconds=n)) for n in range(2)]
+
+    first = control_findings(events)
+    again = control_findings(list(reversed(events)))
+
+    assert len(first) == 2 and len({item["fingerprint"] for item in first}) == 2
+    assert sorted(item["fingerprint"] for item in again) == sorted(
+        item["fingerprint"] for item in first
+    )
+
+
+@pytest.mark.parametrize(
+    "payload",
+    [
+        {},
+        {"rule": "x"},
+        {"rule": "", "rule_version": "1", "action": "ask"},
+        {"rule": "x", "rule_version": "1", "action": 5},
+        {"rule": "x", "rule_version": "1", "action": "ask", "evidence_ids": "not-a-list"},
+    ],
+)
+def test_a_malformed_control_payload_is_skipped_not_fatal(payload):
+    project, moment = uuid4(), datetime(2026, 10, 7, tzinfo=UTC)
+    event = control_event(project, moment).model_copy(update={"payload": {"claude": payload}})
+
+    assert control_findings([event]) == []
+
+
+def test_other_event_kinds_are_not_control_findings():
+    project, moment = uuid4(), datetime(2026, 10, 7, tzinfo=UTC)
+
+    assert control_findings([agent_start(project, moment, agent_id="a")]) == []
+
+
+def test_analyze_reports_control_findings_next_to_the_others():
+    project, moment = uuid4(), datetime(2026, 10, 7, tzinfo=UTC)
+
+    report = analyze([control_event(project, moment)])
+
+    assert [item["rule"] for item in report["findings"]] == ["destructive_command"]
 
 
 def test_same_model_subagent_spawn_is_logged_once_per_agent_not_per_usage_event():

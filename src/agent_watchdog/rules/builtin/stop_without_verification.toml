@@ -1,0 +1,19 @@
+schema_version = 1
+name = "stop_without_verification"
+version = "1"
+origin = "builtin"
+description = "Do not let a turn stop after file edits when no test run followed them. Off until `rules enable`."
+provider = ["claude"]
+event = "Stop"
+priority = 100
+default_enabled = false
+
+[match]
+
+[state]
+edited_without_verification = true
+
+[action]
+kind = "block"
+message = "Watchdog: files were edited in this turn and no test run followed. Run the tests before stopping."
+max_per_turn = 1

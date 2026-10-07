@@ -457,6 +457,30 @@ Exit codes: 0 for successful inspection/mutation; 1 for errors or unhealthy doct
 results; 2 for invalid command syntax; 130 for interruption. Observation hooks keep
 their separate fail-open zero-exit contract.
 
+## Rules
+
+```console
+agent-watchdog rules list
+agent-watchdog rules show NAME
+agent-watchdog rules approve NAME [--yes]
+agent-watchdog rules reject NAME
+agent-watchdog rules disable NAME
+agent-watchdog rules enable NAME
+agent-watchdog rules stats [--since 2026-10-01T00:00:00+00:00]
+```
+
+These manage the decision-channel rules described in [rules.md](rules.md). Every
+command prints one JSON document on stdout; `approve` prints the rule's exact text
+and SHA-256 on stderr and waits for `yes` unless `--yes` is given (without a
+terminal it refuses). Changes are written to `config.toml` under the control lock;
+the running daemon picks them up at its next poll tick. `list` gives each rule's
+status (`approved`, `proposed`, `stale`, `disabled`, `invalid`) and how often it
+fired. `stats` counts firings from the recorded `control` events, with the
+verdicts and precision recorded for them; a rule with nothing reviewed has
+`precision: null`. A control finding's verdict is recorded like any other (the
+`verdict` command, or `calibrate.py annotate`), with the rule's `version` as
+`--rule-version`.
+
 ## Calibrating the shadow rules
 
 ```console
@@ -539,6 +563,13 @@ reported per rule with its denominator, `uncertain` is kept separate from both
 sides, and a rule with no observation is `null` with a stated reason rather than
 100%. Hook overhead comes from the delivery trace already stored on envelopes;
 transcript-sourced events carry none, so the denominator is disclosed.
+
+Findings that carry an `action` (the same-model policy finding, and the control
+findings of the decision-channel rules since WD-142) record what Watchdog did or
+logged, not a probabilistic judgement. They can be annotated like any finding, but
+the report keeps them out of `session_scoped_rules`, the confusion matrix, the
+false-negative count and the M3 recommendation; their precision is reported apart
+under `action_rules`.
 
 ## Measuring overhead
 

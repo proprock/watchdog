@@ -105,7 +105,7 @@ def validate_review(
         frozen_finding = frozen.get(fingerprint)
         if frozen_finding is None:
             raise ValueError("reviewed finding is absent from the frozen sample")
-        if frozen_finding.get("rule") in POLICY_RULES:
+        if frozen_finding.get("rule") in POLICY_RULES or "action" in frozen_finding:
             raise ValueError("policy findings are observations and cannot receive M2 verdicts")
         if frozen_finding.get("rule") in CHECKOUT_RULES:
             raise ValueError("checkout-scoped findings cannot receive session precision verdicts")
@@ -196,7 +196,9 @@ def build_report(baseline_path: Path, sample_path: Path, review_path: Path) -> d
         session_m2_finding[(provider, session_id)] = False
         for finding in require_list(record, "findings", "sample.sessions[]"):
             rule = require_text(finding, "rule", "sample.findings[]")
-            if rule in POLICY_RULES:
+            # A finding with an `action` (the policy rule, or a control action
+            # since WD-142) is an observation, never an M2 shadow finding.
+            if rule in POLICY_RULES or "action" in finding:
                 policy_observed[rule] += 1
             elif rule not in CHECKOUT_RULES:
                 observed[rule] += 1

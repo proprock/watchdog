@@ -16,6 +16,25 @@ def benchmark():
     return module
 
 
+def test_stop_is_the_unsubscribed_zero_path_and_tool_events_carry_a_tool_call(benchmark):
+    stop = benchmark.hook_payload("Stop", "/p", "s", 3)
+    post = benchmark.hook_payload("PostToolUse", "/p", "s", 3)
+    pre = benchmark.hook_payload("PreToolUse", "/p", "s", 4)
+
+    assert stop == {"cwd": "/p", "session_id": "s", "hook_event_name": "Stop"}
+    assert post["tool_name"] == "Bash" and post["tool_response"]["exit_code"] == 0
+    assert pre["tool_input"] == {"command": "echo benchmark 4"} and "tool_response" not in pre
+
+
+def test_each_tool_call_differs_so_the_repeat_rule_cannot_fire(benchmark):
+    calls = {
+        json.dumps(benchmark.hook_payload("PostToolUse", "/p", "s", index), sort_keys=True)
+        for index in range(20)
+    }
+
+    assert len(calls) == 20
+
+
 def test_benchmark_waits_for_live_pid_after_status_invalidation(benchmark, monkeypatch):
     ready = {"state": "running", "alive": True, "pid": 123}
     reports = iter([{}, {"state": "starting", "alive": True}, ready])

@@ -1258,11 +1258,11 @@ def test_native_deny_round_trips_through_a_real_running_daemon(rust_adapter, tmp
         wait(lambda: status(paths)["state"] == "running")
         wait(lambda: (paths.data / "policy" / "socket.json").is_file())
 
-        # Deny first: if the daemon's very first policy response were ever slow
-        # enough to overrun the adapter's own read timeout, an "allow" sent
-        # first would fail open and pass this assertion for the wrong reason.
-        # A denied case sent first fails loudly instead of silently passing.
-        denied = invoke(
+        # The rewrite first: if the daemon's very first policy response were ever
+        # slow enough to overrun the adapter's own read timeout, an unchanged
+        # "allow" sent first would fail open and pass for the wrong reason. A
+        # rewritten case sent first fails loudly instead of silently passing.
+        rewritten = invoke(
             rust_adapter,
             paths,
             {
@@ -1274,8 +1274,14 @@ def test_native_deny_round_trips_through_a_real_running_daemon(rust_adapter, tmp
             },
             provider="claude",
         )
-        stdout = json.loads(denied.stdout)
-        assert stdout["hookSpecificOutput"]["permissionDecision"] == "deny"
+        output = json.loads(rewritten.stdout)["hookSpecificOutput"]
+        # A rewrite is an approval that carries the whole replacement input.
+        assert output["permissionDecision"] == "allow"
+        assert output["updatedInput"] == {
+            "subagent_type": "general-purpose",
+            "prompt": "p",
+            "model": "sonnet",
+        }
 
         allowed = invoke(
             rust_adapter,
@@ -1296,12 +1302,12 @@ def test_native_deny_round_trips_through_a_real_running_daemon(rust_adapter, tmp
     assert not (paths.data / "policy" / "socket.json").exists()
 
 
-def test_native_denies_a_very_long_prompt_and_records_a_control_event_with_a_real_daemon(
+def test_native_rewrites_a_very_long_prompt_and_records_a_control_event_with_a_real_daemon(
     rust_adapter, tmp_path
 ):
     """A long subagent prompt must still reach the daemon (the request budget
-    follows the adapter's own stdin cap), and the delivered deny is recorded as
-    a `control` event."""
+    follows the adapter's own stdin cap), and the delivered rewrite is recorded
+    as a `control` event."""
     from agent_watchdog.daemon import status, stop
     from agent_watchdog.inspection import database
     from agent_watchdog.registry import Registry
@@ -1348,9 +1354,119 @@ def test_native_denies_a_very_long_prompt_and_records_a_control_event_with_a_rea
             "tool_name": "Agent",
             "tool_input": {"prompt": "x" * 900_000, "model": "opus"},
         }
-        denied = invoke(rust_adapter, paths, payload, provider="claude")
-        assert json.loads(denied.stdout)["hookSpecificOutput"]["permissionDecision"] == "deny"
+        rewritten = invoke(rust_adapter, paths, payload, provider="claude")
+        output = json.loads(rewritten.stdout)["hookSpecificOutput"]
+        assert output["updatedInput"]["model"] == "sonnet"
+        assert len(output["updatedInput"]["prompt"]) == 900_000
         wait(lambda: control_rows())
+    finally:
+        stop(paths)
+        wait(lambda: not status(paths)["alive"])
+
+
+def test_native_asks_before_a_destructive_command_and_lets_others_pass_with_a_real_daemon(
+    rust_adapter, tmp_path
+):
+    """The shipped `destructive_command` rule, end to end: the real adapter asks the
+    real daemon about a Bash call (subscribed since WD-142) and renders `ask`; an
+    ordinary command is spooled and passes untouched."""
+    from agent_watchdog.daemon import status, stop
+    from agent_watchdog.registry import Registry
+
+    root = tmp_path / "project"
+    root.mkdir()
+    registry = Registry()
+    registry.add(root)
+    paths = UserPaths(tmp_path / "config.toml", tmp_path / "data", tmp_path / "runtime")
+    save_config(paths.config, registry.config)
+
+    def wait(predicate, timeout=30):
+        deadline = time.monotonic() + timeout
+        while not predicate():
+            assert time.monotonic() < deadline, "Daemon did not settle"
+            time.sleep(0.05)
+
+    def bash(command):
+        return {
+            "cwd": str(root),
+            "session_id": "session-1",
+            "hook_event_name": "PreToolUse",
+            "tool_name": "Bash",
+            "tool_input": {"command": command},
+        }
+
+    try:
+        invoke(rust_adapter, paths, {"cwd": str(root), "hook_event_name": "SessionStart"})
+        wait(lambda: status(paths)["state"] == "running")
+        wait(lambda: (paths.data / "policy" / "socket.json").is_file())
+        subscriptions = json.loads((paths.data / "policy" / "socket.json").read_text())
+        assert {"provider": "claude", "hook_event_name": "PreToolUse", "tool_name": "Bash"} in (
+            subscriptions["subscriptions"]
+        )
+
+        asked = invoke(rust_adapter, paths, bash("git reset --hard HEAD~3"), provider="claude")
+        output = json.loads(asked.stdout)["hookSpecificOutput"]
+        assert output["permissionDecision"] == "ask"
+        assert "Confirm" in output["permissionDecisionReason"]
+
+        passed = invoke(rust_adapter, paths, bash("git status"), provider="claude")
+        assert passed.stdout == ""
+    finally:
+        stop(paths)
+        wait(lambda: not status(paths)["alive"])
+
+
+def test_a_running_daemon_picks_up_a_rule_approved_while_it_runs(rust_adapter, tmp_path):
+    """No restart: approving a rule makes the next poll tick subscribe to its event,
+    and the real adapter then renders the rule's action."""
+    import hashlib
+
+    from agent_watchdog.daemon import status, stop
+    from agent_watchdog.registry import Registry
+    from agent_watchdog.rules import manage
+
+    root = tmp_path / "project"
+    root.mkdir()
+    registry = Registry()
+    registry.add(root)
+    paths = UserPaths(tmp_path / "config.toml", tmp_path / "data", tmp_path / "runtime")
+    save_config(paths.config, registry.config)
+    rule = tmp_path / "rules" / "greet.toml"
+    rule.parent.mkdir()
+    rule.write_text(
+        'schema_version = 1\nname = "greet"\nversion = "1"\norigin = "user"\n'
+        'provider = ["claude"]\nevent = "UserPromptSubmit"\n'
+        '[action]\nkind = "context"\nmessage = "Watchdog: hello from a rule."\n',
+        encoding="utf-8",
+    )
+
+    def wait(predicate, timeout=30):
+        deadline = time.monotonic() + timeout
+        while not predicate():
+            assert time.monotonic() < deadline, "Daemon did not settle"
+            time.sleep(0.05)
+
+    def subscribed():
+        document = json.loads((paths.data / "policy" / "socket.json").read_text())
+        return any(
+            item["hook_event_name"] == "UserPromptSubmit" for item in document["subscriptions"]
+        )
+
+    prompt = {"cwd": str(root), "session_id": "session-1", "hook_event_name": "UserPromptSubmit"}
+    try:
+        invoke(rust_adapter, paths, {"cwd": str(root), "hook_event_name": "SessionStart"})
+        wait(lambda: status(paths)["state"] == "running")
+        wait(lambda: (paths.data / "policy" / "socket.json").is_file())
+        assert not subscribed()
+        before = invoke(rust_adapter, paths, prompt, provider="claude")
+        assert before.stdout == ""
+
+        manage.approve(paths, "greet", hashlib.sha256(rule.read_bytes()).hexdigest())
+        wait(subscribed)
+
+        after = invoke(rust_adapter, paths, prompt, provider="claude")
+        output = json.loads(after.stdout)["hookSpecificOutput"]
+        assert output["additionalContext"] == "Watchdog: hello from a rule."
     finally:
         stop(paths)
         wait(lambda: not status(paths)["alive"])

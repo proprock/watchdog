@@ -1,0 +1,19 @@
+schema_version = 1
+name = "repeat_same_input_same_output"
+version = "1"
+origin = "builtin"
+description = "Tell the model when the same call keeps returning the same output."
+provider = ["claude"]
+event = "PostToolUse"
+priority = 100
+
+[match]
+
+[state]
+repeats_same_input_output = { min = 3 }
+
+[action]
+kind = "context"
+message = "Watchdog: the same call returned the same output {repeats} times in a row. Change the approach or ask the user."
+cooldown_seconds = 600
+max_per_turn = 1

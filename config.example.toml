@@ -40,11 +40,15 @@ log_level = "INFO"
 # content-free. Recommended: set true on your own local installation, where the
 # detail makes failures much easier to diagnose; keep false for any log you share.
 log_detail = false
-# Per-rule kill switch for the WD-014 deterministic policy rules' `intervene`
-# (tool-call-denying) behavior; each rule gets its own flag. This one covers
-# same-model subagent spawn: denying a Claude subagent spawned with the same
-# model as its coordinating conversation. Never affects the rule's own `log`
-# finding, which stays unconditional, or any other policy rule's switch.
+# Kill switch for every action the decision-channel rules send (ask, rewrite,
+# deny, context, block); see docs/rules.md. Set false here to stop them all on
+# every project, and no project can switch them back on. A project can also set
+# `policy_intervene = false` under [projects.overrides] to stop only its own.
+policy_intervene = true
+# Older, narrower switch kept as an alias: it turns off only the built-in
+# `subagent_same_model` rule, which moves a Claude subagent that would run on the
+# coordinating conversation's model tier one tier down. It never affects the rule's
+# recorded finding or any other rule.
 policy_intervene_same_model_subagent_spawn = true
 # Allow `agent-watchdog insights` to send this project's redacted evidence bundle
 # to one isolated `claude -p` call when you run it. Set false to refuse every
@@ -59,6 +63,15 @@ insights_llm_enabled = true
 # [pricing]
 # tariffs = "C:/path/to/pricing.toml"
 
+# Decision-channel rules (docs/rules.md). `agent-watchdog rules approve NAME` writes
+# `approved` for a rule file in the `rules` folder next to this file; edit the rest
+# with `rules enable|disable|reject`, or by hand:
+# [rules]
+# approved = { my_rule = "<sha256 of the approved file>" }   # a changed file is stale
+# disabled = ["destructive_command"]                         # switch a rule off
+# enabled = ["stop_without_verification"]                    # opt in a built-in that ships off
+# tiers = ["haiku", "sonnet", "opus", "fable"]               # model families, lowest first
+
 # To enable automatic registration, set an existing trusted directory and enable it:
 # auto_add_projects = true
 # trusted_projects_dir = "C:/path/to/trusted/projects"
@@ -71,5 +84,6 @@ insights_llm_enabled = true
 # Optional per-project overrides go under the project:
 # [projects.overrides]
 # capture_content = false
+# policy_intervene = false
 # policy_intervene_same_model_subagent_spawn = false
 # insights_llm_enabled = false

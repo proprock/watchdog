@@ -1,0 +1,21 @@
+schema_version = 1
+name = "destructive_command"
+version = "2"
+origin = "builtin"
+description = "Ask before a shell command that discards files, history or uncommitted work."
+provider = ["claude"]
+event = "PreToolUse"
+priority = 100
+
+[match]
+tool_name = "Bash"
+# One alternative per line of the table in docs/rules.md:
+#   rm -r/-rf/--recursive (not `git rm`), git reset --hard, git push --force/-f
+#   (--force-with-lease included), git checkout -- . (the whole tree, not one path),
+#   git clean -f..., and rm/del/erase of an .env file (not .env.example/.sample/.template).
+# The match is textual: a quoted `rm -rf` in an echo asks too, which is the cheap way to be wrong.
+input_regex = '''\b(?<!git )rm\s+(?:[^;&|]*\s)?(?:-[a-zA-Z]*[rR][a-zA-Z]*|--recursive)\b|\bgit\s+reset\s+(?:[^;&|]*\s)?--hard\b|\bgit\s+push\b[^;&|]*\s(?:--force|-f)\b|\bgit\s+checkout\s+(?:[^;&|]*\s)?--\s+\.(?=\s|$|[;&|])|\bgit\s+clean\s+(?:[^;&|]*\s)?-[a-zA-Z]*f|\b(?<!git )(?:rm|del|erase)\s+(?:[^;&|]*\s)?\S*\.env(?!\.(?:example|sample|template)\b)\b'''
+
+[action]
+kind = "ask"
+message = "Watchdog: this command can discard files or history that cannot be recovered. Confirm it before it runs."

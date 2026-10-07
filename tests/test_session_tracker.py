@@ -184,11 +184,12 @@ def test_a_failure_is_logged_once_per_episode(tmp_path, monkeypatch):
 def _capture_session(monkeypatch):
     seen = []
 
-    def rule(context):
+    # A PreToolUse/Agent call reaches exactly one built-in, so one entry per request.
+    def evaluate(rule, context, *, now):
         seen.append(context.session)
         return Decision()
 
-    monkeypatch.setattr(engine, "_RULES", (rule,))
+    monkeypatch.setattr(engine, "evaluate", evaluate)
     return seen
 
 
