@@ -246,12 +246,20 @@ fn ask_decision(
     let address = std::net::SocketAddr::from(([127, 0, 0, 1], socket.port));
     let mut stream = std::net::TcpStream::connect_timeout(&address, remaining()?).ok()?;
     stream.set_write_timeout(Some(remaining()?)).ok()?;
+    // Armed while the connection is still open: macOS rejects setsockopt (EINVAL)
+    // once both directions are closed, i.e. after our shutdown and the daemon's FIN.
+    stream.set_read_timeout(Some(remaining()?)).ok()?;
     stream.write_all(&payload).ok()?;
-    stream.shutdown(std::net::Shutdown::Write).ok()?;
+    // A peer that already answered and closed can make this fail (ENOTCONN on
+    // macOS); the read below still returns what it sent, or fails and fails open.
+    let _ = stream.shutdown(std::net::Shutdown::Write);
     let mut response = Vec::new();
     let mut chunk = [0_u8; 4096];
     loop {
-        stream.set_read_timeout(Some(remaining()?)).ok()?;
+        // Re-arm with the time left, best effort: once the peer has closed, the
+        // read cannot block, and the timeout armed above still bounds it before then.
+        let left = remaining()?;
+        let _ = stream.set_read_timeout(Some(left));
         match stream.read(&mut chunk).ok()? {
             0 => break,
             read => response.extend_from_slice(&chunk[..read]),
@@ -662,5 +670,36 @@ mod tests {
         let secret: Box<dyn std::error::Error> = r"C:\Users\someone\secret".into();
         assert_eq!(fault_category(&*secret), "other");
         assert_eq!(fault_category(&std::io::Error::other("x")), "io-error");
+    }
+
+    /// A daemon that answers the request line and closes at once must still be
+    /// heard: the closed-socket state is where macOS refuses `setsockopt`.
+    #[test]
+    fn ask_decision_reads_an_answer_from_a_peer_that_closes_immediately() {
+        use std::io::{BufRead, BufReader};
+        let listener = std::net::TcpListener::bind(("127.0.0.1", 0)).unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let server = std::thread::spawn(move || {
+            let (mut stream, _) = listener.accept().unwrap();
+            let mut line = String::new();
+            BufReader::new(stream.try_clone().unwrap())
+                .read_line(&mut line)
+                .unwrap();
+            stream
+                .write_all(br#"{"schema_version": 2, "action": "deny", "reason": "no"}"#)
+                .unwrap();
+        });
+        let socket = PolicySocket {
+            port,
+            token: "t".to_owned(),
+            timeout: Duration::from_secs(5),
+            max_request_bytes: 65536,
+            subscriptions: Vec::new(),
+        };
+        let input = json!({"hook_event_name": "PreToolUse"});
+        let decision = ask_decision(&socket, "claude", &input, &Uuid::new_v4()).unwrap();
+        server.join().unwrap();
+        assert_eq!(decision.action, "deny");
+        assert_eq!(decision.reason.as_deref(), Some("no"));
     }
 }
