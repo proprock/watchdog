@@ -121,6 +121,29 @@ def test_a_test_run_after_an_edit_verifies_it_and_a_later_edit_unverifies_it():
     assert (state.edits_in_turn, state.edited_without_verification) == (2, True)
 
 
+def test_a_test_run_through_the_powershell_tool_verifies_too():
+    state = apply(initial("claude", "s1", ""), _envelope(_edit()))
+
+    powershell = _hook(
+        "PostToolUse",
+        tool_name="PowerShell",
+        tool_input={"command": "uv run pytest -q"},
+        tool_response={"stdout": "ok", "exit_code": 0},
+    )
+    state = apply(state, _envelope(powershell, at=1))
+
+    assert state.edited_without_verification is False
+
+
+def test_only_shell_tools_can_verify():
+    state = apply(initial("claude", "s1", ""), _envelope(_edit()))
+
+    read = _hook("PostToolUse", tool_name="Read", tool_input={"command": "uv run pytest"})
+    state = apply(state, _envelope(read, at=1))
+
+    assert state.edited_without_verification is True
+
+
 def test_a_new_turn_forgets_the_previous_turns_edits():
     state = apply(initial("claude", "s1", ""), _envelope(_edit(prompt_id="p1")))
 

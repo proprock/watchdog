@@ -18,6 +18,9 @@ from agent_watchdog.facts import observed_model, turn_of
 SIGNATURE_LIMIT = 16
 # Tools that change files.  Codex edits through `apply_patch`.
 EDIT_TOOLS = frozenset({"Edit", "Write", "MultiEdit", "NotebookEdit", "apply_patch"})
+# Claude runs shell commands through `Bash`, and on Windows through `PowerShell` too;
+# both carry a `command`.
+SHELL_TOOLS = frozenset({"Bash", "PowerShell"})
 # A fixed list of test runners: the verification predicate is deliberately not configurable.
 _TEST_RUNNER = re.compile(r"\b(pytest|cargo\s+test|npm\s+(run\s+)?test|go\s+test)\b")
 
@@ -189,7 +192,7 @@ def _may_have_run_tests(tool: object, tool_input: object) -> bool:
     A shell call whose command was not captured counts: unknown is not "no
     tests ran", and a rule must not act on a claim the state cannot support.
     """
-    if tool != "Bash":
+    if tool not in SHELL_TOOLS:
         return False
     if not isinstance(tool_input, Mapping) or not isinstance(tool_input.get("command"), str):
         return True

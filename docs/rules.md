@@ -90,8 +90,9 @@ unparsable timestamp makes a predicate false: unknown is not zero.
 | `edited_without_verification = true` | Files were edited this turn and no test runner finished after the latest edit |
 | `subagent_same_tier_as_coordinator = true` | The `Agent` call's `tool_input.model` is in the same family as the coordinator's observed model and above the lowest tier |
 
-"Test runner" is a fixed list (`pytest`, `cargo test`, `npm test`, `go test`); a
-shell call whose command was not captured counts as possibly one.
+"Test runner" is a fixed list (`pytest`, `cargo test`, `npm test`, `go test`) matched
+in the command of a `Bash` or `PowerShell` call; a shell call whose command was not
+captured counts as possibly one.
 `[rules] tiers` ranks model families lowest first (default `haiku`, `sonnet`,
 `opus`, `fable`).
 
@@ -132,7 +133,7 @@ has no timeout, so these bounds are the protection.
 | Rule | Event | Action | Notes |
 |---|---|---|---|
 | `subagent_same_model` | `PreToolUse` on `Agent` | `rewrite` | The subagent's model moves one tier down. Reads the coordinator model from session state, so a spawn made by a subagent, whose own state has none, is not evaluated. Evidenced on Claude CLI; not evaluated on Claude desktop |
-| `destructive_command` | `PreToolUse` on `Bash` | `ask` | `rm -r`/`-rf`/`--recursive` (not `git rm`), `git reset --hard`, `git push --force`/`-f`/`--force-with-lease`, `git checkout -- .` (the whole tree, not one path), `git clean -f…`, and `rm`/`del`/`erase` of an `.env` file (not `.env.example`, `.sample`, `.template`). The match is textual, so a quoted `rm -rf` in an `echo` asks too |
+| `destructive_command` | `PreToolUse` on `Bash` | `ask` | `rm -r`/`-rf`/`--recursive` (not `git rm`), `git reset --hard`, `git push --force`/`-f`/`--force-with-lease`, `git checkout -- .` (the whole tree, not one path), `git clean -f…`, and `rm`/`del`/`erase` of an `.env` file (not `.env.example`, `.sample`, `.template`). The match is textual, so a quoted `rm -rf` in an `echo` asks too. It watches the `Bash` tool only: the same command run through the `PowerShell` tool that Claude uses on Windows is not asked about (WD-160) |
 | `repeat_same_input_same_output` | `PostToolUse` | `context` | Three identical calls in a row; cooldown 600 s, once per turn. The count is of calls the daemon has folded in, so it can trail the call in flight by one |
 | `stop_without_verification` | `Stop` | `block` | **Off by default** (`rules enable stop_without_verification`). Once per turn, and never while `stop_hook_active`. Inert when `capture_content = false`, since a command that was not captured may have been the test run. After a very recent test run the daemon may not have folded it in yet, so the block can be wrong for a moment |
 
