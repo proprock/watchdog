@@ -37,3 +37,7 @@ select = ["E", "F", "I", "UP", "B"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+addopts = "-m 'not platform_diagnostic'"
+markers = [
+    "platform_diagnostic: exercises locally installed platform tooling; excluded from the offline suite",
+]

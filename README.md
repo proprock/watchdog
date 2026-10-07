@@ -32,6 +32,10 @@ uv run ty check
 uv build
 ```
 
+The default pytest suite excludes host-shell diagnostics. Run them explicitly with
+`uv run pytest -m platform_diagnostic tests/platform_diagnostics` when diagnosing the
+current machine's shell setup.
+
 The package is `agent_watchdog` and the command is `agent-watchdog`, avoiding a collision with the `watchdog` filesystem monitoring library. Package publication is not currently planned.
 
 The native adapter is a separate host-specific binary and the only production hook

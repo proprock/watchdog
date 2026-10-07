@@ -33,6 +33,6 @@
   ],
   "selection": "full-suite fallback",
   "fallback_reason": "Index coverage remained metadata_changed after a fast index and detect_changes was truncated.",
-  "pytest_command": "uv run pytest --basetemp <USERPROFILE>/.pytest-tmp/watchdog-wd122-full-<PID>",
+  "pytest_command": "uv run pytest --basetemp <TEMP>/watchdog-wd122-full-<PID>",
   "pytest_result": "516 passed in 98.11s; exit code 0"
 }
