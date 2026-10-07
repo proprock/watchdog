@@ -1,0 +1,20 @@
+{
+  "by_rule": {
+    "claude": {
+      "identical_error": 150
+    },
+    "codex": {
+      "identical_error": 150
+    }
+  },
+  "events": 15000,
+  "host": "Windows-11-10.0.22621-SP0",
+  "overview_seconds": 0.136,
+  "pending_sessions": 0,
+  "put_events_per_second": 154,
+  "put_seconds": 97.548,
+  "python": "3.12.13",
+  "refresh_all_seconds": 4.178,
+  "report_findings_seconds": 0.642,
+  "sessions": 300
+}

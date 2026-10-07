@@ -2,6 +2,7 @@
 
 Historical records only: one line per task. The full text of every entry, including its verification, is in [done-archive.md](docs/evidence/done-archive.md). Active work belongs in [TODO.md](TODO.md). Preserve task IDs when moving entries here.
 
+- [x] **WD-141 - Incremental session state and materialized findings in the daemon (2026-10-07).** Pure `state.apply` folded into schema v8 `session_state` in `Store.put`, per-session `session_findings` refreshed by the daemon within a 200 ms tick budget, `overview` reading them (1.4-1.9 s on a copy of the live stores against 5-6 s), and `Context.session` for rules; the per-session findings shift and the 15 s upgrade are recorded. Verification: [wd141.md](docs/evidence/wd141.md).
 - [x] **WD-150 - Test suite and CI (2026-10-07).** Parallel suite with timeouts, a self-building `rust_adapter` fixture, shared insights helpers, split lint/test CI jobs, and Rust unit tests; the full suite fell from 174 s to 78 s and the first Linux/macOS runs exposed three fixed defects. Verification: [wd150.md](docs/evidence/wd150.md).
 - [x] **WD-148 - Revise project rules and documents for the control vector (2026-10-07).** Control, action, code-approval, and budget rules replace the observation-only and no-LLM invariants; the host-local limits moved to `LIVE.md`. Verification and the change list: [wd148.md](docs/evidence/wd148.md).
 - [x] **WD-140 - Generic decision channel between the native adapter and the daemon (2026-10-07).** The WD-014 single-rule policy socket is now a generic channel.

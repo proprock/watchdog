@@ -153,7 +153,9 @@ v4 adds debounced per-checkout Git diff fingerprints and byte counts; schema v5
 adds provider-scoped session outcome/type labels; schema v6 adds the
 [queryable telemetry projections](#schema-v6-queryable-telemetry-projections)
 described below; schema v7 adds the
-[manual annotation fields](#schema-v7-manual-annotations) used by calibration. Diff text is never stored. The core runs the bounded Git read
+[manual annotation fields](#schema-v7-manual-annotations) used by calibration; schema v8
+adds the [incremental session state and materialized findings](#schema-v8-session-state-and-materialized-findings)
+the daemon keeps. Diff text is never stored. The core runs the bounded Git read
 after spool admission; hook paths do not invoke Git or snapshot a worktree.
 Reader sources expire after 30 days without a hook observation; no vendor file is
 deleted or modified. New databases enable incremental vacuum before creating
@@ -343,6 +345,48 @@ old verdict.
 
 `purge` deletes a session's verdict rows with its label. Checkout verdicts
 survive a session purge because they do not belong to a session.
+
+## Schema v8: session state and materialized findings
+
+Schema v8 (WD-141) gives the daemon an answer it does not have to recompute: the
+current state of every conversation agent, and the findings of every session.
+Both are derived from the events, so they can always be rebuilt; neither is a source
+of truth, and `report` still analyzes the events.
+
+- `session_state(provider, session_id, agent_id, state_json, updated_at)`. One row
+  per agent; the coordinator has `agent_id = ''`. `Store.put` folds each stored event
+  into it with the pure `state.apply` inside the same transaction as the event, so a
+  duplicate event is never counted twice and a failed write leaves no state behind.
+  The JSON holds counters (calls, failures, compactions, edits since the last other
+  call, failures and compactions in the current turn), timestamps, the coordinator
+  model, and the last 16 tool-call signatures as SHA-256 hashes of the tool input and
+  output with the outcome. It holds no prompt, command, or output text; the hashes are
+  null when `capture_content` is off.
+- `session_findings(provider, session_id, rule, rule_version, fingerprint, count,
+  evidence_json, computed_at)`. The findings `analysis.analyze` returns for one
+  session, replaced as a whole by `Store.refresh_session_findings`. `evidence_json`
+  holds event ids only.
+- `session_analysis(provider, session_id, computed_at, last_event_rowid, gaps_json)`.
+  The report's `gaps` for the session and a watermark: findings are current while
+  `last_event_rowid` equals the session's newest event, and a session with newer
+  events is *pending*. This third table is not in the original design; the gaps and
+  the watermark need a row for sessions that have no finding.
+
+The daemon refreshes a pending session at most once per minute, immediately after
+`session.end`, and spends at most 200 ms per tick on it (always at least one session,
+the longest-waiting first). A failure is logged once per episode and retried after the
+interval; it never degrades the project. `overview` reads these tables and does not
+parse events. Retention and `purge` delete the rows of sessions whose events are gone.
+
+Opening a v7 store replays every event into `session_state` and analyzes every
+session in the same transaction, after a free-space check of one eighth of the
+database size (the v6 upgrade checks half). A session whose
+envelopes cannot be read is left pending instead of blocking the upgrade. The upgrade
+took 15 s in total for four stores holding 45 thousand events ([evidence](evidence/wd141.md)).
+
+Each session is analyzed alone, so a repeat that spans sessions is no longer merged
+into one finding, and one `diff_oscillation` that several sessions of a checkout share
+counts once in `overview` (same fingerprint).
 
 ## Checkout fingerprint coverage (WD-121)
 

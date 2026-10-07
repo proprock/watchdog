@@ -26,6 +26,7 @@ from agent_watchdog.events import Envelope
 from agent_watchdog.registry import Registry, Resolution
 from agent_watchdog.rules.api import Decision
 from agent_watchdog.rules.engine import decide
+from agent_watchdog.state import SessionState, StateKey
 from agent_watchdog.storage import (
     Inbox,
     QuotaExceeded,
@@ -40,6 +41,10 @@ from agent_watchdog.storage import (
 SPOOL_BYTES = 64 * 1024**2
 SPOOL_FILES = 4096
 CONTROL_REQUEST_BYTES = 8192
+# WD-141: a session's findings are recomputed at most this often, and a tick spends
+# at most this long on it (the remaining sessions wait for the next tick).
+FINDINGS_INTERVAL_SECONDS = 60.0
+FINDINGS_BUDGET_SECONDS = 0.2
 
 
 class _ConfigCache:
@@ -161,6 +166,31 @@ def _capture_diff_snapshot(
             store.record_diff_snapshot(checkout_id, *fingerprint, observed_at=now)
     except (OSError, StorageError, ValueError):
         return
+
+
+def _record_findings_failures(
+    paths: UserPaths,
+    config: Config | None,
+    project_id: UUID,
+    failures: list[Exception],
+    logged_failures: set[tuple[str, str]],
+) -> None:
+    """Log each findings-refresh failure once per episode; the project is not degraded by it."""
+    current = {(str(project_id), error_code(error)) for error in failures}
+    for _, code in current - logged_failures:
+        _log(
+            paths,
+            config,
+            "WARNING",
+            event="findings",
+            decision="unavailable",
+            error_type=code,
+            project_id=project_id,
+        )
+    logged_failures.difference_update(
+        {item for item in logged_failures if item[0] == str(project_id) and item not in current}
+    )
+    logged_failures.update(current)
 
 
 def _record_enrichment_failures(
@@ -939,7 +969,7 @@ _POLICY_DECISION_TIMEOUT_MS = 300
 # dropped (which would fail open and disable the rule).
 _POLICY_REQUEST_OVERHEAD_BYTES = 64 * 1024
 # The hook events the adapter may ask about. Static until the rule registry
-# (WD-141/WD-142) derives it from the approved rules.
+# (WD-142) derives it from the approved rules.
 _POLICY_SUBSCRIPTIONS: tuple[dict[str, str], ...] = (
     {"provider": "claude", "hook_event_name": "PreToolUse", "tool_name": "Agent"},
 )
@@ -1029,6 +1059,15 @@ class _PolicyRequestHandler(socketserver.StreamRequestHandler):
 
     server: "_PolicyServer"
 
+    def _session(self, provider: str, hook_input: Mapping[str, object]) -> SessionState | None:
+        """The daemon's in-memory state of the calling agent; None until it is observed."""
+        session_id, agent_id = hook_input.get("session_id"), hook_input.get("agent_id")
+        if self.server.watchdog_sessions is None or not isinstance(session_id, str):
+            return None
+        return self.server.watchdog_sessions.session(
+            provider, session_id, agent_id if isinstance(agent_id, str) else ""
+        )
+
     def handle(self) -> None:
         self.connection.settimeout(_POLICY_TIMEOUT_SECONDS)
         try:
@@ -1053,7 +1092,13 @@ class _PolicyRequestHandler(socketserver.StreamRequestHandler):
         paths = self.server.watchdog_paths
         try:
             config = _config_cache.load(paths.config)
-            decision = decide(paths, config, str(provider), hook_input)
+            decision = decide(
+                paths,
+                config,
+                str(provider),
+                hook_input,
+                session=self._session(str(provider), hook_input),
+            )
         except ConfigError:
             return
         except Exception as error:  # noqa: BLE001 - a rule bug must fail open, not kill the handler
@@ -1086,10 +1131,11 @@ class _PolicyServer(socketserver.ThreadingTCPServer):
     watchdog_paths: UserPaths
     watchdog_token: str
     watchdog_request_bytes: int
+    watchdog_sessions: "_SessionTracker | None"
 
 
 @contextmanager
-def _policy_server(paths: UserPaths) -> Iterator[None]:
+def _policy_server(paths: UserPaths, sessions: "_SessionTracker | None" = None) -> Iterator[None]:
     """Run the WD-014 ``intervene`` decision socket for one daemon lifetime.
 
     Loopback-only (binding wider triggers a Windows Firewall prompt for no
@@ -1124,6 +1170,7 @@ def _policy_server(paths: UserPaths) -> Iterator[None]:
         yield
         return
     server.watchdog_paths = paths
+    server.watchdog_sessions = sessions
     server.watchdog_token = secrets.token_hex(16)
     server.watchdog_request_bytes = _policy_request_bytes(paths)
     thread = threading.Thread(target=server.serve_forever, daemon=True)
@@ -1179,9 +1226,10 @@ def run(paths: UserPaths) -> int:
     try:
         with ExitStack() as owner:
             owner.enter_context(writer_lock(paths.data / "daemon.lock"))
-            owner.enter_context(_policy_server(paths))
+            sessions = _SessionTracker()
+            owner.enter_context(_policy_server(paths, sessions))
             _log(paths, None, "INFO", event="lifecycle", decision="started")
-            _poll(paths, owner)
+            _poll(paths, owner, sessions)
     except WriterBusy:
         _log(paths, None, "DEBUG", event="lifecycle", decision="already_running")
         return 0
@@ -1189,7 +1237,93 @@ def run(paths: UserPaths) -> int:
     return 0
 
 
-def _poll(paths: UserPaths, owner: ExitStack) -> None:
+class _SessionTracker:
+    """The daemon's session state (WD-141): live states and the findings refresh schedule.
+
+    The poll thread is the only writer; the decision-channel threads only read
+    ``session``.  States are immutable, so a reader never sees a half-applied one.
+    """
+
+    def __init__(self) -> None:
+        self._lock = threading.Lock()
+        self._states: dict[StateKey, SessionState] = {}
+        self._owned: dict[str, set[StateKey]] = {}
+        # project -> session -> whether it ended (refresh without waiting out the interval).
+        self._due: dict[str, dict[tuple[str, str], bool]] = {}
+        self._refreshed: dict[tuple[str, str, str], float] = {}
+
+    def session(self, provider: str, session_id: str, agent_id: str = "") -> SessionState | None:
+        with self._lock:
+            return self._states.get((provider, session_id, agent_id))
+
+    def knows(self, project_id: str) -> bool:
+        return project_id in self._owned
+
+    def load(self, project_id: str, store: Store) -> None:
+        """Replace one project's states with the stored ones: first sight, or after retention."""
+        stored = store.session_states()
+        with self._lock:
+            for key in self._owned.get(project_id, ()):
+                self._states.pop(key, None)
+            self._states.update(stored)
+            self._owned[project_id] = set(stored)
+        due = self._due.setdefault(project_id, {})
+        for session in store.pending_sessions():
+            due.setdefault(session, False)
+
+    def absorb(self, project_id: str, touched: Mapping[StateKey, SessionState]) -> None:
+        """Take over the states this tick's writes produced and schedule their sessions."""
+        touched = dict(touched)
+        with self._lock:
+            self._states.update(touched)
+            self._owned.setdefault(project_id, set()).update(touched)
+        due = self._due.setdefault(project_id, {})
+        for (provider, session_id, _), state in touched.items():
+            session = (provider, session_id)
+            due[session] = due.get(session, False) or state.ended_at is not None
+
+    def refresh(
+        self, project_id: str, store: Store, *, now: float, budget: float = FINDINGS_BUDGET_SECONDS
+    ) -> tuple[int, list[Exception]]:
+        """Refresh due sessions, longest-waiting first, until the budget is spent.
+
+        At least one session is refreshed per call, so a slow session cannot starve
+        itself.  A failed session waits out the interval before it is retried.
+        """
+        due = self._due.get(project_id, {})
+
+        def waited(session: tuple[str, str]) -> float:
+            return self._refreshed.get((project_id, *session), float("-inf"))
+
+        ready = sorted(
+            (
+                session
+                for session, ended in due.items()
+                if ended or now - waited(session) >= FINDINGS_INTERVAL_SECONDS
+            ),
+            key=waited,
+        )
+        deadline = time.monotonic() + budget
+        snapshot_cache: dict[frozenset[str], list[dict]] = {}
+        done = 0
+        failures: list[Exception] = []
+        for provider, session_id in ready:
+            if done + len(failures) and time.monotonic() >= deadline:
+                break
+            self._refreshed[project_id, provider, session_id] = now
+            try:
+                store.refresh_session_findings(provider, session_id, snapshot_cache=snapshot_cache)
+            except (OSError, StorageError, sqlite3.Error, ValueError) as error:
+                failures.append(error)
+                continue
+            del due[provider, session_id]
+            done += 1
+        return done, failures
+
+
+def _poll(paths: UserPaths, owner: ExitStack, sessions: _SessionTracker | None = None) -> None:
+    sessions = sessions or _SessionTracker()
+    logged_findings_failures: set[tuple[str, str]] = set()
     instance_id = str(uuid4())
     delay = 0.25
     maintenance: dict[str, float] = {}
@@ -1242,9 +1376,12 @@ def _poll(paths: UserPaths, owner: ExitStack) -> None:
                     root = paths.project_data(project.id)
                     limits = project.overrides.apply(config.defaults)
                     with Store(root, project.id, limits=limits) as store:
-                        if time.monotonic() >= maintenance.get(str(project.id), 0):
+                        maintained = time.monotonic() >= maintenance.get(str(project.id), 0)
+                        if maintained:
                             store.maintain()
                             maintenance[str(project.id)] = time.monotonic() + 60
+                        if maintained or not sessions.knows(str(project.id)):
+                            sessions.load(str(project.id), store)
                         result = Inbox(root, limits=limits).drain(
                             store, pipeline_telemetry=config.pipeline_telemetry
                         )
@@ -1300,6 +1437,14 @@ def _poll(paths: UserPaths, owner: ExitStack) -> None:
                                 and len(errors) < 32
                             ):
                                 errors.append(str(project.id))
+                        sessions.absorb(str(project.id), store.touched)
+                        refreshed, failures = sessions.refresh(
+                            str(project.id), store, now=time.monotonic()
+                        )
+                        activity |= bool(refreshed)
+                        _record_findings_failures(
+                            paths, config, project.id, failures, logged_findings_failures
+                        )
                         if resources.available(root, limits) < 65536 and len(errors) < 32:
                             errors.append(str(project.id))
                     activity |= bool(

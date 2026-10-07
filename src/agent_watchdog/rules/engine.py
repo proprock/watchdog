@@ -7,7 +7,8 @@ from pathlib import Path
 from agent_watchdog.analysis import model_family_matches
 from agent_watchdog.config import Config, UserPaths
 from agent_watchdog.registry import Registry
-from agent_watchdog.rules.api import ALLOW, Decision, renderable
+from agent_watchdog.rules.api import ALLOW, Context, Decision, renderable
+from agent_watchdog.state import SessionState
 from agent_watchdog.storage import StorageError
 
 SAME_MODEL_RULE = "subagent_same_model"
@@ -25,9 +26,7 @@ def _text(value: object) -> str | None:
     return value if isinstance(value, str) and value else None
 
 
-def _same_model_subagent_spawn(
-    paths: UserPaths, config: Config, provider: str, hook_input: Mapping[str, object]
-) -> Decision:
+def _same_model_subagent_spawn(ctx: Context) -> Decision:
     """Decide the WD-014 same-model-subagent-spawn rule for one PreToolUse call.
 
     Every failure path -- unresolved project, no database, no observed
@@ -41,6 +40,7 @@ def _same_model_subagent_spawn(
     disable only this rule's `intervene` without pausing the daemon or
     affecting any other rule or the rule's own `log` half.
     """
+    paths, config, provider, hook_input = ctx.paths, ctx.config, ctx.provider, ctx.hook_input
     if (
         provider != "claude"
         or hook_input.get("hook_event_name") != "PreToolUse"
@@ -93,13 +93,16 @@ def _same_model_subagent_spawn(
     )
 
 
-_RULES: tuple[Callable[[UserPaths, Config, str, Mapping[str, object]], Decision], ...] = (
-    _same_model_subagent_spawn,
-)
+_RULES: tuple[Callable[[Context], Decision], ...] = (_same_model_subagent_spawn,)
 
 
 def decide(
-    paths: UserPaths, config: Config, provider: str, hook_input: Mapping[str, object]
+    paths: UserPaths,
+    config: Config,
+    provider: str,
+    hook_input: Mapping[str, object],
+    *,
+    session: SessionState | None = None,
 ) -> Decision:
     """Return the first non-``allow`` decision the adapter can actually render.
 
@@ -113,8 +116,9 @@ def decide(
         return ALLOW
     if event in {"Stop", "SubagentStop"} and hook_input.get("stop_hook_active") is True:
         return ALLOW
+    context = Context(paths, config, provider, hook_input, session)
     for rule in _RULES:
-        decision = rule(paths, config, provider, hook_input)
+        decision = rule(context)
         if decision.action != "allow" and renderable(provider, event, decision.action):
             return decision
     return ALLOW

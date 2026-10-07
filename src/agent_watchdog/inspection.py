@@ -3,7 +3,7 @@
 import json
 import re
 import sqlite3
-from collections import Counter, defaultdict
+from collections import defaultdict
 from collections.abc import Iterator
 from contextlib import closing, contextmanager
 from datetime import datetime
@@ -20,7 +20,7 @@ from agent_watchdog.config import (
 )
 from agent_watchdog.events import Envelope
 from agent_watchdog.registry import Registry
-from agent_watchdog.storage import StorageError, persisted_envelope
+from agent_watchdog.storage import PENDING_SESSIONS, StorageError, persisted_envelope
 
 
 class SessionLabel(TypedDict):
@@ -274,7 +274,7 @@ def database(paths: UserPaths, project: Project) -> Iterator[sqlite3.Connection]
     with closing(sqlite3.connect(path.as_uri() + "?mode=ro", uri=True, timeout=0.1)) as db:
         db.execute("PRAGMA query_only=ON")
         db.execute("BEGIN")
-        if db.execute("PRAGMA user_version").fetchone()[0] not in (1, 2, 3, 4, 5, 6, 7):
+        if db.execute("PRAGMA user_version").fetchone()[0] not in (1, 2, 3, 4, 5, 6, 7, 8):
             raise StorageError("Unsupported database schema")
         if db.execute("SELECT project_id FROM metadata").fetchall() != [(str(project.id),)]:
             raise StorageError("Database belongs to a different project")
@@ -372,13 +372,18 @@ def show(
     }
 
 
-def _analysis_inputs(
-    db: sqlite3.Connection, provider: str, session_id: str | None
+def analysis_inputs(
+    db: sqlite3.Connection,
+    provider: str,
+    session_id: str | None,
+    snapshot_cache: dict[frozenset[str], list[dict]] | None = None,
 ) -> tuple[list[str], list[dict[str, object]]]:
     """Read envelope documents and diff snapshots for one provider/session, unparsed.
 
     The caller parses after its read snapshot ends: parsing is the CPU-bound part, and
-    an open snapshot keeps the daemon's WAL checkpoint from completing.
+    an open snapshot keeps the daemon's WAL checkpoint from completing.  Attributing a
+    checkout's snapshots to sessions scans every turn event of the checkout, so a caller
+    analyzing many sessions of one unchanged store passes one ``snapshot_cache``.
     """
     condition = f"{_provider_expression(db)}=?"
     parameters: list[object] = [provider]
@@ -408,7 +413,12 @@ def _analysis_inputs(
             parameters,
         )
     }
-    return documents, snapshots_for_checkouts(db, checkouts)
+    if snapshot_cache is None:
+        return documents, snapshots_for_checkouts(db, checkouts)
+    key = frozenset(checkouts)
+    if key not in snapshot_cache:
+        snapshot_cache[key] = snapshots_for_checkouts(db, checkouts)
+    return documents, snapshot_cache[key]
 
 
 def report(
@@ -422,7 +432,7 @@ def report(
     from agent_watchdog.analysis import analyze
 
     with database(paths, project) as db:
-        documents, snapshots = _analysis_inputs(db, provider, session_id)
+        documents, snapshots = analysis_inputs(db, provider, session_id)
         if session_id is not None and not documents:
             raise StorageError("Unknown session in the selected project/provider")
         # Manual verdicts recorded by a calibration review; absent until WD-012 runs.
@@ -892,18 +902,52 @@ def _overview_sections(
                 "caveat": pricing["caveat"],
                 "by_provider": pricing["by"]["provider"],
             }
-    by_provider = {}
-    for provider in ("codex", "claude"):
-        found = report(paths, project, session_id=None, provider=provider)
-        by_provider[provider] = {
-            "by_rule": dict(Counter(finding["rule"] for finding in found["findings"])),
-            "gaps": found["gaps"],
-        }
     return {
         "usage": usage_section,
-        # Unlike usage, findings are not windowed: they cover every retained event.
-        "findings": {"state": "ready", "window": "all", "by_provider": by_provider},
+        "findings": _findings_section(paths, project, schema),
         "last_activity": last_activity,
+    }
+
+
+def _findings_section(paths: UserPaths, project: Project, schema: int) -> dict[str, Any]:
+    """Read the daemon's per-session findings (WD-141) instead of re-analyzing every event.
+
+    Unlike usage, findings are not windowed: they cover every retained event, as of
+    each session's ``computed_at``.  Cross-session repeats are not merged, and one
+    diff oscillation shared by several sessions of a checkout counts once.
+    """
+    from agent_watchdog.analysis import analyze
+
+    if schema < 8:
+        return {"state": "unsupported", "reason": "schema_predates_v8"}
+    by_rule: dict[str, dict[str, int]] = {"codex": {}, "claude": {}}
+    gaps: dict[str, set[str]] = {"codex": set(), "claude": set()}
+    with database(paths, project) as db:
+        for provider, rule, count in db.execute(
+            "SELECT provider, rule, COUNT(DISTINCT fingerprint) FROM session_findings "
+            "GROUP BY provider, rule ORDER BY provider, rule"
+        ):
+            if provider in by_rule:
+                by_rule[provider][rule] = count
+        analyzed = db.execute("SELECT provider, gaps_json FROM session_analysis").fetchall()
+        as_of = db.execute("SELECT MAX(computed_at) FROM session_analysis").fetchone()[0]
+        pending = len(db.execute(PENDING_SESSIONS).fetchall())
+    for provider, document in analyzed:
+        if provider in gaps:
+            gaps[provider].update(json.loads(document))
+    return {
+        "state": "ready",
+        "window": "all",
+        "as_of": as_of,
+        "pending_sessions": pending,
+        "by_provider": {
+            provider: {
+                "by_rule": by_rule[provider],
+                # A provider with no analyzed session reports what an empty analysis lacks.
+                "gaps": sorted(gaps[provider]) or analyze([])["gaps"],
+            }
+            for provider in by_rule
+        },
     }
 
 
@@ -934,7 +978,9 @@ def overview(
         except (OSError, ValueError, sqlite3.Error) as error:
             row["database"] = {"state": "error", "error": type(error).__name__}
             result["ok"] = False
-        if row["usage"] is None or row["usage"]["state"] != "ready":
+        if any(
+            row[name] is None or row[name]["state"] != "ready" for name in ("usage", "findings")
+        ):
             result["complete"] = False
     return result
 

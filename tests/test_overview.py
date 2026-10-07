@@ -2,8 +2,6 @@
 
 import json
 import sys
-from collections import Counter
-from contextlib import contextmanager
 from datetime import UTC, datetime, timedelta
 from hashlib import sha256
 from uuid import uuid4
@@ -40,6 +38,12 @@ def rows(result):
     return {row["project"]: row for row in result["projects"]}
 
 
+def refresh_all(store):
+    """What the daemon does between ticks: materialize every session's findings."""
+    for provider, session_id in store.pending_sessions():
+        store.refresh_session_findings(provider, session_id)
+
+
 def test_overview_reports_usage_findings_and_recency_per_project(tmp_path, monkeypatch, capsys):
     register(tmp_path, "a", "b", seeded=("a", "b"))
 
@@ -65,6 +69,7 @@ def test_findings_count_a_fired_rule_per_provider(tmp_path, monkeypatch, capsys)
     with Store(paths.project_data(project.id), project.id) as store:
         for at in range(3):
             store.put(_finish(project.id, at=at))
+        refresh_all(store)
 
     _, result = overview(monkeypatch, capsys, tmp_path)
 
@@ -100,18 +105,29 @@ def _noisy_events(project, checkout):
     return events
 
 
-def _expected_per_provider(paths, project):
-    expected = {}
-    for provider in ("codex", "claude"):
-        found = inspection.report(paths, project, session_id=None, provider=provider)
-        expected[provider] = {
-            "by_rule": dict(Counter(finding["rule"] for finding in found["findings"])),
-            "gaps": found["gaps"],
+def _expected_from_session_reports(paths, project):
+    """The per-session ``report`` results, merged the way ``overview`` merges them."""
+    by_rule: dict[str, dict[str, set[str]]] = {"codex": {}, "claude": {}}
+    gaps: dict[str, set[str]] = {"codex": set(), "claude": set()}
+    listing = inspection.sessions(paths, project, limit=1000, offset=0)["sessions"]
+    for session in listing:
+        found = inspection.report(
+            paths, project, session_id=session["session_id"], provider=session["provider"]
+        )
+        gaps[session["provider"]].update(found["gaps"])
+        for finding in found["findings"]:
+            rule = by_rule[session["provider"]].setdefault(finding["rule"], set())
+            rule.add(finding["fingerprint"])
+    return {
+        provider: {
+            "by_rule": {rule: len(prints) for rule, prints in sorted(by_rule[provider].items())},
+            "gaps": sorted(gaps[provider]),
         }
-    return expected
+        for provider in by_rule
+    }
 
 
-def test_overview_findings_equal_the_per_provider_report(tmp_path, monkeypatch, capsys):
+def test_overview_findings_equal_the_sum_of_the_per_session_reports(tmp_path, monkeypatch, capsys):
     paths, projects = register(tmp_path, "noisy")
     project, checkout = projects["noisy"], uuid4()
     start = datetime(2026, 9, 21, tzinfo=UTC)
@@ -122,65 +138,67 @@ def test_overview_findings_equal_the_per_provider_report(tmp_path, monkeypatch, 
             store.record_diff_snapshot(
                 checkout, fingerprint * 64, 10, observed_at=start + timedelta(seconds=step + 1)
             )
+        refresh_all(store)
 
     _, result = overview(monkeypatch, capsys, tmp_path)
 
-    found = rows(result)["noisy"]["findings"]["by_provider"]
-    assert found == _expected_per_provider(paths, project)
-    assert "repeated_tool_outcome" in found["claude"]["by_rule"], found
-    assert "repeated_tool_outcome" in found["codex"]["by_rule"], found
-    assert "diff_oscillation" in found["codex"]["by_rule"], found
+    findings = rows(result)["noisy"]["findings"]
+    assert findings["by_provider"] == _expected_from_session_reports(paths, project)
+    assert findings["pending_sessions"] == 0 and findings["as_of"] is not None
+    by_rule = {name: item["by_rule"] for name, item in findings["by_provider"].items()}
+    assert "repeated_tool_outcome" in by_rule["claude"], findings
+    assert "repeated_tool_outcome" in by_rule["codex"], findings
+    assert "diff_oscillation" in by_rule["codex"], findings
 
 
-def test_overview_findings_on_a_pre_v6_store_equal_the_per_provider_report(
-    tmp_path, monkeypatch, capsys
-):
+def test_sessions_the_daemon_has_not_refreshed_are_pending_not_zero(tmp_path, monkeypatch, capsys):
+    paths, projects = register(tmp_path, "fresh")
+    project = projects["fresh"]
+    with Store(paths.project_data(project.id), project.id) as store:
+        for event in _noisy_events(project, uuid4()):
+            store.put(event)
+
+    _, result = overview(monkeypatch, capsys, tmp_path)
+
+    findings = rows(result)["fresh"]["findings"]
+    assert findings["pending_sessions"] == 2 and findings["as_of"] is None
+    assert findings["by_provider"]["claude"]["by_rule"] == {}
+
+
+def test_a_pre_v8_store_marks_findings_unsupported(tmp_path, monkeypatch, capsys):
     paths, projects = register(tmp_path, "old")
     project = projects["old"]
     root = paths.project_data(project.id)
     root.mkdir(parents=True)
     build_v5(root, project.id, _noisy_events(project, uuid4()))
 
-    _, result = overview(monkeypatch, capsys, tmp_path)
+    code, result = overview(monkeypatch, capsys, tmp_path)
 
-    found = rows(result)["old"]["findings"]["by_provider"]
-    assert found == _expected_per_provider(paths, project)
-    assert found["claude"]["by_rule"] and found["codex"]["by_rule"], found
+    assert code == 0 and not result["complete"]
+    expected = {"state": "unsupported", "reason": "schema_predates_v8"}
+    assert rows(result)["old"]["findings"] == expected
 
 
-def test_each_event_is_parsed_once_and_never_inside_the_read_snapshot(tmp_path, monkeypatch):
+def test_overview_reads_findings_without_parsing_any_event(tmp_path, monkeypatch):
     paths, projects = register(tmp_path, "noisy")
     project = projects["noisy"]
-    events = _noisy_events(project, uuid4())
     with Store(paths.project_data(project.id), project.id) as store:
-        for event in events:
+        for event in _noisy_events(project, uuid4()):
             store.put(event)
-    open_snapshots = 0
+        refresh_all(store)
     parsed = 0
-    real_database, real_parse = inspection.database, inspection.persisted_envelope
-
-    @contextmanager
-    def tracked(*args):
-        nonlocal open_snapshots
-        open_snapshots += 1
-        try:
-            with real_database(*args) as db:
-                yield db
-        finally:
-            open_snapshots -= 1
+    real_parse = inspection.persisted_envelope
 
     def counting(document):
         nonlocal parsed
-        assert open_snapshots == 0, "parsing must not hold the read snapshot open"
         parsed += 1
         return real_parse(document)
 
-    monkeypatch.setattr(inspection, "database", tracked)
     monkeypatch.setattr(inspection, "persisted_envelope", counting)
 
     inspection.overview(paths, since=None, until=None)
 
-    assert parsed == len(events)
+    assert parsed == 0
 
 
 def test_a_project_without_a_database_is_unknown_not_zero(tmp_path, monkeypatch, capsys):
@@ -222,7 +240,7 @@ def test_a_pre_v6_database_marks_usage_unsupported_and_keeps_other_sections(
     old = rows(result)["old"]
     assert old["database"] == {"state": "ready"}
     assert old["usage"] == {"state": "unsupported", "reason": "schema_predates_v6"}
-    assert old["findings"]["state"] == "ready"
+    assert old["findings"]["state"] == "unsupported"
     assert rows(result)["new"]["usage"]["state"] == "ready"
 
 

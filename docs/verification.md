@@ -216,6 +216,16 @@ All three used the remembered 800000-token budget with nothing truncated. Sessio
 - **Daemon and WAL.** The stores are WAL, so readers never block the writer. No `-wal` file existed on the live databases during the measurement, so growth from a pinned checkpoint was not observable; the read snapshot now ends before any parsing, which is what limits that pin.
 - **Checks.** Full offline `uv run pytest`: 767 passed, 1 skipped in 131 s. This was the fallback: graph coverage for the changed files still reported `metadata_changed` after a fast re-index, and the diff touches `tests/conftest.py`. Ruff check/format and `ty check` pass. `LIVE.md` is not updated (not an observation or control change).
 
+### WD-141 session state and materialized findings
+
+2026-10-07, Windows 11 AMD64, Python 3.12.13. Method, numbers, and the output shift are in [wd141.md](evidence/wd141.md); the synthetic run is [wd141-overview-bench.json](evidence/wd141-overview-bench.json) (`scripts/benchmark_overview.py`).
+
+- **Result.** `overview` on a synthetic store of 15000 events and 300 sessions: 0.14-0.16 s, against 0.64-0.79 s for the two per-provider `report` passes it used to run. On a read-only copy of the live stores (45457 events, five projects) the findings part fell from 6.0-7.5 s to 0.32-0.35 s and the whole command took 1.4-1.9 s (WD-138 measured 5.1-6.4 s on 36267 events); `usage` (1.0-1.1 s) and `summary` (0.3 s) now dominate (WD-158).
+- **Not the same output.** `overview` findings are per session. On the live copy `diff_oscillation` and `same_model_subagent_spawn` counts are unchanged, while `repeated_tool_outcome` fell from 51/46 and 48/3 (codex/claude, two large projects) to 25/12 and 41/1, because a command repeated across several sessions no longer adds up to one finding. `report` is unchanged and still project-wide.
+- **Upgrade.** Opening a v7 store replays its events: 8.4 s and 5.2 s for the two large stores (24167 and 18288 events), 15 s in total. The first version took 38 s and 17 s because it re-attributed the checkout's diff snapshots for every session; one snapshot cache per batch removed that.
+- **Write path.** The per-event state upsert is inside run-to-run noise: 2000 events took 10.9 s and 9.9 s without it and 10.3 s and 10.5 s with it. Writes are bound by the `synchronous=FULL` commit, about 155-200 events/s on this host.
+- **Checks.** See [wd141.md](evidence/wd141.md#checks).
+
 ### WD-139 Codex hook-context live probe
 
 2026-10-06, Windows AMD64, Codex CLI 0.160.0. The opt-in `codex-context` probe used a temporary profile and a scratch Git repository outside every registered project. It ran one harmless Bash call and did not call the Watchdog adapter.

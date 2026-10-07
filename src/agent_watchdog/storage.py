@@ -18,6 +18,18 @@ from agent_watchdog import facts, resources
 from agent_watchdog.config import Limits
 from agent_watchdog.events import Envelope
 from agent_watchdog.files import atomic_write as atomic_write
+from agent_watchdog.state import SessionState, StateKey, fold, initial, key_of
+from agent_watchdog.state import apply as apply_state
+
+# Sessions whose events outran their materialized findings (schema v8, WD-141).
+PENDING_SESSIONS = (
+    "SELECT e.provider, e.session_id FROM events e WHERE e.session_id IS NOT NULL "
+    "GROUP BY e.provider, e.session_id "
+    "HAVING MAX(e.rowid) > COALESCE((SELECT a.last_event_rowid FROM session_analysis a "
+    "WHERE a.provider = e.provider AND a.session_id = e.session_id), 0)"
+)
+# Tables keyed by (provider, session_id) that follow the session's events.
+SESSION_TABLES = ("session_state", "session_findings", "session_analysis")
 
 # Manual annotation vocabularies (schema v7, WD-012 calibration).
 PROGRESS_STATES = ("progress", "slow", "stuck", "externally_blocked")
@@ -142,6 +154,8 @@ class Store:
         self.limits = limits or Limits()
         self._connection: sqlite3.Connection | None = None
         self._stack = ExitStack()
+        # Session states written since this store opened; also the read-through cache.
+        self.touched: dict[StateKey, SessionState] = {}
 
     @property
     def connection(self) -> sqlite3.Connection:
@@ -189,7 +203,7 @@ class Store:
     def _initialize(self) -> None:
         db = self.connection
         version = db.execute("PRAGMA user_version").fetchone()[0]
-        if version not in (0, 1, 2, 3, 4, 5, 6, 7):
+        if version not in (0, 1, 2, 3, 4, 5, 6, 7, 8):
             raise StorageError("Unsupported database schema; database left unchanged")
         if version == 0:
             tables = db.execute("SELECT name FROM sqlite_master WHERE name NOT LIKE 'sqlite_%'")
@@ -358,6 +372,13 @@ class Store:
                     "PRIMARY KEY(checkout_id, rule, rule_version, evidence_fingerprint))"
                 )
                 db.execute("PRAGMA user_version=7")
+        if version < 8:
+            size = (self.root / "events.sqlite3").stat().st_size
+            if resources.available(self.root, self.limits) < max(65536, size // 8):
+                raise QuotaExceeded("Insufficient space for the v8 session-state migration")
+            with self._transaction():
+                self._migrate_v8()
+                db.execute("PRAGMA user_version=8")
         # Existing v1 stores need a one-time rebuild to support physical reclamation.
         if db.execute("PRAGMA auto_vacuum").fetchone()[0] != 2:
             size = (self.root / "events.sqlite3").stat().st_size
@@ -439,6 +460,7 @@ class Store:
             self._maintain(datetime.now(UTC), needed)
         if resources.available(self.root, self.limits) < needed:
             raise QuotaExceeded("Project quota or disk reserve reached")
+        applied: SessionState | None = None
         with self._transaction() as db:
             directory = self.root / "artifacts"
             if directory.is_symlink() or directory.is_junction():
@@ -470,15 +492,184 @@ class Store:
                 [(event_id, name, references[name], len(data)) for name, data in artifacts.items()],
             )
             db.execute("INSERT INTO receipts VALUES (?, ?)", (event_id, fingerprint))
-            self._project_fact(db, event_id, event.kind, document, cursor.lastrowid)
+            envelope = json.loads(document)
+            self._project_fact(db, event_id, event.kind, envelope, cursor.lastrowid)
+            applied = self._apply_state(db, envelope)
             self._register_transcript_source(db, event)
+        if applied is not None:
+            self.touched[applied.provider, applied.session_id, applied.agent_id] = applied
         return True
 
+    def _apply_state(self, db: sqlite3.Connection, envelope: dict) -> SessionState | None:
+        """Fold the event into its session state row, atomically with the event itself."""
+        key = key_of(envelope)
+        if key is None:
+            return None
+        current = self.touched.get(key) or self._load_state(db, key) or initial(*key)
+        updated = apply_state(current, envelope)
+        self._write_state(db, updated)
+        return updated
+
+    @staticmethod
+    def _load_state(db: sqlite3.Connection, key: StateKey) -> SessionState | None:
+        row = db.execute(
+            "SELECT state_json FROM session_state WHERE provider=? AND session_id=? AND agent_id=?",
+            key,
+        ).fetchone()
+        return SessionState.from_json(row[0]) if row else None
+
+    @staticmethod
+    def _write_state(db: sqlite3.Connection, state: SessionState) -> None:
+        db.execute(
+            "INSERT INTO session_state (provider, session_id, agent_id, state_json, updated_at) "
+            "VALUES (?, ?, ?, ?, ?) ON CONFLICT(provider, session_id, agent_id) "
+            "DO UPDATE SET state_json=excluded.state_json, updated_at=excluded.updated_at",
+            (
+                state.provider,
+                state.session_id,
+                state.agent_id,
+                state.to_json(),
+                datetime.now(UTC).isoformat(),
+            ),
+        )
+
+    def session_states(self) -> dict[StateKey, SessionState]:
+        """Every stored session state, for the daemon to restore after a restart."""
+        rows = self.connection.execute("SELECT state_json FROM session_state").fetchall()
+        states = (SessionState.from_json(row[0]) for row in rows)
+        return {(item.provider, item.session_id, item.agent_id): item for item in states}
+
+    def pending_sessions(self) -> list[tuple[str, str]]:
+        """Sessions with events newer than their materialized findings."""
+        return [(row[0], row[1]) for row in self.connection.execute(PENDING_SESSIONS)]
+
+    def refresh_session_findings(
+        self,
+        provider: str,
+        session_id: str,
+        *,
+        now: datetime | None = None,
+        snapshot_cache: dict[frozenset[str], list[dict]] | None = None,
+    ) -> None:
+        """Re-run ``analyze`` over one session and replace its materialized findings.
+
+        Pass one ``snapshot_cache`` for a batch of sessions of an unchanged store: the
+        checkout's diff-snapshot attribution is the costly part and is the same for all.
+        """
+        computed = self._analyze_session(provider, session_id, snapshot_cache)
+        with resources.admission(self.root), self._transaction() as db:
+            self._store_findings(db, provider, session_id, computed, now or datetime.now(UTC))
+
+    def _analyze_session(
+        self,
+        provider: str,
+        session_id: str,
+        snapshot_cache: dict[frozenset[str], list[dict]] | None = None,
+    ) -> tuple[dict, int] | None:
+        # Lazy: inspection imports this module for its error and envelope types.
+        from agent_watchdog import inspection
+        from agent_watchdog.analysis import analyze
+
+        db = self.connection
+        documents, snapshots = inspection.analysis_inputs(db, provider, session_id, snapshot_cache)
+        if not documents:
+            return None
+        last_rowid = db.execute(
+            "SELECT MAX(rowid) FROM events WHERE provider=? AND session_id=?",
+            (provider, session_id),
+        ).fetchone()[0]
+        report = analyze((persisted_envelope(item) for item in documents), snapshots=snapshots)
+        return report, last_rowid
+
+    @staticmethod
+    def _store_findings(
+        db: sqlite3.Connection,
+        provider: str,
+        session_id: str,
+        computed: tuple[dict, int] | None,
+        now: datetime,
+    ) -> None:
+        for table in ("session_findings", "session_analysis"):
+            db.execute(
+                f"DELETE FROM {table} WHERE provider=? AND session_id=?", (provider, session_id)
+            )
+        if computed is None:
+            return
+        report, last_rowid = computed
+        stamp = now.isoformat()
+        db.execute(
+            "INSERT INTO session_analysis VALUES (?, ?, ?, ?, ?)",
+            (provider, session_id, stamp, last_rowid, json.dumps(report["gaps"])),
+        )
+        db.executemany(
+            "INSERT OR REPLACE INTO session_findings VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            [
+                (
+                    provider,
+                    session_id,
+                    finding["rule"],
+                    finding["rule_version"],
+                    finding["fingerprint"],
+                    finding["count"],
+                    json.dumps(finding["evidence_ids"]),
+                    stamp,
+                )
+                for finding in report["findings"]
+            ],
+        )
+
+    def _migrate_v8(self) -> None:
+        """Create the session tables and replay every stored event into them."""
+        db = self.connection
+        db.execute(
+            "CREATE TABLE IF NOT EXISTS session_state ("
+            "provider TEXT NOT NULL, session_id TEXT NOT NULL, agent_id TEXT NOT NULL, "
+            "state_json TEXT NOT NULL, updated_at TEXT NOT NULL, "
+            "PRIMARY KEY(provider, session_id, agent_id))"
+        )
+        db.execute(
+            "CREATE TABLE IF NOT EXISTS session_findings ("
+            "provider TEXT NOT NULL, session_id TEXT NOT NULL, rule TEXT NOT NULL, "
+            "rule_version TEXT NOT NULL, fingerprint TEXT NOT NULL, count INTEGER NOT NULL, "
+            "evidence_json TEXT NOT NULL, computed_at TEXT NOT NULL, "
+            "PRIMARY KEY(provider, session_id, rule, rule_version, fingerprint))"
+        )
+        # Also the staleness watermark: findings are current while last_event_rowid
+        # equals the session's newest event.
+        db.execute(
+            "CREATE TABLE IF NOT EXISTS session_analysis ("
+            "provider TEXT NOT NULL, session_id TEXT NOT NULL, computed_at TEXT NOT NULL, "
+            "last_event_rowid INTEGER NOT NULL, gaps_json TEXT NOT NULL, "
+            "PRIMARY KEY(provider, session_id))"
+        )
+        for table in SESSION_TABLES:
+            db.execute(f"DELETE FROM {table}")
+        envelopes = (
+            json.loads(row[0]) for row in db.execute("SELECT envelope FROM events ORDER BY rowid")
+        )
+        for state in fold(envelopes).values():
+            self._write_state(db, state)
+        now = datetime.now(UTC)
+        snapshot_cache: dict[frozenset[str], list[dict]] = {}
+        for provider, session_id in db.execute(
+            "SELECT DISTINCT provider, session_id FROM events WHERE session_id IS NOT NULL"
+        ).fetchall():
+            try:
+                computed = self._analyze_session(provider, session_id, snapshot_cache)
+                self._store_findings(db, provider, session_id, computed, now)
+            except ValueError:
+                # An unreadable envelope must not block the upgrade; the session stays pending.
+                continue
+
     def _project_fact(
-        self, db: sqlite3.Connection, event_id: str, kind: str, document: str, rowid: int | None
+        self,
+        db: sqlite3.Connection,
+        event_id: str,
+        kind: str,
+        envelope: dict,
+        rowid: int | None,
     ) -> None:
         """Materialize the v6 ``event_facts`` row for a freshly inserted event."""
-        envelope = json.loads(document)
         inherited: tuple[str | None, str | None] = (None, None)
         parent_turn: str | None = None
         if kind == "usage" and rowid is not None:
@@ -846,6 +1037,12 @@ class Store:
                 "DELETE FROM finding_verdicts WHERE provider=? AND session_id=?",
                 (provider, session_id),
             )
+            for table in SESSION_TABLES:
+                db.execute(
+                    f"DELETE FROM {table} WHERE provider=? AND session_id=?", (provider, session_id)
+                )
+            for key in [key for key in self.touched if key[:2] == (provider, session_id)]:
+                del self.touched[key]
             db.execute(
                 "DELETE FROM transcript_sources WHERE provider=? AND session_id=?",
                 (provider, session_id),
@@ -884,6 +1081,21 @@ class Store:
         for table in ("artifacts", "receipts", "event_facts", "events"):
             self.connection.execute(f"DELETE FROM {table} WHERE event_id=?", (event_id,))
 
+    def _prune_session_rows(self) -> None:
+        """Drop session state and findings whose events retention has deleted."""
+        for table in SESSION_TABLES:
+            self.connection.execute(
+                f"DELETE FROM {table} WHERE NOT EXISTS (SELECT 1 FROM events e "
+                f"WHERE e.session_id = {table}.session_id AND e.provider = {table}.provider)"
+            )
+        self.touched = {
+            key: state
+            for key, state in self.touched.items()
+            if self.connection.execute(
+                "SELECT 1 FROM session_state WHERE provider=? AND session_id=? AND agent_id=?", key
+            ).fetchone()
+        }
+
     def _reclaim(self) -> None:
         db = self.connection
         referenced = {row[0] for row in db.execute("SELECT DISTINCT digest FROM artifacts")}
@@ -920,6 +1132,7 @@ class Store:
                     self._delete(event_id)
                 elif cutoff_content is not None and event.received_at < cutoff_content:
                     self._strip_content(event_id, document)
+            self._prune_session_rows()
             if cutoff_content is not None:
                 db.execute(
                     "DELETE FROM transcript_sources WHERE last_seen < ?",
@@ -958,6 +1171,7 @@ class Store:
                     "SELECT event_id FROM events WHERE session_id IS ?", (session_id,)
                 ).fetchall():
                     self._delete(event_id)
+                self._prune_session_rows()
             self._reclaim()
             if resources.available(self.root, self.limits) >= needed:
                 return

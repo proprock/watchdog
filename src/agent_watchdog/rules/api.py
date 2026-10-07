@@ -5,6 +5,9 @@ from dataclasses import dataclass
 from typing import Literal
 from uuid import UUID
 
+from agent_watchdog.config import Config, UserPaths
+from agent_watchdog.state import SessionState
+
 Action = Literal["allow", "deny", "ask", "rewrite", "context", "block"]
 
 ACTIONS: frozenset[str] = frozenset({"allow", "deny", "ask", "rewrite", "context", "block"})
@@ -29,6 +32,21 @@ _RENDERABLE: Mapping[str, Mapping[str, frozenset[str]]] = {
         "PreCompact": frozenset({"context"}),
     }
 }
+
+
+@dataclass(frozen=True, slots=True)
+class Context:
+    """What a rule sees for one hook call; read-only.
+
+    ``session`` is the daemon's in-memory state of the calling agent, or None when
+    nothing was observed for it yet (unknown is not zero).
+    """
+
+    paths: UserPaths
+    config: Config
+    provider: str
+    hook_input: Mapping[str, object]
+    session: SessionState | None = None
 
 
 @dataclass(frozen=True, slots=True)

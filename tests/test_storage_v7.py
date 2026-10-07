@@ -43,8 +43,8 @@ def store(tmp_path):
         yield opened
 
 
-def test_schema_is_version_7(store):
-    assert store.connection.execute("PRAGMA user_version").fetchone()[0] == 7
+def test_schema_keeps_the_v7_annotation_columns(store):
+    assert store.connection.execute("PRAGMA user_version").fetchone()[0] >= 7
     columns = {row[1] for row in store.connection.execute("PRAGMA table_info(session_labels)")}
     assert {"progress_state", "reviewer_note"} <= columns
 
@@ -163,7 +163,7 @@ def test_a_v6_database_upgrades_without_losing_labels(tmp_path):
         raw.execute("PRAGMA user_version=6")
 
     with Store(root, PROJECT) as upgraded:
-        assert upgraded.connection.execute("PRAGMA user_version").fetchone()[0] == 7
+        assert upgraded.connection.execute("PRAGMA user_version").fetchone()[0] >= 7
         assert upgraded.connection.execute(
             "SELECT task_outcome, task_type, progress_state FROM session_labels"
         ).fetchall() == [("partial", "debug", None)]
