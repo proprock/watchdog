@@ -6,17 +6,15 @@ the `claude -p` runner is exercised against a recorded fake of `_proc.run`.
 
 import json
 import subprocess
-import sys
 import tempfile
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
-from typing import Any
 from uuid import uuid4
 
 import pytest
+from helpers.insights import invoke, runner_for
 
 from agent_watchdog import insights
-from agent_watchdog.cli import main
 from agent_watchdog.config import Config, Limits, Overrides, Project, UserPaths, save_config
 from agent_watchdog.events import Envelope
 from agent_watchdog.insights import budget, bundle, contract, errors, llm, render
@@ -250,24 +248,7 @@ class FakeRunner:
         return self.result
 
 
-def _run(paths, project, runner, **overrides):
-    options: dict[str, Any] = {
-        "alias": "repo",
-        "mode": "errors",
-        "provider": None,
-        "session_id": None,
-        "since": T0 - timedelta(days=1),
-        "until": None,
-        "model": "sonnet",
-        "effort": None,
-        "timeout": 60.0,
-        "max_bundle_tokens": None,
-        "language": "English",
-        "dry_run": False,
-        "output": None,
-        "runner": runner,
-    }
-    return insights.run(paths, project, **(options | overrides))
+_run = runner_for("errors", since=T0 - timedelta(days=1))
 
 
 def test_run_grounds_each_recommendation_in_the_bundle(tmp_path):
@@ -443,21 +424,7 @@ def test_markdown_keeps_a_draft_that_contains_its_own_code_fence():
 
 
 def _cli(monkeypatch, capsys, paths, *args):
-    monkeypatch.setattr(
-        sys,
-        "argv",
-        [
-            "agent-watchdog",
-            "--config",
-            str(paths.config),
-            "--data",
-            str(paths.data),
-            "--runtime",
-            str(paths.runtime),
-            *args,
-        ],
-    )
-    code = main()
+    code = invoke(monkeypatch, paths, *args)
     return code, json.loads(capsys.readouterr().out)
 
 

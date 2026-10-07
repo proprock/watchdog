@@ -4,7 +4,6 @@ import json
 import os
 import subprocess
 import sys
-from pathlib import Path
 from uuid import uuid4
 
 import pytest
@@ -16,26 +15,6 @@ from agent_watchdog.hook_install import change
 from agent_watchdog.storage import Inbox, Store, writer_lock
 
 RUNNING = {"state": "running", "alive": True, "queues": {}, "losses": {}}
-
-
-@pytest.fixture
-def rust_adapter():
-    suffix = ".exe" if os.name == "nt" else ""
-    installed = os.environ.get("WATCHDOG_NATIVE_ADAPTER")
-    binary = (
-        Path(installed)
-        if installed
-        else Path(__file__).parents[1]
-        / "native"
-        / "target"
-        / "release"
-        / f"agent-watchdog-hook{suffix}"
-    )
-    assert binary.is_file(), (
-        "Set WATCHDOG_NATIVE_ADAPTER to an installed adapter or build it with "
-        "cargo build --release --manifest-path native/Cargo.toml"
-    )
-    return binary
 
 
 @pytest.fixture

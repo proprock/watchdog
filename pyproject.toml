@@ -21,6 +21,8 @@ agent-watchdog = "agent_watchdog.cli:main"
 [dependency-groups]
 dev = [
     "pytest>=8,<10",
+    "pytest-timeout>=2,<3",
+    "pytest-xdist>=3,<4",
     "ruff>=0.11,<1",
     "ty>=0.0.78",
 ]
@@ -37,7 +39,8 @@ select = ["E", "F", "I", "UP", "B"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-addopts = "-m 'not platform_diagnostic'"
+addopts = "-m 'not platform_diagnostic' -n auto --timeout=180"
 markers = [
     "platform_diagnostic: exercises locally installed platform tooling; excluded from the offline suite",
+    "native: needs the native hook adapter (built or found by the rust_adapter fixture)",
 ]

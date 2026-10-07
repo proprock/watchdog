@@ -6,15 +6,14 @@ from datetime import timedelta
 from uuid import uuid4
 
 import pytest
+from helpers.insights import store
 from test_storage_v6 import BASE, claude_usage, codex_usage
 
 from agent_watchdog import insights
 from agent_watchdog.cli import main
-from agent_watchdog.config import Config, Project, UserPaths, save_config
 from agent_watchdog.events import Envelope
 from agent_watchdog.insights import budget, context, llm, timeline, tokens
 from agent_watchdog.inspection import database, tool_finishes
-from agent_watchdog.storage import Store
 
 SESSION = "s1"
 
@@ -59,16 +58,6 @@ def finish(offset, command, response="ok", *, tool="Bash", agent_id=None):
         content={"tool_input": {"command": command}, "tool_response": response},
         metadata={},
     )
-
-
-def store(tmp_path, events):
-    project = Project(id=uuid4(), root=tmp_path / "repo")
-    save_config(tmp_path / "config.toml", Config(projects=(project,)))
-    paths = UserPaths(tmp_path / "config.toml", tmp_path / "data", tmp_path / "runtime")
-    with Store(paths.project_data(project.id), project.id) as writer:
-        for event in events:
-            writer.put(event.model_copy(update={"project_id": project.id}))
-    return paths, project
 
 
 def load(paths, project):

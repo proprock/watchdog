@@ -17,6 +17,7 @@ directory holds none, so the default offline suite is unchanged without a corpus
 """
 
 import os
+import shutil
 import subprocess
 from pathlib import Path
 
@@ -26,6 +27,7 @@ from agent_watchdog import _proc
 from agent_watchdog._proc import hidden_creationflags
 
 _TRUTHY = {"1", "true", "yes", "on"}
+REPO_ROOT = Path(__file__).parents[1]
 LOCAL_CORPUS = Path(__file__).parent / "local"
 CORPUS_PROVIDERS = ("claude", "codex")
 _original_popen_init = None
@@ -66,6 +68,53 @@ def _keep_runner_priority():
     setattr(_proc, "lower_own_priority", lambda: None)  # noqa: B010
     yield
     setattr(_proc, "lower_own_priority", original)  # noqa: B010
+
+
+def pytest_collection_modifyitems(items):
+    """Mark every test that needs the native adapter so ``-m 'not native'`` skips it."""
+    for item in items:
+        if "rust_adapter" in getattr(item, "fixturenames", ()):
+            item.add_marker(pytest.mark.native)
+
+
+@pytest.fixture(scope="session")
+def rust_adapter() -> Path:
+    """Path to the native hook adapter, found, built, or skipped.
+
+    Order: ``WATCHDOG_NATIVE_ADAPTER`` (an installed adapter, never rebuilt), then
+    ``cargo build --release --locked`` when cargo is on PATH (an incremental no-op once
+    built, and it keeps a stale binary from passing), then a binary already in
+    ``native/target``. With neither cargo nor a binary the test is skipped, unless
+    ``WATCHDOG_REQUIRE_NATIVE`` is truthy (CI), where it fails instead. Concurrent xdist
+    workers are safe: cargo serializes on its own build-directory lock.
+    """
+    suffix = ".exe" if os.name == "nt" else ""
+    installed = os.environ.get("WATCHDOG_NATIVE_ADAPTER")
+    if installed:
+        binary = Path(installed)
+        assert binary.is_file(), f"WATCHDOG_NATIVE_ADAPTER is not a file: {binary}"
+        return binary
+    manifest = REPO_ROOT / "native" / "Cargo.toml"
+    binary = REPO_ROOT / "native" / "target" / "release" / f"agent-watchdog-hook{suffix}"
+    if shutil.which("cargo"):
+        build = subprocess.run(
+            ["cargo", "build", "--release", "--locked", "--manifest-path", str(manifest)],
+            capture_output=True,
+            text=True,
+            timeout=900,
+        )
+        assert build.returncode == 0, f"cargo build failed:\n{build.stderr[-4000:]}"
+    elif not binary.is_file():
+        message = (
+            "native adapter unavailable: install cargo, build it with "
+            "`cargo build --release --locked --manifest-path native/Cargo.toml`, "
+            "or set WATCHDOG_NATIVE_ADAPTER"
+        )
+        if os.environ.get("WATCHDOG_REQUIRE_NATIVE", "").strip().lower() in _TRUTHY:
+            pytest.fail(message)
+        pytest.skip(message)
+    assert binary.is_file(), f"cargo build succeeded but {binary} is missing"
+    return binary
 
 
 def local_corpus(root: Path = LOCAL_CORPUS) -> list[tuple[str, Path]]:

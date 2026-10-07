@@ -2,10 +2,9 @@
 
 import json
 from datetime import timedelta
-from typing import Any
 
 import pytest
-from test_insights_context_tokens import store
+from helpers.insights import runner_for, store
 from test_insights_modes import NONE, call, event, request
 from test_insights_session import _cli
 from test_storage_v6 import BASE
@@ -261,24 +260,7 @@ def test_the_budget_cut_drops_the_calmest_sessions_first(tmp_path):
     assert fitted["facts"]["sessions_total"] == 3
 
 
-def _run(paths, project, runner, **overrides):
-    options: dict[str, Any] = {
-        "alias": "repo",
-        "mode": "sessions",
-        "provider": None,
-        "session_id": None,
-        "since": BASE - timedelta(days=1),
-        "until": None,
-        "model": "sonnet",
-        "effort": None,
-        "timeout": 60.0,
-        "max_bundle_tokens": None,
-        "language": "English",
-        "dry_run": False,
-        "output": None,
-        "runner": runner,
-    }
-    return insights.run(paths, project, **(options | overrides))
+_run = runner_for("sessions", since=BASE - timedelta(days=1))
 
 
 def _answer(item, evidence):

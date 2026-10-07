@@ -5,7 +5,7 @@ from datetime import timedelta
 from typing import Any
 
 import pytest
-from test_insights_context_tokens import store
+from helpers.insights import runner_for, store
 from test_insights_modes import NONE, _prompt, _start, call
 from test_insights_session import _cli
 from test_insights_sessions import _calm, _stuck
@@ -255,24 +255,7 @@ def _recommendation(item_ids, evidence_ids):
     }
 
 
-def _run(paths, project, runner, **overrides):
-    options: dict[str, Any] = {
-        "alias": "repo",
-        "mode": "digest",
-        "provider": None,
-        "session_id": None,
-        "since": BASE - timedelta(days=1),
-        "until": None,
-        "model": "sonnet",
-        "effort": None,
-        "timeout": 60.0,
-        "max_bundle_tokens": None,
-        "language": "English",
-        "dry_run": False,
-        "output": None,
-        "runner": runner,
-    }
-    return insights.run(paths, project, **(options | overrides))
+_run = runner_for("digest", since=BASE - timedelta(days=1))
 
 
 def test_an_answer_is_grounded_across_modes_and_rendered(tmp_path):

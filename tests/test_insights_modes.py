@@ -5,7 +5,7 @@ from datetime import timedelta
 from uuid import uuid4
 
 import pytest
-from test_insights_context_tokens import store
+from helpers.insights import store
 from test_storage_v6 import BASE, claude_usage
 
 from agent_watchdog import insights

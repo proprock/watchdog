@@ -21,9 +21,9 @@ Python 3.12+, uv, and Rust stable with the platform linker/build tools. The comm
 
 ```console
 uv sync --locked
-cargo build --release --locked --manifest-path native/Cargo.toml
 cargo fmt --manifest-path native/Cargo.toml --check
 cargo clippy --locked --manifest-path native/Cargo.toml -- -D warnings
+cargo test --locked --manifest-path native/Cargo.toml
 uv run agent-watchdog --help
 uv run pytest
 uv run ruff check .
@@ -31,6 +31,13 @@ uv run ruff format --check .
 uv run ty check
 uv build
 ```
+
+`uv run pytest` runs in parallel (`pytest-xdist`, `-n auto`) with a 180 s per-test timeout
+(`pytest-timeout`); pass `-n 0` to run serially when debugging. Tests that drive the native
+adapter share one session fixture, `rust_adapter`, which uses `WATCHDOG_NATIVE_ADAPTER` when
+set, otherwise runs `cargo build --release --locked` (a no-op when current), and otherwise
+skips with a message. Those tests carry the `native` marker, so `-m "not native"` runs the
+Python-only part. CI sets `WATCHDOG_REQUIRE_NATIVE=1`, which turns that skip into a failure.
 
 The default pytest suite excludes host-shell diagnostics. Run them explicitly with
 `uv run pytest -m platform_diagnostic tests/platform_diagnostics` when diagnosing the

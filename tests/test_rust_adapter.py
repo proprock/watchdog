@@ -1,13 +1,11 @@
 import io
 import json
-import os
 import socket
 import subprocess
 import sys
 import threading
 import time
 from datetime import UTC, datetime
-from pathlib import Path
 from uuid import uuid4
 
 import pytest
@@ -24,26 +22,6 @@ from agent_watchdog.config import (
 from agent_watchdog.daemon import _drain_spool, write_spool_limits
 from agent_watchdog.events import Envelope
 from agent_watchdog.storage import Inbox, Store, writer_lock
-
-
-@pytest.fixture
-def rust_adapter():
-    suffix = ".exe" if os.name == "nt" else ""
-    installed = os.environ.get("WATCHDOG_NATIVE_ADAPTER")
-    binary = (
-        Path(installed)
-        if installed
-        else Path(__file__).parents[1]
-        / "native"
-        / "target"
-        / "release"
-        / f"agent-watchdog-hook{suffix}"
-    )
-    assert binary.is_file(), (
-        "Set WATCHDOG_NATIVE_ADAPTER to an installed adapter or build it with "
-        "cargo build --release --manifest-path native/Cargo.toml"
-    )
-    return binary
 
 
 @pytest.fixture

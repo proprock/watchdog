@@ -1,17 +1,14 @@
 """Offline contracts for `insights session`, the WD-014 second opinion (WD-126)."""
 
 import json
-import sys
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
 import pytest
-from test_insights_context_tokens import store
+from helpers.insights import invoke, runner_for, store
 from test_insights_modes import call, event, request
 from test_storage_v6 import BASE
 
-from agent_watchdog import insights
-from agent_watchdog.cli import main
 from agent_watchdog.insights import llm, render, session
 from agent_watchdog.storage import StorageError
 
@@ -65,24 +62,7 @@ def test_session_bundle_holds_the_task_turns_calls_and_totals(tmp_path):
     assert oldest["ended"] is True
 
 
-def _run(paths, project, runner, **overrides):
-    options: dict[str, Any] = {
-        "alias": "repo",
-        "mode": "session",
-        "provider": "claude",
-        "session_id": "s1",
-        "since": None,
-        "until": None,
-        "model": "sonnet",
-        "effort": None,
-        "timeout": 60.0,
-        "max_bundle_tokens": None,
-        "language": "English",
-        "dry_run": False,
-        "output": None,
-        "runner": runner,
-    }
-    return insights.run(paths, project, **(options | overrides))
+_run = runner_for("session", provider="claude", session_id="s1")
 
 
 def _answer(evidence):
@@ -139,21 +119,7 @@ def test_render_keeps_other_modes_free_of_a_judgement_section():
 
 
 def _cli(monkeypatch, capsys, paths, *args):
-    monkeypatch.setattr(
-        sys,
-        "argv",
-        [
-            "agent-watchdog",
-            "--config",
-            str(paths.config),
-            "--data",
-            str(paths.data),
-            "--runtime",
-            str(paths.runtime),
-            *args,
-        ],
-    )
-    return main()
+    return invoke(monkeypatch, paths, *args)
 
 
 def test_cli_days_sets_the_window_and_excludes_since(tmp_path, monkeypatch, capsys):

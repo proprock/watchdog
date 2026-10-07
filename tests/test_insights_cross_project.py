@@ -1,19 +1,18 @@
 """Offline contracts for `insights --all-projects` (WD-132)."""
 
 import json
-import sys
 from datetime import timedelta
 from pathlib import Path
 from typing import Any
 from uuid import uuid4
 
 import pytest
+from helpers.insights import invoke
 from test_insights import T0, TRACEBACK_A, FakeRunner, _finish
 from test_insights_modes import NONE, _prompt, _start, call
 from test_storage_v6 import BASE
 
 from agent_watchdog import insights
-from agent_watchdog.cli import main
 from agent_watchdog.config import Config, Overrides, Project, UserPaths, save_config
 from agent_watchdog.insights import bundle, contract, errors, llm, permissions, scope, workflow
 from agent_watchdog.storage import Store
@@ -346,22 +345,8 @@ def test_share_keeps_a_fair_slice_per_project_in_order():
 
 
 def _cli(monkeypatch, capsys, paths, *args):
-    monkeypatch.setattr(
-        sys,
-        "argv",
-        [
-            "agent-watchdog",
-            "--config",
-            str(paths.config),
-            "--data",
-            str(paths.data),
-            "--runtime",
-            str(paths.runtime),
-            *args,
-        ],
-    )
     try:
-        code = main()
+        code = invoke(monkeypatch, paths, *args)
     except SystemExit as error:
         return error.code, capsys.readouterr().err
     return code, json.loads(capsys.readouterr().out)
