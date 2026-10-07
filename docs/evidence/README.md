@@ -6,6 +6,10 @@ direct local-adapter runs, and live-provider observations separate, and records
 dispatch, callback gaps, retries, losses, delivery, provenance, and cleanup.
 The record is a reporting requirement, not authorization for a live probe.
 
+`done-archive.md` is the verbatim text of `DONE.md` as it stood when WD-150
+reduced that file to one line per task. It holds the full verification, check
+counts, and benchmark discussion of every task completed up to WD-140.
+
 `wd139c-codex-cli-control.json` contains the 18 isolated Windows Codex CLI
 control records for WD-139c. Later clean reruns replace incomplete records for
 the same capability; neither a callback alone nor a documentation entry enables
