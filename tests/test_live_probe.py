@@ -3,6 +3,7 @@
 import importlib.util
 import io
 import json
+import os
 import sys
 import tomllib
 from pathlib import Path
@@ -67,7 +68,8 @@ def test_profile_loads_both_hooks_without_requiring_scratch_project_trust(tmp_pa
     assert "[[hooks.UserPromptSubmit]]" in profile
     assert "[[hooks.PostToolUse]]" in profile
     assert 'matcher = "^Bash$"' in profile
-    assert "commandWindows" in profile
+    # The Windows-only field is emitted on Windows and nowhere else.
+    assert ("commandWindows" in profile) == (os.name == "nt")
     assert parsed["hooks"]["UserPromptSubmit"][0]["hooks"][0]["type"] == "command"
 
 
@@ -496,7 +498,9 @@ def test_agent_rewrite_changes_only_the_model():
 def test_claude_settings_hold_only_the_case_hooks_with_posix_paths(tmp_path):
     case = _case("agent-deny")
 
-    settings = live_probe.claude_settings(case, Path(r"C:\probe\live_probe.py"), tmp_path / "p.log")
+    # A native absolute path: on Windows it holds backslashes that must become POSIX; on POSIX
+    # a literal ``C:\...`` string is one file name, so it cannot stand in for a Windows path.
+    settings = live_probe.claude_settings(case, tmp_path / "live_probe.py", tmp_path / "p.log")
 
     assert set(settings["hooks"]) == {"PreToolUse", "SubagentStart"}
     entry = settings["hooks"]["PreToolUse"][0]
