@@ -2,6 +2,7 @@
 
 Historical records only: one line per task. The full text of every entry, including its verification, is in [done-archive.md](docs/evidence/done-archive.md). Active work belongs in [TODO.md](TODO.md). Preserve task IDs when moving entries here.
 
+- [x] **WD-148 - Revise project rules and documents for the control vector (2026-10-07).** Control, action, code-approval, and budget rules replace the observation-only and no-LLM invariants; the host-local limits moved to `LIVE.md`. Verification and the change list: [wd148.md](docs/evidence/wd148.md).
 - [x] **WD-140 - Generic decision channel between the native adapter and the daemon (2026-10-07).** The WD-014 single-rule policy socket is now a generic channel.
 - [x] **WD-139c - Expand the Codex CLI live control matrix (2026-10-07).** Added `codex-control` to `scripts/live_probe.py`: 18 isolated Windows Codex CLI cases, one temporary profile and scratch Git repository per case, sanitized `watchdog.probe-result.v1` output, handler envelopes, verdict ...
 - [x] **WD-139 - Live-probe hook control capabilities on Claude Code and Codex (2026-10-07).** `scripts/live_probe.py` (opt-in, outside pytest) probes Codex CLI context delivery (`codex-context`), Claude Code CLI controls headlessly (`claude-control`, 20 cases), and Claude desktop through a routed scratch folder ...
