@@ -37,7 +37,8 @@ log_bytes = 10485760
 log_level = "INFO"
 # Append a de-identified, truncated detail="..." clause (usually str(error)) to
 # error records. Off by default so the log, exports, and shared bug reports stay
-# content-free; enable it on a local development or debugging instance.
+# content-free. Recommended: set true on your own local installation, where the
+# detail makes failures much easier to diagnose; keep false for any log you share.
 log_detail = false
 # Per-rule kill switch for the WD-014 deterministic policy rules' `intervene`
 # (tool-call-denying) behavior; each rule gets its own flag. This one covers

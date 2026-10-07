@@ -2,7 +2,7 @@
 
 Agreed on 2026-09-05. A plan for small projects on top of stock harnesses. Each milestone delivers an independently useful result; later milestones are not enabled automatically. Open tasks: [TODO.md](TODO.md). Completed work: [DONE.md](DONE.md). Contracts: [architecture](docs/architecture.md).
 
-Execution order: M1-M4 for Codex coding only -> M-Anthropic / WD-022a+b -> App Server / WD-015 (complete: no generic attach contract) -> final cross-platform validation / M5. Anthropic support does not block the Codex observation, analysis, or intervention milestones. Ordinary chats are outside product scope.
+Execution order: observation and analysis (M1-M2, done for Codex and Claude Code) -> M-Anthropic / WD-022a+b (done) -> App Server / WD-015 (complete: no generic attach contract) -> M-Control / WD-139 to WD-153 (current; Claude Code first) with M3 guidance and M4 judge delivered through it -> final cross-platform validation / M5. Claude Code is the primary control surface; Codex follows with the capabilities its probes confirm (WD-151). Ordinary chats are outside product scope.
 
 ## M0 - Foundation and verifiable design
 
@@ -37,7 +37,7 @@ Execution order: M1-M4 for Codex coding only -> M-Anthropic / WD-022a+b -> App S
 
 1. **WD-009 (complete 2026-09-07).** Codex rollout-v1 transcript reader with persisted offsets, partial lines/rotation, native ID reconciliation, correct cumulative usage counters, and durable reader gaps. Reader failure does not stop hooks.
 2. **WD-010 (complete 2026-09-07).** Read-only timeline and durations, tool repetitions/errors, comparable pytest/JUnit results, output size, compactions, usage/cached tokens, versioned evidence IDs, and debounced Git diff fingerprints with uncertain attribution explicitly marked.
-3. Deterministic shadow findings: at least three repetitions, identical errors/comparable test sets, and diff oscillation. Evidence, versioned rules, and unknown coverage. No automatic stall verdict based on missing events.
+3. Deterministic shadow findings: at least three repetitions, identical errors/comparable test sets, and diff oscillation. Evidence, versioned rules, and unknown coverage. No universal stall score based on missing events; a deterministic rule on the presence of events is allowed.
 4. **WD-011 (complete 2026-09-07).** CLI `label`, `pin`, `export`, and `purge`; label/pin/purge are acknowledged control requests to the core. Read-only reports and exports work offline.
 5. **WD-011 (complete 2026-09-07).** Export selected sessions with a manifest, JSONL, Markdown, and a manual LLM prompt: typical tasks, costly patterns, and candidates for helper/skill/instruction improvements. A content review before sharing is recommended, not enforced.
 6. Before labeling, add auditable provider-scoped session-state labels (`progress`, `slow`, `stuck`, `externally_blocked`) and per-finding correctness verdicts. Manually label 20-50 real sessions, including negative examples with no finding, and report false positives and false negatives. The session count is a calibration target, not proof of representativeness.
@@ -48,10 +48,10 @@ WD-101 closes practical offline test boundaries identified by the audit, and WD-
 
 ## M3 - Limited opt-in guidance
 
-**Outcome:** add advisory feedback at a supported Codex hook boundary only after collecting the M2 baseline.
+**Outcome:** add advisory feedback and, by the same ladder, stronger actions at a hook boundary with a confirmed capability (Claude Code first), only after collecting the M2 baseline.
 
 - Separate delivery policy: evidence, capability, expiry, cooldown, and at most one nudge per blocker until new evidence appears. Observe remains the default mode.
-- Select rules using labeled traces. Release gate: at least 90% precision on a declared dataset, with counts and uncertainty, plus a review of false signals. A small sample does not justify a hard gate.
+- Select rules using labeled traces. Release gate by action, with counts, uncertainty, and a review of false signals: `log` needs no gate; `context` needs at least 60% precision over 10 reviewed cases; `ask` 80% over 20; `deny` or `block` 90% over 30. Deterministic rules need no gate for `log` and `context`, and reach `ask` or `deny` after 10 observations without a false positive. A small sample does not justify a hard gate.
 - Record proposed/delivered/response observed; delivery is not acceptance of advice. Provide a kill switch and per-project opt-in.
 - Compare time, tool calls, outcome quality, and overhead against the baseline. Do not automatically change models, skills, or AGENTS in monitored projects.
 
@@ -59,9 +59,9 @@ WD-101 closes practical offline test boundaries identified by the audit, and WD-
 
 ## M4 - Semantic judge and controlled escalation
 
-**Outcome:** optional bounded semantic analysis and read-only second opinions for Codex coding sessions, followed by a human gate only on a demonstrably supported control path.
+**Outcome:** optional bounded semantic analysis and read-only second opinions for coding sessions, followed by a human gate only on a demonstrably supported control path.
 
-- Make a separate LLM execution decision before implementation: M0-M3 enable no automatic model calls; explicit opt-in local analysis is permitted. Require project opt-in, budget, timeout, exclusion of the product's own analytical sessions, and provenance.
+- LLM execution decision: M0-M3 enabled no automatic model calls and explicit opt-in local analysis is permitted. The daemon's automatic semantic judge (WD-145) is allowed with project opt-in, a daily call budget, a timeout, exclusion of the product's own analytical sessions, provenance, and a kill switch.
 - Use a compact facts/failed-attempts/evidence bundle and structured `progress|uncertain|stuck|blocked` output. Do not treat a summary as objective verification.
 - Escalation ladder: advisory -> replan request -> read-only second opinion -> question for the user. Do not apply every step to every signal.
 - Distinguish model-mediated questions from actual pause/resume. Never automatically grant approvals. Actions are limited by the current adapter's capabilities.
@@ -85,11 +85,22 @@ WD-101 closes practical offline test boundaries identified by the audit, and WD-
 
 **Acceptance:** offline adapter tests and Windows live evidence, preserved existing hooks, bounded overhead, independent core lifetime, and an explicit event/control capability matrix. Claude-specific failures do not break Codex. macOS/Linux host validation stays in final M5 / WD-019.
 
+## M-Control - Real-time control through hooks and daemon rules
+
+**Outcome:** the daemon decides, through a fixed decision channel, which control action a hook returns, on Claude Code first and on Codex only where a live probe confirmed the capability. Open tasks and order are in [TODO.md](TODO.md); the design is in [architecture](docs/architecture.md).
+
+1. **WD-139 and WD-140 (complete 2026-10-07).** Live-probe the control capabilities of both providers' hooks, and replace the single-rule policy socket with a generic decision channel (an action vocabulary, per-provider rendering of only confirmed cells, fail-open).
+2. **WD-141 to WD-144.** Incremental session state in the daemon, declarative and built-in rules with a `rules` CLI, Python rules approved by content hash, and model-synthesized rule candidates that the user approves.
+3. **WD-145 to WD-147.** The automatic semantic judge with a budget and kill switch, corrected statistical heuristics, and the calibration workflow that promotes a rule up the precision ladder of M3.
+4. **WD-148 to WD-151.** Revised project rules and documents, a simpler and faster pipeline, a faster test suite and CI, and Codex control parity.
+
+**Acceptance:** every action is fail-open, recorded with evidence, and switchable off globally and per project; a Python rule runs only at an approved hash; the daemon never exceeds its model-call budget; nothing is rendered for a provider without live evidence.
+
 ## Optional extensions after M-Anthropic
 
 - **WD-015 (complete 2026-10-02):** the App Server protocol can resume stored App Server threads and steer or interrupt identified active turns, but it has no documented generic attach contract for arbitrary running Codex CLI or desktop sessions. `proxy` reaches the managed App Server control socket rather than those sessions. No adapter was added; hooks remain the observation path. A future opt-in, separately launched App Server mode would need to establish its own session ownership and benefit before reconsideration. M4 remains bounded by verified hook capabilities and does not depend on this extension.
 - **WD-016 (complete 2026-09-30):** the shared read-only project overview without merging databases is the `overview` command (decision in `docs/architecture.md`, "Cross-project views"). The local web UI was not built.
-- **WD-136 (next milestone, optional; split a/b/c):** a local web UI in a separate on-demand process, never part of the core daemon. **a:** loopback-only, read-only viewer over `inspection.overview` and saved `insights` reports. Entry gate: build it only if the `overview` JSON proves insufficient in daily use. `overview` latency was measured at 9.3 s warm (2026-10-01), about three quarters in the per-call findings re-analysis; WD-138 cut it to about 5.1 s by removing redundant parsing and scans, so a long-lived UI process is now a smaller performance gain than a convenience. **b:** generate an insights report on an explicit button, with cost shown first. **c:** apply selected recommendations (checkbox per item, unselected by default, one Apply button) to a closed allowlist of targets, after its own design decision; this is the only part that writes. No plugin or framework layer.
+- **WD-136 (optional, after the rules and the judge of M-Control; split a/b/c):** a local web UI in a separate on-demand process, never part of the core daemon. **a:** loopback-only, read-only viewer over `inspection.overview` and saved `insights` reports. Entry gate: build it only if the `overview` JSON proves insufficient in daily use. `overview` latency was measured at 9.3 s warm (2026-10-01), about three quarters in the per-call findings re-analysis; WD-138 cut it to about 5.1 s by removing redundant parsing and scans, so a long-lived UI process is now a smaller performance gain than a convenience. **b:** generate an insights report on an explicit button, with cost shown first. **c:** apply selected recommendations (checkbox per item, unselected by default, one Apply button) to a closed allowlist of targets, after its own design decision; this is the only part that writes. No plugin or framework layer.
 - A real-work benchmark for model routing, a catalog/eval runner, and automated skill improvement only after M2 produces enough labeled exports to measure completed-task quality, cost, latency, and rework. Repository routing rules remain policy rather than a proven product capability until then.
 - MCP adviser only for a real agent-query use case, not as a process startup placeholder.
 - **WD-123 to WD-126 (complete):** user-run `insights` modes that send a redacted, ranked evidence bundle to one isolated `claude -p` call and return grounded recommendations and `log`-only rule candidates for human review (the WD-014 manual path; see the architecture amendment). `errors`, `context`, `tokens`, `workflow`, `subagents`, `permissions`, and the `session` second opinion (also on request in `calibrate.py annotate`) have shipped, WD-133 adds `sessions`, a project-wide triage of a window's sessions, and WD-134 adds `digest`, one cross-mode synthesis of six modes. No automatic trigger, and no model answer changes stored data or enables a rule.

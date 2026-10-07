@@ -274,8 +274,11 @@ begin `--python <sys.executable> …`; without it, `command` is `sys.executable`
 and `args` begin `-m agent_watchdog …`. There is no `matcher` (optional per
 schema; absent matches all) and no `commandWindows` (Claude has no such field).
 
-**`timeout: 2` is fixed** — the same production budget as Codex. It is not
-parameterized and is not raised to pass acceptance.
+**`timeout: 2` is fixed** for the observation entries — the same production
+budget as Codex. It is not parameterized and is not raised to pass acceptance. A
+control subscription may later get a separate entry with its own, longer timeout
+and latency budget (see "Processes and delivery" in
+[architecture](architecture.md)).
 
 **Empty stdout is required, not stylistic.** Claude adds a hook's stdout to the
 model context on `SessionStart` and `UserPromptSubmit`. Printing `{}` there would
