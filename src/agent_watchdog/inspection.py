@@ -1,14 +1,13 @@
 """Read-only project/session inspection; never open a storage writer."""
 
 import json
-import re
 import sqlite3
 from collections import defaultdict
 from collections.abc import Iterator
 from contextlib import closing, contextmanager
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Literal, TypedDict
+from typing import Any, Literal, TypedDict, cast
 
 from agent_watchdog import daemon, resources
 from agent_watchdog.config import (
@@ -577,8 +576,6 @@ def _error_text(response: object) -> str | None:
     return json.dumps(response, sort_keys=True)
 
 
-_EXIT_CODE_TEXT = re.compile(r"\AExit code (-?\d+)\b")
-
 FinishStatus = Literal["failure", "interrupt", "success", "unknown", "unclassified", "expired"]
 
 
@@ -596,29 +593,18 @@ def finish_status(event: Envelope) -> FinishStatus:
     payload = event.payload.get(event.provider)
     if not isinstance(payload, dict):
         return "expired" if event.availability.get("content") == "unavailable" else "unknown"
-    metadata = payload.get("metadata")
-    response = captured_content(payload).get("tool_response")
-    if payload.get("hook_event_name") == "PostToolUseFailure" or (
-        response is not None and tool_outcome(response) == "failure"
-    ):
-        if isinstance(metadata, dict) and metadata.get("is_interrupt") is True:
-            return "interrupt"
-        return "failure"
-    if response is None:
-        return "unknown"
-    return "success" if tool_outcome(response) == "success" else "unclassified"
+    outcome = tool_outcome(payload, event.provider)
+    if outcome != "unknown":
+        return cast(FinishStatus, outcome)
+    return "unknown" if captured_content(payload).get("tool_response") is None else "unclassified"
 
 
 def failure_exit_code(response: object, error: object) -> int | None:
     """Prefer a structured exit code; Claude reports one only as leading error text."""
-    from agent_watchdog.analysis import exit_code
+    from agent_watchdog.analysis import error_exit_code, exit_code
 
     code = exit_code(response)
-    if code is None and isinstance(error, str):
-        match = _EXIT_CODE_TEXT.match(error)
-        if match is not None:
-            code = int(match.group(1))
-    return code
+    return code if code is not None else error_exit_code(error)
 
 
 def tool_finishes(

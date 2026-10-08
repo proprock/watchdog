@@ -124,11 +124,7 @@ def observed_failure(event) -> bool:
     Captured tool output is data: a session whose own test output names
     `PostToolUseFailure` must not be counted as having failed.
     """
-    payload = provider_payload(event)
-    if payload.get("hook_event_name") == "PostToolUseFailure":
-        return True
-    content = content_of(event)
-    return "tool_response" in content and tool_outcome(content["tool_response"]) == "failure"
+    return tool_outcome(provider_payload(event), event.provider) == "failure"
 
 
 def is_observation(finding: dict) -> bool:
@@ -143,6 +139,93 @@ def split_findings(findings: list[dict]) -> tuple[list[dict], list[dict]]:
     session_scoped = [f for f in findings if f["rule"] not in CHECKOUT_SCOPED_RULES]
     checkout_scoped = [f for f in findings if f["rule"] in CHECKOUT_SCOPED_RULES]
     return session_scoped, checkout_scoped
+
+
+def findings_for(db, events: list) -> tuple[list[dict], list[dict]]:
+    """Session-scoped and checkout-scoped findings the current rules produce for one session."""
+    checkouts = {str(event.checkout_id) for event in events if event.checkout_id}
+    return split_findings(analyze(events, snapshots=snapshots_for(db, checkouts))["findings"])
+
+
+def recompute_sample(paths: UserPaths, project, frozen: dict) -> dict:
+    """Re-run the current rules over a frozen cohort's stored events (WD-146).
+
+    The sample keeps only the findings its rule version produced, so a newer
+    version has to be recomputed from the store. Sessions whose events are gone
+    cannot be recomputed and are listed, not silently scored as "no finding".
+    """
+    selection = frozen["selection"]
+    since, until = parse_time(selection.get("since")), parse_time(selection.get("until"))
+    records: list[dict] = []
+    checkout_findings: dict[str, dict] = {}
+    missing: list[str] = []
+    changed: list[str] = []
+    with inspection.database(paths, project) as db:
+        grouped = read_sessions(db, since, until)
+        for record in frozen["sessions"]:
+            events = grouped.get((record["provider"], record["session_id"]))
+            name = f"{record['provider']}/{record['session_id']}"
+            if not events:
+                missing.append(name)
+                continue
+            if len(events) != record["event_count"]:
+                changed.append(name)
+            session_scoped, checkout_scoped = findings_for(db, events)
+            for finding in checkout_scoped:
+                checkout = record["checkout_ids"][0] if record["checkout_ids"] else "unknown"
+                checkout_findings.setdefault(
+                    finding["fingerprint"], {"checkout_id": checkout, **finding}
+                )
+            records.append(record | {"findings": session_scoped})
+    return frozen | {
+        "rule_version": RULE_VERSION,
+        "recomputed_from": frozen["rule_version"],
+        "sessions": records,
+        "checkout_findings": sorted(
+            checkout_findings.values(), key=lambda finding: finding["fingerprint"]
+        ),
+        "excluded": {"events_missing": missing, "event_count_changed": changed},
+    }
+
+
+def load_review_verdicts(path: str | None) -> dict[str, str]:
+    """Fingerprint -> verdict from a frozen review record (the WD-122 cohort's verdicts)."""
+    if path is None:
+        return {}
+    review = json.loads(Path(path).read_text(encoding="utf-8"))
+    return {item["fingerprint"]: item["verdict"] for item in review.get("findings", [])}
+
+
+def compare_versions(
+    old: list[dict], new: list[dict], verdicts: Mapping[str, str], tally: dict[str, Counter]
+) -> None:
+    """Count what a newer rule version kept, dropped and added, by the old verdicts.
+
+    A v1 finding survives when a v2 finding of the same rule shares an event
+    with it. Verdicts never transfer to v2 findings: their evidence set may have
+    changed, so each stays unreviewed until someone reads it.
+    """
+    for finding in new:
+        tally[finding["rule"]]["v2_observed"] += 1
+        if not any(
+            set(finding["evidence_ids"]) & set(item["evidence_ids"])
+            for item in old
+            if item["rule"] == finding["rule"]
+        ):
+            tally[finding["rule"]]["v2_new"] += 1
+    for finding in old:
+        counts = tally[finding["rule"]]
+        verdict = verdicts.get(finding["fingerprint"], "unreviewed")
+        counts["v1_observed"] += 1
+        counts[f"v1_{verdict}"] += 1
+        survived = any(
+            set(finding["evidence_ids"]) & set(item["evidence_ids"])
+            for item in new
+            if item["rule"] == finding["rule"]
+        )
+        counts["v1_survived" if survived else "v1_dropped"] += 1
+        if not survived:
+            counts[f"dropped_{verdict}"] += 1
 
 
 def build_sample(paths: UserPaths, args: argparse.Namespace) -> dict:
@@ -172,9 +255,7 @@ def build_sample(paths: UserPaths, args: argparse.Namespace) -> dict:
             if not summary["closed"] and events[-1].received_at > settled_before:
                 skipped["not_settled"] += 1
                 continue
-            snapshots = snapshots_for(db, set(summary["checkout_ids"]))
-            findings = analyze(events, snapshots=snapshots)["findings"]
-            session_scoped, checkout_scoped = split_findings(findings)
+            session_scoped, checkout_scoped = findings_for(db, events)
             for finding in checkout_scoped:
                 checkout = summary["checkout_ids"][0] if summary["checkout_ids"] else "unknown"
                 checkout_findings.setdefault(
@@ -352,14 +433,16 @@ def duration_note(metadata: Mapping[str, Any], *names: str) -> str:
 def result_note(event, content: Mapping[str, Any], metadata: Mapping[str, Any]) -> tuple[str, str]:
     """Describe a tool result as the rules read it, plus exit code, cost, and error."""
     response = content.get("tool_response")
-    if "tool_response" not in content:
+    verdict = tool_outcome(provider_payload(event), event.provider)
+    if verdict == "unknown" and "tool_response" not in content:
         outcome = "result not stored"
-    elif provider_payload(event).get("hook_event_name") == "PostToolUseFailure":
-        outcome = "FAILED"
     else:
-        outcome = {"success": "ok", "failure": "FAILED", "unknown": "result unclear"}[
-            tool_outcome(response)
-        ]
+        outcome = {
+            "success": "ok",
+            "failure": "FAILED",
+            "interrupt": "interrupted",
+            "unknown": "result unclear",
+        }[verdict]
     parts: list[str] = []
     code = exit_code(response)
     if code is not None:
@@ -1189,8 +1272,22 @@ def recommend(
 
 def build_report(paths: UserPaths, args: argparse.Namespace) -> dict:
     sample_path = Path(args.sample)
-    sample = json.loads(sample_path.read_text(encoding="utf-8"))
+    frozen = json.loads(sample_path.read_text(encoding="utf-8"))
     project = inspection.project_at(paths, args.project)
+    rule_version = getattr(args, "rule_version", None)
+    sample = frozen
+    if rule_version is not None:
+        if rule_version != RULE_VERSION:
+            raise SystemExit(f"only the current rules ({RULE_VERSION}) can be recomputed")
+        sample = recompute_sample(paths, project, frozen)
+    review_verdicts = load_review_verdicts(getattr(args, "review", None))
+    frozen_findings = {
+        (item["provider"], item["session_id"]): [
+            finding for finding in item["findings"] if not is_observation(finding)
+        ]
+        for item in frozen["sessions"]
+    }
+    tally: dict[str, Counter] = {rule: Counter() for rule in RULES}
     observed: Counter[str] = Counter()
     verdicts: Counter[tuple[str, str]] = Counter()
     action_observed: Counter[str] = Counter()
@@ -1207,6 +1304,13 @@ def build_report(paths: UserPaths, args: argparse.Namespace) -> dict:
                 row["fingerprint"]: row["verdict"]
                 for row in inspection.session_verdicts(db, record["provider"], record["session_id"])
             }
+            if rule_version is not None:
+                compare_versions(
+                    frozen_findings[(record["provider"], record["session_id"])],
+                    [item for item in record["findings"] if not is_observation(item)],
+                    {**review_verdicts, **recorded},
+                    tally,
+                )
             progress = label["progress_state"]
             states[progress or "unlabeled"] += 1
             outcomes[label["task_outcome"]] += 1
@@ -1235,6 +1339,13 @@ def build_report(paths: UserPaths, args: argparse.Namespace) -> dict:
                 if verdict is not None:
                     verdicts[(finding["rule"], verdict)] += 1
         checkout = {row["fingerprint"]: row for row in inspection.checkout_verdicts(db)}
+    if rule_version is not None:
+        compare_versions(
+            frozen["checkout_findings"],
+            sample["checkout_findings"],
+            review_verdicts | {key: row["verdict"] for key, row in checkout.items()},
+            tally,
+        )
     checkout_observed: Counter[str] = Counter()
     checkout_verdicts_seen: Counter[tuple[str, str]] = Counter()
     for finding in sample["checkout_findings"]:
@@ -1252,7 +1363,23 @@ def build_report(paths: UserPaths, args: argparse.Namespace) -> dict:
         for rule, stats in list(session_stats.items()) + list(checkout_stats.items())
         if not stats["observed"]
     ]
-    return {
+    recomputed: dict[str, Any] = {}
+    if rule_version is not None:
+        excluded = sample["excluded"]
+        recomputed = {
+            "version_comparison": {
+                "from": sample["recomputed_from"],
+                "to": rule_version,
+                "note": (
+                    "A v1 finding survives when a v2 finding of the same rule shares an "
+                    "event with it. v1 verdicts are shown for context and never transfer: "
+                    "every v2 finding is unreviewed until someone reads it."
+                ),
+                "rules": {rule: dict(counts) for rule, counts in tally.items()},
+            },
+            "excluded_sessions": excluded,
+        }
+    return recomputed | {
         "format_version": CALIBRATION_FORMAT,
         "generated_at": datetime.now(UTC).isoformat(),
         "supersedes": {
@@ -1271,7 +1398,8 @@ def build_report(paths: UserPaths, args: argparse.Namespace) -> dict:
             "rule_version": sample["rule_version"],
             "selection": sample["selection"],
             "sessions": len(sample["sessions"]),
-        },
+        }
+        | ({"recomputed_from": sample["recomputed_from"]} if rule_version is not None else {}),
         "session_states": dict(states),
         "task_outcomes": dict(outcomes),
         "confusion": {f"{state}/{fired}": count for (state, fired), count in confusion.items()},
@@ -1299,6 +1427,15 @@ def build_report(paths: UserPaths, args: argparse.Namespace) -> dict:
         "hook_overhead": overhead(paths, project),
         "recommendations": recommend(session_stats),
         "limitations": [
+            *(
+                [
+                    f"Findings were recomputed from the live store under {rule_version}; "
+                    "sessions with missing events are excluded and listed, and events "
+                    "added or purged since the sample was frozen can move a finding."
+                ]
+                if rule_version is not None
+                else []
+            ),
             f"Rules with no observation in this dataset: {', '.join(unmeasured) or 'none'}.",
             "Checkout-scoped findings are excluded from per-session precision.",
             "One operator labelled their own sessions; the judgement is not independent.",
@@ -1327,6 +1464,32 @@ def render_markdown(report: dict) -> str:
     ]
     for state, count in sorted(report["session_states"].items()):
         lines.append(f"- {state}: {count}")
+    if "version_comparison" in report:
+        comparison = report["version_comparison"]
+        lines += ["", f"## Version comparison ({comparison['from']} to {comparison['to']})", ""]
+        lines += [comparison["note"], ""]
+        columns = (
+            "v1_observed",
+            "v1_true_positive",
+            "v1_false_positive",
+            "v1_uncertain",
+            "v1_unreviewed",
+            "v1_dropped",
+            "dropped_true_positive",
+            "dropped_false_positive",
+            "v2_observed",
+            "v2_new",
+        )
+        lines.append("| rule | " + " | ".join(columns) + " |")
+        lines.append("| --- |" + " --- |" * len(columns))
+        for rule, counts in comparison["rules"].items():
+            lines.append(f"| {rule} | " + " | ".join(str(counts.get(c, 0)) for c in columns) + " |")
+        excluded = report["excluded_sessions"]
+        lines += [
+            "",
+            f"Excluded (no stored events): {len(excluded['events_missing'])}; "
+            f"event count changed since the sample: {len(excluded['event_count_changed'])}.",
+        ]
     lines += ["", "## Session-scoped rule precision", ""]
     lines.append("| rule | observed | reviewed | TP | FP | uncertain | precision |")
     lines.append("| --- | --- | --- | --- | --- | --- | --- |")
@@ -1414,7 +1577,19 @@ def build_parser() -> argparse.ArgumentParser:
     result = commands.add_parser("report", help="Emit the calibration evidence")
     add_common(result)
     result.add_argument("--sample", default="docs/evidence/wd012-sample.json")
-    result.add_argument("--output", default="docs/evidence/wd012-calibration.json")
+    result.add_argument(
+        "--rule-version",
+        help=f"Recompute the cohort's findings under this rule version ({RULE_VERSION})",
+    )
+    result.add_argument(
+        "--review",
+        help="Frozen review record (wd-122.review.v1) supplying the old version's verdicts",
+    )
+    result.add_argument(
+        "--output",
+        help="Default docs/evidence/wd012-calibration.json, or wd146-calibration.json "
+        "with --rule-version",
+    )
     return parser
 
 
@@ -1446,7 +1621,14 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "annotate":
         return annotate(paths, args)
     report = build_report(paths, args)
-    output = Path(args.output)
+    output = Path(
+        args.output
+        or (
+            "docs/evidence/wd146-calibration.json"
+            if args.rule_version
+            else "docs/evidence/wd012-calibration.json"
+        )
+    )
     output.parent.mkdir(parents=True, exist_ok=True)
     output.write_text(json.dumps(report, indent=2, sort_keys=True) + "\n", encoding="utf-8")
     markdown = output.with_suffix(".md")

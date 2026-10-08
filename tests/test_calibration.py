@@ -9,6 +9,7 @@ from uuid import uuid4
 import pytest
 
 from agent_watchdog import inspection
+from agent_watchdog.analysis import finding_fingerprint
 from agent_watchdog.config import UserPaths, load_config
 from agent_watchdog.daemon import _drain_controls, mutate_registry
 from agent_watchdog.events import Envelope
@@ -1129,3 +1130,119 @@ def test_a_session_with_only_a_control_finding_is_not_a_shadow_finding_session(
     # Only the noisy session fired a shadow rule; the guarded one counts as silent.
     assert report["confusion"].get("unlabeled/finding") == 1
     assert report["confusion"].get("unlabeled/no_finding", 0) >= 1
+
+
+def recompute_args(calibrate, paths, sample_path, *extra):
+    return calibrate.build_parser().parse_args(
+        [
+            "report",
+            "--home",
+            str(paths.config.parent),
+            "--project",
+            "checkout",
+            "--sample",
+            str(sample_path),
+            "--rule-version",
+            "wd-010.v2",
+            *extra,
+        ]
+    )
+
+
+def frozen_v1_sample(calibrate, paths, tmp_path):
+    """The capture cohort as a v1 freeze: a real finding plus one v2 will not reproduce."""
+    sample_path = tmp_path / "sample.json"
+    sample = calibrate.build_sample(paths, sample_args(calibrate, paths, sample_path))
+    by_id = {record["session_id"]: record for record in sample["sessions"]}
+
+    def as_v1(finding):
+        return finding | {
+            "rule_version": "wd-010.v1",
+            "fingerprint": finding_fingerprint(
+                finding["rule"], "wd-010.v1", finding["evidence_ids"]
+            ),
+        }
+
+    by_id["noisy"]["findings"] = [as_v1(f) for f in by_id["noisy"]["findings"]]
+    stale_evidence = [str(uuid4()) for _ in range(3)]
+    stale = {
+        "rule": "repeated_tool_outcome",
+        "rule_version": "wd-010.v1",
+        "evidence_ids": stale_evidence,
+        "count": 3,
+        "fingerprint": finding_fingerprint("repeated_tool_outcome", "wd-010.v1", stale_evidence),
+        "attribution": "observed",
+        "explanation": "v1 only",
+    }
+    quiet = next(record for record in sample["sessions"] if record["session_id"] != "noisy")
+    quiet["findings"] = [stale]
+    sample["rule_version"] = "wd-010.v1"
+    calibrate.write_sample(sample, sample_path)
+    return sample_path, sample, quiet, stale
+
+
+def test_report_recomputes_under_a_rule_version_and_never_transfers_verdicts(
+    calibrate, capture, tmp_path
+):
+    paths, config, project = capture
+    sample_path, sample, quiet, stale = frozen_v1_sample(calibrate, paths, tmp_path)
+    noisy = next(record for record in sample["sessions"] if record["session_id"] == "noisy")
+    repeated = next(f for f in noisy["findings"] if f["rule"] == "repeated_tool_outcome")
+    record_verdict(paths, config, project, "noisy", repeated, "true_positive")
+    record_verdict(paths, config, project, quiet["session_id"], stale, "false_positive")
+
+    report = calibrate.build_report(paths, recompute_args(calibrate, paths, sample_path))
+
+    comparison = report["version_comparison"]["rules"]["repeated_tool_outcome"]
+    assert comparison["v1_observed"] == 2
+    assert (comparison["v1_survived"], comparison["v1_dropped"]) == (1, 1)
+    assert comparison["dropped_false_positive"] == 1
+    assert comparison.get("dropped_true_positive", 0) == 0
+    assert comparison["v2_observed"] == 1
+    assert report["dataset"]["rule_version"] == "wd-010.v2"
+    assert report["dataset"]["recomputed_from"] == "wd-010.v1"
+    # The v1 true positive does not carry over: the v2 finding is unreviewed.
+    stats = report["session_scoped_rules"]["repeated_tool_outcome"]
+    assert stats["observed"] == 1 and stats["reviewed"] == 0 and stats["precision"] is None
+
+
+def test_a_review_record_supplies_the_old_versions_verdicts(calibrate, capture, tmp_path):
+    paths, _, _ = capture
+    sample_path, _, _, stale = frozen_v1_sample(calibrate, paths, tmp_path)
+    review = tmp_path / "review.json"
+    review.write_text(
+        json.dumps(
+            {"findings": [{"fingerprint": stale["fingerprint"], "verdict": "false_positive"}]}
+        ),
+        encoding="utf-8",
+    )
+
+    report = calibrate.build_report(
+        paths, recompute_args(calibrate, paths, sample_path, "--review", str(review))
+    )
+
+    comparison = report["version_comparison"]["rules"]["repeated_tool_outcome"]
+    assert comparison["dropped_false_positive"] == 1
+
+
+def test_a_cohort_session_without_stored_events_is_listed_not_scored(calibrate, capture, tmp_path):
+    paths, _, _ = capture
+    sample_path, sample, _, _ = frozen_v1_sample(calibrate, paths, tmp_path)
+    ghost = dict(sample["sessions"][0]) | {"session_id": "ghost", "findings": []}
+    sample["sessions"].append(ghost)
+    calibrate.write_sample(sample, sample_path)
+
+    report = calibrate.build_report(paths, recompute_args(calibrate, paths, sample_path))
+
+    assert report["excluded_sessions"]["events_missing"] == [f"{ghost['provider']}/ghost"]
+    assert report["dataset"]["sessions"] == len(sample["sessions"]) - 1
+
+
+def test_only_the_current_rule_version_can_be_recomputed(calibrate, capture, tmp_path):
+    paths, _, _ = capture
+    sample_path, _, _, _ = frozen_v1_sample(calibrate, paths, tmp_path)
+    args = recompute_args(calibrate, paths, sample_path)
+    args.rule_version = "wd-010.v1"
+
+    with pytest.raises(SystemExit):
+        calibrate.build_report(paths, args)

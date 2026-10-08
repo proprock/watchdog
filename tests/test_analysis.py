@@ -5,6 +5,7 @@ from uuid import uuid4
 
 import pytest
 
+from agent_watchdog import inspection
 from agent_watchdog.analysis import (
     CHECKOUT_DEADLINE_SECONDS,
     POLICY_RULE_VERSION,
@@ -16,7 +17,9 @@ from agent_watchdog.analysis import (
     finding_fingerprint,
     git_diff_fingerprint,
     model_family_matches,
+    normalize_error_text,
     same_model_subagent_spawn,
+    tool_outcome,
 )
 from agent_watchdog.events import Envelope
 
@@ -351,10 +354,15 @@ def test_report_has_reproducible_shadow_findings_without_a_stall_verdict():
     report = analyze(events)
 
     assert report["schema_version"] == REPORT_SCHEMA_VERSION
-    assert report["rule_version"] == "wd-010.v1"
+    assert report["rule_version"] == "wd-010.v2"
     assert report["timeline"]["wall_seconds"] == 6.0
     assert report["metrics"]["compactions"] == {"started": 1, "completed": 0}
-    assert report["metrics"]["tool_outcomes"] == {"failure": 3, "success": 1, "unknown": 0}
+    assert report["metrics"]["tool_outcomes"] == {
+        "failure": 3,
+        "interrupt": 0,
+        "success": 1,
+        "unknown": 0,
+    }
     assert report["gaps"] == ["active_time_unknown", "task_outcome_unknown", "usage_incomplete"]
     assert {finding["rule"] for finding in report["findings"]} == {
         "identical_error",
@@ -500,10 +508,10 @@ def test_diff_oscillation_is_a_signal_with_uncertain_attribution():
     assert findings == [
         {
             "rule": "diff_oscillation",
-            "rule_version": "wd-010.v1",
+            "rule_version": "wd-010.v2",
             "evidence_ids": ["a", "b", "c"],
             "count": 3,
-            "fingerprint": finding_fingerprint("diff_oscillation", "wd-010.v1", ["a", "b", "c"]),
+            "fingerprint": finding_fingerprint("diff_oscillation", "wd-010.v2", ["a", "b", "c"]),
             "attribution": "uncertain",
             "explanation": (
                 "Observed A-to-B-to-A Git diff fingerprints; concurrent edits are not attributable."
@@ -932,3 +940,362 @@ def test_a_finding_carries_a_stable_fingerprint_over_its_evidence():
     assert len(first[0]["fingerprint"]) == 64
     assert first[0]["fingerprint"] == repeated[0]["fingerprint"]
     assert first[0]["fingerprint"] != wider[0]["fingerprint"]
+
+
+# WD-146: tool outcomes and the wd-010.v2 statistical rules.
+
+START = datetime(2026, 10, 8, tzinfo=UTC)
+
+
+def claude_call(
+    project,
+    offset,
+    *,
+    name="Bash",
+    tool_input="default",
+    response=None,
+    hook="PostToolUse",
+    error=None,
+    interrupt=None,
+    agent_id=None,
+    captured=True,
+):
+    content: dict = {}
+    if captured:
+        content["tool_input"] = {"command": "pytest"} if tool_input == "default" else tool_input
+        if response is not None:
+            content["tool_response"] = response
+    payload: dict = {"hook_event_name": hook, "tool_name": name, "content": content}
+    metadata = {
+        key: value
+        for key, value in (("error", error), ("is_interrupt", interrupt))
+        if value is not None
+    }
+    if metadata:
+        payload["metadata"] = metadata
+    return Envelope(
+        provider="claude",
+        project_id=project,
+        session_id="session-1",
+        agent_id=agent_id,
+        kind="tool.finish",
+        source="hook",
+        received_at=START + timedelta(seconds=offset),
+        payload={"claude": payload},
+    )
+
+
+def claude_edit(project, offset, *, name="Edit", **overrides):
+    return claude_call(
+        project,
+        offset,
+        name=name,
+        tool_input={"file_path": f"f{offset}.py"},
+        response={"ok": True},
+        **overrides,
+    )
+
+
+def claude_failure(project, offset, error, **overrides):
+    return claude_call(project, offset, hook="PostToolUseFailure", error=error, **overrides)
+
+
+def rules_of(report):
+    return sorted(finding["rule"] for finding in report["findings"])
+
+
+@pytest.mark.parametrize(
+    ("provider", "payload", "expected"),
+    [
+        ("claude", {"hook_event_name": "PostToolUseFailure"}, "failure"),
+        (
+            "claude",
+            {"hook_event_name": "PostToolUseFailure", "metadata": {"is_interrupt": False}},
+            "failure",
+        ),
+        (
+            "claude",
+            {"hook_event_name": "PostToolUseFailure", "metadata": {"is_interrupt": True}},
+            "interrupt",
+        ),
+        ("codex", {"hook_event_name": "PostToolUseFailure"}, "failure"),
+        ("claude", {"hook_event_name": "PostToolUse"}, "success"),
+        (
+            "claude",
+            {"hook_event_name": "PostToolUse", "content": {"tool_response": {"isError": True}}},
+            "failure",
+        ),
+        (
+            "claude",
+            {"hook_event_name": "PostToolUse", "content": {"tool_response": {"exit_code": 2}}},
+            "failure",
+        ),
+        ("claude", {"tool_name": "Bash"}, "unknown"),
+        ("codex", {"hook_event_name": "PostToolUse"}, "unknown"),
+        ("codex", {"content": {"tool_response": {"exit_code": 0}}}, "success"),
+        ("codex", {"content": {"tool_response": {"exit_code": 1}}}, "failure"),
+        ("codex", {"content": {"tool_response": {"output": "no code"}}}, "unknown"),
+    ],
+)
+def test_tool_outcome_reads_the_provider_signals(provider, payload, expected):
+    assert tool_outcome(payload, provider) == expected
+
+
+@pytest.mark.parametrize("provider", ["claude", "codex"])
+def test_finish_status_delegates_to_the_shared_classification(provider):
+    payload = {"hook_event_name": "PostToolUseFailure", "metadata": {"is_interrupt": True}}
+    event = Envelope(
+        provider=provider,
+        project_id=uuid4(),
+        session_id="session-1",
+        kind="tool.finish",
+        source="hook",
+        received_at=START,
+        payload={provider: payload},
+    )
+
+    assert inspection.finish_status(event) == tool_outcome(payload, provider)
+
+
+def test_a_claude_failure_hook_counts_as_a_failure_without_a_response():
+    project = uuid4()
+
+    report = analyze(
+        [
+            claude_failure(project, 1, "Exit code 1\nboom"),
+            claude_call(project, 2, response={"stdout": "ok"}),
+            claude_failure(project, 3, "interrupted", interrupt=True),
+        ]
+    )
+
+    assert report["metrics"]["tool_outcomes"] == {
+        "failure": 1,
+        "interrupt": 1,
+        "success": 1,
+        "unknown": 0,
+    }
+
+
+def test_a_claude_call_without_a_hook_name_stays_unknown():
+    project = uuid4()
+    event = claude_call(project, 1, response={"stdout": "ok"}, hook="PreToolUse")
+
+    assert analyze([event])["metrics"]["tool_outcomes"]["unknown"] == 1
+
+
+def test_three_identical_claude_failures_trip_both_rules_despite_varying_paths():
+    project = uuid4()
+    errors = [
+        "Exit code 1\nNo such file: C:\\work\\run-1\\a.py line 12",
+        "Exit code 1\nNo such file: C:\\work\\run-2\\a.py line 98",
+        "Exit code 1\nNo such file: C:\\work\\run-3\\a.py line 7",
+    ]
+
+    report = analyze(
+        [claude_failure(project, number, error) for number, error in enumerate(errors, 1)]
+    )
+
+    assert rules_of(report) == ["identical_error", "repeated_tool_outcome"]
+    assert report["metrics"]["tool_outcomes"]["failure"] == 3
+
+
+def test_different_claude_errors_do_not_form_an_identical_error():
+    project = uuid4()
+
+    report = analyze(
+        [
+            claude_failure(project, 1, "Exit code 1\nNo such file: a.py"),
+            claude_failure(project, 2, "Exit code 1\nPermission denied"),
+            claude_failure(project, 3, "Exit code 2\nsyntax error"),
+        ]
+    )
+
+    assert "identical_error" not in rules_of(report)
+
+
+def test_an_interrupt_is_not_an_identical_error():
+    project = uuid4()
+
+    report = analyze(
+        [claude_failure(project, number, "stopped", interrupt=True) for number in (1, 2, 3)]
+    )
+
+    assert "identical_error" not in rules_of(report)
+    assert report["metrics"]["tool_outcomes"]["failure"] == 0
+
+
+def test_edits_between_runs_with_changing_output_are_progress_not_repetition():
+    project = uuid4()
+    events = []
+    for number in range(3):
+        events.append(
+            claude_call(project, number * 2, response={"stdout": f"{88 + number} passed"})
+        )
+        events.append(claude_edit(project, number * 2 + 1))
+
+    assert "repeated_tool_outcome" not in rules_of(analyze(events))
+
+
+def test_a_run_chain_broken_by_an_edit_and_new_output_stays_short():
+    project = uuid4()
+
+    report = analyze(
+        [
+            claude_call(project, 1, response={"stdout": "2 failed"}),
+            claude_call(project, 2, response={"stdout": "2 failed"}),
+            claude_edit(project, 3),
+            claude_call(project, 4, response={"stdout": "1 failed"}),
+        ]
+    )
+
+    assert "repeated_tool_outcome" not in rules_of(report)
+
+
+def test_identical_output_still_counts_across_edits():
+    project = uuid4()
+    git_status = {"tool_input": {"command": "git status"}, "response": {"stdout": "clean"}}
+    events = []
+    for number in range(3):
+        events.append(
+            claude_call(
+                project,
+                number * 2,
+                tool_input=git_status["tool_input"],
+                response=git_status["response"],
+            )
+        )
+        events.append(claude_edit(project, number * 2 + 1))
+
+    report = analyze(events)
+
+    assert rules_of(report) == ["repeated_tool_outcome"]
+    assert "same output" in report["findings"][0]["explanation"]
+
+
+def test_repeats_without_any_edit_count_even_when_the_output_changes():
+    project = uuid4()
+
+    report = analyze(
+        [
+            claude_call(project, number, response={"stdout": f"tick {number}"})
+            for number in (1, 2, 3)
+        ]
+    )
+
+    assert rules_of(report) == ["repeated_tool_outcome"]
+    assert "no edits between" in report["findings"][0]["explanation"]
+
+
+def test_an_edit_by_another_agent_in_the_session_breaks_the_edit_free_chain():
+    project = uuid4()
+
+    report = analyze(
+        [
+            claude_call(project, 1, response={"stdout": "a"}),
+            claude_edit(project, 2, agent_id="subagent"),
+            claude_call(project, 3, response={"stdout": "b"}),
+            claude_call(project, 4, response={"stdout": "c"}),
+        ]
+    )
+
+    assert "repeated_tool_outcome" not in rules_of(report)
+
+
+def test_repeats_are_counted_per_agent():
+    project = uuid4()
+    events = [
+        claude_call(project, number, response={"stdout": "same"}, agent_id=agent)
+        for number, agent in enumerate(("a", "b", "a", "b", "a", "b"), 1)
+    ]
+
+    assert rules_of(analyze(events)) == ["repeated_tool_outcome", "repeated_tool_outcome"]
+    assert rules_of(analyze(events[:4])) == []
+
+
+def test_calls_without_captured_input_are_not_grouped():
+    project = uuid4()
+
+    report = analyze([claude_call(project, number, captured=False) for number in (1, 2, 3)])
+
+    assert report["findings"] == []
+    assert report["metrics"]["tool_outcomes"]["success"] == 3
+
+
+def test_codex_exit_code_fixtures_keep_their_v1_behaviour():
+    project = uuid4()
+
+    report = analyze(
+        [
+            tool(project, START + timedelta(seconds=number), code=1, output="boom")
+            for number in (1, 2, 3)
+        ]
+    )
+
+    assert rules_of(report) == ["identical_error", "repeated_tool_outcome"]
+
+
+def test_normalize_error_text_drops_paths_numbers_and_quoted_values():
+    text = "Error in 'foo' at C:\\a\\b.py:12 and /tmp/x/y.py: code 0xdeadbeef"
+
+    assert normalize_error_text(text) == "Error in '<s>' at <path>:<n> and <path>: code <hex>"
+
+
+def oscillation(offsets):
+    return [
+        {
+            "snapshot_id": name,
+            "checkout_id": "c",
+            "fingerprint": fingerprint,
+            "observed_at": (START + timedelta(seconds=offset)).isoformat(),
+        }
+        for (name, fingerprint), offset in zip(
+            (("a", "one"), ("b", "two"), ("c", "one")), offsets, strict=True
+        )
+    ]
+
+
+def turn_start(project, offset):
+    return Envelope(
+        provider="claude",
+        project_id=project,
+        session_id="session-1",
+        kind="turn.start",
+        source="hook",
+        received_at=START + timedelta(seconds=offset),
+    )
+
+
+def test_an_oscillation_needs_an_edit_or_turn_between_each_pair_of_snapshots():
+    project = uuid4()
+    snapshots = oscillation((0, 10, 20))
+
+    caused = diff_oscillations(snapshots, [claude_edit(project, 5), turn_start(project, 15)])
+    only_first_step = diff_oscillations(snapshots, [claude_edit(project, 5)])
+    nothing_between = diff_oscillations(snapshots, [claude_edit(project, 25)])
+    only_reads = diff_oscillations(
+        snapshots, [claude_call(project, 5, response={"stdout": "x"}), turn_start(project, 30)]
+    )
+
+    assert [f["evidence_ids"] for f in caused] == [["a", "b", "c"]]
+    assert only_first_step == []
+    assert nothing_between == []
+    assert only_reads == []
+
+
+def test_an_oscillation_is_not_filtered_when_the_evidence_to_filter_is_missing():
+    snapshots = oscillation((0, 10, 20))
+    undated = [{key: value for key, value in s.items() if key != "observed_at"} for s in snapshots]
+
+    assert len(diff_oscillations(snapshots)) == 1
+    assert len(diff_oscillations(snapshots, [])) == 0
+    assert len(diff_oscillations(undated, [])) == 1
+
+
+def test_analyze_applies_the_oscillation_gate_to_its_own_events():
+    project = uuid4()
+    snapshots = oscillation((0, 10, 20))
+    quiet = [claude_call(project, 5, response={"stdout": "x"})]
+    busy = [claude_edit(project, 5), claude_edit(project, 15)]
+
+    assert "diff_oscillation" not in rules_of(analyze(quiet, snapshots=snapshots))
+    assert "diff_oscillation" in rules_of(analyze(busy, snapshots=snapshots))

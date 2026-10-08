@@ -7,6 +7,7 @@ from datetime import datetime
 from typing import Any, Literal
 
 from agent_watchdog import inspection, privacy
+from agent_watchdog.analysis import normalize_error_text
 from agent_watchdog.config import Project, UserPaths
 from agent_watchdog.events import Envelope
 from agent_watchdog.insights import timeline
@@ -24,15 +25,6 @@ _EXCEPTION_LINE = re.compile(r"\A[A-Za-z_][\w.]*(?:Error|Exception|Exit|Interrup
 _ERRORISH = re.compile(
     r"(?i)\b(?:error|exception|failed|failure|fatal|not found|denied|invalid|unexpected|"
     r"cannot|can't|no such|refused|timed out|timeout|missing|unknown|does not exist)\b"
-)
-_NORMALIZERS = (
-    (re.compile(r"[A-Za-z]:[\\/][^\s'\":]*"), "<path>"),
-    (re.compile(r"(?<![\w.<>])/(?:[^\s/'\":]+/)+[^\s'\":]*"), "<path>"),
-    (re.compile(r"'[^']*'"), "'<s>'"),
-    (re.compile(r"\"[^\"]*\""), '"<s>"'),
-    (re.compile(r"\b0x[0-9a-fA-F]+\b|\b[0-9a-f]{8,}\b"), "<hex>"),
-    (re.compile(r"\d+"), "<n>"),
-    (re.compile(r"\s+"), " "),
 )
 
 PROMPT = """\
@@ -103,9 +95,7 @@ def key_line(text: str) -> str:
         chosen = next((line for line in reversed(lines) if _EXCEPTION_LINE.match(line)), lines[-1])
     else:
         chosen = next((line for line in lines if _ERRORISH.search(line)), lines[0])
-    for pattern, replacement in _NORMALIZERS:
-        chosen = pattern.sub(replacement, chosen)
-    return chosen.strip()[:160]
+    return normalize_error_text(chosen)[:160]
 
 
 def _agent(alias: str | None, event: Envelope) -> tuple:

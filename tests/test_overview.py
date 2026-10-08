@@ -102,6 +102,20 @@ def _noisy_events(project, checkout):
         _turn(project, checkout, "codex-s", "turn.start", start),
         _turn(project, checkout, "codex-s", "turn.end", start + timedelta(seconds=10)),
     ]
+    # WD-146: an oscillation needs an edit between each pair of snapshots.
+    events += [
+        Envelope(
+            provider="codex",
+            project_id=project.id,
+            checkout_id=checkout,
+            session_id="codex-s",
+            kind="tool.finish",
+            source="hook",
+            received_at=start + timedelta(seconds=seconds),
+            payload={"codex": {"tool_name": "apply_patch"}},
+        )
+        for seconds in (1.5, 2.5)
+    ]
     return events
 
 

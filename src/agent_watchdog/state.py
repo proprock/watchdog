@@ -12,12 +12,10 @@ from dataclasses import asdict, dataclass, replace
 from datetime import datetime
 from typing import Any
 
-from agent_watchdog.analysis import _fingerprint, captured_content, tool_outcome
+from agent_watchdog.analysis import EDIT_TOOLS, _fingerprint, captured_content, tool_outcome
 from agent_watchdog.facts import observed_model, turn_of
 
 SIGNATURE_LIMIT = 16
-# Tools that change files.  Codex edits through `apply_patch`.
-EDIT_TOOLS = frozenset({"Edit", "Write", "MultiEdit", "NotebookEdit", "apply_patch"})
 # Claude runs shell commands through `Bash`, and on Windows through `PowerShell` too;
 # both carry a `command`.
 SHELL_TOOLS = frozenset({"Bash", "PowerShell"})
@@ -155,10 +153,7 @@ def _finished_call(
     content = captured_content(provider_payload)
     response = content.get("tool_response")
     tool = provider_payload.get("tool_name")
-    if provider_payload.get("hook_event_name") == "PostToolUseFailure":
-        outcome = "failure"
-    else:
-        outcome = tool_outcome(response) if response is not None else "unknown"
+    outcome = tool_outcome(provider_payload, state.provider)
     signature = Signature(
         tool if isinstance(tool, str) else None,
         _hash(content.get("tool_input")),

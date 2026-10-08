@@ -237,11 +237,14 @@ def test_omitted_content_leaves_the_hashes_unknown():
     state = apply(initial("claude", "s1", ""), _envelope(_bash("pytest"), capture_content=False))
 
     signature = state.last_signatures[-1]
+    # The outcome comes from Claude's PostToolUse hook, not from captured content;
+    # the hashes need content and stay unknown, so no repeat is claimed.
     assert (signature.input_hash, signature.output_hash, signature.outcome) == (
         None,
         None,
-        "unknown",
+        "success",
     )
+    assert trailing_repeats(state) == 0
 
 
 def test_apply_is_pure_and_the_json_round_trips():

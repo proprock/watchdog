@@ -710,6 +710,20 @@ def test_diff_oscillation_is_not_reported_for_an_unrelated_session_sharing_a_che
                 received_at=start + timedelta(seconds=10),
             )
         )
+        # WD-146: an oscillation needs an edit between each pair of snapshots.
+        for seconds in (1.5, 2.5):
+            store.put(
+                Envelope(
+                    provider="codex",
+                    project_id=project.id,
+                    checkout_id=checkout,
+                    session_id="implicated",
+                    kind="tool.finish",
+                    source="hook",
+                    received_at=start + timedelta(seconds=seconds),
+                    payload={"codex": {"tool_name": "apply_patch"}},
+                )
+            )
         store.put(
             Envelope(
                 provider="codex",

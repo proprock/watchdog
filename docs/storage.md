@@ -435,8 +435,9 @@ produce evidence.
 
 The `v2-checkout` tag makes a v2 value unequal to every earlier (v1) value, so the first
 snapshot per checkout after the upgrade is a one-time change and no oscillation can span the
-two contracts. The rule version stays `wd-010.v1`: calibration counts of `diff_oscillation`
-findings from before 2026-09-30 come from the narrower contract.
+two contracts. The rule version was `wd-010.v1` at that time (it became `wd-010.v2` with
+WD-146): calibration counts of `diff_oscillation` findings from before 2026-09-30 come from
+the narrower contract.
 
 ## `diff_oscillation` session attribution (WD-118)
 

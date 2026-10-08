@@ -18,8 +18,11 @@ from agent_watchdog._proc import run as _run
 from agent_watchdog.events import Envelope
 from agent_watchdog.facts import USAGE_COLUMNS, claude_response_usage
 
-REPORT_SCHEMA_VERSION = 2
-RULE_VERSION = "wd-010.v1"
+REPORT_SCHEMA_VERSION = 3
+# v2 (WD-146): Claude outcomes come from the failure/success hooks, repeats must
+# be edit-free or produce the same output, error text is normalised, and a diff
+# oscillation needs an edit or turn start between its snapshots.
+RULE_VERSION = "wd-010.v2"
 # Every rule `analyze` can emit. A calibration report must list a rule that
 # never fired as unmeasured rather than omitting it.
 RULES = (
@@ -29,6 +32,19 @@ RULES = (
     "diff_oscillation",
 )
 REPETITION_THRESHOLD = 3
+# Tools that change files.  Codex edits through `apply_patch`.
+EDIT_TOOLS = frozenset({"Edit", "Write", "MultiEdit", "NotebookEdit", "apply_patch"})
+# Paths, quoted values, hex ids and numbers differ between runs of one failure.
+_ERROR_NORMALIZERS = (
+    (re.compile(r"[A-Za-z]:[\\/][^\s'\":]*"), "<path>"),
+    (re.compile(r"(?<![\w.<>])/(?:[^\s/'\":]+/)+[^\s'\":]*"), "<path>"),
+    (re.compile(r"'[^']*'"), "'<s>'"),
+    (re.compile(r"\"[^\"]*\""), '"<s>"'),
+    (re.compile(r"\b0x[0-9a-fA-F]+\b|\b[0-9a-f]{8,}\b"), "<hex>"),
+    (re.compile(r"\d+"), "<n>"),
+    (re.compile(r"\s+"), " "),
+)
+_EXIT_CODE_TEXT = re.compile(r"\AExit code (-?\d+)\b")
 # WD-121 checkout fingerprint bounds; a state beyond any of them is unknown.
 # The tag domain-separates it from the v1 hash of unstaged tracked changes only.
 _CHECKOUT_FINGERPRINT_TAG = b"v2-checkout\0"
@@ -287,14 +303,49 @@ def exit_code(value: object) -> int | None:
     return None
 
 
-def tool_outcome(response: object) -> str:
-    """Judge one tool result; a review renders the same judgement it reads."""
+def error_exit_code(error: object) -> int | None:
+    """Claude reports a failing command's exit code only as leading error text."""
+    match = _EXIT_CODE_TEXT.match(error) if isinstance(error, str) else None
+    return int(match.group(1)) if match is not None else None
+
+
+def normalize_error_text(text: str) -> str:
+    for pattern, replacement in _ERROR_NORMALIZERS:
+        text = pattern.sub(replacement, text)
+    return text.strip()
+
+
+def tool_outcome(provider_payload: Mapping[str, Any], provider: str) -> str:
+    """Judge one finished tool call; every review renders this same judgement.
+
+    Order: Claude's own failure hook (a user interrupt is not an agent error),
+    then a structured exit code or ``isError`` in a captured response, then
+    Claude's ``PostToolUse``, which the provider fires only after a success.
+    Codex has no failure hook and its responses carry no verdict without an
+    exit code, so those stay ``unknown``: unknown is not success.
+    """
+    hook = provider_payload.get("hook_event_name")
+    if hook == "PostToolUseFailure":
+        metadata = provider_payload.get("metadata")
+        interrupted = isinstance(metadata, dict) and metadata.get("is_interrupt") is True
+        return "interrupt" if interrupted else "failure"
+    response = captured_content(provider_payload).get("tool_response")
     code = exit_code(response)
     if code is not None:
         return "success" if code == 0 else "failure"
     if isinstance(response, dict) and response.get("isError") is True:
         return "failure"
-    return "unknown"
+    return "success" if hook == "PostToolUse" and provider == "claude" else "unknown"
+
+
+def _failure_text(provider_payload: Mapping[str, Any]) -> tuple[int | None, str]:
+    """The exit code and text of a failed call: its response, else Claude's hook error."""
+    response = captured_content(provider_payload).get("tool_response")
+    if response is not None:
+        return exit_code(response), "\n".join(_strings(response))
+    metadata = provider_payload.get("metadata")
+    error = metadata.get("error") if isinstance(metadata, dict) else None
+    return (error_exit_code(error), error) if isinstance(error, str) else (None, "")
 
 
 def _test_failures(command: object, response: object) -> tuple[str, ...]:
@@ -607,8 +658,53 @@ def _framed(data: bytes) -> bytes:
     return len(data).to_bytes(8, "big") + data
 
 
-def diff_oscillations(snapshots: Iterable[Mapping[str, object]]) -> list[dict[str, Any]]:
+def _is_edit(event: Envelope) -> bool:
+    return event.kind == "tool.finish" and _provider(event).get("tool_name") in EDIT_TOOLS
+
+
+def _change_moments(events: Iterable[Envelope], checkout: str) -> list[datetime]:
+    """When an edit finished or a turn started; an event of unknown checkout counts."""
+    return sorted(
+        event.received_at
+        for event in events
+        if (event.kind == "turn.start" or _is_edit(event))
+        and (event.checkout_id is None or str(event.checkout_id) == checkout)
+    )
+
+
+def _snapshot_time(snapshot: Mapping[str, object]) -> datetime | None:
+    value = snapshot.get("observed_at")
+    try:
+        parsed = datetime.fromisoformat(value) if isinstance(value, str) else None
+    except ValueError:
+        return None
+    return parsed if parsed is not None and parsed.utcoffset() is not None else None
+
+
+def _caused_by_work(
+    snapshots: tuple[Mapping[str, object], ...], moments: list[datetime]
+) -> bool | None:
+    """Whether an edit or turn start separates each pair of snapshots; None when undatable."""
+    maybe_times = [_snapshot_time(snapshot) for snapshot in snapshots]
+    times = [time for time in maybe_times if time is not None]
+    if len(times) != len(maybe_times):
+        return None
+    return all(
+        any(earlier <= moment <= later for moment in moments)
+        for earlier, later in zip(times, times[1:], strict=False)
+    )
+
+
+def diff_oscillations(
+    snapshots: Iterable[Mapping[str, object]], events: Iterable[Envelope] | None = None
+) -> list[dict[str, Any]]:
     """Return A-to-B-to-A fingerprint signals, never ownership claims.
+
+    With ``events``, a signal needs an edit or a turn start between each pair of
+    snapshots: a checkout that flips with no work observed in between (a
+    formatter, a branch switch) is not the agent going back and forth. Without
+    events, or with a snapshot that carries no usable ``observed_at``, nothing
+    is filtered: unknown is not "no work".
 
     Each finding also carries ``session_ids``: the sessions whose own turn
     window covered at least one of the three implicated snapshots, per an
@@ -626,10 +722,17 @@ def diff_oscillations(snapshots: Iterable[Mapping[str, object]]) -> list[dict[st
         if not all(isinstance(item, str) and item for item in (checkout, fingerprint, snapshot_id)):
             continue
         by_checkout[str(checkout)].append(snapshot)
+    observed = list(events) if events is not None else None
     findings = []
-    for entries in by_checkout.values():
+    for checkout, entries in by_checkout.items():
+        moments = _change_moments(observed, checkout) if observed is not None else None
         for first, second, third in zip(entries, entries[1:], entries[2:], strict=False):
             if first["fingerprint"] == third["fingerprint"] != second["fingerprint"]:
+                if (
+                    moments is not None
+                    and _caused_by_work((first, second, third), moments) is False
+                ):
+                    continue
                 implicated: set[str] = set()
                 for triggering in (first, second, third):
                     candidates = triggering.get("session_ids")
@@ -652,6 +755,45 @@ def diff_oscillations(snapshots: Iterable[Mapping[str, object]]) -> list[dict[st
                 finding["session_ids"] = session_ids
                 findings.append(finding)
     return findings
+
+
+@dataclass(frozen=True, slots=True)
+class _Run:
+    """One call in a group of identical (tool, input, outcome) calls by one agent."""
+
+    event_id: str
+    edits: int  # finished edits seen in the session before this call
+    output: str | None  # hash of the captured response; None when not captured
+
+
+def _repeat_chains(runs: list[_Run]) -> list[list[_Run]]:
+    """Split a group into runs of repeats that were not separated by progress.
+
+    Two consecutive repeats are linked when no edit finished between them, or when
+    they produced the same output; an edit followed by a different output is work.
+    """
+    chains: list[list[_Run]] = [[runs[0]]]
+    for previous, current in zip(runs, runs[1:], strict=False):
+        same_output = current.output is not None and current.output == previous.output
+        if current.edits == previous.edits or same_output:
+            chains[-1].append(current)
+        else:
+            chains.append([current])
+    return chains
+
+
+def _repeat_explanation(chain: list[_Run]) -> str:
+    quiet = len({run.edits for run in chain}) == 1
+    same = chain[0].output is not None and len({run.output for run in chain}) == 1
+    if quiet and same:
+        detail = "same output, no edits between"
+    elif quiet:
+        detail = "no edits between"
+    elif same:
+        detail = "same output despite edits between"
+    else:
+        detail = "each repeat followed no edit or reproduced the previous output"
+    return f"Observed the same tool input and outcome {len(chain)} times in a row ({detail})."
 
 
 def analyze(
@@ -712,7 +854,8 @@ def analyze(
     outcomes: Counter[str] = Counter()
     output_bytes = 0
     output_available = 0
-    repeated: dict[str, list[str]] = defaultdict(list)
+    edits_seen: Counter[tuple[str, str | None]] = Counter()
+    repeated: dict[tuple[tuple[str, str | None, str | None], str], list[_Run]] = defaultdict(list)
     errors: dict[str, list[str]] = defaultdict(list)
     failing_tests: dict[str, list[str]] = defaultdict(list)
     usage: dict[str, int] = defaultdict(int)
@@ -772,21 +915,38 @@ def analyze(
         captured = captured_content(provider)
         command = captured.get("tool_input")
         response = captured.get("tool_response")
-        if response is None:
-            outcomes["unknown"] += 1
-            continue
-        output_available += 1
-        output_bytes += len(_canonical(response).encode("utf-8"))
-        outcome = tool_outcome(response)
+        outcome = tool_outcome(provider, event.provider)
         outcomes[outcome] += 1
-        tool = provider.get("tool_name")
-        signature = _fingerprint({"tool": tool, "input": command, "outcome": outcome})
-        repeated[signature].append(str(event.event_id))
+        session = (event.provider, event.session_id)
+        edits_before = edits_seen[session]
+        if _is_edit(event):
+            edits_seen[session] += 1
+        if response is not None:
+            output_available += 1
+            output_bytes += len(_canonical(response).encode("utf-8"))
+        if command is None and response is None:
+            # Nothing captured to compare; grouping such calls by tool alone
+            # would call every call of one tool a repeat.
+            continue
+        agent = (event.provider, event.session_id, event.agent_id)
+        signature = _fingerprint(
+            {"tool": provider.get("tool_name"), "input": command, "outcome": outcome}
+        )
+        repeated[(agent, signature)].append(
+            _Run(
+                str(event.event_id),
+                edits_before,
+                _fingerprint(response) if response is not None else None,
+            )
+        )
         if outcome != "failure":
             continue
-        error_signature = _fingerprint({"code": exit_code(response), "response": response})
+        code, text = _failure_text(provider)
+        if code is None and not text:
+            continue
+        error_signature = _fingerprint({"code": code, "error": normalize_error_text(text)})
         errors[error_signature].append(str(event.event_id))
-        tests = _test_failures(command, response)
+        tests = _test_failures(command, text)
         if tests:
             test_signature = _fingerprint({"input": command, "failures": tests})
             failing_tests[test_signature].append(str(event.event_id))
@@ -803,22 +963,24 @@ def analyze(
                 usage_unavailable = True
 
     findings: list[dict[str, Any]] = []
-    for evidence_ids in repeated.values():
-        if len(evidence_ids) >= REPETITION_THRESHOLD:
-            findings.append(
-                _finding(
-                    "repeated_tool_outcome",
-                    evidence_ids,
-                    "Observed the same tool input and outcome at least three times.",
+    for runs in repeated.values():
+        for chain in _repeat_chains(runs):
+            if len(chain) >= REPETITION_THRESHOLD:
+                findings.append(
+                    _finding(
+                        "repeated_tool_outcome",
+                        [run.event_id for run in chain],
+                        _repeat_explanation(chain),
+                    )
                 )
-            )
     for evidence_ids in errors.values():
         if len(evidence_ids) >= REPETITION_THRESHOLD:
             findings.append(
                 _finding(
                     "identical_error",
                     evidence_ids,
-                    "Observed the same structured failing tool result at least three times.",
+                    f"Observed the same failing tool result {len(evidence_ids)} times "
+                    "(paths and numbers normalised).",
                 )
             )
     for evidence_ids in failing_tests.values():
@@ -832,7 +994,7 @@ def analyze(
                 )
             )
     target_sessions = set(sessions)
-    for oscillation in diff_oscillations(snapshots):
+    for oscillation in diff_oscillations(snapshots, ordered):
         implicated = oscillation["session_ids"]
         # An empty set means attribution could not be narrowed (no turn boundary
         # observed for the checkout); keep the old inclusive behavior rather than
@@ -866,7 +1028,9 @@ def analyze(
             "event_counts": dict(sorted(kinds.items())),
         },
         "metrics": {
-            "tool_outcomes": {name: outcomes[name] for name in ("failure", "success", "unknown")},
+            "tool_outcomes": {
+                name: outcomes[name] for name in ("failure", "interrupt", "success", "unknown")
+            },
             "tool_durations": {
                 "observed_count": len(tool_durations),
                 "total_seconds": sum(tool_durations) if tool_durations else None,
