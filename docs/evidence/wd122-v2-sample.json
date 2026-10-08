@@ -1,0 +1,1328 @@
+{
+  "checkout_findings": [
+    {
+      "attribution": "uncertain",
+      "checkout_id": "9f4edabb-c34e-5c24-a0da-24755024f12d",
+      "count": 3,
+      "evidence_ids": [
+        "9fa6cc2f-af10-4a59-875d-04c17aa15f78",
+        "1b7fc560-ac3d-4aa7-8668-60ba8701206e",
+        "e3b8b64a-75ed-4d73-8081-87bbb5c2746b"
+      ],
+      "explanation": "Observed A-to-B-to-A Git diff fingerprints; concurrent edits are not attributable.",
+      "fingerprint": "142ec12874f033e636b083ef1bcf89f559d36cedb69a723f9ab1013c9613b897",
+      "rule": "diff_oscillation",
+      "rule_version": "wd-010.v2",
+      "session_ids": [
+        "01a07e28-900f-7b23-bc55-2f2571ce1bb7",
+        "01a07f91-bce6-7fe0-abe5-8ed2470049a4",
+        "01a07faa-fa6e-7fa1-9e26-63e718d30732",
+        "01a07faf-ecd8-7aa1-97af-48e706727e40",
+        "01a0822f-0745-7761-afff-51c448d60714",
+        "01a08236-2423-7570-909d-9967f4913195",
+        "01a0824c-df30-74d2-b88a-47f2a22f2229"
+      ]
+    },
+    {
+      "attribution": "uncertain",
+      "checkout_id": "9f4edabb-c34e-5c24-a0da-24755024f12d",
+      "count": 3,
+      "evidence_ids": [
+        "97eadc6f-fdcd-403b-814d-5347b231fcdd",
+        "2f2b9355-b41e-43f5-b45b-ab64e158df38",
+        "4fe4ec3a-00e6-4e1b-9a01-129393e97f11"
+      ],
+      "explanation": "Observed A-to-B-to-A Git diff fingerprints; concurrent edits are not attributable.",
+      "fingerprint": "1f24d93fa1f9f98eb309284c5fa79be5daf67cfb696611e89df5136907a467bd",
+      "rule": "diff_oscillation",
+      "rule_version": "wd-010.v2",
+      "session_ids": [
+        "01a07e28-900f-7b23-bc55-2f2571ce1bb7",
+        "01a07f91-bce6-7fe0-abe5-8ed2470049a4",
+        "01a07faa-fa6e-7fa1-9e26-63e718d30732"
+      ]
+    },
+    {
+      "attribution": "uncertain",
+      "checkout_id": "9f4edabb-c34e-5c24-a0da-24755024f12d",
+      "count": 3,
+      "evidence_ids": [
+        "31a09c0d-1428-45ce-86f1-7d1d4f1082d2",
+        "7f69fe84-e3de-4f80-94e1-c8db5328becc",
+        "0ff08e8c-6633-4d47-b24f-2b83038185e7"
+      ],
+      "explanation": "Observed A-to-B-to-A Git diff fingerprints; concurrent edits are not attributable.",
+      "fingerprint": "235bec2500d4c5f48556d8b6fce735ea001fda178e397dd1fb2924d276e02bfe",
+      "rule": "diff_oscillation",
+      "rule_version": "wd-010.v2",
+      "session_ids": [
+        "01a07e28-900f-7b23-bc55-2f2571ce1bb7",
+        "01a07f91-bce6-7fe0-abe5-8ed2470049a4",
+        "01a07faa-fa6e-7fa1-9e26-63e718d30732",
+        "01a07faf-ecd8-7aa1-97af-48e706727e40",
+        "01a08236-2423-7570-909d-9967f4913195",
+        "01a0824c-df30-74d2-b88a-47f2a22f2229"
+      ]
+    },
+    {
+      "attribution": "uncertain",
+      "checkout_id": "9f4edabb-c34e-5c24-a0da-24755024f12d",
+      "count": 3,
+      "evidence_ids": [
+        "766fa274-413f-44e9-9e08-40ade2b6180b",
+        "c6fcb1a8-908f-4659-8ae2-07361b8e1b18",
+        "30c6852b-64fe-4d02-9260-ca7caf5d35a7"
+      ],
+      "explanation": "Observed A-to-B-to-A Git diff fingerprints; concurrent edits are not attributable.",
+      "fingerprint": "73584f93528496e4bf162697cade33bceecb4a1c82cae8779924620b599ba454",
+      "rule": "diff_oscillation",
+      "rule_version": "wd-010.v2",
+      "session_ids": [
+        "01a07e28-900f-7b23-bc55-2f2571ce1bb7",
+        "01a07f91-bce6-7fe0-abe5-8ed2470049a4",
+        "01a07faa-fa6e-7fa1-9e26-63e718d30732",
+        "01a07faf-ecd8-7aa1-97af-48e706727e40",
+        "01a08236-2423-7570-909d-9967f4913195",
+        "01a0824c-df30-74d2-b88a-47f2a22f2229",
+        "01a084a9-7398-7293-ad52-fb6ff081f6b7",
+        "42cd82e9-ce54-4f10-816f-93907fb085b8",
+        "4573c081-6eb5-46b6-913c-e8c8992bd3aa",
+        "8a5e5928-119f-4749-8cba-a32547428ef9",
+        "fea7a7d1-d6ee-43ca-b327-ef5ee33185a5",
+        "ff3e0390-d0fd-49c3-888e-7f62a6c30f9f"
+      ]
+    },
+    {
+      "attribution": "uncertain",
+      "checkout_id": "9f4edabb-c34e-5c24-a0da-24755024f12d",
+      "count": 3,
+      "evidence_ids": [
+        "ada053af-fb45-40c5-bc45-a6962f8f3e84",
+        "005f81cb-4b96-478f-b424-4e1494eeb1f5",
+        "b8231e65-e95b-4ba4-bfc6-05054727f06d"
+      ],
+      "explanation": "Observed A-to-B-to-A Git diff fingerprints; concurrent edits are not attributable.",
+      "fingerprint": "81dbf4948ba5c7560e07ab72e582b9b230227bb97a079576750093da96bf531b",
+      "rule": "diff_oscillation",
+      "rule_version": "wd-010.v2",
+      "session_ids": [
+        "01a07e28-900f-7b23-bc55-2f2571ce1bb7",
+        "01a07f91-bce6-7fe0-abe5-8ed2470049a4",
+        "01a07faa-fa6e-7fa1-9e26-63e718d30732",
+        "01a07faf-ecd8-7aa1-97af-48e706727e40",
+        "01a08236-2423-7570-909d-9967f4913195",
+        "01a0824c-df30-74d2-b88a-47f2a22f2229",
+        "01a084a9-7398-7293-ad52-fb6ff081f6b7",
+        "01a08805-66f3-76f1-91be-28fb974debc7",
+        "01a0881a-f104-7863-bfb8-78585c3f5a3a",
+        "2bd19110-34d7-4ed3-bf5b-33eac9438429",
+        "42cd82e9-ce54-4f10-816f-93907fb085b8",
+        "4573c081-6eb5-46b6-913c-e8c8992bd3aa",
+        "8a5e5928-119f-4749-8cba-a32547428ef9",
+        "e8320fcb-0adf-4c3f-abe4-9987c78ecac0",
+        "ef62aae4-a871-4d0e-afe3-6bd534e8416a",
+        "fea7a7d1-d6ee-43ca-b327-ef5ee33185a5",
+        "ff3e0390-d0fd-49c3-888e-7f62a6c30f9f"
+      ]
+    },
+    {
+      "attribution": "uncertain",
+      "checkout_id": "9f4edabb-c34e-5c24-a0da-24755024f12d",
+      "count": 3,
+      "evidence_ids": [
+        "3ce4e79f-9c6d-441f-a726-98507a1713a7",
+        "0f5f72a8-22b4-4abb-9ae3-5d3400190468",
+        "4acea8f1-a271-442f-b5ec-02c12dbe1441"
+      ],
+      "explanation": "Observed A-to-B-to-A Git diff fingerprints; concurrent edits are not attributable.",
+      "fingerprint": "a94496b0006d2624e291bdfe3eb34c7fca321ab0ea461a97da3cb008230b2641",
+      "rule": "diff_oscillation",
+      "rule_version": "wd-010.v2",
+      "session_ids": [
+        "01a07e28-900f-7b23-bc55-2f2571ce1bb7",
+        "01a07f91-bce6-7fe0-abe5-8ed2470049a4",
+        "01a07faa-fa6e-7fa1-9e26-63e718d30732",
+        "01a07faf-ecd8-7aa1-97af-48e706727e40",
+        "01a08236-2423-7570-909d-9967f4913195",
+        "01a0824c-df30-74d2-b88a-47f2a22f2229",
+        "01a084a9-7398-7293-ad52-fb6ff081f6b7",
+        "01a08805-66f3-76f1-91be-28fb974debc7",
+        "01a0881a-f104-7863-bfb8-78585c3f5a3a",
+        "01a0e454-c911-70f0-93cb-a814c0b85ee0",
+        "20707b47-52a2-4cc3-b9c8-7d85894f74c7",
+        "2bd19110-34d7-4ed3-bf5b-33eac9438429",
+        "42cd82e9-ce54-4f10-816f-93907fb085b8",
+        "4573c081-6eb5-46b6-913c-e8c8992bd3aa",
+        "8394af3e-3a4a-4c10-b898-a5ca715e8f67",
+        "8a5e5928-119f-4749-8cba-a32547428ef9",
+        "e8320fcb-0adf-4c3f-abe4-9987c78ecac0",
+        "ef62aae4-a871-4d0e-afe3-6bd534e8416a",
+        "f06870ad-049c-45be-abdf-a265f4f87cba",
+        "fea7a7d1-d6ee-43ca-b327-ef5ee33185a5",
+        "ff3e0390-d0fd-49c3-888e-7f62a6c30f9f"
+      ]
+    }
+  ],
+  "excluded": {
+    "event_count_changed": [],
+    "events_missing": []
+  },
+  "format_version": "wd-012.sample.v1",
+  "generated_at": "2026-09-27T20:32:32.166848+00:00",
+  "project_id": "130179bd-aefa-4160-8d04-247118c095eb",
+  "recomputed_from": "wd-010.v1",
+  "rule_version": "wd-010.v2",
+  "schema_version": 7,
+  "selection": {
+    "all_eligible": true,
+    "considered": 81,
+    "eligible": 46,
+    "min_events": 20,
+    "provider": null,
+    "seed": 12,
+    "settle_hours": 2.0,
+    "since": null,
+    "skipped": {
+      "below_min_events": 33,
+      "not_settled": 2
+    },
+    "strata": {
+      "with_finding": 14,
+      "without_finding_available": 32,
+      "without_finding_drawn": 32
+    },
+    "target": 40,
+    "until": null
+  },
+  "sessions": [
+    {
+      "checkout_ids": [
+        "9f4edabb-c34e-5c24-a0da-24755024f12d"
+      ],
+      "closed": true,
+      "compactions": 0,
+      "event_count": 183,
+      "findings": [],
+      "first_received_at": "2026-09-07T20:35:37.536056+00:00",
+      "gaps": 0,
+      "last_received_at": "2026-09-07T23:59:47.408934+00:00",
+      "provider": "codex",
+      "session_id": "01a07d94-c681-7693-a877-cebec978bf3a",
+      "tool_failures": 0,
+      "tools": 49,
+      "turns": 6,
+      "waiting": 0
+    },
+    {
+      "checkout_ids": [
+        "9f4edabb-c34e-5c24-a0da-24755024f12d"
+      ],
+      "closed": true,
+      "compactions": 0,
+      "event_count": 233,
+      "findings": [],
+      "first_received_at": "2026-09-07T21:18:15.308914+00:00",
+      "gaps": 0,
+      "last_received_at": "2026-09-07T23:56:59.800595+00:00",
+      "provider": "codex",
+      "session_id": "01a07dbc-329e-7c31-9557-cfe097b14b8d",
+      "tool_failures": 0,
+      "tools": 76,
+      "turns": 2,
+      "waiting": 0
+    },
+    {
+      "checkout_ids": [
+        "9f4edabb-c34e-5c24-a0da-24755024f12d"
+      ],
+      "closed": false,
+      "compactions": 0,
+      "event_count": 240,
+      "findings": [],
+      "first_received_at": "2026-09-07T22:36:54.759014+00:00",
+      "gaps": 0,
+      "last_received_at": "2026-09-07T23:31:27.088936+00:00",
+      "provider": "codex",
+      "session_id": "01a07e04-373d-70a1-acc8-290c81a23d33",
+      "tool_failures": 0,
+      "tools": 70,
+      "turns": 2,
+      "waiting": 0
+    },
+    {
+      "checkout_ids": [
+        "9f4edabb-c34e-5c24-a0da-24755024f12d"
+      ],
+      "closed": true,
+      "compactions": 0,
+      "event_count": 224,
+      "findings": [],
+      "first_received_at": "2026-09-07T23:17:47.042074+00:00",
+      "gaps": 2,
+      "last_received_at": "2026-09-08T19:58:04.389067+00:00",
+      "provider": "codex",
+      "session_id": "01a07e28-900f-7b23-bc55-2f2571ce1bb7",
+      "tool_failures": 0,
+      "tools": 58,
+      "turns": 8,
+      "waiting": 0
+    },
+    {
+      "checkout_ids": [
+        "9f4edabb-c34e-5c24-a0da-24755024f12d"
+      ],
+      "closed": true,
+      "compactions": 0,
+      "event_count": 100,
+      "findings": [],
+      "first_received_at": "2026-09-07T23:30:06.334039+00:00",
+      "gaps": 0,
+      "last_received_at": "2026-09-07T23:30:08.229899+00:00",
+      "provider": "codex",
+      "session_id": "01a07d17-48be-71c3-981f-ae1db5e7bf99",
+      "tool_failures": 0,
+      "tools": 0,
+      "turns": 0,
+      "waiting": 0
+    },
+    {
+      "checkout_ids": [
+        "9f4edabb-c34e-5c24-a0da-24755024f12d"
+      ],
+      "closed": true,
+      "compactions": 0,
+      "event_count": 92,
+      "findings": [],
+      "first_received_at": "2026-09-07T23:50:19.177141+00:00",
+      "gaps": 0,
+      "last_received_at": "2026-09-07T23:50:22.540754+00:00",
+      "provider": "codex",
+      "session_id": "01a07d4a-630a-7033-8543-67a236ffa8ff",
+      "tool_failures": 0,
+      "tools": 0,
+      "turns": 0,
+      "waiting": 0
+    },
+    {
+      "checkout_ids": [
+        "9f4edabb-c34e-5c24-a0da-24755024f12d"
+      ],
+      "closed": true,
+      "compactions": 0,
+      "event_count": 256,
+      "findings": [],
+      "first_received_at": "2026-09-08T05:04:50.458125+00:00",
+      "gaps": 0,
+      "last_received_at": "2026-09-08T19:58:02.834834+00:00",
+      "provider": "codex",
+      "session_id": "01a07f67-46a2-76d2-a495-20f1d2fa142a",
+      "tool_failures": 0,
+      "tools": 86,
+      "turns": 2,
+      "waiting": 0
+    },
+    {
+      "checkout_ids": [
+        "9f4edabb-c34e-5c24-a0da-24755024f12d"
+      ],
+      "closed": true,
+      "compactions": 0,
+      "event_count": 81,
+      "findings": [],
+      "first_received_at": "2026-09-08T05:19:25.113544+00:00",
+      "gaps": 0,
+      "last_received_at": "2026-09-08T19:58:01.008630+00:00",
+      "provider": "codex",
+      "session_id": "01a07f73-550e-7213-ad08-f2090014c1fc",
+      "tool_failures": 0,
+      "tools": 27,
+      "turns": 1,
+      "waiting": 0
+    },
+    {
+      "checkout_ids": [
+        "9f4edabb-c34e-5c24-a0da-24755024f12d"
+      ],
+      "closed": false,
+      "compactions": 1,
+      "event_count": 399,
+      "findings": [],
+      "first_received_at": "2026-09-08T05:55:32.512943+00:00",
+      "gaps": 1,
+      "last_received_at": "2026-09-08T19:58:08.653692+00:00",
+      "provider": "codex",
+      "session_id": "01a07f91-bce6-7fe0-abe5-8ed2470049a4",
+      "tool_failures": 0,
+      "tools": 135,
+      "turns": 15,
+      "waiting": 0
+    },
+    {
+      "checkout_ids": [
+        "9f4edabb-c34e-5c24-a0da-24755024f12d"
+      ],
+      "closed": true,
+      "compactions": 0,
+      "event_count": 56,
+      "findings": [],
+      "first_received_at": "2026-09-08T06:08:35.386604+00:00",
+      "gaps": 0,
+      "last_received_at": "2026-09-08T19:58:01.239796+00:00",
+      "provider": "codex",
+      "session_id": "01a07f8f-8592-7580-adeb-2312d3cf86de",
+      "tool_failures": 0,
+      "tools": 7,
+      "turns": 0,
+      "waiting": 0
+    },
+    {
+      "checkout_ids": [
+        "9f4edabb-c34e-5c24-a0da-24755024f12d"
+      ],
+      "closed": true,
+      "compactions": 0,
+      "event_count": 97,
+      "findings": [],
+      "first_received_at": "2026-09-08T06:19:39.544508+00:00",
+      "gaps": 2,
+      "last_received_at": "2026-09-12T11:33:52.882973+00:00",
+      "provider": "codex",
+      "session_id": "01a07faa-fa6e-7fa1-9e26-63e718d30732",
+      "tool_failures": 0,
+      "tools": 25,
+      "turns": 3,
+      "waiting": 0
+    },
+    {
+      "checkout_ids": [
+        "9f4edabb-c34e-5c24-a0da-24755024f12d"
+      ],
+      "closed": false,
+      "compactions": 1,
+      "event_count": 364,
+      "findings": [],
+      "first_received_at": "2026-09-08T06:26:50.977777+00:00",
+      "gaps": 0,
+      "last_received_at": "2026-09-08T19:58:05.999617+00:00",
+      "provider": "codex",
+      "session_id": "01a07faf-ecd8-7aa1-97af-48e706727e40",
+      "tool_failures": 0,
+      "tools": 120,
+      "turns": 10,
+      "waiting": 0
+    },
+    {
+      "checkout_ids": [
+        "9f4edabb-c34e-5c24-a0da-24755024f12d"
+      ],
+      "closed": false,
+      "compactions": 0,
+      "event_count": 113,
+      "findings": [],
+      "first_received_at": "2026-09-08T18:02:15.079978+00:00",
+      "gaps": 0,
+      "last_received_at": "2026-09-08T19:58:01.498528+00:00",
+      "provider": "codex",
+      "session_id": "01a0822f-0745-7761-afff-51c448d60714",
+      "tool_failures": 0,
+      "tools": 33,
+      "turns": 6,
+      "waiting": 0
+    },
+    {
+      "checkout_ids": [
+        "9f4edabb-c34e-5c24-a0da-24755024f12d"
+      ],
+      "closed": false,
+      "compactions": 0,
+      "event_count": 178,
+      "findings": [],
+      "first_received_at": "2026-09-08T18:10:05.997301+00:00",
+      "gaps": 0,
+      "last_received_at": "2026-09-08T19:58:04.901055+00:00",
+      "provider": "codex",
+      "session_id": "01a08236-2423-7570-909d-9967f4913195",
+      "tool_failures": 0,
+      "tools": 66,
+      "turns": 5,
+      "waiting": 0
+    },
+    {
+      "checkout_ids": [
+        "9f4edabb-c34e-5c24-a0da-24755024f12d"
+      ],
+      "closed": false,
+      "compactions": 1,
+      "event_count": 841,
+      "findings": [
+        {
+          "attribution": "observed",
+          "count": 5,
+          "evidence_ids": [
+            "146644f6-21d4-444d-a94d-cfa24cc3812d",
+            "07f5845f-787b-488b-be3f-6c61e7c3c72c",
+            "bb4fe345-249a-4899-b24c-c253ab2f8a9e",
+            "a4cb5c51-0256-44d5-a92f-0c65e6d24293",
+            "2ea67d4d-2f98-45cc-ac7b-de0c54c6fc43"
+          ],
+          "explanation": "Observed the same tool input and outcome 5 times in a row (same output despite edits between).",
+          "fingerprint": "ff7365b5aa0641a0ebabbb161183c3927be9ddaee631e3b4dfd091918f55efac",
+          "rule": "repeated_tool_outcome",
+          "rule_version": "wd-010.v2"
+        }
+      ],
+      "first_received_at": "2026-09-08T18:38:59.674966+00:00",
+      "gaps": 3,
+      "last_received_at": "2026-09-08T20:04:17.405016+00:00",
+      "provider": "codex",
+      "session_id": "01a0824c-df30-74d2-b88a-47f2a22f2229",
+      "tool_failures": 0,
+      "tools": 241,
+      "turns": 6,
+      "waiting": 0
+    },
+    {
+      "checkout_ids": [
+        "9f4edabb-c34e-5c24-a0da-24755024f12d"
+      ],
+      "closed": false,
+      "compactions": 0,
+      "event_count": 164,
+      "findings": [],
+      "first_received_at": "2026-09-08T18:47:28.104369+00:00",
+      "gaps": 0,
+      "last_received_at": "2026-09-08T19:58:03.541746+00:00",
+      "provider": "codex",
+      "session_id": "01a08255-497c-7540-a2f4-ceeca3b7e876",
+      "tool_failures": 0,
+      "tools": 60,
+      "turns": 0,
+      "waiting": 0
+    },
+    {
+      "checkout_ids": [
+        "9f4edabb-c34e-5c24-a0da-24755024f12d"
+      ],
+      "closed": true,
+      "compactions": 0,
+      "event_count": 82,
+      "findings": [],
+      "first_received_at": "2026-09-08T20:07:52.928402+00:00",
+      "gaps": 0,
+      "last_received_at": "2026-09-08T21:49:47.285952+00:00",
+      "provider": "claude",
+      "session_id": "6c812d9d-a85a-46a5-b0e6-bda373f790c8",
+      "tool_failures": 5,
+      "tools": 30,
+      "turns": 2,
+      "waiting": 12
+    },
+    {
+      "checkout_ids": [
+        "9f4edabb-c34e-5c24-a0da-24755024f12d"
+      ],
+      "closed": true,
+      "compactions": 0,
+      "event_count": 106,
+      "findings": [],
+      "first_received_at": "2026-09-08T20:22:45.215600+00:00",
+      "gaps": 0,
+      "last_received_at": "2026-09-08T21:49:47.132758+00:00",
+      "provider": "claude",
+      "session_id": "8a5e5928-119f-4749-8cba-a32547428ef9",
+      "tool_failures": 0,
+      "tools": 47,
+      "turns": 4,
+      "waiting": 0
+    },
+    {
+      "checkout_ids": [
+        "9f4edabb-c34e-5c24-a0da-24755024f12d"
+      ],
+      "closed": false,
+      "compactions": 0,
+      "event_count": 42,
+      "findings": [],
+      "first_received_at": "2026-09-08T20:39:53.284397+00:00",
+      "gaps": 0,
+      "last_received_at": "2026-09-08T20:44:35.242408+00:00",
+      "provider": "codex",
+      "session_id": "01a082be-a3a1-7812-beb3-af9e42131bc4",
+      "tool_failures": 0,
+      "tools": 9,
+      "turns": 5,
+      "waiting": 0
+    },
+    {
+      "checkout_ids": [
+        "9f4edabb-c34e-5c24-a0da-24755024f12d"
+      ],
+      "closed": true,
+      "compactions": 0,
+      "event_count": 380,
+      "findings": [],
+      "first_received_at": "2026-09-08T20:52:47.385776+00:00",
+      "gaps": 0,
+      "last_received_at": "2026-09-08T21:49:47.145604+00:00",
+      "provider": "claude",
+      "session_id": "fea7a7d1-d6ee-43ca-b327-ef5ee33185a5",
+      "tool_failures": 0,
+      "tools": 181,
+      "turns": 7,
+      "waiting": 1
+    },
+    {
+      "checkout_ids": [
+        "9f4edabb-c34e-5c24-a0da-24755024f12d"
+      ],
+      "closed": true,
+      "compactions": 0,
+      "event_count": 280,
+      "findings": [],
+      "first_received_at": "2026-09-09T04:58:08.574058+00:00",
+      "gaps": 0,
+      "last_received_at": "2026-09-10T20:41:53.647085+00:00",
+      "provider": "claude",
+      "session_id": "4573c081-6eb5-46b6-913c-e8c8992bd3aa",
+      "tool_failures": 1,
+      "tools": 102,
+      "turns": 6,
+      "waiting": 2
+    },
+    {
+      "checkout_ids": [
+        "9f4edabb-c34e-5c24-a0da-24755024f12d"
+      ],
+      "closed": true,
+      "compactions": 0,
+      "event_count": 85,
+      "findings": [],
+      "first_received_at": "2026-09-09T05:29:46.767579+00:00",
+      "gaps": 0,
+      "last_received_at": "2026-09-09T13:09:10.604290+00:00",
+      "provider": "claude",
+      "session_id": "275cfd15-a824-4eb8-ad18-b6b809e90c14",
+      "tool_failures": 2,
+      "tools": 26,
+      "turns": 1,
+      "waiting": 5
+    },
+    {
+      "checkout_ids": [
+        "9f4edabb-c34e-5c24-a0da-24755024f12d"
+      ],
+      "closed": true,
+      "compactions": 0,
+      "event_count": 365,
+      "findings": [],
+      "first_received_at": "2026-09-09T05:35:09.350508+00:00",
+      "gaps": 0,
+      "last_received_at": "2026-09-09T19:50:36.388951+00:00",
+      "provider": "codex",
+      "session_id": "01a084a9-7398-7293-ad52-fb6ff081f6b7",
+      "tool_failures": 0,
+      "tools": 87,
+      "turns": 5,
+      "waiting": 0
+    },
+    {
+      "checkout_ids": [
+        "9f4edabb-c34e-5c24-a0da-24755024f12d"
+      ],
+      "closed": true,
+      "compactions": 0,
+      "event_count": 514,
+      "findings": [],
+      "first_received_at": "2026-09-09T06:37:30.136222+00:00",
+      "gaps": 1,
+      "last_received_at": "2026-09-10T20:41:46.382823+00:00",
+      "provider": "claude",
+      "session_id": "42cd82e9-ce54-4f10-816f-93907fb085b8",
+      "tool_failures": 1,
+      "tools": 187,
+      "turns": 4,
+      "waiting": 3
+    },
+    {
+      "checkout_ids": [
+        "9f4edabb-c34e-5c24-a0da-24755024f12d"
+      ],
+      "closed": true,
+      "compactions": 0,
+      "event_count": 1170,
+      "findings": [
+        {
+          "action": "both",
+          "attribution": "observed",
+          "count": 2,
+          "evidence_ids": [
+            "0b0508c8-c9d6-4458-93b0-a084a1e87afb",
+            "73ee3413-cf4c-5008-9b04-3fb35dc34685"
+          ],
+          "explanation": "Subagent resolved to the same model (claude-sonnet-5) as its coordinating conversation.",
+          "fingerprint": "3f49cd80c596a1c0deab163b3f3cde2d1f1e083de1df621d4f642d766bfd2024",
+          "rule": "same_model_subagent_spawn",
+          "rule_version": "wd-014.v1"
+        },
+        {
+          "action": "both",
+          "attribution": "observed",
+          "count": 2,
+          "evidence_ids": [
+            "143d1dd8-2fd4-514c-b3e9-4f95cfdd7c29",
+            "ae0662b2-246d-44bb-b9c3-4db98514809d"
+          ],
+          "explanation": "Subagent resolved to the same model (claude-sonnet-5) as its coordinating conversation.",
+          "fingerprint": "cb86f520f7dc11bfd35014ed2e070dc8ecde93dba5fce55142d646708312ab2d",
+          "rule": "same_model_subagent_spawn",
+          "rule_version": "wd-014.v1"
+        },
+        {
+          "action": "both",
+          "attribution": "observed",
+          "count": 2,
+          "evidence_ids": [
+            "3a42a7e5-1fb4-57ab-bcf3-06307612bda2",
+            "8cee32ab-e200-4b17-97e4-0b1fe42b1acd"
+          ],
+          "explanation": "Subagent resolved to the same model (claude-sonnet-5) as its coordinating conversation.",
+          "fingerprint": "45861cad9329238c6b020d0a5b17a417bc80024007e848439ca47032c1b96d28",
+          "rule": "same_model_subagent_spawn",
+          "rule_version": "wd-014.v1"
+        },
+        {
+          "action": "both",
+          "attribution": "observed",
+          "count": 2,
+          "evidence_ids": [
+            "4befce36-8c71-45c0-ad51-218b3abc2359",
+            "a535de5e-9aba-5181-9c7d-8d576f29c063"
+          ],
+          "explanation": "Subagent resolved to the same model (claude-sonnet-5) as its coordinating conversation.",
+          "fingerprint": "9037e5434929da145991f3ddd88439d84af1738936e4c49a4d9d14f3a8406c8d",
+          "rule": "same_model_subagent_spawn",
+          "rule_version": "wd-014.v1"
+        },
+        {
+          "action": "both",
+          "attribution": "observed",
+          "count": 2,
+          "evidence_ids": [
+            "58799b32-1477-4624-990a-fa5fcbe23cc8",
+            "8e345793-e78b-51dc-b91c-7b8efa01627b"
+          ],
+          "explanation": "Subagent resolved to the same model (claude-sonnet-5) as its coordinating conversation.",
+          "fingerprint": "a710d45af08f969a6d767db91163581e8ffa4c1a95ea27286339f0c38884e899",
+          "rule": "same_model_subagent_spawn",
+          "rule_version": "wd-014.v1"
+        },
+        {
+          "action": "both",
+          "attribution": "observed",
+          "count": 2,
+          "evidence_ids": [
+            "9a533d0f-ae75-4cda-8fc2-25e19e0d0eca",
+            "bd5f9db6-a283-5383-bcfb-be9e9ba4b993"
+          ],
+          "explanation": "Subagent resolved to the same model (claude-sonnet-5) as its coordinating conversation.",
+          "fingerprint": "8b4bd37faf7137b0249a0409ff006e369a29e05c7d3bad6b7a4c8921db87256a",
+          "rule": "same_model_subagent_spawn",
+          "rule_version": "wd-014.v1"
+        },
+        {
+          "action": "both",
+          "attribution": "observed",
+          "count": 2,
+          "evidence_ids": [
+            "d59433aa-66ed-5614-9e7a-6a8297e89af8",
+            "f203921a-60dc-4e61-8134-d8fe8dec9ca8"
+          ],
+          "explanation": "Subagent resolved to the same model (claude-sonnet-5) as its coordinating conversation.",
+          "fingerprint": "268027bf5b13a1d527f68e6b4f5720f993a3c542e97c7b0b1f338d2cd1be2c03",
+          "rule": "same_model_subagent_spawn",
+          "rule_version": "wd-014.v1"
+        }
+      ],
+      "first_received_at": "2026-09-09T13:09:10.108588+00:00",
+      "gaps": 17,
+      "last_received_at": "2026-09-16T19:15:09.582558+00:00",
+      "provider": "claude",
+      "session_id": "ff3e0390-d0fd-49c3-888e-7f62a6c30f9f",
+      "tool_failures": 8,
+      "tools": 340,
+      "turns": 41,
+      "waiting": 4
+    },
+    {
+      "checkout_ids": [
+        "9f4edabb-c34e-5c24-a0da-24755024f12d"
+      ],
+      "closed": false,
+      "compactions": 0,
+      "event_count": 182,
+      "findings": [],
+      "first_received_at": "2026-09-09T18:37:37.397917+00:00",
+      "gaps": 60,
+      "last_received_at": "2026-09-09T18:49:25.650960+00:00",
+      "provider": "codex",
+      "session_id": "01a08773-6d39-70c0-99e5-952755bbddeb",
+      "tool_failures": 0,
+      "tools": 48,
+      "turns": 1,
+      "waiting": 0
+    },
+    {
+      "checkout_ids": [
+        "9f4edabb-c34e-5c24-a0da-24755024f12d"
+      ],
+      "closed": true,
+      "compactions": 0,
+      "event_count": 246,
+      "findings": [],
+      "first_received_at": "2026-09-09T18:44:26.013669+00:00",
+      "gaps": 5,
+      "last_received_at": "2026-09-10T20:41:30.871760+00:00",
+      "provider": "claude",
+      "session_id": "b5ee9e09-0903-46bf-a26c-c05095767820",
+      "tool_failures": 1,
+      "tools": 75,
+      "turns": 4,
+      "waiting": 1
+    },
+    {
+      "checkout_ids": [
+        "9f4edabb-c34e-5c24-a0da-24755024f12d"
+      ],
+      "closed": true,
+      "compactions": 0,
+      "event_count": 955,
+      "findings": [
+        {
+          "attribution": "observed",
+          "count": 4,
+          "evidence_ids": [
+            "7a3b8060-165e-46d7-8230-9a31bf8dab94",
+            "aef30004-bcb1-4d8f-9862-25e99b81adbf",
+            "692d7f59-b331-4c3e-bdf3-89b4c53ab8c3",
+            "f6f6adf7-4e03-4e24-b2fc-b825d8e7ce8d"
+          ],
+          "explanation": "Observed the same failing tool result 4 times (paths and numbers normalised).",
+          "fingerprint": "dfe304b008907508f3d0b85fbdc253784dd4053e4f0aa72d3d1f3798b145d158",
+          "rule": "identical_error",
+          "rule_version": "wd-010.v2"
+        },
+        {
+          "attribution": "observed",
+          "count": 5,
+          "evidence_ids": [
+            "95b605c1-3ee4-4543-93fa-986fda2e9908",
+            "be2f5cbd-0b0d-459a-9691-eec7cb8427f6",
+            "980f7107-1ce1-4e94-af85-c141689d7591",
+            "ecb2dd5c-3502-4848-b46f-d8599931153b",
+            "519205b6-f84b-489e-bead-bfb8bf062d7d"
+          ],
+          "explanation": "Observed the same failing tool result 5 times (paths and numbers normalised).",
+          "fingerprint": "9ffcf21826f858c086a3427482cbc8bbfdf11202e8cfcf4214b21d94bcd3b34d",
+          "rule": "identical_error",
+          "rule_version": "wd-010.v2"
+        },
+        {
+          "action": "both",
+          "attribution": "observed",
+          "count": 2,
+          "evidence_ids": [
+            "382c48c7-494b-5bf1-a097-84005a85dfaf",
+            "edd9dbef-0479-4cfe-bd98-4b7fc64ee042"
+          ],
+          "explanation": "Subagent resolved to the same model (claude-opus-5) as its coordinating conversation.",
+          "fingerprint": "214ebc0565bdd912e8a9227bb3d3c8f899bd3de291d2bd473662ba1add3727b1",
+          "rule": "same_model_subagent_spawn",
+          "rule_version": "wd-014.v1"
+        },
+        {
+          "action": "both",
+          "attribution": "observed",
+          "count": 2,
+          "evidence_ids": [
+            "47d49032-9756-5611-8f8c-64f801aeea0f",
+            "52660829-df0e-42b8-b537-656b746b05f8"
+          ],
+          "explanation": "Subagent resolved to the same model (claude-opus-5) as its coordinating conversation.",
+          "fingerprint": "717f3da84d85aa3533760043b132446959d7cc8683f26a253e10963c794cfa20",
+          "rule": "same_model_subagent_spawn",
+          "rule_version": "wd-014.v1"
+        }
+      ],
+      "first_received_at": "2026-09-09T19:00:17.660936+00:00",
+      "gaps": 1,
+      "last_received_at": "2026-09-13T15:08:50.090285+00:00",
+      "provider": "claude",
+      "session_id": "ef62aae4-a871-4d0e-afe3-6bd534e8416a",
+      "tool_failures": 21,
+      "tools": 321,
+      "turns": 7,
+      "waiting": 2
+    },
+    {
+      "checkout_ids": [
+        "9f4edabb-c34e-5c24-a0da-24755024f12d"
+      ],
+      "closed": false,
+      "compactions": 0,
+      "event_count": 214,
+      "findings": [],
+      "first_received_at": "2026-09-09T20:51:38.614499+00:00",
+      "gaps": 0,
+      "last_received_at": "2026-09-09T21:12:04.292684+00:00",
+      "provider": "codex",
+      "session_id": "01a087f0-6bbc-7273-b4af-562fcd96e04e",
+      "tool_failures": 0,
+      "tools": 73,
+      "turns": 1,
+      "waiting": 0
+    },
+    {
+      "checkout_ids": [
+        "9f4edabb-c34e-5c24-a0da-24755024f12d"
+      ],
+      "closed": false,
+      "compactions": 0,
+      "event_count": 152,
+      "findings": [
+        {
+          "attribution": "observed",
+          "count": 4,
+          "evidence_ids": [
+            "e19f14d9-f693-4d85-b662-f8b53ed69990",
+            "bb25d436-9c85-4661-8e1c-062e98cc2561",
+            "e6f1f0a2-4720-4742-82cd-59518d5a386f",
+            "8a8c55cb-b826-4f42-8c62-2edcea870e0a"
+          ],
+          "explanation": "Observed the same tool input and outcome 4 times in a row (same output, no edits between).",
+          "fingerprint": "16b783772132663bd84577a00672b0117e81dfbe6313d3cea6bd59555731a70a",
+          "rule": "repeated_tool_outcome",
+          "rule_version": "wd-010.v2"
+        }
+      ],
+      "first_received_at": "2026-09-09T21:12:26.203887+00:00",
+      "gaps": 0,
+      "last_received_at": "2026-09-09T21:27:00.437383+00:00",
+      "provider": "codex",
+      "session_id": "01a08803-a9b7-7c91-8876-e55ba7829a6b",
+      "tool_failures": 0,
+      "tools": 48,
+      "turns": 1,
+      "waiting": 0
+    },
+    {
+      "checkout_ids": [
+        "9f4edabb-c34e-5c24-a0da-24755024f12d"
+      ],
+      "closed": false,
+      "compactions": 1,
+      "event_count": 284,
+      "findings": [],
+      "first_received_at": "2026-09-09T21:17:03.978931+00:00",
+      "gaps": 0,
+      "last_received_at": "2026-09-09T21:58:38.209835+00:00",
+      "provider": "codex",
+      "session_id": "01a08805-66f3-76f1-91be-28fb974debc7",
+      "tool_failures": 0,
+      "tools": 90,
+      "turns": 5,
+      "waiting": 0
+    },
+    {
+      "checkout_ids": [
+        "9f4edabb-c34e-5c24-a0da-24755024f12d"
+      ],
+      "closed": false,
+      "compactions": 0,
+      "event_count": 85,
+      "findings": [],
+      "first_received_at": "2026-09-09T21:21:54.460780+00:00",
+      "gaps": 0,
+      "last_received_at": "2026-09-09T21:34:31.434003+00:00",
+      "provider": "codex",
+      "session_id": "01a0880a-8923-70e3-a23e-5341ca58622c",
+      "tool_failures": 0,
+      "tools": 24,
+      "turns": 2,
+      "waiting": 0
+    },
+    {
+      "checkout_ids": [
+        "9f4edabb-c34e-5c24-a0da-24755024f12d"
+      ],
+      "closed": true,
+      "compactions": 0,
+      "event_count": 62,
+      "findings": [],
+      "first_received_at": "2026-09-09T21:38:42.999248+00:00",
+      "gaps": 0,
+      "last_received_at": "2026-09-10T21:58:51.338741+00:00",
+      "provider": "codex",
+      "session_id": "01a0881a-f104-7863-bfb8-78585c3f5a3a",
+      "tool_failures": 0,
+      "tools": 8,
+      "turns": 2,
+      "waiting": 0
+    },
+    {
+      "checkout_ids": [
+        "9f4edabb-c34e-5c24-a0da-24755024f12d"
+      ],
+      "closed": true,
+      "compactions": 0,
+      "event_count": 377,
+      "findings": [],
+      "first_received_at": "2026-09-10T05:11:47.002871+00:00",
+      "gaps": 0,
+      "last_received_at": "2026-09-10T21:48:00.429642+00:00",
+      "provider": "codex",
+      "session_id": "01a089ba-13b8-7443-beed-23bb133c04cf",
+      "tool_failures": 0,
+      "tools": 106,
+      "turns": 5,
+      "waiting": 0
+    },
+    {
+      "checkout_ids": [
+        "9f4edabb-c34e-5c24-a0da-24755024f12d"
+      ],
+      "closed": true,
+      "compactions": 0,
+      "event_count": 270,
+      "findings": [],
+      "first_received_at": "2026-09-10T06:27:34.418438+00:00",
+      "gaps": 84,
+      "last_received_at": "2026-09-10T21:47:17.234137+00:00",
+      "provider": "codex",
+      "session_id": "01a089ff-a05b-7851-bd36-81392c073785",
+      "tool_failures": 0,
+      "tools": 59,
+      "turns": 1,
+      "waiting": 0
+    },
+    {
+      "checkout_ids": [
+        "9f4edabb-c34e-5c24-a0da-24755024f12d"
+      ],
+      "closed": false,
+      "compactions": 0,
+      "event_count": 109,
+      "findings": [
+        {
+          "attribution": "observed",
+          "count": 3,
+          "evidence_ids": [
+            "217eb013-d6c4-4f72-852a-e22abb51fdc5",
+            "657bf97d-a1e7-4a24-833f-b45680824fc4",
+            "96cb2d2b-6d29-4614-829f-0908d9b21ef7"
+          ],
+          "explanation": "Observed the same tool input and outcome 3 times in a row (no edits between).",
+          "fingerprint": "56ef48f43d18b9c5ccc31cf62c95e8244b7cad7e12a1691e8750a9277acf70c0",
+          "rule": "repeated_tool_outcome",
+          "rule_version": "wd-010.v2"
+        }
+      ],
+      "first_received_at": "2026-09-10T20:16:02.588686+00:00",
+      "gaps": 0,
+      "last_received_at": "2026-09-10T20:31:15.058774+00:00",
+      "provider": "codex",
+      "session_id": "01a08cf5-f0bc-7951-bee5-da818343c835",
+      "tool_failures": 0,
+      "tools": 29,
+      "turns": 1,
+      "waiting": 0
+    },
+    {
+      "checkout_ids": [
+        "9f4edabb-c34e-5c24-a0da-24755024f12d"
+      ],
+      "closed": true,
+      "compactions": 0,
+      "event_count": 455,
+      "findings": [],
+      "first_received_at": "2026-09-10T20:33:05.672351+00:00",
+      "gaps": 79,
+      "last_received_at": "2026-09-11T23:34:53.487775+00:00",
+      "provider": "codex",
+      "session_id": "01a08d04-8b94-7440-ac77-cf71ffc628d3",
+      "tool_failures": 0,
+      "tools": 101,
+      "turns": 0,
+      "waiting": 0
+    },
+    {
+      "checkout_ids": [
+        "9f4edabb-c34e-5c24-a0da-24755024f12d"
+      ],
+      "closed": false,
+      "compactions": 0,
+      "event_count": 42,
+      "findings": [],
+      "first_received_at": "2026-09-13T14:21:09.822467+00:00",
+      "gaps": 0,
+      "last_received_at": "2026-09-13T14:26:28.418598+00:00",
+      "provider": "codex",
+      "session_id": "01a09b21-7809-7110-be03-0596a102ecb2",
+      "tool_failures": 0,
+      "tools": 13,
+      "turns": 0,
+      "waiting": 0
+    },
+    {
+      "checkout_ids": [
+        "9f4edabb-c34e-5c24-a0da-24755024f12d"
+      ],
+      "closed": true,
+      "compactions": 0,
+      "event_count": 515,
+      "findings": [],
+      "first_received_at": "2026-09-13T15:00:20.664398+00:00",
+      "gaps": 34,
+      "last_received_at": "2026-09-14T21:33:44.288518+00:00",
+      "provider": "claude",
+      "session_id": "e8320fcb-0adf-4c3f-abe4-9987c78ecac0",
+      "tool_failures": 7,
+      "tools": 116,
+      "turns": 34,
+      "waiting": 0
+    },
+    {
+      "checkout_ids": [
+        "9f4edabb-c34e-5c24-a0da-24755024f12d"
+      ],
+      "closed": false,
+      "compactions": 0,
+      "event_count": 256,
+      "findings": [],
+      "first_received_at": "2026-09-14T21:35:57.173152+00:00",
+      "gaps": 2,
+      "last_received_at": "2026-09-14T21:49:48.422494+00:00",
+      "provider": "claude",
+      "session_id": "042686d7-7e9b-4818-ace0-62e5fa9eaf8c",
+      "tool_failures": 3,
+      "tools": 83,
+      "turns": 1,
+      "waiting": 0
+    },
+    {
+      "checkout_ids": [
+        "9f4edabb-c34e-5c24-a0da-24755024f12d"
+      ],
+      "closed": true,
+      "compactions": 0,
+      "event_count": 21,
+      "findings": [],
+      "first_received_at": "2026-09-16T18:45:56.236177+00:00",
+      "gaps": 3,
+      "last_received_at": "2026-09-16T22:28:30.822610+00:00",
+      "provider": "claude",
+      "session_id": "05f31f78-b7c7-41e2-8e1c-5ae70e61be54",
+      "tool_failures": 0,
+      "tools": 3,
+      "turns": 2,
+      "waiting": 0
+    },
+    {
+      "checkout_ids": [
+        "9f4edabb-c34e-5c24-a0da-24755024f12d"
+      ],
+      "closed": true,
+      "compactions": 0,
+      "event_count": 1011,
+      "findings": [
+        {
+          "action": "both",
+          "attribution": "observed",
+          "count": 2,
+          "evidence_ids": [
+            "2e7d1029-525a-5caa-9cb3-89cbaffe1924",
+            "771de016-8c62-4504-9c62-7170caea2c02"
+          ],
+          "explanation": "Subagent resolved to the same model (claude-sonnet-5) as its coordinating conversation.",
+          "fingerprint": "1b6abe347ff19048c54275a92b24916b43acf16750545d9b4ec34a1e4af82e8c",
+          "rule": "same_model_subagent_spawn",
+          "rule_version": "wd-014.v1"
+        }
+      ],
+      "first_received_at": "2026-09-16T19:01:54.566213+00:00",
+      "gaps": 14,
+      "last_received_at": "2026-09-16T22:28:31.264769+00:00",
+      "provider": "claude",
+      "session_id": "2bd19110-34d7-4ed3-bf5b-33eac9438429",
+      "tool_failures": 3,
+      "tools": 323,
+      "turns": 19,
+      "waiting": 3
+    },
+    {
+      "checkout_ids": [
+        "9f4edabb-c34e-5c24-a0da-24755024f12d"
+      ],
+      "closed": true,
+      "compactions": 0,
+      "event_count": 442,
+      "findings": [],
+      "first_received_at": "2026-09-16T21:47:33.944394+00:00",
+      "gaps": 1,
+      "last_received_at": "2026-09-16T22:28:30.479213+00:00",
+      "provider": "claude",
+      "session_id": "8394af3e-3a4a-4c10-b898-a5ca715e8f67",
+      "tool_failures": 4,
+      "tools": 145,
+      "turns": 2,
+      "waiting": 0
+    },
+    {
+      "checkout_ids": [
+        "9f4edabb-c34e-5c24-a0da-24755024f12d"
+      ],
+      "closed": true,
+      "compactions": 0,
+      "event_count": 169,
+      "findings": [
+        {
+          "action": "both",
+          "attribution": "observed",
+          "count": 2,
+          "evidence_ids": [
+            "04364f4c-2181-4da7-8310-eef9fd1b2cb8",
+            "e2c84edc-495d-5524-a428-96dd9497c013"
+          ],
+          "explanation": "Subagent resolved to the same model (claude-sonnet-5) as its coordinating conversation.",
+          "fingerprint": "333409d6a3093a556fa1c97883770d51d1c68934b5a98cb283f58661fc3ec068",
+          "rule": "same_model_subagent_spawn",
+          "rule_version": "wd-014.v1"
+        }
+      ],
+      "first_received_at": "2026-09-26T07:40:19.644220+00:00",
+      "gaps": 5,
+      "last_received_at": "2026-09-26T22:00:34.816658+00:00",
+      "provider": "claude",
+      "session_id": "3ac3a88b-cac5-4f39-8052-ae0acd9dc026",
+      "tool_failures": 0,
+      "tools": 47,
+      "turns": 7,
+      "waiting": 3
+    },
+    {
+      "checkout_ids": [
+        "9f4edabb-c34e-5c24-a0da-24755024f12d"
+      ],
+      "closed": true,
+      "compactions": 0,
+      "event_count": 1904,
+      "findings": [
+        {
+          "attribution": "observed",
+          "count": 3,
+          "evidence_ids": [
+            "0c3d2542-3c9a-4e2c-aaa8-12566a4d409b",
+            "21512b22-48a2-4e04-ae8b-692d71ad4c5e",
+            "06a72637-1cd2-4396-b00b-8b623b693959"
+          ],
+          "explanation": "Observed the same tool input and outcome 3 times in a row (same output despite edits between).",
+          "fingerprint": "e68d6758076240f9d31edde4bc7da85df41cef86ad82ffb7f70369295de39b54",
+          "rule": "repeated_tool_outcome",
+          "rule_version": "wd-010.v2"
+        },
+        {
+          "action": "both",
+          "attribution": "observed",
+          "count": 2,
+          "evidence_ids": [
+            "09ccf6aa-9ba4-59c6-a911-540d209f7d10",
+            "9ee56b2a-4269-4b29-a9c1-24a6d26f3370"
+          ],
+          "explanation": "Subagent resolved to the same model (claude-sonnet-5) as its coordinating conversation.",
+          "fingerprint": "76876a471c5164d1b99109fbd6ff39e4ee609d99f6705fe92863d525c0413652",
+          "rule": "same_model_subagent_spawn",
+          "rule_version": "wd-014.v1"
+        },
+        {
+          "action": "both",
+          "attribution": "observed",
+          "count": 2,
+          "evidence_ids": [
+            "5ceb5ece-f402-5f4e-8a42-5989f66b43d8",
+            "f34d249b-def9-46f5-bb97-9b2f2cecd042"
+          ],
+          "explanation": "Subagent resolved to the same model (claude-sonnet-5) as its coordinating conversation.",
+          "fingerprint": "2d9ebb62d7b73016097328c84103ac1004b10ecf3b403c6e9b6d4caf4dd3125a",
+          "rule": "same_model_subagent_spawn",
+          "rule_version": "wd-014.v1"
+        },
+        {
+          "action": "both",
+          "attribution": "observed",
+          "count": 2,
+          "evidence_ids": [
+            "79c1a0d2-6d05-4213-861c-aaa0e6328c3a",
+            "d96a8084-9fae-5d86-9abe-8e2f3b074c1f"
+          ],
+          "explanation": "Subagent resolved to the same model (claude-sonnet-5) as its coordinating conversation.",
+          "fingerprint": "c4b3654ce0f6496d7a192fab3f8e85ef883091f0ba4e8548e2696cde9546406a",
+          "rule": "same_model_subagent_spawn",
+          "rule_version": "wd-014.v1"
+        },
+        {
+          "action": "both",
+          "attribution": "observed",
+          "count": 2,
+          "evidence_ids": [
+            "984e2bf5-9937-5dd1-912c-081b03cd4721",
+            "d079c62e-6b2f-4da6-b128-62101903fb46"
+          ],
+          "explanation": "Subagent resolved to the same model (claude-sonnet-5) as its coordinating conversation.",
+          "fingerprint": "0cd8261f49c1582be0c426220e58a3e49e1d6c9134ee6019aa56d3c2768f9f55",
+          "rule": "same_model_subagent_spawn",
+          "rule_version": "wd-014.v1"
+        }
+      ],
+      "first_received_at": "2026-09-26T08:17:28.359015+00:00",
+      "gaps": 20,
+      "last_received_at": "2026-09-26T22:00:34.616980+00:00",
+      "provider": "claude",
+      "session_id": "f06870ad-049c-45be-abdf-a265f4f87cba",
+      "tool_failures": 6,
+      "tools": 611,
+      "turns": 27,
+      "waiting": 6
+    },
+    {
+      "checkout_ids": [
+        "9f4edabb-c34e-5c24-a0da-24755024f12d"
+      ],
+      "closed": true,
+      "compactions": 0,
+      "event_count": 646,
+      "findings": [
+        {
+          "action": "both",
+          "attribution": "observed",
+          "count": 2,
+          "evidence_ids": [
+            "4370ec50-3a6c-4587-9283-f230b420abdd",
+            "7cf2d347-6bd7-5e8e-ba01-13b87fc9cd5d"
+          ],
+          "explanation": "Subagent resolved to the same model (claude-sonnet-5) as its coordinating conversation.",
+          "fingerprint": "8ef60653aa5b7baad7d26c7758b81eb0e17bb8cf26b91473529b650d2d2ffdad",
+          "rule": "same_model_subagent_spawn",
+          "rule_version": "wd-014.v1"
+        }
+      ],
+      "first_received_at": "2026-09-26T20:16:55.217113+00:00",
+      "gaps": 12,
+      "last_received_at": "2026-09-26T22:00:34.568096+00:00",
+      "provider": "claude",
+      "session_id": "20707b47-52a2-4cc3-b9c8-7d85894f74c7",
+      "tool_failures": 8,
+      "tools": 199,
+      "turns": 15,
+      "waiting": 3
+    }
+  ]
+}

@@ -1246,3 +1246,67 @@ def test_only_the_current_rule_version_can_be_recomputed(calibrate, capture, tmp
 
     with pytest.raises(SystemExit):
         calibrate.build_report(paths, args)
+
+
+def test_events_added_after_the_freeze_do_not_change_the_recomputation(
+    calibrate, capture, tmp_path
+):
+    paths, _, project = capture
+    sample_path, sample, _, _ = frozen_v1_sample(calibrate, paths, tmp_path)
+    noisy = next(record for record in sample["sessions"] if record["session_id"] == "noisy")
+    after = datetime.fromisoformat(noisy["last_received_at"]) + timedelta(minutes=1)
+    with Store(paths.project_data(project.id), project.id) as store:
+        for offset in range(3):
+            moment = after + timedelta(seconds=offset)
+            store.put(
+                event(
+                    project.id,
+                    "noisy",
+                    "tool.finish",
+                    moment,
+                    payload={
+                        "tool_name": "shell",
+                        "tool_input": {"command": "uv run ruff check"},
+                        "tool_response": {"exit_code": 1},
+                    },
+                )
+            )
+
+    report = calibrate.build_report(paths, recompute_args(calibrate, paths, sample_path))
+
+    assert report["excluded_sessions"]["event_count_changed"] == []
+    assert report["version_comparison"]["rules"]["repeated_tool_outcome"]["v2_observed"] == 1
+
+
+def test_the_recomputed_cohort_is_written_as_a_sample_to_annotate(
+    calibrate, capture, tmp_path, capsys
+):
+    paths, _, _ = capture
+    sample_path, _, _, _ = frozen_v1_sample(calibrate, paths, tmp_path)
+
+    code = calibrate.main(
+        [
+            "report",
+            "--home",
+            str(paths.config.parent),
+            "--project",
+            "checkout",
+            "--sample",
+            str(sample_path),
+            "--rule-version",
+            "wd-010.v2",
+        ]
+    )
+
+    assert code == 0
+    written = json.loads(capsys.readouterr().out)
+    recomputed = json.loads((tmp_path / "sample-v2-sample.json").read_text(encoding="utf-8"))
+    assert written["sample"] == str(tmp_path / "sample-v2-sample.json")
+    assert (tmp_path / "sample-v2-calibration.json").exists()
+    assert recomputed["rule_version"] == "wd-010.v2"
+    assert recomputed["recomputed_from"] == "wd-010.v1"
+    assert all(
+        finding["rule_version"] == "wd-010.v2"
+        for record in recomputed["sessions"]
+        for finding in record["findings"]
+    )

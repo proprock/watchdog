@@ -1,0 +1,205 @@
+{
+  "action_rules": {
+    "note": "Policy and control findings record an action Watchdog took or logged. They are reviewed here but never enter the session precision gate.",
+    "rules": {}
+  },
+  "checkout_scoped_rules": {
+    "note": "Diff snapshots are keyed by checkout, so these findings are not attributable to one session and are excluded from session precision.",
+    "rules": {
+      "diff_oscillation": {
+        "false_positive": 0,
+        "observed": 3,
+        "precision": null,
+        "precision_denominator": 0,
+        "reason": "observed but not reviewed; precision is unmeasured",
+        "reviewed": 0,
+        "true_positive": 0,
+        "uncertain": 0
+      }
+    }
+  },
+  "confusion": {
+    "progress/no_finding": 16,
+    "slow/finding": 1,
+    "slow/no_finding": 5,
+    "unlabeled/no_finding": 2
+  },
+  "dataset": {
+    "generated_at": "2026-09-09T20:26:12.372587+00:00",
+    "project_id": "130179bd-aefa-4160-8d04-247118c095eb",
+    "recomputed_from": "wd-010.v1",
+    "rule_version": "wd-010.v2",
+    "sample_file": "wd012-sample.json",
+    "sample_sha256": "8ee766b4c7eb1a78f2eac9ff853c7d15d0c962ffbf06c92c8ff0b13a21f77d73",
+    "schema_version": 7,
+    "selection": {
+      "considered": 48,
+      "eligible": 24,
+      "min_events": 20,
+      "provider": null,
+      "seed": 12,
+      "settle_hours": 2.0,
+      "since": null,
+      "skipped": {
+        "below_min_events": 20,
+        "not_settled": 4
+      },
+      "strata": {
+        "with_finding": 4,
+        "without_finding_available": 20,
+        "without_finding_drawn": 20
+      },
+      "target": 40,
+      "until": null
+    },
+    "sessions": 24
+  },
+  "excluded_sessions": {
+    "event_count_changed": [],
+    "events_missing": []
+  },
+  "false_negatives": {
+    "count": 5,
+    "definition": "sessions judged slow or stuck with no session-scoped finding",
+    "sessions": [
+      {
+        "progress_state": "slow",
+        "provider": "codex",
+        "reviewer_note": null,
+        "session_id": "01a07e28-900f-7b23-bc55-2f2571ce1bb7"
+      },
+      {
+        "progress_state": "slow",
+        "provider": "codex",
+        "reviewer_note": "\u0434\u0432\u043e\u0439\u043d\u043e\u0439 pytest run, \u043f\u0435\u0440\u0435\u0440\u0430\u0431\u043e\u0442\u043a\u0430 venv/sandbox, \u043d\u043e \u0444\u0438\u043d\u0430\u043b \u0434\u0430\u0451\u0442 \u0440\u0435\u0448\u0435\u043d\u0438\u0435",
+        "session_id": "01a07f91-bce6-7fe0-abe5-8ed2470049a4"
+      },
+      {
+        "progress_state": "slow",
+        "provider": "codex",
+        "reviewer_note": "\u043f\u0435\u0440\u0432\u044b\u0439 \u043e\u0442\u0432\u0435\u0442 \u043e\u0441\u0442\u0430\u043d\u043e\u0432\u0438\u043b\u0441\u044f \u0431\u0435\u0437 \u0440\u0430\u0431\u043e\u0442\u044b, \u043f\u043e\u0432\u0442\u043e\u0440\u044b \u043a\u043e\u043c\u0430\u043d\u0434, 12-\u0447\u0430\u0441\u043e\u0432\u0430\u044f \u043f\u0430\u0443\u0437\u0430 \u043c\u0435\u0436\u0434\u0443 \u043f\u043e\u043f\u044b\u0442\u043a\u0430\u043c\u0438, \u0444\u0438\u043d\u0430\u043b \u0434\u0430\u0451\u0442 \u0440\u0435\u0437\u0443\u043b\u044c\u0442\u0430\u0442",
+        "session_id": "01a07faa-fa6e-7fa1-9e26-63e718d30732"
+      },
+      {
+        "progress_state": "slow",
+        "provider": "codex",
+        "reviewer_note": "4 turns \u0431\u0435\u0437 \u043e\u0442\u0432\u0435\u0442\u043e\u0432 (\u043f\u043e\u0442\u0435\u0440\u0438 \u0437\u0430\u0445\u0432\u0430\u0442\u0430), \u043f\u043e\u0432\u0442\u043e\u0440\u043d\u044b\u0439 \u0442\u0435\u0441\u0442 run, \u043f\u0435\u0440\u0435\u0441\u0431\u043e\u0440\u043a\u0430 adapter, \u043d\u043e \u0444\u0438\u043d\u0430\u043b \u0434\u0430\u0451\u0442 \u0444\u0438\u043a\u0441 \u0432 \u043a\u043e\u043c\u043c\u0438\u0442\u0435 c019f6b",
+        "session_id": "01a07faf-ecd8-7aa1-97af-48e706727e40"
+      },
+      {
+        "progress_state": "slow",
+        "provider": "codex",
+        "reviewer_note": "4 \u043e\u0434\u0438\u043d\u0430\u043a\u043e\u0432\u044b\u0435 Response annotations \u0438\u043d\u0441\u0442\u0440\u0443\u043a\u0446\u0438\u0438 \u043f\u043e\u0434\u0440\u044f\u0434 (\u043e\u0448\u0438\u0431\u043a\u0430 \u0437\u0430\u0445\u0432\u0430\u0442\u0430?), 5 \u043f\u043e\u0432\u0442\u043e\u0440\u043e\u0432 query \u043f\u043e\u0438\u0441\u043a \u0438\u043d\u0444\u043e\u0440\u043c\u0430\u0446\u0438\u0438, \u043d\u043e \u0444\u0438\u043d\u0430\u043b \u0434\u0430\u0451\u0442 \u043e\u0431\u043d\u043e\u0432\u043b\u0435\u043d\u0438\u0435 TODO.md \u043f\u0440\u043e native adapter CI/CD \u0438 \u0443\u0434\u0430\u043b\u0435\u043d\u0438\u0435 fallback",
+        "session_id": "01a08236-2423-7570-909d-9967f4913195"
+      }
+    ]
+  },
+  "format_version": "wd-012.calibration.v3",
+  "generated_at": "2026-10-08T05:45:58.756404+00:00",
+  "hook_overhead": {
+    "end_to_end_ms": {
+      "max": 77324.6,
+      "p50": 883.9,
+      "p95": 2592.7
+    },
+    "events": 24167,
+    "events_with_delivery": 13780,
+    "events_without_delivery": 10387,
+    "in_hook_ms": {
+      "max": 3274.1,
+      "mean": 4.8,
+      "p50": 0.6,
+      "p95": 13.9
+    },
+    "note": "Transcript-sourced events carry no delivery trace, so the denominator is smaller than the event count. Null is not zero."
+  },
+  "limitations": [
+    "Findings were recomputed from the live store under wd-010.v2; sessions with missing events are excluded and listed, and events added or purged since the sample was frozen can move a finding.",
+    "Rules with no observation in this dataset: identical_error, repeated_test_failure.",
+    "Checkout-scoped findings are excluded from per-session precision.",
+    "One operator labelled their own sessions; the judgement is not independent.",
+    "The session count is a calibration target, not proof of representativeness."
+  ],
+  "recommendations": [
+    "identical_error: not recommended (n=0) \u2014 no observation in this dataset.",
+    "repeated_test_failure: not recommended (n=0) \u2014 no observation in this dataset.",
+    "repeated_tool_outcome: not recommended \u2014 observed 1 time(s) but never reviewed; precision is unmeasured.",
+    "No rule cleared the 90% gate in this dataset; M3 selects no rule for delivery yet."
+  ],
+  "session_scoped_rules": {
+    "identical_error": {
+      "false_positive": 0,
+      "observed": 0,
+      "precision": null,
+      "precision_denominator": 0,
+      "reason": "no observation in this dataset; null is not zero",
+      "reviewed": 0,
+      "true_positive": 0,
+      "uncertain": 0
+    },
+    "repeated_test_failure": {
+      "false_positive": 0,
+      "observed": 0,
+      "precision": null,
+      "precision_denominator": 0,
+      "reason": "no observation in this dataset; null is not zero",
+      "reviewed": 0,
+      "true_positive": 0,
+      "uncertain": 0
+    },
+    "repeated_tool_outcome": {
+      "false_positive": 0,
+      "observed": 1,
+      "precision": null,
+      "precision_denominator": 0,
+      "reason": "observed but not reviewed; precision is unmeasured",
+      "reviewed": 0,
+      "true_positive": 0,
+      "uncertain": 0
+    }
+  },
+  "session_states": {
+    "progress": 16,
+    "slow": 6,
+    "unlabeled": 2
+  },
+  "supersedes": {
+    "format_version": "wd-012.calibration.v1",
+    "reason": "The first pass read local Codex rollout files directly, so no Watchdog report or per-hook timing existed and every measurement was null."
+  },
+  "task_outcomes": {
+    "abandoned": 3,
+    "success": 21
+  },
+  "unreviewed_sessions": [
+    "01a07d17-48be-71c3-981f-ae1db5e7bf99",
+    "01a07d4a-630a-7033-8543-67a236ffa8ff"
+  ],
+  "version_comparison": {
+    "from": "wd-010.v1",
+    "note": "A v1 finding survives when a v2 finding of the same rule shares an event with it. v1 verdicts are shown for context and never transfer: every v2 finding is unreviewed until someone reads it.",
+    "rules": {
+      "diff_oscillation": {
+        "dropped_unreviewed": 5,
+        "v1_dropped": 5,
+        "v1_observed": 8,
+        "v1_survived": 3,
+        "v1_unreviewed": 8,
+        "v2_observed": 3
+      },
+      "identical_error": {},
+      "repeated_test_failure": {},
+      "repeated_tool_outcome": {
+        "dropped_false_positive": 6,
+        "dropped_true_positive": 1,
+        "v1_dropped": 7,
+        "v1_false_positive": 6,
+        "v1_observed": 8,
+        "v1_survived": 1,
+        "v1_true_positive": 2,
+        "v2_observed": 1
+      }
+    },
+    "to": "wd-010.v2"
+  }
+}

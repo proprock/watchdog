@@ -59,9 +59,10 @@ differ. "Dropped TP/FP" uses the stored or reviewed v1 verdict of each dropped f
   "no edits or the same output"; it was not tuned away (see WD-161).
 - `identical_error` now has observations (2 on WD-122, both Claude). Under v1 it could
   not fire for Claude at all.
-- Seven WD-122 sessions (six in WD-012) gained events after the sample was frozen,
-  so the v2 side includes late transcript enrichment; the comparison is by shared
-  evidence, not by count. No cohort session was missing from the store.
+- Each session's events are cut at its recorded `last_received_at` and diff snapshots at
+  the sample's `generated_at`, so the table measures the rule change and not data that
+  arrived later. An uncut first run gave the same counts. No cohort session was missing
+  from the store and none changed its event count.
 
 ## Precision of the v2 findings
 
@@ -83,12 +84,34 @@ On that read the provisional precision is 0 of 4 for `repeated_tool_outcome` (th
 target is not met) and 2 of 2 for `identical_error`. These are counts of six
 findings, one reviewer's reading, and not a gate input.
 
+## Reproduce and record verdicts
+
+The recomputed cohorts and reports are committed beside the v1 samples:
+[wd012-v2-sample.json](wd012-v2-sample.json),
+[wd122-v2-sample.json](wd122-v2-sample.json),
+[wd012-v2-calibration.md](wd012-v2-calibration.md) and
+[wd122-v2-calibration.md](wd122-v2-calibration.md) (with `.json`/`.csv` twins).
+
+```
+uv run python scripts/calibrate.py report --config CONFIG --data DATA --runtime RUNTIME \
+  --project PROJECT --sample docs/evidence/wd122-sample.json --rule-version wd-010.v2 \
+  --review docs/evidence/wd122-review.json
+```
+
+Verdicts for the v2 findings are recorded with `calibrate.py annotate --sample
+docs/evidence/wd122-v2-sample.json` (same `--config/--data/--runtime/--project` as the
+installed hook); `report --sample docs/evidence/wd122-v2-sample.json` then scores them.
+
 ## Limits
 
 - Polling and waiting calls (`wait_agent`, background-run status checks) still trip
   `repeated_tool_outcome`. Excluding them by tool name would be fitted to this
   cohort; the follow-up (WD-161) waits for user verdicts.
 - Codex outcomes remain unknown, so Codex repeats are keyed on the outcome `unknown`.
+- The oscillation gate recognises only edit tools and turn starts. A checkout changed
+  through the shell (`git checkout`/`stash`, a formatter, `Set-Content`) reads as "no
+  work", so some of the 7 oscillations dropped on WD-122 may have been the agent's own
+  doing. Unknown is not zero; the rule follows the ticket and the gap is recorded here.
 - The cohort is the owner's own sessions on one machine; events added after the
   freeze and retention-stripped content can move a finding.
 - All four rules stay observe-only; no rule clears any rung of the M3 ladder.

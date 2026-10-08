@@ -1,0 +1,246 @@
+{
+  "action_rules": {
+    "note": "Policy and control findings record an action Watchdog took or logged. They are reviewed here but never enter the session precision gate.",
+    "rules": {
+      "same_model_subagent_spawn": {
+        "false_positive": 0,
+        "observed": 16,
+        "precision": null,
+        "precision_denominator": 0,
+        "reason": "observed but not reviewed; precision is unmeasured",
+        "reviewed": 0,
+        "true_positive": 0,
+        "uncertain": 0
+      }
+    }
+  },
+  "checkout_scoped_rules": {
+    "note": "Diff snapshots are keyed by checkout, so these findings are not attributable to one session and are excluded from session precision.",
+    "rules": {
+      "diff_oscillation": {
+        "false_positive": 0,
+        "observed": 6,
+        "precision": null,
+        "precision_denominator": 0,
+        "reason": "observed but not reviewed; precision is unmeasured",
+        "reviewed": 0,
+        "true_positive": 0,
+        "uncertain": 0
+      }
+    }
+  },
+  "confusion": {
+    "progress/no_finding": 16,
+    "slow/finding": 1,
+    "slow/no_finding": 5,
+    "unlabeled/finding": 4,
+    "unlabeled/no_finding": 20
+  },
+  "dataset": {
+    "generated_at": "2026-09-27T20:32:32.166848+00:00",
+    "project_id": "130179bd-aefa-4160-8d04-247118c095eb",
+    "recomputed_from": "wd-010.v1",
+    "rule_version": "wd-010.v2",
+    "sample_file": "wd122-sample.json",
+    "sample_sha256": "507831ac1b7eb6b85a61117942af1e6ea2fdc39cab54de3d67b8081803433c6a",
+    "schema_version": 7,
+    "selection": {
+      "all_eligible": true,
+      "considered": 81,
+      "eligible": 46,
+      "min_events": 20,
+      "provider": null,
+      "seed": 12,
+      "settle_hours": 2.0,
+      "since": null,
+      "skipped": {
+        "below_min_events": 33,
+        "not_settled": 2
+      },
+      "strata": {
+        "with_finding": 14,
+        "without_finding_available": 32,
+        "without_finding_drawn": 32
+      },
+      "target": 40,
+      "until": null
+    },
+    "sessions": 46
+  },
+  "excluded_sessions": {
+    "event_count_changed": [],
+    "events_missing": []
+  },
+  "false_negatives": {
+    "count": 5,
+    "definition": "sessions judged slow or stuck with no session-scoped finding",
+    "sessions": [
+      {
+        "progress_state": "slow",
+        "provider": "codex",
+        "reviewer_note": null,
+        "session_id": "01a07e28-900f-7b23-bc55-2f2571ce1bb7"
+      },
+      {
+        "progress_state": "slow",
+        "provider": "codex",
+        "reviewer_note": "\u0434\u0432\u043e\u0439\u043d\u043e\u0439 pytest run, \u043f\u0435\u0440\u0435\u0440\u0430\u0431\u043e\u0442\u043a\u0430 venv/sandbox, \u043d\u043e \u0444\u0438\u043d\u0430\u043b \u0434\u0430\u0451\u0442 \u0440\u0435\u0448\u0435\u043d\u0438\u0435",
+        "session_id": "01a07f91-bce6-7fe0-abe5-8ed2470049a4"
+      },
+      {
+        "progress_state": "slow",
+        "provider": "codex",
+        "reviewer_note": "\u043f\u0435\u0440\u0432\u044b\u0439 \u043e\u0442\u0432\u0435\u0442 \u043e\u0441\u0442\u0430\u043d\u043e\u0432\u0438\u043b\u0441\u044f \u0431\u0435\u0437 \u0440\u0430\u0431\u043e\u0442\u044b, \u043f\u043e\u0432\u0442\u043e\u0440\u044b \u043a\u043e\u043c\u0430\u043d\u0434, 12-\u0447\u0430\u0441\u043e\u0432\u0430\u044f \u043f\u0430\u0443\u0437\u0430 \u043c\u0435\u0436\u0434\u0443 \u043f\u043e\u043f\u044b\u0442\u043a\u0430\u043c\u0438, \u0444\u0438\u043d\u0430\u043b \u0434\u0430\u0451\u0442 \u0440\u0435\u0437\u0443\u043b\u044c\u0442\u0430\u0442",
+        "session_id": "01a07faa-fa6e-7fa1-9e26-63e718d30732"
+      },
+      {
+        "progress_state": "slow",
+        "provider": "codex",
+        "reviewer_note": "4 turns \u0431\u0435\u0437 \u043e\u0442\u0432\u0435\u0442\u043e\u0432 (\u043f\u043e\u0442\u0435\u0440\u0438 \u0437\u0430\u0445\u0432\u0430\u0442\u0430), \u043f\u043e\u0432\u0442\u043e\u0440\u043d\u044b\u0439 \u0442\u0435\u0441\u0442 run, \u043f\u0435\u0440\u0435\u0441\u0431\u043e\u0440\u043a\u0430 adapter, \u043d\u043e \u0444\u0438\u043d\u0430\u043b \u0434\u0430\u0451\u0442 \u0444\u0438\u043a\u0441 \u0432 \u043a\u043e\u043c\u043c\u0438\u0442\u0435 c019f6b",
+        "session_id": "01a07faf-ecd8-7aa1-97af-48e706727e40"
+      },
+      {
+        "progress_state": "slow",
+        "provider": "codex",
+        "reviewer_note": "4 \u043e\u0434\u0438\u043d\u0430\u043a\u043e\u0432\u044b\u0435 Response annotations \u0438\u043d\u0441\u0442\u0440\u0443\u043a\u0446\u0438\u0438 \u043f\u043e\u0434\u0440\u044f\u0434 (\u043e\u0448\u0438\u0431\u043a\u0430 \u0437\u0430\u0445\u0432\u0430\u0442\u0430?), 5 \u043f\u043e\u0432\u0442\u043e\u0440\u043e\u0432 query \u043f\u043e\u0438\u0441\u043a \u0438\u043d\u0444\u043e\u0440\u043c\u0430\u0446\u0438\u0438, \u043d\u043e \u0444\u0438\u043d\u0430\u043b \u0434\u0430\u0451\u0442 \u043e\u0431\u043d\u043e\u0432\u043b\u0435\u043d\u0438\u0435 TODO.md \u043f\u0440\u043e native adapter CI/CD \u0438 \u0443\u0434\u0430\u043b\u0435\u043d\u0438\u0435 fallback",
+        "session_id": "01a08236-2423-7570-909d-9967f4913195"
+      }
+    ]
+  },
+  "format_version": "wd-012.calibration.v3",
+  "generated_at": "2026-10-08T05:46:24.314409+00:00",
+  "hook_overhead": {
+    "end_to_end_ms": {
+      "max": 77324.6,
+      "p50": 883.9,
+      "p95": 2592.7
+    },
+    "events": 24167,
+    "events_with_delivery": 13780,
+    "events_without_delivery": 10387,
+    "in_hook_ms": {
+      "max": 3274.1,
+      "mean": 4.8,
+      "p50": 0.6,
+      "p95": 13.9
+    },
+    "note": "Transcript-sourced events carry no delivery trace, so the denominator is smaller than the event count. Null is not zero."
+  },
+  "limitations": [
+    "Findings were recomputed from the live store under wd-010.v2; sessions with missing events are excluded and listed, and events added or purged since the sample was frozen can move a finding.",
+    "Rules with no observation in this dataset: repeated_test_failure.",
+    "Checkout-scoped findings are excluded from per-session precision.",
+    "One operator labelled their own sessions; the judgement is not independent.",
+    "The session count is a calibration target, not proof of representativeness."
+  ],
+  "recommendations": [
+    "identical_error: not recommended \u2014 observed 2 time(s) but never reviewed; precision is unmeasured.",
+    "repeated_test_failure: not recommended (n=0) \u2014 no observation in this dataset.",
+    "repeated_tool_outcome: not recommended \u2014 observed 4 time(s) but never reviewed; precision is unmeasured.",
+    "No rule cleared the 90% gate in this dataset; M3 selects no rule for delivery yet."
+  ],
+  "session_scoped_rules": {
+    "identical_error": {
+      "false_positive": 0,
+      "observed": 2,
+      "precision": null,
+      "precision_denominator": 0,
+      "reason": "observed but not reviewed; precision is unmeasured",
+      "reviewed": 0,
+      "true_positive": 0,
+      "uncertain": 0
+    },
+    "repeated_test_failure": {
+      "false_positive": 0,
+      "observed": 0,
+      "precision": null,
+      "precision_denominator": 0,
+      "reason": "no observation in this dataset; null is not zero",
+      "reviewed": 0,
+      "true_positive": 0,
+      "uncertain": 0
+    },
+    "repeated_tool_outcome": {
+      "false_positive": 0,
+      "observed": 4,
+      "precision": null,
+      "precision_denominator": 0,
+      "reason": "observed but not reviewed; precision is unmeasured",
+      "reviewed": 0,
+      "true_positive": 0,
+      "uncertain": 0
+    }
+  },
+  "session_states": {
+    "progress": 16,
+    "slow": 6,
+    "unlabeled": 24
+  },
+  "supersedes": {
+    "format_version": "wd-012.calibration.v1",
+    "reason": "The first pass read local Codex rollout files directly, so no Watchdog report or per-hook timing existed and every measurement was null."
+  },
+  "task_outcomes": {
+    "abandoned": 3,
+    "success": 21,
+    "unknown": 22
+  },
+  "unreviewed_sessions": [
+    "01a07d17-48be-71c3-981f-ae1db5e7bf99",
+    "01a07d4a-630a-7033-8543-67a236ffa8ff",
+    "ff3e0390-d0fd-49c3-888e-7f62a6c30f9f",
+    "01a08773-6d39-70c0-99e5-952755bbddeb",
+    "b5ee9e09-0903-46bf-a26c-c05095767820",
+    "ef62aae4-a871-4d0e-afe3-6bd534e8416a",
+    "01a087f0-6bbc-7273-b4af-562fcd96e04e",
+    "01a08803-a9b7-7c91-8876-e55ba7829a6b",
+    "01a08805-66f3-76f1-91be-28fb974debc7",
+    "01a0880a-8923-70e3-a23e-5341ca58622c",
+    "01a0881a-f104-7863-bfb8-78585c3f5a3a",
+    "01a089ba-13b8-7443-beed-23bb133c04cf",
+    "01a089ff-a05b-7851-bd36-81392c073785",
+    "01a08cf5-f0bc-7951-bee5-da818343c835",
+    "01a08d04-8b94-7440-ac77-cf71ffc628d3",
+    "01a09b21-7809-7110-be03-0596a102ecb2",
+    "e8320fcb-0adf-4c3f-abe4-9987c78ecac0",
+    "042686d7-7e9b-4818-ace0-62e5fa9eaf8c",
+    "05f31f78-b7c7-41e2-8e1c-5ae70e61be54",
+    "2bd19110-34d7-4ed3-bf5b-33eac9438429",
+    "8394af3e-3a4a-4c10-b898-a5ca715e8f67",
+    "3ac3a88b-cac5-4f39-8052-ae0acd9dc026",
+    "f06870ad-049c-45be-abdf-a265f4f87cba",
+    "20707b47-52a2-4cc3-b9c8-7d85894f74c7"
+  ],
+  "version_comparison": {
+    "from": "wd-010.v1",
+    "note": "A v1 finding survives when a v2 finding of the same rule shares an event with it. v1 verdicts are shown for context and never transfer: every v2 finding is unreviewed until someone reads it.",
+    "rules": {
+      "diff_oscillation": {
+        "dropped_unreviewed": 7,
+        "v1_dropped": 7,
+        "v1_observed": 14,
+        "v1_survived": 7,
+        "v1_unreviewed": 14,
+        "v2_observed": 6
+      },
+      "identical_error": {
+        "v2_new": 2,
+        "v2_observed": 2
+      },
+      "repeated_test_failure": {},
+      "repeated_tool_outcome": {
+        "dropped_false_positive": 12,
+        "dropped_true_positive": 1,
+        "dropped_uncertain": 2,
+        "v1_dropped": 15,
+        "v1_false_positive": 15,
+        "v1_observed": 19,
+        "v1_survived": 4,
+        "v1_true_positive": 2,
+        "v1_uncertain": 2,
+        "v2_observed": 4
+      }
+    },
+    "to": "wd-010.v2"
+  }
+}

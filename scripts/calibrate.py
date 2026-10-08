@@ -141,21 +141,35 @@ def split_findings(findings: list[dict]) -> tuple[list[dict], list[dict]]:
     return session_scoped, checkout_scoped
 
 
-def findings_for(db, events: list) -> tuple[list[dict], list[dict]]:
+def findings_for(
+    db, events: list, snapshots_until: datetime | None = None
+) -> tuple[list[dict], list[dict]]:
     """Session-scoped and checkout-scoped findings the current rules produce for one session."""
     checkouts = {str(event.checkout_id) for event in events if event.checkout_id}
-    return split_findings(analyze(events, snapshots=snapshots_for(db, checkouts))["findings"])
+    snapshots = snapshots_for(db, checkouts)
+    if snapshots_until is not None:
+        snapshots = [
+            snapshot
+            for snapshot in snapshots
+            if (observed := parse_time(snapshot["observed_at"])) is not None
+            and observed <= snapshots_until
+        ]
+    return split_findings(analyze(events, snapshots=snapshots)["findings"])
 
 
 def recompute_sample(paths: UserPaths, project, frozen: dict) -> dict:
     """Re-run the current rules over a frozen cohort's stored events (WD-146).
 
     The sample keeps only the findings its rule version produced, so a newer
-    version has to be recomputed from the store. Sessions whose events are gone
-    cannot be recomputed and are listed, not silently scored as "no finding".
+    version has to be recomputed from the store. Events and diff snapshots are cut
+    at the freeze (a session's recorded last event, the sample's generation time)
+    so the comparison measures the rule change, not data that arrived later.
+    Sessions whose events are gone cannot be recomputed and are listed, not
+    silently scored as "no finding".
     """
     selection = frozen["selection"]
     since, until = parse_time(selection.get("since")), parse_time(selection.get("until"))
+    frozen_at = parse_time(frozen["generated_at"])
     records: list[dict] = []
     checkout_findings: dict[str, dict] = {}
     missing: list[str] = []
@@ -163,14 +177,19 @@ def recompute_sample(paths: UserPaths, project, frozen: dict) -> dict:
     with inspection.database(paths, project) as db:
         grouped = read_sessions(db, since, until)
         for record in frozen["sessions"]:
-            events = grouped.get((record["provider"], record["session_id"]))
+            last = parse_time(record["last_received_at"])
+            events = [
+                event
+                for event in grouped.get((record["provider"], record["session_id"]), [])
+                if last is None or event.received_at <= last
+            ]
             name = f"{record['provider']}/{record['session_id']}"
             if not events:
                 missing.append(name)
                 continue
             if len(events) != record["event_count"]:
                 changed.append(name)
-            session_scoped, checkout_scoped = findings_for(db, events)
+            session_scoped, checkout_scoped = findings_for(db, events, frozen_at)
             for finding in checkout_scoped:
                 checkout = record["checkout_ids"][0] if record["checkout_ids"] else "unknown"
                 checkout_findings.setdefault(
@@ -1270,7 +1289,9 @@ def recommend(
     return lines
 
 
-def build_report(paths: UserPaths, args: argparse.Namespace) -> dict:
+def build_report(
+    paths: UserPaths, args: argparse.Namespace, recomputed: dict | None = None
+) -> dict:
     sample_path = Path(args.sample)
     frozen = json.loads(sample_path.read_text(encoding="utf-8"))
     project = inspection.project_at(paths, args.project)
@@ -1279,7 +1300,7 @@ def build_report(paths: UserPaths, args: argparse.Namespace) -> dict:
     if rule_version is not None:
         if rule_version != RULE_VERSION:
             raise SystemExit(f"only the current rules ({RULE_VERSION}) can be recomputed")
-        sample = recompute_sample(paths, project, frozen)
+        sample = recomputed or recompute_sample(paths, project, frozen)
     review_verdicts = load_review_verdicts(getattr(args, "review", None))
     frozen_findings = {
         (item["provider"], item["session_id"]): [
@@ -1587,8 +1608,9 @@ def build_parser() -> argparse.ArgumentParser:
     )
     result.add_argument(
         "--output",
-        help="Default docs/evidence/wd012-calibration.json, or wd146-calibration.json "
-        "with --rule-version",
+        help="Default docs/evidence/wd012-calibration.json; with --rule-version, "
+        "<cohort>-v2-calibration.json beside the sample (the recomputed cohort is "
+        "written there as <cohort>-v2-sample.json)",
     )
     return parser
 
@@ -1620,20 +1642,35 @@ def main(argv: list[str] | None = None) -> int:
         return 0
     if args.command == "annotate":
         return annotate(paths, args)
-    report = build_report(paths, args)
-    output = Path(
-        args.output
-        or (
-            "docs/evidence/wd146-calibration.json"
-            if args.rule_version
-            else "docs/evidence/wd012-calibration.json"
+    recomputed = None
+    written: dict[str, str] = {}
+    sample_path = Path(args.sample)
+    cohort = sample_path.name.removesuffix(".json").removesuffix("-sample")
+    if args.rule_version:
+        if args.rule_version != RULE_VERSION:
+            raise SystemExit(f"only the current rules ({RULE_VERSION}) can be recomputed")
+        # The recomputed cohort is a sample in its own right: `annotate --sample` records
+        # verdicts against its fingerprints, and `report --sample` then scores them.
+        recomputed = recompute_sample(
+            paths,
+            inspection.project_at(paths, args.project),
+            json.loads(sample_path.read_text(encoding="utf-8")),
         )
-    )
+        sample_out = sample_path.with_name(f"{cohort}-v2-sample.json")
+        write_sample(recomputed, sample_out)
+        written["sample"] = str(sample_out)
+    report = build_report(paths, args, recomputed)
+    if args.output:
+        output = Path(args.output)
+    elif args.rule_version:
+        output = sample_path.with_name(f"{cohort}-v2-calibration.json")
+    else:
+        output = Path("docs/evidence/wd012-calibration.json")
     output.parent.mkdir(parents=True, exist_ok=True)
     output.write_text(json.dumps(report, indent=2, sort_keys=True) + "\n", encoding="utf-8")
     markdown = output.with_suffix(".md")
     markdown.write_text(render_markdown(report), encoding="utf-8")
-    print(json.dumps({"report": str(output), "markdown": str(markdown)}))
+    print(json.dumps({"report": str(output), "markdown": str(markdown), **written}))
     return 0
 
 
