@@ -197,7 +197,12 @@ a build without that suffix predates the channel), and `readiness` fails its
 `decision_channel` stage when that differs from the published file. `daemon status`
 adds `"warnings": ["decision_channel_unused"]` when events a published subscription
 covers have arrived since the daemon started and no adapter has asked about any, which
-is what an adapter that cannot speak the schema looks like from the daemon's side.
+is what an adapter that cannot speak the schema looks like from the daemon's side. The
+warning is evidence of silence, not proof of a mismatch, and `status.json` carries the
+window it covers (`decision_channel.observed_since`). It stays absent when the daemon
+is idle (no covered event arrived), when control is switched off (`policy_intervene =
+false` publishes no subscriptions, so nothing counts), and for traffic no subscription
+covers. Only `readiness` can name the two schemas.
 
 Every failure — no file, another schema version, a stale port, a refused or
 slow connection, a request over the published `max_request_bytes`, an empty,

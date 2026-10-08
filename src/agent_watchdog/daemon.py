@@ -1229,9 +1229,14 @@ class _ChannelStats:
         with self._lock:
             self._subscribed_seen += 1
 
-    def snapshot(self) -> dict[str, int]:
+    def snapshot(self) -> dict[str, int | str]:
+        """The counts plus the window they cover, since a count of zero means little without it."""
         with self._lock:
-            return {"requests": self._requests, "subscribed_events_seen": self._subscribed_seen}
+            return {
+                "observed_since": self.started_at.isoformat(),
+                "requests": self._requests,
+                "subscribed_events_seen": self._subscribed_seen,
+            }
 
 
 class _Channel:

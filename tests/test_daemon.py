@@ -770,13 +770,18 @@ def _claude_spool_record(cwd, event, *, tool=None, received_at=None):
     return record
 
 
+def _counts(channel):
+    snapshot = channel.stats.snapshot()
+    return {key: snapshot[key] for key in ("requests", "subscribed_events_seen")}
+
+
 def test_the_channel_counts_decision_requests_and_subscribed_events_seen(paths, tmp_path):
     # WD-155: the two numbers `daemon status` compares to tell an adapter that never
     # asks from a daemon that never gets asked.
     root, _ = _same_model_setup(paths, tmp_path)
     config = load_config(paths.config)
     with _policy_server(paths, _tracker()) as channel:
-        assert channel.stats.snapshot() == {"requests": 0, "subscribed_events_seen": 0}
+        assert _counts(channel) == {"requests": 0, "subscribed_events_seen": 0}
         before = datetime.now(UTC) - timedelta(hours=1)
         for record in (
             _claude_spool_record(root, "PreToolUse", tool="Bash"),
@@ -791,10 +796,26 @@ def test_the_channel_counts_decision_requests_and_subscribed_events_seen(paths, 
 
         # Bash PreToolUse and any PostToolUse match; Read PreToolUse and Stop do not;
         # a record from before the daemon started says nothing about this lifetime.
-        assert channel.stats.snapshot() == {"requests": 0, "subscribed_events_seen": 2}
+        assert _counts(channel) == {"requests": 0, "subscribed_events_seen": 2}
+        assert channel.stats.snapshot()["observed_since"]
         discovery = _published(paths)
         _policy_request(discovery["port"], **_decision_request(discovery, root))
-        assert channel.stats.snapshot()["requests"] == 1
+        assert _counts(channel)["requests"] == 1
+
+
+def test_nothing_is_counted_while_control_is_switched_off(paths, tmp_path):
+    # With the global switch off nothing is subscribed, so traffic that would have
+    # been asked about is not evidence of a broken adapter.
+    root, _ = _same_model_setup(paths, tmp_path)
+    config = load_config(paths.config)
+    off = config.model_copy(update={"defaults": Limits(policy_intervene=False)})
+    with _policy_server(paths, _tracker()) as channel:
+        channel.sync(off)
+        write_spool_record(paths, _claude_spool_record(root, "PreToolUse", tool="Bash"))
+
+        assert _drain_spool(paths, off, channel=channel) is True
+
+        assert _counts(channel) == {"requests": 0, "subscribed_events_seen": 0}
 
 
 def test_status_warns_when_subscribed_events_arrive_but_no_adapter_ever_asks(paths):
