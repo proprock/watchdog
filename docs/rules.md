@@ -144,7 +144,7 @@ Two independent switches stop every action, and neither can undo the other:
 `[projects.overrides] policy_intervene = false` (one project). With the global
 switch off the daemon publishes no subscriptions, so adapters stop asking.
 To turn off one rule, use `rules disable <name>`; the older
-`policy_intervene_same_model_subagent_spawn` alias was removed (WD-164), and a
+`policy_intervene_same_model_subagent_spawn` alias was removed (WD-171), and a
 configuration that still sets it is rejected as an unknown key. `daemon pause`
 stops the channel altogether.
 

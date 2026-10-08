@@ -132,7 +132,7 @@ def test_project_overrides_round_trip_and_do_not_change_other_projects(tmp_path)
 
 
 def test_the_removed_per_rule_switch_is_rejected_as_an_unknown_key(tmp_path):
-    # WD-164 removed the WD-022b alias; a rule is switched off by name instead.
+    # WD-171 removed the WD-022b alias; a rule is switched off by name instead.
     with pytest.raises(ValidationError):
         Limits.model_validate({"policy_intervene_same_model_subagent_spawn": False})
     with pytest.raises(ValidationError):

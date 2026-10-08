@@ -152,7 +152,7 @@ present — producing the same values as
 unrecognized layout falls back to spawning `git` with its 250 ms subprocess
 timeout. An unregistered or since-removed `cwd` discards the record, except an
 unregistered Git checkout under the configured trusted directory is added and
-then admitted. A resolution failure never stops the daemon (WD-163): a `cwd` that no longer
+then admitted. A resolution failure never stops the daemon (WD-170): a `cwd` that no longer
 exists is discarded and logged as `decision=discarded reason=unresolvable_cwd`, while one that still
 exists (for example after a Git timeout) stays for the next pass and is logged once as
 `decision=deferred reason=unresolvable_cwd`. A busy

@@ -270,7 +270,7 @@ def write_named_spool_record(paths, name, record):
 
 
 def test_spool_record_whose_cwd_is_gone_is_discarded_and_the_drain_continues(paths, tmp_path):
-    # WD-163: a record from a deleted temporary directory used to raise out of the drain
+    # WD-170: a record from a deleted temporary directory used to raise out of the drain
     # and kill the daemon on every start, which stalled every record behind it.
     root = tmp_path / "project"
     root.mkdir()
