@@ -84,6 +84,74 @@ def drain_everything(paths):
     return settle
 
 
+OLD_BANNER = "agent-watchdog-hook 0.1.4 (providers: codex, claude)"
+
+
+def publish_channel(paths, schema):
+    (paths.data / "policy").mkdir(parents=True, exist_ok=True)
+    (paths.data / "policy" / "socket.json").write_text(
+        json.dumps({"schema_version": schema, "subscriptions": []}), encoding="utf-8"
+    )
+
+
+@pytest.mark.parametrize(
+    ("banner", "published", "state", "adapter"),
+    [
+        # An adapter that declares no schema cannot use the daemon's channel: the
+        # state WD-155 found live (a 0.1.4 binary against a schema 2 daemon).
+        (OLD_BANNER, 2, "failed", None),
+        ("agent-watchdog-hook 0.1.5 (providers: codex, claude; decision schema 2)", 1, "failed", 2),
+        ("agent-watchdog-hook 0.1.5 (providers: codex, claude; decision schema 2)", 2, "ready", 2),
+        (
+            "agent-watchdog-hook 0.1.5 (providers: codex, claude; decision schema 2)",
+            None,
+            "unknown",
+            2,
+        ),
+        (OLD_BANNER, None, "unknown", None),
+    ],
+)
+def test_the_decision_channel_stage_compares_the_adapters_schema_with_the_daemons(
+    setup, banner, published, state, adapter
+):
+    paths, _ = setup
+    if published is not None:
+        publish_channel(paths, published)
+
+    stage = readiness._decision_channel(paths, banner)
+
+    assert stage["state"] == state
+    assert stage["evidence"]["adapter_decision_schema"] == adapter
+    assert stage["evidence"]["daemon_decision_schema"] == published
+    if state == "failed":
+        assert stage["evidence"]["reason"] == "decision_schema_mismatch"
+        assert "adapter" in stage["action"]
+
+
+def test_the_installed_adapter_declares_the_schema_the_daemon_publishes(
+    setup, installed, provider, monkeypatch
+):
+    paths, _ = setup
+    monkeypatch.setattr(daemon, "status", lambda _paths: RUNNING)
+    publish_channel(paths, 2)
+
+    report = readiness.check(paths, provider, installed, project_ref="project")
+
+    assert report["stages"]["decision_channel"]["state"] == "ready"
+    assert report["ok"] is True
+
+
+def test_a_schema_mismatch_makes_the_report_not_ok(setup, installed, provider, monkeypatch):
+    paths, _ = setup
+    monkeypatch.setattr(daemon, "status", lambda _paths: RUNNING)
+    publish_channel(paths, 1)
+
+    report = readiness.check(paths, provider, installed, project_ref="project")
+
+    assert report["stages"]["decision_channel"]["state"] == "failed"
+    assert report["ok"] is False
+
+
 def test_absent_hook_fails_the_hook_stage_and_skips_the_rest(setup, provider, tmp_path):
     paths, _ = setup
     name = "hooks.json" if provider == "codex" else "settings.json"
@@ -128,6 +196,7 @@ def test_passive_check_never_claims_delivery_and_leaves_state_untouched(
     assert stages(report) == {
         "hook": "ready",
         "project": "ready",
+        "decision_channel": "unknown",  # the test daemon publishes no discovery file
         "provider_callback": "unknown",
         "spool": "unknown",
         "admission": "unknown",
@@ -244,6 +313,7 @@ def test_probe_delivers_through_the_installed_adapter_and_removes_its_traces(
     assert stages(report) == {
         "hook": "ready",
         "project": "ready",
+        "decision_channel": "unknown",
         "provider_callback": "unknown",  # a synthetic probe is never provider evidence
         "spool": "ready",
         "admission": "ready",

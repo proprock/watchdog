@@ -191,6 +191,14 @@ call is consistently about 5-8 ms slower. A `Stop`/`SubagentStop` whose input ca
 event is spooled whatever the answer, and the answer is rendered after the
 spool write is attempted, so a quota or I/O failure still delivers it.
 
+A mismatch must not stay silent (WD-155). The adapter declares the schema it speaks in
+`--version` (`agent-watchdog-hook 0.1.5 (providers: codex, claude; decision schema 2)`;
+a build without that suffix predates the channel), and `readiness` fails its
+`decision_channel` stage when that differs from the published file. `daemon status`
+adds `"warnings": ["decision_channel_unused"]` when events a published subscription
+covers have arrived since the daemon started and no adapter has asked about any, which
+is what an adapter that cannot speak the schema looks like from the daemon's side.
+
 Every failure — no file, another schema version, a stale port, a refused or
 slow connection, a request over the published `max_request_bytes`, an empty,
 oversized, malformed or unknown-action answer — means "no opinion" and prints

@@ -776,6 +776,64 @@ def _control_events(paths, project):
     return [json.loads(path.read_text(encoding="utf-8")) for path in inbox.glob("*.json")]
 
 
+def _claude_spool_record(cwd, event, *, tool=None, received_at=None):
+    record = spool_record(cwd, hook_event_name=event, session_id="s1")
+    record["provider"] = "claude"
+    if tool is not None:
+        record["input"]["tool_name"] = tool
+    if received_at is not None:
+        record["received_at"] = received_at.isoformat()
+    return record
+
+
+def test_the_channel_counts_decision_requests_and_subscribed_events_seen(paths, tmp_path):
+    # WD-155: the two numbers `daemon status` compares to tell an adapter that never
+    # asks from a daemon that never gets asked.
+    root, _ = _same_model_setup(paths, tmp_path)
+    config = load_config(paths.config)
+    with _policy_server(paths, _tracker()) as channel:
+        assert channel.stats.snapshot() == {"requests": 0, "subscribed_events_seen": 0}
+        before = datetime.now(UTC) - timedelta(hours=1)
+        for record in (
+            _claude_spool_record(root, "PreToolUse", tool="Bash"),
+            _claude_spool_record(root, "PostToolUse", tool="Read"),
+            _claude_spool_record(root, "PreToolUse", tool="Read"),
+            _claude_spool_record(root, "Stop"),
+            _claude_spool_record(root, "PreToolUse", tool="Bash", received_at=before),
+        ):
+            write_spool_record(paths, record)
+
+        assert _drain_spool(paths, config, channel=channel) is True
+
+        # Bash PreToolUse and any PostToolUse match; Read PreToolUse and Stop do not;
+        # a record from before the daemon started says nothing about this lifetime.
+        assert channel.stats.snapshot() == {"requests": 0, "subscribed_events_seen": 2}
+        discovery = _published(paths)
+        _policy_request(discovery["port"], **_decision_request(discovery, root))
+        assert channel.stats.snapshot()["requests"] == 1
+
+
+def test_status_warns_when_subscribed_events_arrive_but_no_adapter_ever_asks(paths):
+    paths.data.mkdir(parents=True)
+    paths.runtime.mkdir(parents=True)
+
+    def publish(**counts):
+        (paths.runtime / "status.json").write_text(
+            json.dumps({"heartbeat": time.time(), "errors": [], "decision_channel": counts}),
+            encoding="utf-8",
+        )
+
+    with writer_lock(paths.data / "daemon.lock"):
+        publish(requests=0, subscribed_events_seen=3)
+        assert status(paths)["warnings"] == ["decision_channel_unused"]
+
+        publish(requests=1, subscribed_events_seen=3)
+        assert status(paths)["warnings"] == []
+
+        publish(requests=0, subscribed_events_seen=0)
+        assert status(paths)["warnings"] == []
+
+
 def test_policy_server_answers_over_the_loopback_socket(paths, tmp_path):
     root, project = _same_model_setup(paths, tmp_path)
     socket_path = paths.data / "policy" / "socket.json"

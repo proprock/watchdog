@@ -26,7 +26,9 @@ from agent_watchdog.hooks import EVENTS
 from agent_watchdog.storage import StorageError
 
 PROBE_PREFIX = "watchdog-readiness-probe-"
-STAGES = ("hook", "project", "provider_callback", "spool", "admission")
+STAGES = ("hook", "project", "decision_channel", "provider_callback", "spool", "admission")
+_ADAPTER_SCHEMA = re.compile(r"decision schema (\d+)\)\Z")
+_DISCOVERY_BYTES = 16 * 1024
 _OPTIONS = ("--python", "--config", "--data", "--runtime", "--installation")
 _POWERSHELL_ARGUMENT = re.compile(r"'((?:[^']|'')*)'")
 
@@ -181,6 +183,7 @@ def _hook(paths: UserPaths, provider: str, target: Path) -> tuple[dict, dict | N
         )
     installation = {
         "argv": argv,
+        "banner": banner,
         "installed_at": datetime.fromtimestamp(manifest_path.stat().st_mtime, UTC),
     }
     return (
@@ -191,6 +194,41 @@ def _hook(paths: UserPaths, provider: str, target: Path) -> tuple[dict, dict | N
             events=len(EVENTS[provider]),
         ),
         installation,
+    )
+
+
+def _published_schema(paths: UserPaths) -> int | None:
+    """The decision-channel schema the running daemon publishes; None when it publishes none."""
+    try:
+        with (paths.data / "policy" / "socket.json").open("rb") as stream:
+            raw = stream.read(_DISCOVERY_BYTES + 1)
+        schema = json.loads(raw)["schema_version"] if len(raw) <= _DISCOVERY_BYTES else None
+    except (OSError, ValueError, KeyError, TypeError):
+        return None
+    return schema if type(schema) is int else None
+
+
+def _decision_channel(paths: UserPaths, banner: str) -> dict:
+    """Compare the schema the installed adapter declares with the one the daemon publishes.
+
+    A mismatch fails open by design: the adapter ignores a channel it cannot speak and
+    every rule that needs a decision silently stops acting. This stage makes that
+    visible. A banner without a schema line is an adapter older than the channel.
+    """
+    match = _ADAPTER_SCHEMA.search(banner)
+    adapter = int(match.group(1)) if match is not None else None
+    published = _published_schema(paths)
+    evidence = {"adapter_decision_schema": adapter, "daemon_decision_schema": published}
+    if published is None:
+        return _stage("unknown", reason="no_discovery_file", **evidence)
+    if adapter == published:
+        return _stage("ready", **evidence)
+    return _stage(
+        "failed",
+        "Install a native adapter that speaks the daemon's decision schema "
+        "(`--adapter-artifact`), or run a daemon of the matching version.",
+        reason="decision_schema_mismatch",
+        **evidence,
     )
 
 
@@ -483,9 +521,15 @@ def check(
             state=state,
         )
         callback = _callback(paths, provider, project, installation["installed_at"])
+    channel = (
+        _decision_channel(paths, installation["banner"])
+        if installation is not None
+        else _stage("unknown", reason="precondition_not_ready", after=["hook"])
+    )
     stages = {
         "hook": hook,
         "project": project_stage,
+        "decision_channel": channel,
         "provider_callback": callback,
         "spool": spool,
         "admission": admission,

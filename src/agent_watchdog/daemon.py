@@ -287,6 +287,24 @@ def alive(paths: UserPaths) -> bool:
         return True
 
 
+def _warnings(report: Mapping[str, object]) -> list[str]:
+    """Conditions that leave the daemon running but a capability silently unused (WD-155).
+
+    Events a published subscription covers keep arriving while no adapter has ever
+    asked the daemon about one: the installed adapter does not speak the channel's
+    schema (or is not subscribed-aware), so every rule that needs a decision is inert.
+    ``readiness`` names the two schemas.
+    """
+    channel = report.get("decision_channel")
+    if (
+        isinstance(channel, dict)
+        and channel.get("subscribed_events_seen", 0) > 0
+        and channel.get("requests", 0) == 0
+    ):
+        return ["decision_channel_unused"]
+    return []
+
+
 def status(paths: UserPaths) -> dict:
     control = desired(paths)
     running = alive(paths)
@@ -315,6 +333,7 @@ def status(paths: UserPaths) -> dict:
     return report | {
         "state": state,
         "alive": running,
+        "warnings": _warnings(report) if running else [],
         "request_id": control.get("request_id"),
         "losses": loss_report,
         "queues": queues,
@@ -758,6 +777,7 @@ def _drain_spool(
     *,
     limit: int = 100,
     logged_unknown_checkouts: set[tuple[UUID, str]] | None = None,
+    channel: "_Channel | None" = None,
 ) -> bool:
     """Resolve, build, and admit native adapter spool records.
 
@@ -964,6 +984,8 @@ def _drain_spool(
             )
             continue  # Keep the record for the next unpaused poll.
         if admitted:
+            if channel is not None:
+                channel.observe(str(provider), payload, received_at)
             _capture_diff_snapshot(
                 event.checkout_id,
                 resolution.root,
@@ -1136,6 +1158,7 @@ class _PolicyRequestHandler(socketserver.StreamRequestHandler):
             event_id = UUID(str(request.get("event_id")))
         except ValueError:
             return
+        self.server.watchdog_stats.request()
         paths = self.server.watchdog_paths
         try:
             config = _config_cache.load(paths.config)
@@ -1181,6 +1204,34 @@ class _PolicyServer(socketserver.ThreadingTCPServer):
     watchdog_request_bytes: int
     watchdog_sessions: "_SessionTracker | None"
     watchdog_failed_rules: set[str]
+    watchdog_stats: "_ChannelStats"
+
+
+class _ChannelStats:
+    """What `daemon status` needs to tell an adapter that never asks from an idle channel.
+
+    ``requests`` counts well-formed, authenticated decision requests; ``subscribed_seen``
+    counts events drained from the spool during this daemon's lifetime that a published
+    subscription covers, which an adapter speaking the channel would have asked about.
+    """
+
+    def __init__(self) -> None:
+        self.started_at = datetime.now(UTC)
+        self._lock = threading.Lock()
+        self._requests = 0
+        self._subscribed_seen = 0
+
+    def request(self) -> None:
+        with self._lock:
+            self._requests += 1
+
+    def subscribed_event(self) -> None:
+        with self._lock:
+            self._subscribed_seen += 1
+
+    def snapshot(self) -> dict[str, int]:
+        with self._lock:
+            return {"requests": self._requests, "subscribed_events_seen": self._subscribed_seen}
 
 
 class _Channel:
@@ -1193,10 +1244,33 @@ class _Channel:
     for it) and never to something an adapter would act on without a rule.
     """
 
-    def __init__(self, paths: UserPaths, document: dict[str, object] | None = None) -> None:
+    def __init__(
+        self,
+        paths: UserPaths,
+        document: dict[str, object] | None = None,
+        stats: _ChannelStats | None = None,
+    ) -> None:
         self._paths = paths
         self._document = document
         self._failing = False
+        self.stats = stats if stats is not None else _ChannelStats()
+
+    def observe(
+        self, provider: str, hook_input: Mapping[str, object], received_at: datetime
+    ) -> None:
+        """Count a freshly drained event that a published subscription covers."""
+        if self._document is None or received_at < self.stats.started_at:
+            return
+        event, tool = hook_input.get("hook_event_name"), hook_input.get("tool_name")
+        entries = self._document.get("subscriptions")
+        for entry in entries if isinstance(entries, list) else []:
+            if (
+                entry["provider"] == provider
+                and entry["hook_event_name"] == event
+                and entry["tool_name"] in (None, tool)
+            ):
+                self.stats.subscribed_event()
+                return
 
     def sync(self, config: Config) -> None:
         if self._document is None:
@@ -1271,6 +1345,8 @@ def _policy_server(
     server.watchdog_paths = paths
     server.watchdog_sessions = sessions
     server.watchdog_failed_rules = set()
+    stats = _ChannelStats()
+    server.watchdog_stats = stats
     server.watchdog_token = secrets.token_hex(16)
     server.watchdog_request_bytes = _policy_request_bytes(paths)
     thread = threading.Thread(target=server.serve_forever, daemon=True)
@@ -1306,7 +1382,7 @@ def _policy_server(
         yield _Channel(paths)
         return
     try:
-        yield _Channel(paths, document)
+        yield _Channel(paths, document, stats)
     finally:
         try:
             socket_path.unlink(missing_ok=True)
@@ -1470,7 +1546,9 @@ def _poll(
                     )
                     pass
             channel.sync(config)
-            if _drain_spool(paths, config, logged_unknown_checkouts=logged_unknown_checkouts):
+            if _drain_spool(
+                paths, config, logged_unknown_checkouts=logged_unknown_checkouts, channel=channel
+            ):
                 activity = True
             if _drain_controls(paths, config):
                 activity = True
@@ -1588,6 +1666,7 @@ def _poll(
                     "acknowledged_request": control.get("request_id"),
                     "errors": errors,
                     "transcript_failures": transcript_failures,
+                    "decision_channel": channel.stats.snapshot(),
                 }
             ).encode(),
         )

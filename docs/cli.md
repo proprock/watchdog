@@ -140,6 +140,7 @@ pass the same `--config`/`--data`/`--runtime` that hook uses.
 |---|---|
 | `hook` | An ownership record exists and every owned hook is present unedited. The command is the native adapter (not the Python fallback), it and its Python exist, it runs `--version`, and its `--config`/`--data`/`--runtime` match this invocation. |
 | `project` | The `--project` alias, or the working directory, resolves to a registered project whose root exists. |
+| `decision_channel` | The decision schema the adapter declares in `--version` (`decision schema N`) equals the schema in the daemon's `policy/socket.json`. `failed` on a difference, including an adapter that declares none (older than 0.1.5): it fails open, so every rule that needs a decision is silently inert. `unknown` while the daemon publishes no file. |
 | `provider_callback` | Real provider events stored after the hook was installed. Native trust is never inspected, so this stage is `ready` only from that history and otherwise `unknown`; the evidence lists the provider versions and surfaces seen. Synthetic probe events never count. |
 | `spool` | The adapter wrote a record to the spool. `failed` while the daemon is paused, because the adapter drops events then. |
 | `admission` | The daemon committed the record to the project's SQLite store. `failed` while paused or degraded. |

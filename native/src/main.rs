@@ -151,6 +151,19 @@ const DEFAULT_DECISION_TIMEOUT_MS: u64 = 300;
 /// The installed hook entries time out at two seconds; the whole round trip
 /// must finish well inside that, whatever the daemon publishes.
 const MAX_DECISION_TIMEOUT_MS: u64 = 1500;
+/// The decision-channel schema this adapter speaks. `--version` declares it so
+/// `agent-watchdog readiness` can compare it with the schema the daemon publishes
+/// in `policy/socket.json` and say so when they differ, instead of the adapter
+/// silently ignoring a channel it cannot use.
+const DECISION_SCHEMA: u64 = 2;
+
+fn banner() -> String {
+    format!(
+        "agent-watchdog-hook {} (providers: codex, claude; decision schema {})",
+        env!("CARGO_PKG_VERSION"),
+        DECISION_SCHEMA
+    )
+}
 
 impl PolicySocket {
     fn read(data: &Path) -> Option<Self> {
@@ -164,7 +177,7 @@ impl PolicySocket {
             return None;
         }
         let value: Value = serde_json::from_slice(&bytes).ok()?;
-        if value["schema_version"].as_u64() != Some(2) {
+        if value["schema_version"].as_u64() != Some(DECISION_SCHEMA) {
             return None;
         }
         let port = u16::try_from(value["port"].as_u64()?).ok()?;
@@ -232,7 +245,7 @@ fn ask_decision(
             .filter(|left| !left.is_zero())
     };
     let request = json!({
-        "schema_version": 2,
+        "schema_version": DECISION_SCHEMA,
         "token": socket.token,
         "provider": provider,
         "event_id": event_id,
@@ -269,7 +282,7 @@ fn ask_decision(
         }
     }
     let value: Value = serde_json::from_slice(&response).ok()?;
-    if value["schema_version"].as_u64() != Some(2) {
+    if value["schema_version"].as_u64() != Some(DECISION_SCHEMA) {
         return None;
     }
     let action = value["action"].as_str()?;
@@ -528,10 +541,7 @@ fn main() {
     #[cfg(windows)]
     prevent_stdio_inheritance();
     if std::env::args().any(|arg| arg == "--version") {
-        println!(
-            "agent-watchdog-hook {} (providers: codex, claude)",
-            env!("CARGO_PKG_VERSION")
-        );
+        println!("{}", banner());
         return;
     }
     if std::env::args().any(|arg| arg == "--help") {
@@ -591,6 +601,13 @@ fn prevent_stdio_inheritance() {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_banner_declares_the_decision_schema_the_adapter_speaks() {
+        let line = banner();
+        assert!(line.starts_with("agent-watchdog-hook "));
+        assert!(line.ends_with(&format!("decision schema {DECISION_SCHEMA})")));
+    }
 
     fn decision(action: &str) -> Decision {
         Decision {
