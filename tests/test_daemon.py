@@ -40,7 +40,7 @@ from agent_watchdog.daemon import (
     write_spool_limits,
 )
 from agent_watchdog.events import Envelope
-from agent_watchdog.registry import Registry
+from agent_watchdog.registry import Registry, RegistryError
 from agent_watchdog.resources import losses
 from agent_watchdog.rules.engine import decide
 from agent_watchdog.state import SessionState, Signature
@@ -261,6 +261,70 @@ def test_spool_unregistered_cwd_is_discarded_without_loss(paths, tmp_path):
     body = (paths.data / "watchdog.log").read_text(encoding="ascii")
     assert "component=daemon event=spool decision=unregistered" in body
     assert str(foreign) not in body
+
+
+def write_named_spool_record(paths, name, record):
+    directory = paths.data / "spool"
+    directory.mkdir(parents=True, exist_ok=True)
+    (directory / name).write_text(json.dumps(record), encoding="utf-8")
+
+
+def test_spool_record_whose_cwd_is_gone_is_discarded_and_the_drain_continues(paths, tmp_path):
+    # WD-163: a record from a deleted temporary directory used to raise out of the drain
+    # and kill the daemon on every start, which stalled every record behind it.
+    root = tmp_path / "project"
+    root.mkdir()
+    mutate_registry(paths, lambda registry: registry.add(root))
+    config = load_config(paths.config)
+    project = config.projects[0]
+    gone = tmp_path / "deleted-probe-dir"
+    write_named_spool_record(paths, "0-gone.json", spool_record(gone, hook_event_name="Stop"))
+    write_named_spool_record(
+        paths,
+        "1-kept.json",
+        spool_record(root, hook_event_name="UserPromptSubmit", session_id="s1"),
+    )
+
+    assert _drain_spool(paths, config) is True
+
+    assert not list((paths.data / "spool").glob("*.json"))
+    assert len(list((paths.project_data(project.id) / "inbox").glob("*.json"))) == 1
+    body = (paths.data / "watchdog.log").read_text(encoding="ascii")
+    assert "component=daemon event=spool decision=discarded reason=unresolvable_cwd" in body
+    assert str(gone) not in body
+
+
+def test_spool_record_with_a_transient_resolution_failure_is_kept_for_a_retry(
+    paths, tmp_path, monkeypatch
+):
+    root = tmp_path / "project"
+    root.mkdir()
+    mutate_registry(paths, lambda registry: registry.add(root))
+    config = load_config(paths.config)
+    project = config.projects[0]
+    slow = tmp_path / "slow"
+    slow.mkdir()
+    real_resolve = Registry.resolve
+
+    def resolve(self, path, **options):
+        if Path(path) == slow:
+            raise RegistryError("Cannot resolve project path or Git metadata")
+        return real_resolve(self, path, **options)
+
+    monkeypatch.setattr(Registry, "resolve", resolve)
+    write_named_spool_record(paths, "0-slow.json", spool_record(slow, hook_event_name="Stop"))
+    write_named_spool_record(
+        paths, "1-ok.json", spool_record(root, hook_event_name="UserPromptSubmit", session_id="s1")
+    )
+    logged: set = set()
+
+    assert _drain_spool(paths, config, logged_unknown_checkouts=logged) is True
+    assert _drain_spool(paths, config, logged_unknown_checkouts=logged) is False
+
+    assert [item.name for item in (paths.data / "spool").glob("*.json")] == ["0-slow.json"]
+    assert len(list((paths.project_data(project.id) / "inbox").glob("*.json"))) == 1
+    body = (paths.data / "watchdog.log").read_text(encoding="ascii")
+    assert body.count("event=spool decision=deferred reason=unresolvable_cwd") == 1
 
 
 def test_invalid_spool_log_uses_a_fixed_reason_without_record_content(paths):

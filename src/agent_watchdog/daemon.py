@@ -23,7 +23,7 @@ from agent_watchdog._proc import hidden_creationflags
 from agent_watchdog.config import Config, ConfigError, Limits, UserPaths, load_config, save_config
 from agent_watchdog.diagnostics import Level, emit, error_code
 from agent_watchdog.events import Envelope
-from agent_watchdog.registry import Registry, Resolution
+from agent_watchdog.registry import Registry, RegistryError, Resolution
 from agent_watchdog.rules.api import Decision
 from agent_watchdog.rules.engine import decide, subscriptions
 from agent_watchdog.state import SessionState, StateKey
@@ -835,10 +835,40 @@ def _drain_spool(
             _discard(path)
             activity = True
             continue
-        resolution = registry.resolve(Path(cwd), timeout=0.25)
-        if resolution is None and config.auto_add_projects:
-            config, resolution = resolve_or_auto_register(paths, Path(cwd), timeout=0.25)
-            registry = Registry(config)
+        try:
+            resolution = registry.resolve(Path(cwd), timeout=0.25)
+            if resolution is None and config.auto_add_projects:
+                config, resolution = resolve_or_auto_register(paths, Path(cwd), timeout=0.25)
+                registry = Registry(config)
+        except RegistryError as error:
+            # A resolution failure must never stop the daemon: one record from a deleted
+            # directory would otherwise kill it on every start and stall all records behind it.
+            if not Path(cwd).exists():
+                _log(
+                    paths,
+                    config,
+                    "WARNING",
+                    event="spool",
+                    decision="discarded",
+                    reason="unresolvable_cwd",
+                    error_type=error_code(error),
+                )
+                _discard(path)
+                activity = True
+            elif (event_id, "unresolvable_cwd") not in logged_unknown_checkouts:
+                # The directory exists, so the failure may be transient (a Git timeout):
+                # keep the record and retry on the next pass, logging it once.
+                logged_unknown_checkouts.add((event_id, "unresolvable_cwd"))
+                _log(
+                    paths,
+                    config,
+                    "WARNING",
+                    event="spool",
+                    decision="deferred",
+                    reason="unresolvable_cwd",
+                    error_type=error_code(error),
+                )
+            continue
         if resolution is None:
             _log(paths, config, "DEBUG", event="spool", decision="unregistered", event_id=event_id)
             _discard(path)

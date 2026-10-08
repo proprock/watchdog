@@ -81,6 +81,7 @@ _REASONS = {
     "oversized",
     "quota",
     "unknown_field",
+    "unresolvable_cwd",
     "usage_seen_unstored",
     "writer_busy",
 }
