@@ -572,22 +572,6 @@ def test_nothing_is_subscribed_while_the_global_switch_is_off(paths, tmp_path):
         assert _published(paths)["subscriptions"]
 
 
-@pytest.mark.parametrize("scope", ["global", "project"])
-def test_the_legacy_same_model_switch_still_turns_the_rule_off(paths, tmp_path, scope):
-    root = tmp_path / "project"
-    root.mkdir()
-    off = Overrides(policy_intervene_same_model_subagent_spawn=False)
-    if scope == "global":
-        config = Config(
-            defaults=Limits(policy_intervene_same_model_subagent_spawn=False),
-            projects=(Project(id=uuid4(), root=root),),
-        )
-    else:
-        config = Config(projects=(Project(id=uuid4(), root=root, overrides=off),))
-    save_config(paths.config, config)
-    assert _decide(paths, _agent_input(root), session=_coordinator()).action == "allow"
-
-
 def test_decide_allows_a_different_family_subagent_spawn(paths, tmp_path):
     root = tmp_path / "project"
     root.mkdir()

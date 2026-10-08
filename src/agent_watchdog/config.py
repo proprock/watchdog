@@ -40,15 +40,10 @@ class Limits(StrictModel):
     log_bytes: Positive = 10 * 1024**2
     log_level: Literal["DEBUG", "INFO", "WARNING", "ERROR"] = "INFO"
     log_detail: bool = False
-    # Legacy per-rule kill switch for the WD-014 same-model-subagent rule, kept
-    # since WD-142 as an alias that turns off the built-in `subagent_same_model`
-    # rule alone. New rules have no flag of their own: `policy_intervene` below
-    # stops every rule, and `[rules] disabled` turns one off by name. The rule's
-    # finding (the `log` half) is not gated by either.
-    policy_intervene_same_model_subagent_spawn: bool = True
     # Kill switch for every control action of the decision channel (WD-142):
     # false means the daemon answers "no opinion" to every hook call for the
-    # project. Set it in [defaults] to switch the channel off globally.
+    # project. Set it in [defaults] to switch the channel off globally. One rule
+    # is turned off by name with `[rules] disabled` (`rules disable`).
     policy_intervene: bool = True
     # Kill switch for `insights`, the only path that sends a project's evidence to a
     # model. The explicit command is the opt-in; false refuses the call (a dry run,
@@ -71,7 +66,6 @@ class Overrides(StrictModel):
     project_bytes: Positive | None = None
     inbox_bytes: Positive | None = None
     payload_bytes: Positive | None = None
-    policy_intervene_same_model_subagent_spawn: bool | None = None
     policy_intervene: bool | None = None
     insights_llm_enabled: bool | None = None
 

@@ -22,9 +22,6 @@ from agent_watchdog.rules.registry import RuleRegistry
 from agent_watchdog.state import SessionState
 
 SAME_MODEL_RULE = "subagent_same_model"
-# The WD-014 per-rule switch predates `policy_intervene`; it keeps switching off
-# the rule that replaced the rule it named.
-_LEGACY_SWITCH = {SAME_MODEL_RULE: "policy_intervene_same_model_subagent_spawn"}
 _THROTTLE_LIMIT = 4096
 _THROTTLE_RETENTION_SECONDS = 24 * 3600
 
@@ -193,13 +190,10 @@ def decide(
         if project is None:
             return ALLOW
         limits = project.overrides.apply(config.defaults)
-        legacy = _LEGACY_SWITCH.get(rule.name)
         # Two independent switches, each of which stops every action: a project
         # cannot switch the channel back on once the global default is off.
         if not (config.defaults.policy_intervene and limits.policy_intervene):
             return ALLOW
-        if legacy is not None and not getattr(limits, legacy):
-            continue
         engine.throttle.record(rule, context, mono)
         decision = replace(decision, project_id=project.id)
         if decision.action == "log":

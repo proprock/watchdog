@@ -131,19 +131,12 @@ def test_project_overrides_round_trip_and_do_not_change_other_projects(tmp_path)
         Config(projects=(Project(id=uuid4(), root=tmp_path, overrides=Overrides(inbox_bytes=1)),))
 
 
-def test_policy_intervene_kill_switch_defaults_true_and_is_project_overridable(tmp_path):
-    default_off = Project(id=uuid4(), root=tmp_path / "one")
-    overridden_off = Project(
-        id=uuid4(),
-        root=tmp_path / "two",
-        overrides=Overrides(policy_intervene_same_model_subagent_spawn=False),
-    )
-    config = Config(projects=(default_off, overridden_off))
-    assert config.defaults.policy_intervene_same_model_subagent_spawn is True
-    assert default_off.overrides.apply(config.defaults).policy_intervene_same_model_subagent_spawn
-    assert not overridden_off.overrides.apply(
-        config.defaults
-    ).policy_intervene_same_model_subagent_spawn
+def test_the_removed_per_rule_switch_is_rejected_as_an_unknown_key(tmp_path):
+    # WD-164 removed the WD-022b alias; a rule is switched off by name instead.
+    with pytest.raises(ValidationError):
+        Limits.model_validate({"policy_intervene_same_model_subagent_spawn": False})
+    with pytest.raises(ValidationError):
+        Overrides.model_validate({"policy_intervene_same_model_subagent_spawn": False})
 
 
 def test_the_all_rules_kill_switch_defaults_true_and_is_project_overridable(tmp_path):

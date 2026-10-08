@@ -45,11 +45,6 @@ log_detail = false
 # every project, and no project can switch them back on. A project can also set
 # `policy_intervene = false` under [projects.overrides] to stop only its own.
 policy_intervene = true
-# Older, narrower switch kept as an alias: it turns off only the built-in
-# `subagent_same_model` rule, which moves a Claude subagent that would run on the
-# coordinating conversation's model tier one tier down. It never affects the rule's
-# recorded finding or any other rule.
-policy_intervene_same_model_subagent_spawn = true
 # Allow `agent-watchdog insights` to send this project's redacted evidence bundle
 # to one isolated `claude -p` call when you run it. Set false to refuse every
 # call; `insights --dry-run` sends nothing and keeps working.
@@ -85,5 +80,4 @@ insights_llm_enabled = true
 # [projects.overrides]
 # capture_content = false
 # policy_intervene = false
-# policy_intervene_same_model_subagent_spawn = false
 # insights_llm_enabled = false
