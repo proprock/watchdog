@@ -20,7 +20,7 @@ import sys
 import tempfile
 import time
 from collections.abc import Callable, Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import UTC, datetime
 from pathlib import Path
 from uuid import uuid4
@@ -434,6 +434,7 @@ class CodexCase:
     judge: Callable[[CodexEvidence], CodexVerdict]
     sandbox: str = "read-only"
     limitations: tuple[str, ...] = ()
+    code_mode: bool = False
 
 
 def _codex_context(event: str, marker: str) -> CodexResponse:
@@ -518,10 +519,20 @@ def _codex_rewrite_verdict(evidence: CodexEvidence) -> CodexVerdict:
     return "inconclusive", ["neither rewritten nor original output was read back"]
 
 
+def _codex_patch_rewrite_verdict(evidence: CodexEvidence) -> CodexVerdict:
+    if CODEX_REWRITTEN in evidence.file_markers and CODEX_ORIGINAL not in evidence.file_markers:
+        return "supported", []
+    if CODEX_ORIGINAL in evidence.file_markers:
+        return "unsupported", ["the original patch effect was read back from the sentinel"]
+    return "inconclusive", ["the rewritten patch effect was not read back from the sentinel"]
+
+
 def _codex_permission_allow_verdict(evidence: CodexEvidence) -> CodexVerdict:
     if CODEX_SENTINEL in evidence.files:
         return "supported", []
-    return "unsupported", ["PermissionRequest allowed the operation, but it did not run"]
+    return "inconclusive", [
+        "PermissionRequest allowed the operation, but its effect was not confirmed"
+    ]
 
 
 def _codex_post_block_verdict(evidence: CodexEvidence) -> CodexVerdict:
@@ -535,7 +546,7 @@ def _codex_post_block_verdict(evidence: CodexEvidence) -> CodexVerdict:
 def _codex_halt_verdict(evidence: CodexEvidence) -> CodexVerdict:
     if evidence.saw(CODEX_FINISHED):
         return "unsupported", ["the model completed its final reply after continue:false"]
-    return "supported", ["evidence is the absence of the final reply after the callback"]
+    return "inconclusive", ["an absent final reply alone does not establish a halt effect"]
 
 
 def _codex_stop_verdict(event: str) -> Callable[[CodexEvidence], CodexVerdict]:
@@ -583,6 +594,12 @@ def _codex_observe_verdict(event: str) -> Callable[[CodexEvidence], CodexVerdict
     return judge
 
 
+def _codex_ask_verdict(evidence: CodexEvidence) -> CodexVerdict:
+    if evidence.saw("unsupported permissionDecision:ask"):
+        return "unsupported", ["the provider explicitly rejected permissionDecision:ask"]
+    return "inconclusive", ["interactive ask effect needs explicit operator evidence"]
+
+
 _CODEX_TOKEN_ASK = (
     f"Reply with exactly {CODEX_CONTEXT_MARKER} if and only if a hook supplied it; "
     "otherwise reply with NONE. Do not guess."
@@ -615,6 +632,51 @@ def _codex_cases() -> list[CodexCase]:
     post_bash = (("PostToolUse", "^Bash$"),)
     permission_bash = (("PermissionRequest", "^Bash$"),)
     cases = [
+        CodexCase(
+            "pre-tool-bash-ask",
+            pre_bash,
+            {"PreToolUse": 1},
+            {"PreToolUse": _codex_pre_tool("ask", CODEX_DENY_REASON)},
+            "hookSpecificOutput.permissionDecision=ask",
+            (f"Run exactly one Bash command: {_CODEX_BASH_SIDE_EFFECT}. Quote any hook error.",),
+            _codex_ask_verdict,
+            sandbox="workspace-write",
+        ),
+        CodexCase(
+            "post-tool-local-context",
+            (("PostToolUse", "^(spawn_agent|Agent)$"),),
+            {"PostToolUse": 1},
+            {"PostToolUse": _codex_context("PostToolUse", CODEX_CONTEXT_MARKER)},
+            "hookSpecificOutput.additionalContext",
+            ("Start exactly one subagent to reply READY. Then " + _CODEX_TOKEN_ASK,),
+            _codex_context_verdict(CODEX_CONTEXT_MARKER, "PostToolUse"),
+        ),
+        CodexCase(
+            "pre-tool-mcp-rewrite",
+            (("PreToolUse", "^mcp__probe__emit$"),),
+            {"PreToolUse": 1},
+            {"PreToolUse": _codex_pre_tool("allow", "WD163 rewrite", text=CODEX_REWRITTEN)},
+            "hookSpecificOutput.permissionDecision=allow,updatedInput.text",
+            (
+                f"Call mcp__probe__emit exactly once with text {CODEX_ORIGINAL}. "
+                "Do not use Bash or edit files yourself. Then report the tool result.",
+            ),
+            _codex_patch_rewrite_verdict,
+            sandbox="workspace-write",
+        ),
+        CodexCase(
+            "pre-tool-mcp-deny",
+            (("PreToolUse", "^mcp__probe__emit$"),),
+            {"PreToolUse": 1},
+            {"PreToolUse": _codex_pre_tool("deny", CODEX_DENY_REASON)},
+            "hookSpecificOutput.permissionDecision=deny",
+            (
+                f"Call mcp__probe__emit exactly once with text {CODEX_SIDE_EFFECT}. "
+                "Do not use Bash or edit files yourself. Quote any refusal.",
+            ),
+            _codex_deny_verdict,
+            sandbox="workspace-write",
+        ),
         CodexCase(
             "session-start-context",
             (("SessionStart", "^startup$"),),
@@ -682,12 +744,12 @@ def _codex_cases() -> list[CodexCase]:
             {"PreToolUse": 1},
             {
                 "PreToolUse": _codex_pre_tool(
-                    "allow", "WD139C rewrite", patch=_CODEX_APPLY_PATCH_REWRITTEN
+                    "allow", "WD139C rewrite", command=_CODEX_APPLY_PATCH_REWRITTEN
                 )
             },
-            "hookSpecificOutput.permissionDecision=allow,updatedInput.patch",
+            "hookSpecificOutput.permissionDecision=allow,updatedInput.command",
             (_CODEX_APPLY_PATCH,),
-            _codex_rewrite_verdict,
+            _codex_patch_rewrite_verdict,
             sandbox="workspace-write",
         ),
         CodexCase(
@@ -797,12 +859,20 @@ def _codex_cases() -> list[CodexCase]:
             (("Interrupt", None),),
             {"Interrupt": 1},
             {},
-            "systemMessage",
+            "{} (observation only)",
             ("Run a long harmless Bash sleep so this CLI run can be interrupted by its owner.",),
             _codex_observe_verdict("Interrupt"),
             limitations=("Requires an operator to interrupt the active standalone CLI turn.",),
         ),
     ]
+    for name in (
+        "post-tool-local-context",
+        "pre-tool-mcp-rewrite",
+        "pre-tool-apply-patch-rewrite",
+        "pre-tool-bash-rewrite",
+    ):
+        original = next(case for case in cases if case.name == name)
+        cases.append(replace(original, name=name + "-code-mode", code_mode=True))
     return cases
 
 
@@ -863,23 +933,6 @@ def codex_profile_configuration(case: CodexCase, handler: Path, log: Path) -> st
             chunks.append(f"matcher = {json.dumps(matcher)}")
         chunks.extend(["", f"[[hooks.{event}.hooks]]", *fields, ""])
     return "\n".join(chunks)
-
-
-def codex_case_command(codex: str, profile_name: str, work: Path, case: CodexCase) -> list[str]:
-    return [
-        codex,
-        "exec",
-        "--enable",
-        "hooks",
-        "--profile",
-        profile_name,
-        "--dangerously-bypass-hook-trust",
-        "--sandbox",
-        case.sandbox,
-        "-C",
-        str(work),
-        case.prompts[0],
-    ]
 
 
 def _codex_problems(case: CodexCase, evidence: CodexEvidence) -> list[str]:
@@ -1054,93 +1107,17 @@ def codex_record(
     }
 
 
-def run_codex_case(
-    case: CodexCase, args: argparse.Namespace, codex: str, version: str, roots: Sequence[Path]
-) -> dict[str, object]:
-    started_at = datetime.now(UTC).isoformat().replace("+00:00", "Z")
-    scratch: Path | None = None
-    removed = False
-    home = Path(os.environ.get("CODEX_HOME", Path.home() / ".codex"))
-    profile_name = f"watchdog-wd139c-{uuid4().hex}"
-    profile = home / f"{profile_name}.config.toml"
-    try:
-        with tempfile.TemporaryDirectory(
-            prefix="watchdog-wd139c-codex-", ignore_cleanup_errors=True
-        ) as temporary:
-            scratch = Path(temporary)
-            ensure_scratch_outside_roots(scratch, roots)
-            work = scratch / "work"
-            control = scratch / "control"
-            work.mkdir()
-            control.mkdir()
-            log = control / "probe.ndjson"
-            profile.write_text(
-                codex_profile_configuration(case, Path(__file__).resolve(), log),
-                encoding="utf-8",
-                newline="\n",
-            )
-            subprocess.run(
-                ["git", "init", str(work)],
-                capture_output=True,
-                text=True,
-                check=True,
-                creationflags=hidden_creationflags(),
-            )
-            stdout = ""
-            completed = False
-            timed_out = False
-            try:
-                process = subprocess.run(
-                    codex_case_command(codex, profile_name, work, case),
-                    capture_output=True,
-                    text=True,
-                    timeout=args.timeout,
-                    creationflags=hidden_creationflags(),
-                )
-                stdout = process.stdout
-                completed = process.returncode == 0
-            except subprocess.TimeoutExpired as error:
-                timed_out = True
-                partial = error.stdout
-                stdout = (
-                    partial.decode("utf-8", "replace")
-                    if isinstance(partial, bytes)
-                    else partial or ""
-                )
-            evidence = CodexEvidence(
-                records=_read_records(log),
-                stdout=stdout,
-                rollout=_read_rollout(_rollout_path(_read_records(log))),
-                files=frozenset(entry.name for entry in work.iterdir() if entry.name != ".git"),
-                completed=completed,
-                timed_out=timed_out,
-                file_markers=_codex_file_markers(work),
-            )
-        if scratch is not None and scratch.exists():
-            removed = _remove_codex_scratch(scratch)
-        else:
-            removed = True
-    finally:
-        profile.unlink(missing_ok=True)
-    return codex_record(
-        case,
-        evidence,
-        verdict=evaluate_codex(case, evidence),
-        version=version,
-        started_at=started_at,
-        finished_at=datetime.now(UTC).isoformat().replace("+00:00", "Z"),
-        removed=removed,
-    )
-
-
 def run_codex_control(args: argparse.Namespace) -> list[dict[str, object]]:
     require_standalone_cli()
-    roots = registered_roots(args.config)
-    ensure_scratch_outside_roots(Path(tempfile.gettempdir()), roots)
-    codex = resolve_codex(args.codex)
-    version = codex_version(codex)
+    if not args.live:
+        raise RuntimeError("Codex control probes require --live")
+    from codex_control_probe import command_line, run_case
+
     names = sorted(CODEX_CASES) if args.all else args.case
-    return [run_codex_case(CODEX_CASES[name], args, codex, version, roots) for name in names]
+    args.debug_log = None
+    for name in names:
+        command_line(args.codex, CODEX_CASES[name], Path("."), interactive=args.interactive)
+    return [run_case(args, CODEX_CASES[name]) for name in names]
 
 
 # --- Claude Code control probes ---------------------------------------------------
@@ -2333,7 +2310,9 @@ def main() -> int:
     codex_selection = codex_control.add_mutually_exclusive_group(required=True)
     codex_selection.add_argument("--case", action="append", choices=sorted(CODEX_CASES))
     codex_selection.add_argument("--all", action="store_true")
-    codex_control.add_argument("--codex", default="codex")
+    codex_control.add_argument("--codex", required=True)
+    codex_control.add_argument("--live", action="store_true", required=True)
+    codex_control.add_argument("--interactive", action="store_true")
     codex_control.add_argument("--config", type=Path)
     codex_control.add_argument("--timeout", type=float, default=90)
     claude_handler = commands.add_parser("claude-handler", help="internal Claude hook handler")

@@ -1,0 +1,5680 @@
+[
+  {
+    "format_version": "watchdog.probe-result.v1",
+    "record_id": "wd163-codex-cli-pre-tool-apply-patch-rewrite-24a463d2e4d547f38fb9b12b988168b2",
+    "classification": "live_provider",
+    "started_at": "2026-10-14T21:05:25.123045Z",
+    "finished_at": "2026-10-14T21:05:38.056324Z",
+    "provenance": {
+      "provider": {
+        "name": "codex",
+        "version": "codex-cli 0.160.0",
+        "surface": "cli"
+      },
+      "harness": {
+        "name": "codex-cli",
+        "version": "codex-cli 0.160.0"
+      },
+      "adapter": {
+        "name": "none",
+        "version": null,
+        "invocation": "provider"
+      },
+      "os": {
+        "name": "Windows",
+        "version": null,
+        "architecture": "AMD64"
+      },
+      "source": {
+        "kind": "generated-workload",
+        "sanitized_reference": "wd163-pre-tool-apply-patch-rewrite"
+      },
+      "model": {
+        "name": "gpt-6.1-sol",
+        "reasoning_effort": "low"
+      }
+    },
+    "scope": {
+      "isolation": "Isolated Codex home and scratch Git repository outside registered projects",
+      "expected_callback_kinds": [
+        "PreToolUse"
+      ],
+      "expected_deliveries": 0,
+      "notes": "Noninteractive codex exec",
+      "tool_path": "default",
+      "callback_minimums": {
+        "PreToolUse": 1
+      }
+    },
+    "stages": {
+      "provider_dispatch": {
+        "state": "confirmed",
+        "attempts": 1,
+        "evidence": "Observed hook callbacks and owned CLI exit status",
+        "detail": null
+      },
+      "adapter": {
+        "state": "not_invoked",
+        "starts": 0,
+        "failure_category": null,
+        "evidence": "The probe calls no Watchdog adapter."
+      },
+      "callbacks": {
+        "expected": 1,
+        "observed": 1,
+        "missing": 0,
+        "missing_attribution": "not_applicable",
+        "evidence": "Expected callback counts and sanitized input shapes are in capabilities."
+      },
+      "retries": {
+        "count": 0,
+        "scopes": [],
+        "reason": null,
+        "outcome": "not_attempted",
+        "evidence": "One run per case."
+      },
+      "persistence": {
+        "accepted": 0,
+        "losses": [],
+        "evidence": "Not applicable: the probe does not exercise Watchdog persistence."
+      },
+      "end_to_end_delivery": {
+        "expected": 0,
+        "persisted": 0,
+        "read_back": 0,
+        "state": "not_applicable",
+        "failure_attribution": "not_applicable",
+        "failure_detail": null,
+        "evidence": "No Watchdog store; provider effect is recorded separately in capabilities."
+      }
+    },
+    "capabilities": {
+      "pre-tool-apply-patch-rewrite": {
+        "state": "inconclusive",
+        "response_shape": "hookSpecificOutput.permissionDecision=allow,updatedInput.command",
+        "callbacks": {
+          "PreToolUse": {
+            "observed": 1,
+            "input_fields": [
+              "cwd",
+              "hook_event_name",
+              "model",
+              "permission_mode",
+              "session_id",
+              "tool_input",
+              "tool_name",
+              "tool_use_id",
+              "transcript_path",
+              "turn_id"
+            ],
+            "tool_names": [
+              "apply_patch"
+            ]
+          }
+        },
+        "observed_effect": "inconclusive"
+      }
+    },
+    "cleanup": {
+      "resources": [
+        {
+          "kind": "process",
+          "alias": "owned-cli-process-tree",
+          "action": "stopped",
+          "state": "confirmed",
+          "failure_attribution": "not_applicable",
+          "detail": null,
+          "evidence": "Windows job accounting reports zero active processes"
+        },
+        {
+          "kind": "hook_installation",
+          "alias": "isolated-codex-home",
+          "action": "removed",
+          "state": "confirmed",
+          "failure_attribution": "not_applicable",
+          "detail": null,
+          "evidence": "Isolated home removal check; active profile was not modified"
+        },
+        {
+          "kind": "temporary_state",
+          "alias": "scratch-and-rollouts",
+          "action": "removed",
+          "state": "confirmed",
+          "failure_attribution": "not_applicable",
+          "detail": null,
+          "evidence": "Scratch removal check, including authentication copy and provider rollouts"
+        }
+      ],
+      "complete": true,
+      "remaining_state": null
+    },
+    "result": {
+      "state": "incomplete",
+      "limitations": [
+        "the rewritten patch effect was not read back from the sentinel",
+        "One Windows CLI build and one isolated attempt; no cross-version inference."
+      ]
+    },
+    "effect": {
+      "state": "inconclusive",
+      "evidence": "Filtered model/tool output and isolated sentinel read-back",
+      "notes": [
+        "the rewritten patch effect was not read back from the sentinel"
+      ]
+    },
+    "assessment_version": "wd163.1"
+  },
+  {
+    "format_version": "watchdog.probe-result.v1",
+    "record_id": "wd163-codex-cli-pre-tool-apply-patch-rewrite-dd4b82cf6bc1411c840a92b89d7d6d82",
+    "classification": "live_provider",
+    "started_at": "2026-10-14T21:06:14.881923Z",
+    "finished_at": "2026-10-14T21:06:26.395670Z",
+    "provenance": {
+      "provider": {
+        "name": "codex",
+        "version": "codex-cli 0.160.0",
+        "surface": "cli"
+      },
+      "harness": {
+        "name": "codex-cli",
+        "version": "codex-cli 0.160.0"
+      },
+      "adapter": {
+        "name": "none",
+        "version": null,
+        "invocation": "provider"
+      },
+      "os": {
+        "name": "Windows",
+        "version": null,
+        "architecture": "AMD64"
+      },
+      "source": {
+        "kind": "generated-workload",
+        "sanitized_reference": "wd163-pre-tool-apply-patch-rewrite"
+      },
+      "model": {
+        "name": "gpt-6.1-sol",
+        "reasoning_effort": "low"
+      }
+    },
+    "scope": {
+      "isolation": "Isolated Codex home and scratch Git repository outside registered projects",
+      "expected_callback_kinds": [
+        "PreToolUse"
+      ],
+      "expected_deliveries": 0,
+      "notes": "Noninteractive codex exec",
+      "tool_path": "default",
+      "callback_minimums": {
+        "PreToolUse": 1
+      }
+    },
+    "stages": {
+      "provider_dispatch": {
+        "state": "confirmed",
+        "attempts": 1,
+        "evidence": "Observed hook callbacks and owned CLI exit status",
+        "detail": null
+      },
+      "adapter": {
+        "state": "not_invoked",
+        "starts": 0,
+        "failure_category": null,
+        "evidence": "The probe calls no Watchdog adapter."
+      },
+      "callbacks": {
+        "expected": 1,
+        "observed": 1,
+        "missing": 0,
+        "missing_attribution": "not_applicable",
+        "evidence": "Expected callback counts and sanitized input shapes are in capabilities."
+      },
+      "retries": {
+        "count": 0,
+        "scopes": [],
+        "reason": null,
+        "outcome": "not_attempted",
+        "evidence": "One run per case."
+      },
+      "persistence": {
+        "accepted": 0,
+        "losses": [],
+        "evidence": "Not applicable: the probe does not exercise Watchdog persistence."
+      },
+      "end_to_end_delivery": {
+        "expected": 0,
+        "persisted": 0,
+        "read_back": 0,
+        "state": "not_applicable",
+        "failure_attribution": "not_applicable",
+        "failure_detail": null,
+        "evidence": "No Watchdog store; provider effect is recorded separately in capabilities."
+      }
+    },
+    "capabilities": {
+      "pre-tool-apply-patch-rewrite": {
+        "state": "inconclusive",
+        "response_shape": "hookSpecificOutput.permissionDecision=allow,updatedInput.command",
+        "callbacks": {
+          "PreToolUse": {
+            "observed": 1,
+            "input_fields": [
+              "cwd",
+              "hook_event_name",
+              "model",
+              "permission_mode",
+              "session_id",
+              "tool_input",
+              "tool_name",
+              "tool_use_id",
+              "transcript_path",
+              "turn_id"
+            ],
+            "tool_names": [
+              "apply_patch"
+            ],
+            "tool_input_types": {
+              "command": "str"
+            }
+          }
+        },
+        "observed_effect": "inconclusive"
+      }
+    },
+    "cleanup": {
+      "resources": [
+        {
+          "kind": "process",
+          "alias": "owned-cli-process-tree",
+          "action": "stopped",
+          "state": "confirmed",
+          "failure_attribution": "not_applicable",
+          "detail": null,
+          "evidence": "Windows job accounting reports zero active processes"
+        },
+        {
+          "kind": "hook_installation",
+          "alias": "isolated-codex-home",
+          "action": "removed",
+          "state": "confirmed",
+          "failure_attribution": "not_applicable",
+          "detail": null,
+          "evidence": "Isolated home removal check; active profile was not modified"
+        },
+        {
+          "kind": "temporary_state",
+          "alias": "scratch-and-rollouts",
+          "action": "removed",
+          "state": "confirmed",
+          "failure_attribution": "not_applicable",
+          "detail": null,
+          "evidence": "Scratch removal check, including authentication copy and provider rollouts"
+        },
+        {
+          "kind": "temporary_state",
+          "alias": "operator-debug-log",
+          "action": "retained",
+          "state": "confirmed",
+          "failure_attribution": "not_applicable",
+          "detail": "Raw synthetic probe diagnostics retained in git-ignored tests/local only.",
+          "evidence": "Exclusive debug-log write completed"
+        }
+      ],
+      "complete": true,
+      "remaining_state": null
+    },
+    "result": {
+      "state": "incomplete",
+      "limitations": [
+        "the rewritten patch effect was not read back from the sentinel",
+        "One Windows CLI build and one isolated attempt; no cross-version inference."
+      ]
+    },
+    "effect": {
+      "state": "inconclusive",
+      "evidence": "Filtered model/tool output and isolated sentinel read-back",
+      "notes": [
+        "the rewritten patch effect was not read back from the sentinel"
+      ]
+    },
+    "execution": {
+      "exit_code": 0,
+      "observed_tool_paths": [
+        "exec"
+      ],
+      "effective_sandbox": "read-only"
+    },
+    "assessment_version": "wd163.1"
+  },
+  {
+    "format_version": "watchdog.probe-result.v1",
+    "record_id": "wd163-codex-cli-pre-tool-apply-patch-rewrite-46f7f3b34ffc457e892c73e693f86696",
+    "classification": "live_provider",
+    "started_at": "2026-10-14T21:07:17.873393Z",
+    "finished_at": "2026-10-14T21:07:28.194747Z",
+    "provenance": {
+      "provider": {
+        "name": "codex",
+        "version": "codex-cli 0.162.0-alpha.17.2",
+        "surface": "cli"
+      },
+      "harness": {
+        "name": "codex-cli",
+        "version": "codex-cli 0.162.0-alpha.17.2"
+      },
+      "adapter": {
+        "name": "none",
+        "version": null,
+        "invocation": "provider"
+      },
+      "os": {
+        "name": "Windows",
+        "version": null,
+        "architecture": "AMD64"
+      },
+      "source": {
+        "kind": "generated-workload",
+        "sanitized_reference": "wd163-pre-tool-apply-patch-rewrite"
+      },
+      "model": {
+        "name": "gpt-6.1-sol",
+        "reasoning_effort": "low"
+      }
+    },
+    "scope": {
+      "isolation": "Isolated Codex home and scratch Git repository outside registered projects",
+      "expected_callback_kinds": [
+        "PreToolUse"
+      ],
+      "expected_deliveries": 0,
+      "notes": "Noninteractive codex exec",
+      "tool_path": "default",
+      "callback_minimums": {
+        "PreToolUse": 1
+      }
+    },
+    "stages": {
+      "provider_dispatch": {
+        "state": "confirmed",
+        "attempts": 1,
+        "evidence": "Observed hook callbacks and owned CLI exit status",
+        "detail": null
+      },
+      "adapter": {
+        "state": "not_invoked",
+        "starts": 0,
+        "failure_category": null,
+        "evidence": "The probe calls no Watchdog adapter."
+      },
+      "callbacks": {
+        "expected": 1,
+        "observed": 1,
+        "missing": 0,
+        "missing_attribution": "not_applicable",
+        "evidence": "Expected callback counts and sanitized input shapes are in capabilities."
+      },
+      "retries": {
+        "count": 0,
+        "scopes": [],
+        "reason": null,
+        "outcome": "not_attempted",
+        "evidence": "One run per case."
+      },
+      "persistence": {
+        "accepted": 0,
+        "losses": [],
+        "evidence": "Not applicable: the probe does not exercise Watchdog persistence."
+      },
+      "end_to_end_delivery": {
+        "expected": 0,
+        "persisted": 0,
+        "read_back": 0,
+        "state": "not_applicable",
+        "failure_attribution": "not_applicable",
+        "failure_detail": null,
+        "evidence": "No Watchdog store; provider effect is recorded separately in capabilities."
+      }
+    },
+    "capabilities": {
+      "pre-tool-apply-patch-rewrite": {
+        "state": "inconclusive",
+        "response_shape": "hookSpecificOutput.permissionDecision=allow,updatedInput.command",
+        "callbacks": {
+          "PreToolUse": {
+            "observed": 1,
+            "input_fields": [
+              "cwd",
+              "hook_event_name",
+              "model",
+              "permission_mode",
+              "session_id",
+              "tool_input",
+              "tool_name",
+              "tool_use_id",
+              "transcript_path",
+              "turn_id"
+            ],
+            "tool_names": [
+              "apply_patch"
+            ],
+            "tool_input_types": {
+              "command": "str"
+            }
+          }
+        },
+        "observed_effect": "inconclusive"
+      }
+    },
+    "cleanup": {
+      "resources": [
+        {
+          "kind": "process",
+          "alias": "owned-cli-process-tree",
+          "action": "stopped",
+          "state": "confirmed",
+          "failure_attribution": "not_applicable",
+          "detail": null,
+          "evidence": "Windows job accounting reports zero active processes"
+        },
+        {
+          "kind": "hook_installation",
+          "alias": "isolated-codex-home",
+          "action": "removed",
+          "state": "confirmed",
+          "failure_attribution": "not_applicable",
+          "detail": null,
+          "evidence": "Isolated home removal check; active profile was not modified"
+        },
+        {
+          "kind": "temporary_state",
+          "alias": "scratch-and-rollouts",
+          "action": "removed",
+          "state": "confirmed",
+          "failure_attribution": "not_applicable",
+          "detail": null,
+          "evidence": "Scratch removal check, including authentication copy and provider rollouts"
+        },
+        {
+          "kind": "temporary_state",
+          "alias": "operator-debug-log",
+          "action": "retained",
+          "state": "confirmed",
+          "failure_attribution": "not_applicable",
+          "detail": "Raw synthetic probe diagnostics retained in git-ignored tests/local only.",
+          "evidence": "Exclusive debug-log write completed"
+        }
+      ],
+      "complete": true,
+      "remaining_state": null
+    },
+    "result": {
+      "state": "incomplete",
+      "limitations": [
+        "the rewritten patch effect was not read back from the sentinel",
+        "One Windows CLI build and one isolated attempt; no cross-version inference."
+      ]
+    },
+    "effect": {
+      "state": "inconclusive",
+      "evidence": "Filtered model/tool output and isolated sentinel read-back",
+      "notes": [
+        "the rewritten patch effect was not read back from the sentinel"
+      ]
+    },
+    "execution": {
+      "exit_code": 0,
+      "observed_tool_paths": [
+        "exec"
+      ],
+      "effective_sandbox": "read-only"
+    },
+    "assessment_version": "wd163.1"
+  },
+  {
+    "format_version": "watchdog.probe-result.v1",
+    "record_id": "wd163-codex-cli-pre-tool-apply-patch-rewrite-7012e3afeb9b4100b441a546ee3368b9",
+    "classification": "live_provider",
+    "started_at": "2026-10-14T21:08:38.371836Z",
+    "finished_at": "2026-10-14T21:08:48.281221Z",
+    "provenance": {
+      "provider": {
+        "name": "codex",
+        "version": "codex-cli 0.162.0-alpha.17.2",
+        "surface": "cli"
+      },
+      "harness": {
+        "name": "codex-cli",
+        "version": "codex-cli 0.162.0-alpha.17.2"
+      },
+      "adapter": {
+        "name": "none",
+        "version": null,
+        "invocation": "provider"
+      },
+      "os": {
+        "name": "Windows",
+        "version": null,
+        "architecture": "AMD64"
+      },
+      "source": {
+        "kind": "generated-workload",
+        "sanitized_reference": "wd163-pre-tool-apply-patch-rewrite"
+      },
+      "model": {
+        "name": "gpt-6.1-sol",
+        "reasoning_effort": "low"
+      }
+    },
+    "scope": {
+      "isolation": "Isolated Codex home and scratch Git repository outside registered projects",
+      "expected_callback_kinds": [
+        "PreToolUse"
+      ],
+      "expected_deliveries": 0,
+      "notes": "Noninteractive codex exec",
+      "tool_path": "default",
+      "callback_minimums": {
+        "PreToolUse": 1
+      }
+    },
+    "stages": {
+      "provider_dispatch": {
+        "state": "confirmed",
+        "attempts": 1,
+        "evidence": "Observed hook callbacks and owned CLI exit status",
+        "detail": null
+      },
+      "adapter": {
+        "state": "not_invoked",
+        "starts": 0,
+        "failure_category": null,
+        "evidence": "The probe calls no Watchdog adapter."
+      },
+      "callbacks": {
+        "expected": 1,
+        "observed": 1,
+        "missing": 0,
+        "missing_attribution": "not_applicable",
+        "evidence": "Expected callback counts and sanitized input shapes are in capabilities."
+      },
+      "retries": {
+        "count": 0,
+        "scopes": [],
+        "reason": null,
+        "outcome": "not_attempted",
+        "evidence": "One run per case."
+      },
+      "persistence": {
+        "accepted": 0,
+        "losses": [],
+        "evidence": "Not applicable: the probe does not exercise Watchdog persistence."
+      },
+      "end_to_end_delivery": {
+        "expected": 0,
+        "persisted": 0,
+        "read_back": 0,
+        "state": "not_applicable",
+        "failure_attribution": "not_applicable",
+        "failure_detail": null,
+        "evidence": "No Watchdog store; provider effect is recorded separately in capabilities."
+      }
+    },
+    "capabilities": {
+      "pre-tool-apply-patch-rewrite": {
+        "state": "inconclusive",
+        "response_shape": "hookSpecificOutput.permissionDecision=allow,updatedInput.command",
+        "callbacks": {
+          "PreToolUse": {
+            "observed": 1,
+            "input_fields": [
+              "cwd",
+              "hook_event_name",
+              "model",
+              "permission_mode",
+              "session_id",
+              "tool_input",
+              "tool_name",
+              "tool_use_id",
+              "transcript_path",
+              "turn_id"
+            ],
+            "tool_names": [
+              "apply_patch"
+            ],
+            "tool_input_types": {
+              "command": "str"
+            }
+          }
+        },
+        "observed_effect": "inconclusive"
+      }
+    },
+    "cleanup": {
+      "resources": [
+        {
+          "kind": "process",
+          "alias": "owned-cli-process-tree",
+          "action": "stopped",
+          "state": "confirmed",
+          "failure_attribution": "not_applicable",
+          "detail": null,
+          "evidence": "Windows job accounting reports zero active processes"
+        },
+        {
+          "kind": "hook_installation",
+          "alias": "isolated-codex-home",
+          "action": "removed",
+          "state": "confirmed",
+          "failure_attribution": "not_applicable",
+          "detail": null,
+          "evidence": "Isolated home removal check; active profile was not modified"
+        },
+        {
+          "kind": "temporary_state",
+          "alias": "scratch-and-rollouts",
+          "action": "removed",
+          "state": "confirmed",
+          "failure_attribution": "not_applicable",
+          "detail": null,
+          "evidence": "Scratch removal check, including authentication copy and provider rollouts"
+        },
+        {
+          "kind": "temporary_state",
+          "alias": "operator-debug-log",
+          "action": "retained",
+          "state": "confirmed",
+          "failure_attribution": "not_applicable",
+          "detail": "Raw synthetic probe diagnostics retained in git-ignored tests/local only.",
+          "evidence": "Exclusive debug-log write completed"
+        }
+      ],
+      "complete": true,
+      "remaining_state": null
+    },
+    "result": {
+      "state": "incomplete",
+      "limitations": [
+        "the rewritten patch effect was not read back from the sentinel",
+        "One Windows CLI build and one isolated attempt; no cross-version inference."
+      ]
+    },
+    "effect": {
+      "state": "inconclusive",
+      "evidence": "Filtered model/tool output and isolated sentinel read-back",
+      "notes": [
+        "the rewritten patch effect was not read back from the sentinel"
+      ]
+    },
+    "execution": {
+      "exit_code": 0,
+      "observed_tool_paths": [
+        "exec"
+      ],
+      "effective_sandbox": "workspace-write"
+    },
+    "assessment_version": "wd163.1"
+  },
+  {
+    "format_version": "watchdog.probe-result.v1",
+    "record_id": "wd163-codex-cli-pre-tool-apply-patch-rewrite-ba6bad7294464046b1549dd75ae02ef5",
+    "classification": "live_provider",
+    "started_at": "2026-10-14T21:09:34.941291Z",
+    "finished_at": "2026-10-14T21:09:50.043772Z",
+    "provenance": {
+      "provider": {
+        "name": "codex",
+        "version": "codex-cli 0.162.0-alpha.17.2",
+        "surface": "cli"
+      },
+      "harness": {
+        "name": "codex-cli",
+        "version": "codex-cli 0.162.0-alpha.17.2"
+      },
+      "adapter": {
+        "name": "none",
+        "version": null,
+        "invocation": "provider"
+      },
+      "os": {
+        "name": "Windows",
+        "version": null,
+        "architecture": "AMD64"
+      },
+      "source": {
+        "kind": "generated-workload",
+        "sanitized_reference": "wd163-pre-tool-apply-patch-rewrite"
+      },
+      "model": {
+        "name": "gpt-6.1-sol",
+        "reasoning_effort": "low"
+      }
+    },
+    "scope": {
+      "isolation": "Isolated Codex home and scratch Git repository outside registered projects",
+      "expected_callback_kinds": [
+        "PreToolUse"
+      ],
+      "expected_deliveries": 0,
+      "notes": "Noninteractive codex exec",
+      "tool_path": "default",
+      "callback_minimums": {
+        "PreToolUse": 1
+      }
+    },
+    "stages": {
+      "provider_dispatch": {
+        "state": "confirmed",
+        "attempts": 1,
+        "evidence": "Observed hook callbacks and owned CLI exit status",
+        "detail": null
+      },
+      "adapter": {
+        "state": "not_invoked",
+        "starts": 0,
+        "failure_category": null,
+        "evidence": "The probe calls no Watchdog adapter."
+      },
+      "callbacks": {
+        "expected": 2,
+        "observed": 2,
+        "missing": 0,
+        "missing_attribution": "not_applicable",
+        "evidence": "Expected callback counts and sanitized input shapes are in capabilities."
+      },
+      "retries": {
+        "count": 0,
+        "scopes": [],
+        "reason": null,
+        "outcome": "not_attempted",
+        "evidence": "One run per case."
+      },
+      "persistence": {
+        "accepted": 0,
+        "losses": [],
+        "evidence": "Not applicable: the probe does not exercise Watchdog persistence."
+      },
+      "end_to_end_delivery": {
+        "expected": 0,
+        "persisted": 0,
+        "read_back": 0,
+        "state": "not_applicable",
+        "failure_attribution": "not_applicable",
+        "failure_detail": null,
+        "evidence": "No Watchdog store; provider effect is recorded separately in capabilities."
+      }
+    },
+    "capabilities": {
+      "pre-tool-apply-patch-rewrite": {
+        "state": "inconclusive",
+        "response_shape": "hookSpecificOutput.permissionDecision=allow,updatedInput.command",
+        "callbacks": {
+          "PreToolUse": {
+            "observed": 2,
+            "input_fields": [
+              "cwd",
+              "hook_event_name",
+              "model",
+              "permission_mode",
+              "session_id",
+              "tool_input",
+              "tool_name",
+              "tool_use_id",
+              "transcript_path",
+              "turn_id"
+            ],
+            "tool_names": [
+              "apply_patch"
+            ],
+            "tool_input_types": {
+              "command": "str"
+            }
+          }
+        },
+        "observed_effect": "inconclusive"
+      }
+    },
+    "cleanup": {
+      "resources": [
+        {
+          "kind": "process",
+          "alias": "owned-cli-process-tree",
+          "action": "stopped",
+          "state": "confirmed",
+          "failure_attribution": "not_applicable",
+          "detail": null,
+          "evidence": "Windows job accounting reports zero active processes"
+        },
+        {
+          "kind": "hook_installation",
+          "alias": "isolated-codex-home",
+          "action": "removed",
+          "state": "confirmed",
+          "failure_attribution": "not_applicable",
+          "detail": null,
+          "evidence": "Isolated home removal check; active profile was not modified"
+        },
+        {
+          "kind": "temporary_state",
+          "alias": "scratch-and-rollouts",
+          "action": "removed",
+          "state": "confirmed",
+          "failure_attribution": "not_applicable",
+          "detail": null,
+          "evidence": "Scratch removal check, including authentication copy and provider rollouts"
+        },
+        {
+          "kind": "temporary_state",
+          "alias": "operator-debug-log",
+          "action": "retained",
+          "state": "confirmed",
+          "failure_attribution": "not_applicable",
+          "detail": "Raw synthetic probe diagnostics retained in git-ignored tests/local only.",
+          "evidence": "Exclusive debug-log write completed"
+        }
+      ],
+      "complete": true,
+      "remaining_state": null
+    },
+    "result": {
+      "state": "incomplete",
+      "limitations": [
+        "the rewritten patch effect was not read back from the sentinel",
+        "One Windows CLI build and one isolated attempt; no cross-version inference."
+      ]
+    },
+    "effect": {
+      "state": "inconclusive",
+      "evidence": "Filtered model/tool output and isolated sentinel read-back",
+      "notes": [
+        "the rewritten patch effect was not read back from the sentinel"
+      ]
+    },
+    "execution": {
+      "exit_code": 0,
+      "observed_tool_paths": [
+        "exec"
+      ],
+      "effective_sandbox": "workspace-write"
+    },
+    "assessment_version": "wd163.1"
+  },
+  {
+    "format_version": "watchdog.probe-result.v1",
+    "record_id": "wd163-codex-cli-pre-tool-apply-patch-context-cae219f868de420bb0c0a15fffe5bdee",
+    "classification": "live_provider",
+    "started_at": "2026-10-14T21:10:41.675644Z",
+    "finished_at": "2026-10-14T21:10:51.914234Z",
+    "provenance": {
+      "provider": {
+        "name": "codex",
+        "version": "codex-cli 0.162.0-alpha.17.2",
+        "surface": "cli"
+      },
+      "harness": {
+        "name": "codex-cli",
+        "version": "codex-cli 0.162.0-alpha.17.2"
+      },
+      "adapter": {
+        "name": "none",
+        "version": null,
+        "invocation": "provider"
+      },
+      "os": {
+        "name": "Windows",
+        "version": null,
+        "architecture": "AMD64"
+      },
+      "source": {
+        "kind": "generated-workload",
+        "sanitized_reference": "wd163-pre-tool-apply-patch-context"
+      },
+      "model": {
+        "name": "gpt-6.1-sol",
+        "reasoning_effort": "low"
+      }
+    },
+    "scope": {
+      "isolation": "Isolated Codex home and scratch Git repository outside registered projects",
+      "expected_callback_kinds": [
+        "PreToolUse"
+      ],
+      "expected_deliveries": 0,
+      "notes": "Noninteractive codex exec",
+      "tool_path": "default",
+      "callback_minimums": {
+        "PreToolUse": 1
+      }
+    },
+    "stages": {
+      "provider_dispatch": {
+        "state": "confirmed",
+        "attempts": 1,
+        "evidence": "Observed hook callbacks and owned CLI exit status",
+        "detail": null
+      },
+      "adapter": {
+        "state": "not_invoked",
+        "starts": 0,
+        "failure_category": null,
+        "evidence": "The probe calls no Watchdog adapter."
+      },
+      "callbacks": {
+        "expected": 1,
+        "observed": 1,
+        "missing": 0,
+        "missing_attribution": "not_applicable",
+        "evidence": "Expected callback counts and sanitized input shapes are in capabilities."
+      },
+      "retries": {
+        "count": 0,
+        "scopes": [],
+        "reason": null,
+        "outcome": "not_attempted",
+        "evidence": "One run per case."
+      },
+      "persistence": {
+        "accepted": 0,
+        "losses": [],
+        "evidence": "Not applicable: the probe does not exercise Watchdog persistence."
+      },
+      "end_to_end_delivery": {
+        "expected": 0,
+        "persisted": 0,
+        "read_back": 0,
+        "state": "not_applicable",
+        "failure_attribution": "not_applicable",
+        "failure_detail": null,
+        "evidence": "No Watchdog store; provider effect is recorded separately in capabilities."
+      }
+    },
+    "capabilities": {
+      "pre-tool-apply-patch-context": {
+        "state": "supported",
+        "response_shape": "hookSpecificOutput.additionalContext",
+        "callbacks": {
+          "PreToolUse": {
+            "observed": 1,
+            "input_fields": [
+              "cwd",
+              "hook_event_name",
+              "model",
+              "permission_mode",
+              "session_id",
+              "tool_input",
+              "tool_name",
+              "tool_use_id",
+              "transcript_path",
+              "turn_id"
+            ],
+            "tool_names": [
+              "apply_patch"
+            ],
+            "tool_input_types": {
+              "command": "str"
+            }
+          }
+        },
+        "observed_effect": "supported"
+      }
+    },
+    "cleanup": {
+      "resources": [
+        {
+          "kind": "process",
+          "alias": "owned-cli-process-tree",
+          "action": "stopped",
+          "state": "confirmed",
+          "failure_attribution": "not_applicable",
+          "detail": null,
+          "evidence": "Windows job accounting reports zero active processes"
+        },
+        {
+          "kind": "hook_installation",
+          "alias": "isolated-codex-home",
+          "action": "removed",
+          "state": "confirmed",
+          "failure_attribution": "not_applicable",
+          "detail": null,
+          "evidence": "Isolated home removal check; active profile was not modified"
+        },
+        {
+          "kind": "temporary_state",
+          "alias": "scratch-and-rollouts",
+          "action": "removed",
+          "state": "confirmed",
+          "failure_attribution": "not_applicable",
+          "detail": null,
+          "evidence": "Scratch removal check, including authentication copy and provider rollouts"
+        },
+        {
+          "kind": "temporary_state",
+          "alias": "operator-debug-log",
+          "action": "retained",
+          "state": "confirmed",
+          "failure_attribution": "not_applicable",
+          "detail": "Raw synthetic probe diagnostics retained in git-ignored tests/local only.",
+          "evidence": "Exclusive debug-log write completed"
+        }
+      ],
+      "complete": true,
+      "remaining_state": null
+    },
+    "result": {
+      "state": "passed",
+      "limitations": [
+        "One Windows CLI build and one isolated attempt; no cross-version inference."
+      ]
+    },
+    "effect": {
+      "state": "supported",
+      "evidence": "Filtered model/tool output and isolated sentinel read-back",
+      "notes": []
+    },
+    "execution": {
+      "exit_code": 0,
+      "observed_tool_paths": [
+        "exec"
+      ],
+      "effective_sandbox": "workspace-write"
+    },
+    "assessment_version": "wd163.1"
+  },
+  {
+    "format_version": "watchdog.probe-result.v1",
+    "record_id": "wd163-codex-cli-pre-tool-bash-context-43354046de67452991e0fd7373132f44",
+    "classification": "live_provider",
+    "started_at": "2026-10-14T21:12:08.360505Z",
+    "finished_at": "2026-10-14T21:12:18.043791Z",
+    "provenance": {
+      "provider": {
+        "name": "codex",
+        "version": "codex-cli 0.162.0-alpha.17.2",
+        "surface": "cli"
+      },
+      "harness": {
+        "name": "codex-cli",
+        "version": "codex-cli 0.162.0-alpha.17.2"
+      },
+      "adapter": {
+        "name": "none",
+        "version": null,
+        "invocation": "provider"
+      },
+      "os": {
+        "name": "Windows",
+        "version": null,
+        "architecture": "AMD64"
+      },
+      "source": {
+        "kind": "generated-workload",
+        "sanitized_reference": "wd163-pre-tool-bash-context"
+      },
+      "model": {
+        "name": "gpt-6.1-sol",
+        "reasoning_effort": "low"
+      }
+    },
+    "scope": {
+      "isolation": "Isolated Codex home and scratch Git repository outside registered projects",
+      "expected_callback_kinds": [
+        "PreToolUse"
+      ],
+      "expected_deliveries": 0,
+      "notes": "Noninteractive codex exec",
+      "tool_path": "default",
+      "callback_minimums": {
+        "PreToolUse": 1
+      }
+    },
+    "stages": {
+      "provider_dispatch": {
+        "state": "confirmed",
+        "attempts": 1,
+        "evidence": "Observed hook callbacks and owned CLI exit status",
+        "detail": null
+      },
+      "adapter": {
+        "state": "not_invoked",
+        "starts": 0,
+        "failure_category": null,
+        "evidence": "The probe calls no Watchdog adapter."
+      },
+      "callbacks": {
+        "expected": 1,
+        "observed": 1,
+        "missing": 0,
+        "missing_attribution": "not_applicable",
+        "evidence": "Expected callback counts and sanitized input shapes are in capabilities."
+      },
+      "retries": {
+        "count": 0,
+        "scopes": [],
+        "reason": null,
+        "outcome": "not_attempted",
+        "evidence": "One run per case."
+      },
+      "persistence": {
+        "accepted": 0,
+        "losses": [],
+        "evidence": "Not applicable: the probe does not exercise Watchdog persistence."
+      },
+      "end_to_end_delivery": {
+        "expected": 0,
+        "persisted": 0,
+        "read_back": 0,
+        "state": "not_applicable",
+        "failure_attribution": "not_applicable",
+        "failure_detail": null,
+        "evidence": "No Watchdog store; provider effect is recorded separately in capabilities."
+      }
+    },
+    "capabilities": {
+      "pre-tool-bash-context": {
+        "state": "supported",
+        "response_shape": "hookSpecificOutput.additionalContext",
+        "callbacks": {
+          "PreToolUse": {
+            "observed": 1,
+            "input_fields": [
+              "cwd",
+              "hook_event_name",
+              "model",
+              "permission_mode",
+              "session_id",
+              "tool_input",
+              "tool_name",
+              "tool_use_id",
+              "transcript_path",
+              "turn_id"
+            ],
+            "tool_names": [
+              "Bash"
+            ],
+            "tool_input_types": {
+              "command": "str"
+            }
+          }
+        },
+        "observed_effect": "supported"
+      }
+    },
+    "cleanup": {
+      "resources": [
+        {
+          "kind": "process",
+          "alias": "owned-cli-process-tree",
+          "action": "stopped",
+          "state": "confirmed",
+          "failure_attribution": "not_applicable",
+          "detail": null,
+          "evidence": "Windows job accounting reports zero active processes"
+        },
+        {
+          "kind": "hook_installation",
+          "alias": "isolated-codex-home",
+          "action": "removed",
+          "state": "confirmed",
+          "failure_attribution": "not_applicable",
+          "detail": null,
+          "evidence": "Isolated home removal check; active profile was not modified"
+        },
+        {
+          "kind": "temporary_state",
+          "alias": "scratch-and-rollouts",
+          "action": "removed",
+          "state": "confirmed",
+          "failure_attribution": "not_applicable",
+          "detail": null,
+          "evidence": "Scratch removal check, including authentication copy and provider rollouts"
+        },
+        {
+          "kind": "temporary_state",
+          "alias": "operator-debug-log",
+          "action": "retained",
+          "state": "confirmed",
+          "failure_attribution": "not_applicable",
+          "detail": "Raw diagnostics retained in git-ignored tests/local only.",
+          "evidence": "Exclusive debug-log write completed"
+        }
+      ],
+      "complete": true,
+      "remaining_state": null
+    },
+    "result": {
+      "state": "passed",
+      "limitations": [
+        "One Windows CLI build and one isolated attempt; no cross-version inference."
+      ]
+    },
+    "effect": {
+      "state": "supported",
+      "evidence": "Filtered model/tool output and isolated sentinel read-back",
+      "notes": []
+    },
+    "execution": {
+      "exit_code": 0,
+      "observed_tool_paths": [
+        "exec"
+      ],
+      "effective_sandbox": "read-only"
+    },
+    "assessment_version": "wd163.1"
+  },
+  {
+    "format_version": "watchdog.probe-result.v1",
+    "record_id": "wd163-codex-cli-pre-tool-apply-patch-deny-8348b7401b844f2c82aa95e314f358c7",
+    "classification": "live_provider",
+    "started_at": "2026-10-14T21:12:18.758548Z",
+    "finished_at": "2026-10-14T21:12:29.576593Z",
+    "provenance": {
+      "provider": {
+        "name": "codex",
+        "version": "codex-cli 0.162.0-alpha.17.2",
+        "surface": "cli"
+      },
+      "harness": {
+        "name": "codex-cli",
+        "version": "codex-cli 0.162.0-alpha.17.2"
+      },
+      "adapter": {
+        "name": "none",
+        "version": null,
+        "invocation": "provider"
+      },
+      "os": {
+        "name": "Windows",
+        "version": null,
+        "architecture": "AMD64"
+      },
+      "source": {
+        "kind": "generated-workload",
+        "sanitized_reference": "wd163-pre-tool-apply-patch-deny"
+      },
+      "model": {
+        "name": "gpt-6.1-sol",
+        "reasoning_effort": "low"
+      }
+    },
+    "scope": {
+      "isolation": "Isolated Codex home and scratch Git repository outside registered projects",
+      "expected_callback_kinds": [
+        "PreToolUse"
+      ],
+      "expected_deliveries": 0,
+      "notes": "Noninteractive codex exec",
+      "tool_path": "default",
+      "callback_minimums": {
+        "PreToolUse": 1
+      }
+    },
+    "stages": {
+      "provider_dispatch": {
+        "state": "confirmed",
+        "attempts": 1,
+        "evidence": "Observed hook callbacks and owned CLI exit status",
+        "detail": null
+      },
+      "adapter": {
+        "state": "not_invoked",
+        "starts": 0,
+        "failure_category": null,
+        "evidence": "The probe calls no Watchdog adapter."
+      },
+      "callbacks": {
+        "expected": 1,
+        "observed": 1,
+        "missing": 0,
+        "missing_attribution": "not_applicable",
+        "evidence": "Expected callback counts and sanitized input shapes are in capabilities."
+      },
+      "retries": {
+        "count": 0,
+        "scopes": [],
+        "reason": null,
+        "outcome": "not_attempted",
+        "evidence": "One run per case."
+      },
+      "persistence": {
+        "accepted": 0,
+        "losses": [],
+        "evidence": "Not applicable: the probe does not exercise Watchdog persistence."
+      },
+      "end_to_end_delivery": {
+        "expected": 0,
+        "persisted": 0,
+        "read_back": 0,
+        "state": "not_applicable",
+        "failure_attribution": "not_applicable",
+        "failure_detail": null,
+        "evidence": "No Watchdog store; provider effect is recorded separately in capabilities."
+      }
+    },
+    "capabilities": {
+      "pre-tool-apply-patch-deny": {
+        "state": "supported",
+        "response_shape": "hookSpecificOutput.permissionDecision=deny",
+        "callbacks": {
+          "PreToolUse": {
+            "observed": 1,
+            "input_fields": [
+              "cwd",
+              "hook_event_name",
+              "model",
+              "permission_mode",
+              "session_id",
+              "tool_input",
+              "tool_name",
+              "tool_use_id",
+              "transcript_path",
+              "turn_id"
+            ],
+            "tool_names": [
+              "apply_patch"
+            ],
+            "tool_input_types": {
+              "command": "str"
+            }
+          }
+        },
+        "observed_effect": "supported"
+      }
+    },
+    "cleanup": {
+      "resources": [
+        {
+          "kind": "process",
+          "alias": "owned-cli-process-tree",
+          "action": "stopped",
+          "state": "confirmed",
+          "failure_attribution": "not_applicable",
+          "detail": null,
+          "evidence": "Windows job accounting reports zero active processes"
+        },
+        {
+          "kind": "hook_installation",
+          "alias": "isolated-codex-home",
+          "action": "removed",
+          "state": "confirmed",
+          "failure_attribution": "not_applicable",
+          "detail": null,
+          "evidence": "Isolated home removal check; active profile was not modified"
+        },
+        {
+          "kind": "temporary_state",
+          "alias": "scratch-and-rollouts",
+          "action": "removed",
+          "state": "confirmed",
+          "failure_attribution": "not_applicable",
+          "detail": null,
+          "evidence": "Scratch removal check, including authentication copy and provider rollouts"
+        },
+        {
+          "kind": "temporary_state",
+          "alias": "operator-debug-log",
+          "action": "retained",
+          "state": "confirmed",
+          "failure_attribution": "not_applicable",
+          "detail": "Raw diagnostics retained in git-ignored tests/local only.",
+          "evidence": "Exclusive debug-log write completed"
+        }
+      ],
+      "complete": true,
+      "remaining_state": null
+    },
+    "result": {
+      "state": "passed",
+      "limitations": [
+        "One Windows CLI build and one isolated attempt; no cross-version inference."
+      ]
+    },
+    "effect": {
+      "state": "supported",
+      "evidence": "Filtered model/tool output and isolated sentinel read-back",
+      "notes": []
+    },
+    "execution": {
+      "exit_code": 0,
+      "observed_tool_paths": [
+        "exec"
+      ],
+      "effective_sandbox": "workspace-write"
+    },
+    "assessment_version": "wd163.1"
+  },
+  {
+    "format_version": "watchdog.probe-result.v1",
+    "record_id": "wd163-codex-cli-post-tool-bash-block-c66d73a4d18d4012b25e63762ecca197",
+    "classification": "live_provider",
+    "started_at": "2026-10-14T21:12:30.534825Z",
+    "finished_at": "2026-10-14T21:12:40.571055Z",
+    "provenance": {
+      "provider": {
+        "name": "codex",
+        "version": "codex-cli 0.162.0-alpha.17.2",
+        "surface": "cli"
+      },
+      "harness": {
+        "name": "codex-cli",
+        "version": "codex-cli 0.162.0-alpha.17.2"
+      },
+      "adapter": {
+        "name": "none",
+        "version": null,
+        "invocation": "provider"
+      },
+      "os": {
+        "name": "Windows",
+        "version": null,
+        "architecture": "AMD64"
+      },
+      "source": {
+        "kind": "generated-workload",
+        "sanitized_reference": "wd163-post-tool-bash-block"
+      },
+      "model": {
+        "name": "gpt-6.1-sol",
+        "reasoning_effort": "low"
+      }
+    },
+    "scope": {
+      "isolation": "Isolated Codex home and scratch Git repository outside registered projects",
+      "expected_callback_kinds": [
+        "PostToolUse"
+      ],
+      "expected_deliveries": 0,
+      "notes": "Noninteractive codex exec",
+      "tool_path": "default",
+      "callback_minimums": {
+        "PostToolUse": 1
+      }
+    },
+    "stages": {
+      "provider_dispatch": {
+        "state": "missing",
+        "attempts": 1,
+        "evidence": "Observed hook callbacks and owned CLI exit status",
+        "detail": null
+      },
+      "adapter": {
+        "state": "not_invoked",
+        "starts": 0,
+        "failure_category": null,
+        "evidence": "The probe calls no Watchdog adapter."
+      },
+      "callbacks": {
+        "expected": 1,
+        "observed": 0,
+        "missing": 1,
+        "missing_attribution": "unknown",
+        "evidence": "Expected callback counts and sanitized input shapes are in capabilities."
+      },
+      "retries": {
+        "count": 0,
+        "scopes": [],
+        "reason": null,
+        "outcome": "not_attempted",
+        "evidence": "One run per case."
+      },
+      "persistence": {
+        "accepted": 0,
+        "losses": [],
+        "evidence": "Not applicable: the probe does not exercise Watchdog persistence."
+      },
+      "end_to_end_delivery": {
+        "expected": 0,
+        "persisted": 0,
+        "read_back": 0,
+        "state": "not_applicable",
+        "failure_attribution": "not_applicable",
+        "failure_detail": null,
+        "evidence": "No Watchdog store; provider effect is recorded separately in capabilities."
+      }
+    },
+    "capabilities": {
+      "post-tool-bash-block": {
+        "state": "inconclusive",
+        "response_shape": "decision=block",
+        "callbacks": {
+          "PostToolUse": {
+            "observed": 0,
+            "input_fields": [],
+            "tool_names": [],
+            "tool_input_types": {}
+          }
+        },
+        "observed_effect": "inconclusive"
+      }
+    },
+    "cleanup": {
+      "resources": [
+        {
+          "kind": "process",
+          "alias": "owned-cli-process-tree",
+          "action": "stopped",
+          "state": "confirmed",
+          "failure_attribution": "not_applicable",
+          "detail": null,
+          "evidence": "Windows job accounting reports zero active processes"
+        },
+        {
+          "kind": "hook_installation",
+          "alias": "isolated-codex-home",
+          "action": "removed",
+          "state": "confirmed",
+          "failure_attribution": "not_applicable",
+          "detail": null,
+          "evidence": "Isolated home removal check; active profile was not modified"
+        },
+        {
+          "kind": "temporary_state",
+          "alias": "scratch-and-rollouts",
+          "action": "removed",
+          "state": "confirmed",
+          "failure_attribution": "not_applicable",
+          "detail": null,
+          "evidence": "Scratch removal check, including authentication copy and provider rollouts"
+        },
+        {
+          "kind": "temporary_state",
+          "alias": "operator-debug-log",
+          "action": "retained",
+          "state": "confirmed",
+          "failure_attribution": "not_applicable",
+          "detail": "Raw diagnostics retained in git-ignored tests/local only.",
+          "evidence": "Exclusive debug-log write completed"
+        }
+      ],
+      "complete": true,
+      "remaining_state": null
+    },
+    "result": {
+      "state": "incomplete",
+      "limitations": [
+        "PostToolUse runs after the tool; it cannot roll back the side effect.",
+        "missing callback: PostToolUse",
+        "One Windows CLI build and one isolated attempt; no cross-version inference."
+      ]
+    },
+    "effect": {
+      "state": "inconclusive",
+      "evidence": "Filtered model/tool output and isolated sentinel read-back",
+      "notes": [
+        "missing callback: PostToolUse"
+      ]
+    },
+    "execution": {
+      "exit_code": 0,
+      "observed_tool_paths": [],
+      "effective_sandbox": null
+    },
+    "assessment_version": "wd163.1"
+  },
+  {
+    "format_version": "watchdog.probe-result.v1",
+    "record_id": "wd163-codex-cli-post-tool-bash-halt-364d7d385f13493fbb18e4cdfa8d1e52",
+    "classification": "live_provider",
+    "started_at": "2026-10-14T21:12:41.386656Z",
+    "finished_at": "2026-10-14T21:12:49.494186Z",
+    "provenance": {
+      "provider": {
+        "name": "codex",
+        "version": "codex-cli 0.162.0-alpha.17.2",
+        "surface": "cli"
+      },
+      "harness": {
+        "name": "codex-cli",
+        "version": "codex-cli 0.162.0-alpha.17.2"
+      },
+      "adapter": {
+        "name": "none",
+        "version": null,
+        "invocation": "provider"
+      },
+      "os": {
+        "name": "Windows",
+        "version": null,
+        "architecture": "AMD64"
+      },
+      "source": {
+        "kind": "generated-workload",
+        "sanitized_reference": "wd163-post-tool-bash-halt"
+      },
+      "model": {
+        "name": "gpt-6.1-sol",
+        "reasoning_effort": "low"
+      }
+    },
+    "scope": {
+      "isolation": "Isolated Codex home and scratch Git repository outside registered projects",
+      "expected_callback_kinds": [
+        "PostToolUse"
+      ],
+      "expected_deliveries": 0,
+      "notes": "Noninteractive codex exec",
+      "tool_path": "default",
+      "callback_minimums": {
+        "PostToolUse": 1
+      }
+    },
+    "stages": {
+      "provider_dispatch": {
+        "state": "missing",
+        "attempts": 1,
+        "evidence": "Observed hook callbacks and owned CLI exit status",
+        "detail": null
+      },
+      "adapter": {
+        "state": "not_invoked",
+        "starts": 0,
+        "failure_category": null,
+        "evidence": "The probe calls no Watchdog adapter."
+      },
+      "callbacks": {
+        "expected": 1,
+        "observed": 0,
+        "missing": 1,
+        "missing_attribution": "unknown",
+        "evidence": "Expected callback counts and sanitized input shapes are in capabilities."
+      },
+      "retries": {
+        "count": 0,
+        "scopes": [],
+        "reason": null,
+        "outcome": "not_attempted",
+        "evidence": "One run per case."
+      },
+      "persistence": {
+        "accepted": 0,
+        "losses": [],
+        "evidence": "Not applicable: the probe does not exercise Watchdog persistence."
+      },
+      "end_to_end_delivery": {
+        "expected": 0,
+        "persisted": 0,
+        "read_back": 0,
+        "state": "not_applicable",
+        "failure_attribution": "not_applicable",
+        "failure_detail": null,
+        "evidence": "No Watchdog store; provider effect is recorded separately in capabilities."
+      }
+    },
+    "capabilities": {
+      "post-tool-bash-halt": {
+        "state": "inconclusive",
+        "response_shape": "continue=false",
+        "callbacks": {
+          "PostToolUse": {
+            "observed": 0,
+            "input_fields": [],
+            "tool_names": [],
+            "tool_input_types": {}
+          }
+        },
+        "observed_effect": "inconclusive"
+      }
+    },
+    "cleanup": {
+      "resources": [
+        {
+          "kind": "process",
+          "alias": "owned-cli-process-tree",
+          "action": "stopped",
+          "state": "confirmed",
+          "failure_attribution": "not_applicable",
+          "detail": null,
+          "evidence": "Windows job accounting reports zero active processes"
+        },
+        {
+          "kind": "hook_installation",
+          "alias": "isolated-codex-home",
+          "action": "removed",
+          "state": "confirmed",
+          "failure_attribution": "not_applicable",
+          "detail": null,
+          "evidence": "Isolated home removal check; active profile was not modified"
+        },
+        {
+          "kind": "temporary_state",
+          "alias": "scratch-and-rollouts",
+          "action": "removed",
+          "state": "confirmed",
+          "failure_attribution": "not_applicable",
+          "detail": null,
+          "evidence": "Scratch removal check, including authentication copy and provider rollouts"
+        },
+        {
+          "kind": "temporary_state",
+          "alias": "operator-debug-log",
+          "action": "retained",
+          "state": "confirmed",
+          "failure_attribution": "not_applicable",
+          "detail": "Raw diagnostics retained in git-ignored tests/local only.",
+          "evidence": "Exclusive debug-log write completed"
+        }
+      ],
+      "complete": true,
+      "remaining_state": null
+    },
+    "result": {
+      "state": "incomplete",
+      "limitations": [
+        "missing callback: PostToolUse",
+        "One Windows CLI build and one isolated attempt; no cross-version inference."
+      ]
+    },
+    "effect": {
+      "state": "inconclusive",
+      "evidence": "Filtered model/tool output and isolated sentinel read-back",
+      "notes": [
+        "missing callback: PostToolUse"
+      ]
+    },
+    "execution": {
+      "exit_code": 0,
+      "observed_tool_paths": [],
+      "effective_sandbox": null
+    },
+    "assessment_version": "wd163.1"
+  },
+  {
+    "format_version": "watchdog.probe-result.v1",
+    "record_id": "wd163-codex-cli-stop-block-2de2aa37dcdf40e6a9a4af67b445abc5",
+    "classification": "live_provider",
+    "started_at": "2026-10-14T21:12:52.804068Z",
+    "finished_at": "2026-10-14T21:13:06.242913Z",
+    "provenance": {
+      "provider": {
+        "name": "codex",
+        "version": "codex-cli 0.162.0-alpha.17.2",
+        "surface": "cli"
+      },
+      "harness": {
+        "name": "codex-cli",
+        "version": "codex-cli 0.162.0-alpha.17.2"
+      },
+      "adapter": {
+        "name": "none",
+        "version": null,
+        "invocation": "provider"
+      },
+      "os": {
+        "name": "Windows",
+        "version": null,
+        "architecture": "AMD64"
+      },
+      "source": {
+        "kind": "generated-workload",
+        "sanitized_reference": "wd163-stop-block"
+      },
+      "model": {
+        "name": "gpt-6.1-sol",
+        "reasoning_effort": "low"
+      }
+    },
+    "scope": {
+      "isolation": "Isolated Codex home and scratch Git repository outside registered projects",
+      "expected_callback_kinds": [
+        "Stop"
+      ],
+      "expected_deliveries": 0,
+      "notes": "Noninteractive codex exec",
+      "tool_path": "default",
+      "callback_minimums": {
+        "Stop": 2
+      }
+    },
+    "stages": {
+      "provider_dispatch": {
+        "state": "confirmed",
+        "attempts": 1,
+        "evidence": "Observed hook callbacks and owned CLI exit status",
+        "detail": null
+      },
+      "adapter": {
+        "state": "not_invoked",
+        "starts": 0,
+        "failure_category": null,
+        "evidence": "The probe calls no Watchdog adapter."
+      },
+      "callbacks": {
+        "expected": 2,
+        "observed": 2,
+        "missing": 0,
+        "missing_attribution": "not_applicable",
+        "evidence": "Expected callback counts and sanitized input shapes are in capabilities."
+      },
+      "retries": {
+        "count": 0,
+        "scopes": [],
+        "reason": null,
+        "outcome": "not_attempted",
+        "evidence": "One run per case."
+      },
+      "persistence": {
+        "accepted": 0,
+        "losses": [],
+        "evidence": "Not applicable: the probe does not exercise Watchdog persistence."
+      },
+      "end_to_end_delivery": {
+        "expected": 0,
+        "persisted": 0,
+        "read_back": 0,
+        "state": "not_applicable",
+        "failure_attribution": "not_applicable",
+        "failure_detail": null,
+        "evidence": "No Watchdog store; provider effect is recorded separately in capabilities."
+      }
+    },
+    "capabilities": {
+      "stop-block": {
+        "state": "supported",
+        "response_shape": "decision=block",
+        "callbacks": {
+          "Stop": {
+            "observed": 2,
+            "input_fields": [
+              "cwd",
+              "hook_event_name",
+              "last_assistant_message",
+              "model",
+              "permission_mode",
+              "session_id",
+              "stop_hook_active",
+              "transcript_path",
+              "turn_id"
+            ],
+            "tool_names": [],
+            "tool_input_types": {}
+          }
+        },
+        "observed_effect": "supported"
+      }
+    },
+    "cleanup": {
+      "resources": [
+        {
+          "kind": "process",
+          "alias": "owned-cli-process-tree",
+          "action": "stopped",
+          "state": "confirmed",
+          "failure_attribution": "not_applicable",
+          "detail": null,
+          "evidence": "Windows job accounting reports zero active processes"
+        },
+        {
+          "kind": "hook_installation",
+          "alias": "isolated-codex-home",
+          "action": "removed",
+          "state": "confirmed",
+          "failure_attribution": "not_applicable",
+          "detail": null,
+          "evidence": "Isolated home removal check; active profile was not modified"
+        },
+        {
+          "kind": "temporary_state",
+          "alias": "scratch-and-rollouts",
+          "action": "removed",
+          "state": "confirmed",
+          "failure_attribution": "not_applicable",
+          "detail": null,
+          "evidence": "Scratch removal check, including authentication copy and provider rollouts"
+        },
+        {
+          "kind": "temporary_state",
+          "alias": "operator-debug-log",
+          "action": "retained",
+          "state": "confirmed",
+          "failure_attribution": "not_applicable",
+          "detail": "Raw diagnostics retained in git-ignored tests/local only.",
+          "evidence": "Exclusive debug-log write completed"
+        }
+      ],
+      "complete": true,
+      "remaining_state": null
+    },
+    "result": {
+      "state": "passed",
+      "limitations": [
+        "One Windows CLI build and one isolated attempt; no cross-version inference."
+      ]
+    },
+    "effect": {
+      "state": "supported",
+      "evidence": "Filtered model/tool output and isolated sentinel read-back",
+      "notes": []
+    },
+    "execution": {
+      "exit_code": 0,
+      "observed_tool_paths": [],
+      "effective_sandbox": "read-only"
+    },
+    "assessment_version": "wd163.1"
+  },
+  {
+    "format_version": "watchdog.probe-result.v1",
+    "record_id": "wd163-codex-cli-permission-bash-allow-c83ad25b95764d9eabfc71b5c6710cb3",
+    "classification": "live_provider",
+    "started_at": "2026-10-14T21:13:01.018532Z",
+    "finished_at": "2026-10-14T21:15:03.380894Z",
+    "provenance": {
+      "provider": {
+        "name": "codex",
+        "version": "codex-cli 0.162.0-alpha.17.2",
+        "surface": "cli"
+      },
+      "harness": {
+        "name": "codex-cli",
+        "version": "codex-cli 0.162.0-alpha.17.2"
+      },
+      "adapter": {
+        "name": "none",
+        "version": null,
+        "invocation": "provider"
+      },
+      "os": {
+        "name": "Windows",
+        "version": null,
+        "architecture": "AMD64"
+      },
+      "source": {
+        "kind": "generated-workload",
+        "sanitized_reference": "wd163-permission-bash-allow"
+      },
+      "model": {
+        "name": "gpt-6.1-sol",
+        "reasoning_effort": "low"
+      }
+    },
+    "scope": {
+      "isolation": "Isolated Codex home and scratch Git repository outside registered projects",
+      "expected_callback_kinds": [
+        "PermissionRequest"
+      ],
+      "expected_deliveries": 0,
+      "notes": "Interactive CLI",
+      "tool_path": "default",
+      "callback_minimums": {
+        "PermissionRequest": 1
+      }
+    },
+    "stages": {
+      "provider_dispatch": {
+        "state": "confirmed",
+        "attempts": 1,
+        "evidence": "Observed hook callbacks and owned CLI exit status",
+        "detail": null
+      },
+      "adapter": {
+        "state": "not_invoked",
+        "starts": 0,
+        "failure_category": null,
+        "evidence": "The probe calls no Watchdog adapter."
+      },
+      "callbacks": {
+        "expected": 1,
+        "observed": 1,
+        "missing": 0,
+        "missing_attribution": "not_applicable",
+        "evidence": "Expected callback counts and sanitized input shapes are in capabilities."
+      },
+      "retries": {
+        "count": 0,
+        "scopes": [],
+        "reason": null,
+        "outcome": "not_attempted",
+        "evidence": "One run per case."
+      },
+      "persistence": {
+        "accepted": 0,
+        "losses": [],
+        "evidence": "Not applicable: the probe does not exercise Watchdog persistence."
+      },
+      "end_to_end_delivery": {
+        "expected": 0,
+        "persisted": 0,
+        "read_back": 0,
+        "state": "not_applicable",
+        "failure_attribution": "not_applicable",
+        "failure_detail": null,
+        "evidence": "No Watchdog store; provider effect is recorded separately in capabilities."
+      }
+    },
+    "capabilities": {
+      "permission-bash-allow": {
+        "state": "supported",
+        "response_shape": "hookSpecificOutput.decision.behavior=allow",
+        "callbacks": {
+          "PermissionRequest": {
+            "observed": 1,
+            "input_fields": [
+              "cwd",
+              "hook_event_name",
+              "model",
+              "permission_mode",
+              "session_id",
+              "tool_input",
+              "tool_name",
+              "transcript_path",
+              "turn_id"
+            ],
+            "tool_names": [
+              "Bash"
+            ],
+            "tool_input_types": {
+              "command": "str",
+              "description": "str"
+            }
+          }
+        },
+        "observed_effect": "supported"
+      }
+    },
+    "cleanup": {
+      "resources": [
+        {
+          "kind": "process",
+          "alias": "owned-cli-process-tree",
+          "action": "stopped",
+          "state": "confirmed",
+          "failure_attribution": "not_applicable",
+          "detail": null,
+          "evidence": "Windows job accounting reports zero active processes"
+        },
+        {
+          "kind": "hook_installation",
+          "alias": "isolated-codex-home",
+          "action": "removed",
+          "state": "confirmed",
+          "failure_attribution": "not_applicable",
+          "detail": null,
+          "evidence": "Isolated home removal check; active profile was not modified"
+        },
+        {
+          "kind": "temporary_state",
+          "alias": "scratch-and-rollouts",
+          "action": "removed",
+          "state": "confirmed",
+          "failure_attribution": "not_applicable",
+          "detail": null,
+          "evidence": "Scratch removal check, including authentication copy and provider rollouts"
+        },
+        {
+          "kind": "temporary_state",
+          "alias": "operator-debug-log",
+          "action": "retained",
+          "state": "confirmed",
+          "failure_attribution": "not_applicable",
+          "detail": "Raw diagnostics retained in git-ignored tests/local only.",
+          "evidence": "Exclusive debug-log write completed"
+        }
+      ],
+      "complete": true,
+      "remaining_state": null
+    },
+    "result": {
+      "state": "passed",
+      "limitations": [
+        "One Windows CLI build and one isolated attempt; no cross-version inference."
+      ]
+    },
+    "effect": {
+      "state": "supported",
+      "evidence": "Filtered model/tool output and isolated sentinel read-back",
+      "notes": []
+    },
+    "execution": {
+      "exit_code": 0,
+      "observed_tool_paths": [
+        "exec"
+      ],
+      "effective_sandbox": "read-only"
+    },
+    "assessment_version": "wd163.1"
+  },
+  {
+    "format_version": "watchdog.probe-result.v1",
+    "record_id": "wd163-codex-cli-subagent-start-context-4f74d97f4c0c4307b87a3162155623db",
+    "classification": "live_provider",
+    "started_at": "2026-10-14T21:13:06.946832Z",
+    "finished_at": "2026-10-14T21:13:24.085783Z",
+    "provenance": {
+      "provider": {
+        "name": "codex",
+        "version": "codex-cli 0.162.0-alpha.17.2",
+        "surface": "cli"
+      },
+      "harness": {
+        "name": "codex-cli",
+        "version": "codex-cli 0.162.0-alpha.17.2"
+      },
+      "adapter": {
+        "name": "none",
+        "version": null,
+        "invocation": "provider"
+      },
+      "os": {
+        "name": "Windows",
+        "version": null,
+        "architecture": "AMD64"
+      },
+      "source": {
+        "kind": "generated-workload",
+        "sanitized_reference": "wd163-subagent-start-context"
+      },
+      "model": {
+        "name": "gpt-6.1-sol",
+        "reasoning_effort": "low"
+      }
+    },
+    "scope": {
+      "isolation": "Isolated Codex home and scratch Git repository outside registered projects",
+      "expected_callback_kinds": [
+        "SubagentStart"
+      ],
+      "expected_deliveries": 0,
+      "notes": "Noninteractive codex exec",
+      "tool_path": "default",
+      "callback_minimums": {
+        "SubagentStart": 1
+      }
+    },
+    "stages": {
+      "provider_dispatch": {
+        "state": "confirmed",
+        "attempts": 1,
+        "evidence": "Observed hook callbacks and owned CLI exit status",
+        "detail": null
+      },
+      "adapter": {
+        "state": "not_invoked",
+        "starts": 0,
+        "failure_category": null,
+        "evidence": "The probe calls no Watchdog adapter."
+      },
+      "callbacks": {
+        "expected": 1,
+        "observed": 1,
+        "missing": 0,
+        "missing_attribution": "not_applicable",
+        "evidence": "Expected callback counts and sanitized input shapes are in capabilities."
+      },
+      "retries": {
+        "count": 0,
+        "scopes": [],
+        "reason": null,
+        "outcome": "not_attempted",
+        "evidence": "One run per case."
+      },
+      "persistence": {
+        "accepted": 0,
+        "losses": [],
+        "evidence": "Not applicable: the probe does not exercise Watchdog persistence."
+      },
+      "end_to_end_delivery": {
+        "expected": 0,
+        "persisted": 0,
+        "read_back": 0,
+        "state": "not_applicable",
+        "failure_attribution": "not_applicable",
+        "failure_detail": null,
+        "evidence": "No Watchdog store; provider effect is recorded separately in capabilities."
+      }
+    },
+    "capabilities": {
+      "subagent-start-context": {
+        "state": "unsupported",
+        "response_shape": "hookSpecificOutput.additionalContext",
+        "callbacks": {
+          "SubagentStart": {
+            "observed": 1,
+            "input_fields": [
+              "agent_id",
+              "agent_type",
+              "cwd",
+              "hook_event_name",
+              "model",
+              "permission_mode",
+              "session_id",
+              "transcript_path",
+              "turn_id"
+            ],
+            "tool_names": [],
+            "tool_input_types": {}
+          }
+        },
+        "observed_effect": "unsupported"
+      }
+    },
+    "cleanup": {
+      "resources": [
+        {
+          "kind": "process",
+          "alias": "owned-cli-process-tree",
+          "action": "stopped",
+          "state": "confirmed",
+          "failure_attribution": "not_applicable",
+          "detail": null,
+          "evidence": "Windows job accounting reports zero active processes"
+        },
+        {
+          "kind": "hook_installation",
+          "alias": "isolated-codex-home",
+          "action": "removed",
+          "state": "confirmed",
+          "failure_attribution": "not_applicable",
+          "detail": null,
+          "evidence": "Isolated home removal check; active profile was not modified"
+        },
+        {
+          "kind": "temporary_state",
+          "alias": "scratch-and-rollouts",
+          "action": "removed",
+          "state": "confirmed",
+          "failure_attribution": "not_applicable",
+          "detail": null,
+          "evidence": "Scratch removal check, including authentication copy and provider rollouts"
+        },
+        {
+          "kind": "temporary_state",
+          "alias": "operator-debug-log",
+          "action": "retained",
+          "state": "confirmed",
+          "failure_attribution": "not_applicable",
+          "detail": "Raw diagnostics retained in git-ignored tests/local only.",
+          "evidence": "Exclusive debug-log write completed"
+        }
+      ],
+      "complete": true,
+      "remaining_state": null
+    },
+    "result": {
+      "state": "failed",
+      "limitations": [
+        "SubagentStart ran but its context marker was not model-visible",
+        "One Windows CLI build and one isolated attempt; no cross-version inference."
+      ]
+    },
+    "effect": {
+      "state": "unsupported",
+      "evidence": "Filtered model/tool output and isolated sentinel read-back",
+      "notes": [
+        "SubagentStart ran but its context marker was not model-visible"
+      ]
+    },
+    "execution": {
+      "exit_code": 0,
+      "observed_tool_paths": [],
+      "effective_sandbox": "read-only"
+    },
+    "assessment_version": "wd163.1"
+  },
+  {
+    "format_version": "watchdog.probe-result.v1",
+    "record_id": "wd163-codex-cli-post-tool-local-context-ff77b6403fca4dfab99e42ccd9d0710b",
+    "classification": "live_provider",
+    "started_at": "2026-10-14T21:13:25.780123Z",
+    "finished_at": "2026-10-14T21:13:35.873153Z",
+    "provenance": {
+      "provider": {
+        "name": "codex",
+        "version": "codex-cli 0.162.0-alpha.17.2",
+        "surface": "cli"
+      },
+      "harness": {
+        "name": "codex-cli",
+        "version": "codex-cli 0.162.0-alpha.17.2"
+      },
+      "adapter": {
+        "name": "none",
+        "version": null,
+        "invocation": "provider"
+      },
+      "os": {
+        "name": "Windows",
+        "version": null,
+        "architecture": "AMD64"
+      },
+      "source": {
+        "kind": "generated-workload",
+        "sanitized_reference": "wd163-post-tool-local-context"
+      },
+      "model": {
+        "name": "gpt-6.1-sol",
+        "reasoning_effort": "low"
+      }
+    },
+    "scope": {
+      "isolation": "Isolated Codex home and scratch Git repository outside registered projects",
+      "expected_callback_kinds": [
+        "PostToolUse"
+      ],
+      "expected_deliveries": 0,
+      "notes": "Noninteractive codex exec",
+      "tool_path": "default",
+      "callback_minimums": {
+        "PostToolUse": 1
+      }
+    },
+    "stages": {
+      "provider_dispatch": {
+        "state": "missing",
+        "attempts": 1,
+        "evidence": "Observed hook callbacks and owned CLI exit status",
+        "detail": null
+      },
+      "adapter": {
+        "state": "not_invoked",
+        "starts": 0,
+        "failure_category": null,
+        "evidence": "The probe calls no Watchdog adapter."
+      },
+      "callbacks": {
+        "expected": 1,
+        "observed": 0,
+        "missing": 1,
+        "missing_attribution": "unknown",
+        "evidence": "Expected callback counts and sanitized input shapes are in capabilities."
+      },
+      "retries": {
+        "count": 0,
+        "scopes": [],
+        "reason": null,
+        "outcome": "not_attempted",
+        "evidence": "One run per case."
+      },
+      "persistence": {
+        "accepted": 0,
+        "losses": [],
+        "evidence": "Not applicable: the probe does not exercise Watchdog persistence."
+      },
+      "end_to_end_delivery": {
+        "expected": 0,
+        "persisted": 0,
+        "read_back": 0,
+        "state": "not_applicable",
+        "failure_attribution": "not_applicable",
+        "failure_detail": null,
+        "evidence": "No Watchdog store; provider effect is recorded separately in capabilities."
+      }
+    },
+    "capabilities": {
+      "post-tool-local-context": {
+        "state": "inconclusive",
+        "response_shape": "hookSpecificOutput.additionalContext",
+        "callbacks": {
+          "PostToolUse": {
+            "observed": 0,
+            "input_fields": [],
+            "tool_names": [],
+            "tool_input_types": {}
+          }
+        },
+        "observed_effect": "inconclusive"
+      }
+    },
+    "cleanup": {
+      "resources": [
+        {
+          "kind": "process",
+          "alias": "owned-cli-process-tree",
+          "action": "stopped",
+          "state": "confirmed",
+          "failure_attribution": "not_applicable",
+          "detail": null,
+          "evidence": "Windows job accounting reports zero active processes"
+        },
+        {
+          "kind": "hook_installation",
+          "alias": "isolated-codex-home",
+          "action": "removed",
+          "state": "confirmed",
+          "failure_attribution": "not_applicable",
+          "detail": null,
+          "evidence": "Isolated home removal check; active profile was not modified"
+        },
+        {
+          "kind": "temporary_state",
+          "alias": "scratch-and-rollouts",
+          "action": "removed",
+          "state": "confirmed",
+          "failure_attribution": "not_applicable",
+          "detail": null,
+          "evidence": "Scratch removal check, including authentication copy and provider rollouts"
+        },
+        {
+          "kind": "temporary_state",
+          "alias": "operator-debug-log",
+          "action": "retained",
+          "state": "confirmed",
+          "failure_attribution": "not_applicable",
+          "detail": "Raw diagnostics retained in git-ignored tests/local only.",
+          "evidence": "Exclusive debug-log write completed"
+        }
+      ],
+      "complete": true,
+      "remaining_state": null
+    },
+    "result": {
+      "state": "incomplete",
+      "limitations": [
+        "missing callback: PostToolUse",
+        "One Windows CLI build and one isolated attempt; no cross-version inference."
+      ]
+    },
+    "effect": {
+      "state": "inconclusive",
+      "evidence": "Filtered model/tool output and isolated sentinel read-back",
+      "notes": [
+        "missing callback: PostToolUse"
+      ]
+    },
+    "execution": {
+      "exit_code": 0,
+      "observed_tool_paths": [],
+      "effective_sandbox": null
+    },
+    "assessment_version": "wd163.1"
+  },
+  {
+    "format_version": "watchdog.probe-result.v1",
+    "record_id": "wd163-codex-cli-pre-tool-mcp-rewrite-1072e762216f46a299db3f064c176c9c",
+    "classification": "live_provider",
+    "started_at": "2026-10-14T21:13:37.555063Z",
+    "finished_at": "2026-10-14T21:13:52.050394Z",
+    "provenance": {
+      "provider": {
+        "name": "codex",
+        "version": "codex-cli 0.162.0-alpha.17.2",
+        "surface": "cli"
+      },
+      "harness": {
+        "name": "codex-cli",
+        "version": "codex-cli 0.162.0-alpha.17.2"
+      },
+      "adapter": {
+        "name": "none",
+        "version": null,
+        "invocation": "provider"
+      },
+      "os": {
+        "name": "Windows",
+        "version": null,
+        "architecture": "AMD64"
+      },
+      "source": {
+        "kind": "generated-workload",
+        "sanitized_reference": "wd163-pre-tool-mcp-rewrite"
+      },
+      "model": {
+        "name": "gpt-6.1-sol",
+        "reasoning_effort": "low"
+      }
+    },
+    "scope": {
+      "isolation": "Isolated Codex home and scratch Git repository outside registered projects",
+      "expected_callback_kinds": [
+        "PreToolUse"
+      ],
+      "expected_deliveries": 0,
+      "notes": "Noninteractive codex exec",
+      "tool_path": "default",
+      "callback_minimums": {
+        "PreToolUse": 1
+      }
+    },
+    "stages": {
+      "provider_dispatch": {
+        "state": "confirmed",
+        "attempts": 1,
+        "evidence": "Observed hook callbacks and owned CLI exit status",
+        "detail": null
+      },
+      "adapter": {
+        "state": "not_invoked",
+        "starts": 0,
+        "failure_category": null,
+        "evidence": "The probe calls no Watchdog adapter."
+      },
+      "callbacks": {
+        "expected": 1,
+        "observed": 1,
+        "missing": 0,
+        "missing_attribution": "not_applicable",
+        "evidence": "Expected callback counts and sanitized input shapes are in capabilities."
+      },
+      "retries": {
+        "count": 0,
+        "scopes": [],
+        "reason": null,
+        "outcome": "not_attempted",
+        "evidence": "One run per case."
+      },
+      "persistence": {
+        "accepted": 0,
+        "losses": [],
+        "evidence": "Not applicable: the probe does not exercise Watchdog persistence."
+      },
+      "end_to_end_delivery": {
+        "expected": 0,
+        "persisted": 0,
+        "read_back": 0,
+        "state": "not_applicable",
+        "failure_attribution": "not_applicable",
+        "failure_detail": null,
+        "evidence": "No Watchdog store; provider effect is recorded separately in capabilities."
+      }
+    },
+    "capabilities": {
+      "pre-tool-mcp-rewrite": {
+        "state": "inconclusive",
+        "response_shape": "hookSpecificOutput.permissionDecision=allow,updatedInput.text",
+        "callbacks": {
+          "PreToolUse": {
+            "observed": 1,
+            "input_fields": [
+              "cwd",
+              "hook_event_name",
+              "model",
+              "permission_mode",
+              "session_id",
+              "tool_input",
+              "tool_name",
+              "tool_use_id",
+              "transcript_path",
+              "turn_id"
+            ],
+            "tool_names": [
+              "mcp__probe__emit"
+            ],
+            "tool_input_types": {
+              "text": "str"
+            }
+          }
+        },
+        "observed_effect": "inconclusive"
+      }
+    },
+    "cleanup": {
+      "resources": [
+        {
+          "kind": "process",
+          "alias": "owned-cli-process-tree",
+          "action": "stopped",
+          "state": "confirmed",
+          "failure_attribution": "not_applicable",
+          "detail": null,
+          "evidence": "Windows job accounting reports zero active processes"
+        },
+        {
+          "kind": "hook_installation",
+          "alias": "isolated-codex-home",
+          "action": "removed",
+          "state": "confirmed",
+          "failure_attribution": "not_applicable",
+          "detail": null,
+          "evidence": "Isolated home removal check; active profile was not modified"
+        },
+        {
+          "kind": "temporary_state",
+          "alias": "scratch-and-rollouts",
+          "action": "removed",
+          "state": "confirmed",
+          "failure_attribution": "not_applicable",
+          "detail": null,
+          "evidence": "Scratch removal check, including authentication copy and provider rollouts"
+        },
+        {
+          "kind": "temporary_state",
+          "alias": "operator-debug-log",
+          "action": "retained",
+          "state": "confirmed",
+          "failure_attribution": "not_applicable",
+          "detail": "Raw diagnostics retained in git-ignored tests/local only.",
+          "evidence": "Exclusive debug-log write completed"
+        }
+      ],
+      "complete": true,
+      "remaining_state": null
+    },
+    "result": {
+      "state": "incomplete",
+      "limitations": [
+        "the rewritten patch effect was not read back from the sentinel",
+        "One Windows CLI build and one isolated attempt; no cross-version inference."
+      ]
+    },
+    "effect": {
+      "state": "inconclusive",
+      "evidence": "Filtered model/tool output and isolated sentinel read-back",
+      "notes": [
+        "the rewritten patch effect was not read back from the sentinel"
+      ]
+    },
+    "execution": {
+      "exit_code": 0,
+      "observed_tool_paths": [
+        "exec"
+      ],
+      "effective_sandbox": "workspace-write"
+    },
+    "assessment_version": "wd163.1"
+  },
+  {
+    "format_version": "watchdog.probe-result.v1",
+    "record_id": "wd163-codex-cli-pre-tool-mcp-deny-bc8f3a67d43e4f5aae69ebfe785c045c",
+    "classification": "live_provider",
+    "started_at": "2026-10-14T21:13:53.636934Z",
+    "finished_at": "2026-10-14T21:14:07.206102Z",
+    "provenance": {
+      "provider": {
+        "name": "codex",
+        "version": "codex-cli 0.162.0-alpha.17.2",
+        "surface": "cli"
+      },
+      "harness": {
+        "name": "codex-cli",
+        "version": "codex-cli 0.162.0-alpha.17.2"
+      },
+      "adapter": {
+        "name": "none",
+        "version": null,
+        "invocation": "provider"
+      },
+      "os": {
+        "name": "Windows",
+        "version": null,
+        "architecture": "AMD64"
+      },
+      "source": {
+        "kind": "generated-workload",
+        "sanitized_reference": "wd163-pre-tool-mcp-deny"
+      },
+      "model": {
+        "name": "gpt-6.1-sol",
+        "reasoning_effort": "low"
+      }
+    },
+    "scope": {
+      "isolation": "Isolated Codex home and scratch Git repository outside registered projects",
+      "expected_callback_kinds": [
+        "PreToolUse"
+      ],
+      "expected_deliveries": 0,
+      "notes": "Noninteractive codex exec",
+      "tool_path": "default",
+      "callback_minimums": {
+        "PreToolUse": 1
+      }
+    },
+    "stages": {
+      "provider_dispatch": {
+        "state": "confirmed",
+        "attempts": 1,
+        "evidence": "Observed hook callbacks and owned CLI exit status",
+        "detail": null
+      },
+      "adapter": {
+        "state": "not_invoked",
+        "starts": 0,
+        "failure_category": null,
+        "evidence": "The probe calls no Watchdog adapter."
+      },
+      "callbacks": {
+        "expected": 1,
+        "observed": 1,
+        "missing": 0,
+        "missing_attribution": "not_applicable",
+        "evidence": "Expected callback counts and sanitized input shapes are in capabilities."
+      },
+      "retries": {
+        "count": 0,
+        "scopes": [],
+        "reason": null,
+        "outcome": "not_attempted",
+        "evidence": "One run per case."
+      },
+      "persistence": {
+        "accepted": 0,
+        "losses": [],
+        "evidence": "Not applicable: the probe does not exercise Watchdog persistence."
+      },
+      "end_to_end_delivery": {
+        "expected": 0,
+        "persisted": 0,
+        "read_back": 0,
+        "state": "not_applicable",
+        "failure_attribution": "not_applicable",
+        "failure_detail": null,
+        "evidence": "No Watchdog store; provider effect is recorded separately in capabilities."
+      }
+    },
+    "capabilities": {
+      "pre-tool-mcp-deny": {
+        "state": "supported",
+        "response_shape": "hookSpecificOutput.permissionDecision=deny",
+        "callbacks": {
+          "PreToolUse": {
+            "observed": 1,
+            "input_fields": [
+              "cwd",
+              "hook_event_name",
+              "model",
+              "permission_mode",
+              "session_id",
+              "tool_input",
+              "tool_name",
+              "tool_use_id",
+              "transcript_path",
+              "turn_id"
+            ],
+            "tool_names": [
+              "mcp__probe__emit"
+            ],
+            "tool_input_types": {
+              "text": "str"
+            }
+          }
+        },
+        "observed_effect": "supported"
+      }
+    },
+    "cleanup": {
+      "resources": [
+        {
+          "kind": "process",
+          "alias": "owned-cli-process-tree",
+          "action": "stopped",
+          "state": "confirmed",
+          "failure_attribution": "not_applicable",
+          "detail": null,
+          "evidence": "Windows job accounting reports zero active processes"
+        },
+        {
+          "kind": "hook_installation",
+          "alias": "isolated-codex-home",
+          "action": "removed",
+          "state": "confirmed",
+          "failure_attribution": "not_applicable",
+          "detail": null,
+          "evidence": "Isolated home removal check; active profile was not modified"
+        },
+        {
+          "kind": "temporary_state",
+          "alias": "scratch-and-rollouts",
+          "action": "removed",
+          "state": "confirmed",
+          "failure_attribution": "not_applicable",
+          "detail": null,
+          "evidence": "Scratch removal check, including authentication copy and provider rollouts"
+        },
+        {
+          "kind": "temporary_state",
+          "alias": "operator-debug-log",
+          "action": "retained",
+          "state": "confirmed",
+          "failure_attribution": "not_applicable",
+          "detail": "Raw diagnostics retained in git-ignored tests/local only.",
+          "evidence": "Exclusive debug-log write completed"
+        }
+      ],
+      "complete": true,
+      "remaining_state": null
+    },
+    "result": {
+      "state": "passed",
+      "limitations": [
+        "One Windows CLI build and one isolated attempt; no cross-version inference."
+      ]
+    },
+    "effect": {
+      "state": "supported",
+      "evidence": "Filtered model/tool output and isolated sentinel read-back",
+      "notes": []
+    },
+    "execution": {
+      "exit_code": 0,
+      "observed_tool_paths": [
+        "exec"
+      ],
+      "effective_sandbox": "workspace-write"
+    },
+    "assessment_version": "wd163.1"
+  },
+  {
+    "format_version": "watchdog.probe-result.v1",
+    "record_id": "wd163-codex-cli-permission-bash-deny-189873a56b07477c9171e360b3868014",
+    "classification": "live_provider",
+    "started_at": "2026-10-14T21:15:54.767156Z",
+    "finished_at": "2026-10-14T21:17:44.624969Z",
+    "provenance": {
+      "provider": {
+        "name": "codex",
+        "version": "codex-cli 0.162.0-alpha.17.2",
+        "surface": "cli"
+      },
+      "harness": {
+        "name": "codex-cli",
+        "version": "codex-cli 0.162.0-alpha.17.2"
+      },
+      "adapter": {
+        "name": "none",
+        "version": null,
+        "invocation": "provider"
+      },
+      "os": {
+        "name": "Windows",
+        "version": null,
+        "architecture": "AMD64"
+      },
+      "source": {
+        "kind": "generated-workload",
+        "sanitized_reference": "wd163-permission-bash-deny"
+      },
+      "model": {
+        "name": "gpt-6.1-sol",
+        "reasoning_effort": "low"
+      }
+    },
+    "scope": {
+      "isolation": "Isolated Codex home and scratch Git repository outside registered projects",
+      "expected_callback_kinds": [
+        "PermissionRequest"
+      ],
+      "expected_deliveries": 0,
+      "notes": "Interactive CLI",
+      "tool_path": "default",
+      "callback_minimums": {
+        "PermissionRequest": 1
+      }
+    },
+    "stages": {
+      "provider_dispatch": {
+        "state": "confirmed",
+        "attempts": 1,
+        "evidence": "Observed hook callbacks and owned CLI exit status",
+        "detail": null
+      },
+      "adapter": {
+        "state": "not_invoked",
+        "starts": 0,
+        "failure_category": null,
+        "evidence": "The probe calls no Watchdog adapter."
+      },
+      "callbacks": {
+        "expected": 1,
+        "observed": 1,
+        "missing": 0,
+        "missing_attribution": "not_applicable",
+        "evidence": "Expected callback counts and sanitized input shapes are in capabilities."
+      },
+      "retries": {
+        "count": 0,
+        "scopes": [],
+        "reason": null,
+        "outcome": "not_attempted",
+        "evidence": "One run per case."
+      },
+      "persistence": {
+        "accepted": 0,
+        "losses": [],
+        "evidence": "Not applicable: the probe does not exercise Watchdog persistence."
+      },
+      "end_to_end_delivery": {
+        "expected": 0,
+        "persisted": 0,
+        "read_back": 0,
+        "state": "not_applicable",
+        "failure_attribution": "not_applicable",
+        "failure_detail": null,
+        "evidence": "No Watchdog store; provider effect is recorded separately in capabilities."
+      }
+    },
+    "capabilities": {
+      "permission-bash-deny": {
+        "state": "supported",
+        "response_shape": "hookSpecificOutput.decision.behavior=deny",
+        "callbacks": {
+          "PermissionRequest": {
+            "observed": 1,
+            "input_fields": [
+              "cwd",
+              "hook_event_name",
+              "model",
+              "permission_mode",
+              "session_id",
+              "tool_input",
+              "tool_name",
+              "transcript_path",
+              "turn_id"
+            ],
+            "tool_names": [
+              "Bash"
+            ],
+            "tool_input_types": {
+              "command": "str",
+              "description": "str"
+            }
+          }
+        },
+        "observed_effect": "supported"
+      }
+    },
+    "cleanup": {
+      "resources": [
+        {
+          "kind": "process",
+          "alias": "owned-cli-process-tree",
+          "action": "stopped",
+          "state": "confirmed",
+          "failure_attribution": "not_applicable",
+          "detail": null,
+          "evidence": "Windows job accounting reports zero active processes"
+        },
+        {
+          "kind": "hook_installation",
+          "alias": "isolated-codex-home",
+          "action": "removed",
+          "state": "confirmed",
+          "failure_attribution": "not_applicable",
+          "detail": null,
+          "evidence": "Isolated home removal check; active profile was not modified"
+        },
+        {
+          "kind": "temporary_state",
+          "alias": "scratch-and-rollouts",
+          "action": "removed",
+          "state": "confirmed",
+          "failure_attribution": "not_applicable",
+          "detail": null,
+          "evidence": "Scratch removal check, including authentication copy and provider rollouts"
+        },
+        {
+          "kind": "temporary_state",
+          "alias": "operator-debug-log",
+          "action": "retained",
+          "state": "confirmed",
+          "failure_attribution": "not_applicable",
+          "detail": "Raw diagnostics retained in git-ignored tests/local only.",
+          "evidence": "Exclusive debug-log write completed"
+        }
+      ],
+      "complete": true,
+      "remaining_state": null
+    },
+    "result": {
+      "state": "passed",
+      "limitations": [
+        "One Windows CLI build and one isolated attempt; no cross-version inference."
+      ]
+    },
+    "effect": {
+      "state": "supported",
+      "evidence": "Filtered model/tool output and isolated sentinel read-back",
+      "notes": []
+    },
+    "execution": {
+      "exit_code": 0,
+      "observed_tool_paths": [
+        "exec"
+      ],
+      "effective_sandbox": "read-only"
+    },
+    "assessment_version": "wd163.1"
+  },
+  {
+    "format_version": "watchdog.probe-result.v1",
+    "record_id": "wd163-codex-cli-post-tool-bash-block-67681308ad294f1cbd3271dbb5de0d8c",
+    "classification": "live_provider",
+    "started_at": "2026-10-14T21:16:22.531592Z",
+    "finished_at": "2026-10-14T21:16:30.668720Z",
+    "provenance": {
+      "provider": {
+        "name": "codex",
+        "version": "codex-cli 0.162.0-alpha.17.2",
+        "surface": "cli"
+      },
+      "harness": {
+        "name": "codex-cli",
+        "version": "codex-cli 0.162.0-alpha.17.2"
+      },
+      "adapter": {
+        "name": "none",
+        "version": null,
+        "invocation": "provider"
+      },
+      "os": {
+        "name": "Windows",
+        "version": null,
+        "architecture": "AMD64"
+      },
+      "source": {
+        "kind": "generated-workload",
+        "sanitized_reference": "wd163-post-tool-bash-block"
+      },
+      "model": {
+        "name": "gpt-6.1-sol",
+        "reasoning_effort": "low"
+      }
+    },
+    "scope": {
+      "isolation": "Isolated Codex home and scratch Git repository outside registered projects",
+      "expected_callback_kinds": [
+        "PostToolUse"
+      ],
+      "expected_deliveries": 0,
+      "notes": "Noninteractive codex exec",
+      "tool_path": "default",
+      "callback_minimums": {
+        "PostToolUse": 1
+      }
+    },
+    "stages": {
+      "provider_dispatch": {
+        "state": "missing",
+        "attempts": 1,
+        "evidence": "Observed hook callbacks and owned CLI exit status",
+        "detail": null
+      },
+      "adapter": {
+        "state": "not_invoked",
+        "starts": 0,
+        "failure_category": null,
+        "evidence": "The probe calls no Watchdog adapter."
+      },
+      "callbacks": {
+        "expected": 1,
+        "observed": 0,
+        "missing": 1,
+        "missing_attribution": "unknown",
+        "evidence": "Expected callback counts and sanitized input shapes are in capabilities."
+      },
+      "retries": {
+        "count": 0,
+        "scopes": [],
+        "reason": null,
+        "outcome": "not_attempted",
+        "evidence": "One run per case."
+      },
+      "persistence": {
+        "accepted": 0,
+        "losses": [],
+        "evidence": "Not applicable: the probe does not exercise Watchdog persistence."
+      },
+      "end_to_end_delivery": {
+        "expected": 0,
+        "persisted": 0,
+        "read_back": 0,
+        "state": "not_applicable",
+        "failure_attribution": "not_applicable",
+        "failure_detail": null,
+        "evidence": "No Watchdog store; provider effect is recorded separately in capabilities."
+      }
+    },
+    "capabilities": {
+      "post-tool-bash-block": {
+        "state": "inconclusive",
+        "response_shape": "decision=block",
+        "callbacks": {
+          "PostToolUse": {
+            "observed": 0,
+            "input_fields": [],
+            "tool_names": [],
+            "tool_input_types": {}
+          }
+        },
+        "observed_effect": "inconclusive"
+      }
+    },
+    "cleanup": {
+      "resources": [
+        {
+          "kind": "process",
+          "alias": "owned-cli-process-tree",
+          "action": "stopped",
+          "state": "confirmed",
+          "failure_attribution": "not_applicable",
+          "detail": null,
+          "evidence": "Windows job accounting reports zero active processes"
+        },
+        {
+          "kind": "hook_installation",
+          "alias": "isolated-codex-home",
+          "action": "removed",
+          "state": "confirmed",
+          "failure_attribution": "not_applicable",
+          "detail": null,
+          "evidence": "Isolated home removal check; active profile was not modified"
+        },
+        {
+          "kind": "temporary_state",
+          "alias": "scratch-and-rollouts",
+          "action": "removed",
+          "state": "confirmed",
+          "failure_attribution": "not_applicable",
+          "detail": null,
+          "evidence": "Scratch removal check, including authentication copy and provider rollouts"
+        },
+        {
+          "kind": "temporary_state",
+          "alias": "operator-debug-log",
+          "action": "retained",
+          "state": "confirmed",
+          "failure_attribution": "not_applicable",
+          "detail": "Raw diagnostics retained in git-ignored tests/local only.",
+          "evidence": "Exclusive debug-log write completed"
+        }
+      ],
+      "complete": true,
+      "remaining_state": null
+    },
+    "result": {
+      "state": "incomplete",
+      "limitations": [
+        "PostToolUse runs after the tool; it cannot roll back the side effect.",
+        "missing callback: PostToolUse",
+        "One Windows CLI build and one isolated attempt; no cross-version inference."
+      ]
+    },
+    "effect": {
+      "state": "inconclusive",
+      "evidence": "Filtered model/tool output and isolated sentinel read-back",
+      "notes": [
+        "missing callback: PostToolUse"
+      ]
+    },
+    "execution": {
+      "exit_code": 0,
+      "observed_tool_paths": [],
+      "effective_sandbox": null
+    },
+    "assessment_version": "wd163.1"
+  },
+  {
+    "format_version": "watchdog.probe-result.v1",
+    "record_id": "wd163-codex-cli-post-tool-bash-halt-65f8d4649a7048d1bca5c277e41c9c54",
+    "classification": "live_provider",
+    "started_at": "2026-10-14T21:16:31.449807Z",
+    "finished_at": "2026-10-14T21:16:40.225119Z",
+    "provenance": {
+      "provider": {
+        "name": "codex",
+        "version": "codex-cli 0.162.0-alpha.17.2",
+        "surface": "cli"
+      },
+      "harness": {
+        "name": "codex-cli",
+        "version": "codex-cli 0.162.0-alpha.17.2"
+      },
+      "adapter": {
+        "name": "none",
+        "version": null,
+        "invocation": "provider"
+      },
+      "os": {
+        "name": "Windows",
+        "version": null,
+        "architecture": "AMD64"
+      },
+      "source": {
+        "kind": "generated-workload",
+        "sanitized_reference": "wd163-post-tool-bash-halt"
+      },
+      "model": {
+        "name": "gpt-6.1-sol",
+        "reasoning_effort": "low"
+      }
+    },
+    "scope": {
+      "isolation": "Isolated Codex home and scratch Git repository outside registered projects",
+      "expected_callback_kinds": [
+        "PostToolUse"
+      ],
+      "expected_deliveries": 0,
+      "notes": "Noninteractive codex exec",
+      "tool_path": "default",
+      "callback_minimums": {
+        "PostToolUse": 1
+      }
+    },
+    "stages": {
+      "provider_dispatch": {
+        "state": "missing",
+        "attempts": 1,
+        "evidence": "Observed hook callbacks and owned CLI exit status",
+        "detail": null
+      },
+      "adapter": {
+        "state": "not_invoked",
+        "starts": 0,
+        "failure_category": null,
+        "evidence": "The probe calls no Watchdog adapter."
+      },
+      "callbacks": {
+        "expected": 1,
+        "observed": 0,
+        "missing": 1,
+        "missing_attribution": "unknown",
+        "evidence": "Expected callback counts and sanitized input shapes are in capabilities."
+      },
+      "retries": {
+        "count": 0,
+        "scopes": [],
+        "reason": null,
+        "outcome": "not_attempted",
+        "evidence": "One run per case."
+      },
+      "persistence": {
+        "accepted": 0,
+        "losses": [],
+        "evidence": "Not applicable: the probe does not exercise Watchdog persistence."
+      },
+      "end_to_end_delivery": {
+        "expected": 0,
+        "persisted": 0,
+        "read_back": 0,
+        "state": "not_applicable",
+        "failure_attribution": "not_applicable",
+        "failure_detail": null,
+        "evidence": "No Watchdog store; provider effect is recorded separately in capabilities."
+      }
+    },
+    "capabilities": {
+      "post-tool-bash-halt": {
+        "state": "inconclusive",
+        "response_shape": "continue=false",
+        "callbacks": {
+          "PostToolUse": {
+            "observed": 0,
+            "input_fields": [],
+            "tool_names": [],
+            "tool_input_types": {}
+          }
+        },
+        "observed_effect": "inconclusive"
+      }
+    },
+    "cleanup": {
+      "resources": [
+        {
+          "kind": "process",
+          "alias": "owned-cli-process-tree",
+          "action": "stopped",
+          "state": "confirmed",
+          "failure_attribution": "not_applicable",
+          "detail": null,
+          "evidence": "Windows job accounting reports zero active processes"
+        },
+        {
+          "kind": "hook_installation",
+          "alias": "isolated-codex-home",
+          "action": "removed",
+          "state": "confirmed",
+          "failure_attribution": "not_applicable",
+          "detail": null,
+          "evidence": "Isolated home removal check; active profile was not modified"
+        },
+        {
+          "kind": "temporary_state",
+          "alias": "scratch-and-rollouts",
+          "action": "removed",
+          "state": "confirmed",
+          "failure_attribution": "not_applicable",
+          "detail": null,
+          "evidence": "Scratch removal check, including authentication copy and provider rollouts"
+        },
+        {
+          "kind": "temporary_state",
+          "alias": "operator-debug-log",
+          "action": "retained",
+          "state": "confirmed",
+          "failure_attribution": "not_applicable",
+          "detail": "Raw diagnostics retained in git-ignored tests/local only.",
+          "evidence": "Exclusive debug-log write completed"
+        }
+      ],
+      "complete": true,
+      "remaining_state": null
+    },
+    "result": {
+      "state": "incomplete",
+      "limitations": [
+        "missing callback: PostToolUse",
+        "One Windows CLI build and one isolated attempt; no cross-version inference."
+      ]
+    },
+    "effect": {
+      "state": "inconclusive",
+      "evidence": "Filtered model/tool output and isolated sentinel read-back",
+      "notes": [
+        "missing callback: PostToolUse"
+      ]
+    },
+    "execution": {
+      "exit_code": 0,
+      "observed_tool_paths": [],
+      "effective_sandbox": null
+    },
+    "assessment_version": "wd163.1"
+  },
+  {
+    "format_version": "watchdog.probe-result.v1",
+    "record_id": "wd163-codex-cli-subagent-start-context-4ffe4ce50cfd41a49837cb55d86fef76",
+    "classification": "live_provider",
+    "started_at": "2026-10-14T21:16:41.086269Z",
+    "finished_at": "2026-10-14T21:16:52.246822Z",
+    "provenance": {
+      "provider": {
+        "name": "codex",
+        "version": "codex-cli 0.162.0-alpha.17.2",
+        "surface": "cli"
+      },
+      "harness": {
+        "name": "codex-cli",
+        "version": "codex-cli 0.162.0-alpha.17.2"
+      },
+      "adapter": {
+        "name": "none",
+        "version": null,
+        "invocation": "provider"
+      },
+      "os": {
+        "name": "Windows",
+        "version": null,
+        "architecture": "AMD64"
+      },
+      "source": {
+        "kind": "generated-workload",
+        "sanitized_reference": "wd163-subagent-start-context"
+      },
+      "model": {
+        "name": "gpt-6.1-sol",
+        "reasoning_effort": "low"
+      }
+    },
+    "scope": {
+      "isolation": "Isolated Codex home and scratch Git repository outside registered projects",
+      "expected_callback_kinds": [
+        "SubagentStart"
+      ],
+      "expected_deliveries": 0,
+      "notes": "Noninteractive codex exec",
+      "tool_path": "default",
+      "callback_minimums": {
+        "SubagentStart": 1
+      }
+    },
+    "stages": {
+      "provider_dispatch": {
+        "state": "confirmed",
+        "attempts": 1,
+        "evidence": "Observed hook callbacks and owned CLI exit status",
+        "detail": null
+      },
+      "adapter": {
+        "state": "not_invoked",
+        "starts": 0,
+        "failure_category": null,
+        "evidence": "The probe calls no Watchdog adapter."
+      },
+      "callbacks": {
+        "expected": 1,
+        "observed": 1,
+        "missing": 0,
+        "missing_attribution": "not_applicable",
+        "evidence": "Expected callback counts and sanitized input shapes are in capabilities."
+      },
+      "retries": {
+        "count": 0,
+        "scopes": [],
+        "reason": null,
+        "outcome": "not_attempted",
+        "evidence": "One run per case."
+      },
+      "persistence": {
+        "accepted": 0,
+        "losses": [],
+        "evidence": "Not applicable: the probe does not exercise Watchdog persistence."
+      },
+      "end_to_end_delivery": {
+        "expected": 0,
+        "persisted": 0,
+        "read_back": 0,
+        "state": "not_applicable",
+        "failure_attribution": "not_applicable",
+        "failure_detail": null,
+        "evidence": "No Watchdog store; provider effect is recorded separately in capabilities."
+      }
+    },
+    "capabilities": {
+      "subagent-start-context": {
+        "state": "supported",
+        "response_shape": "hookSpecificOutput.additionalContext",
+        "callbacks": {
+          "SubagentStart": {
+            "observed": 1,
+            "input_fields": [
+              "agent_id",
+              "agent_type",
+              "cwd",
+              "hook_event_name",
+              "model",
+              "permission_mode",
+              "session_id",
+              "transcript_path",
+              "turn_id"
+            ],
+            "tool_names": [],
+            "tool_input_types": {}
+          }
+        },
+        "observed_effect": "supported"
+      }
+    },
+    "cleanup": {
+      "resources": [
+        {
+          "kind": "process",
+          "alias": "owned-cli-process-tree",
+          "action": "stopped",
+          "state": "confirmed",
+          "failure_attribution": "not_applicable",
+          "detail": null,
+          "evidence": "Windows job accounting reports zero active processes"
+        },
+        {
+          "kind": "hook_installation",
+          "alias": "isolated-codex-home",
+          "action": "removed",
+          "state": "confirmed",
+          "failure_attribution": "not_applicable",
+          "detail": null,
+          "evidence": "Isolated home removal check; active profile was not modified"
+        },
+        {
+          "kind": "temporary_state",
+          "alias": "scratch-and-rollouts",
+          "action": "removed",
+          "state": "confirmed",
+          "failure_attribution": "not_applicable",
+          "detail": null,
+          "evidence": "Scratch removal check, including authentication copy and provider rollouts"
+        },
+        {
+          "kind": "temporary_state",
+          "alias": "operator-debug-log",
+          "action": "retained",
+          "state": "confirmed",
+          "failure_attribution": "not_applicable",
+          "detail": "Raw diagnostics retained in git-ignored tests/local only.",
+          "evidence": "Exclusive debug-log write completed"
+        }
+      ],
+      "complete": true,
+      "remaining_state": null
+    },
+    "result": {
+      "state": "passed",
+      "limitations": [
+        "One Windows CLI build and one isolated attempt; no cross-version inference."
+      ]
+    },
+    "effect": {
+      "state": "supported",
+      "evidence": "Filtered model/tool output and isolated sentinel read-back",
+      "notes": []
+    },
+    "execution": {
+      "exit_code": 0,
+      "observed_tool_paths": [],
+      "effective_sandbox": "read-only"
+    },
+    "assessment_version": "wd163.1"
+  },
+  {
+    "format_version": "watchdog.probe-result.v1",
+    "record_id": "wd163-codex-cli-pre-tool-mcp-rewrite-d31fc94928904f8a8d518efa2e4000a9",
+    "classification": "live_provider",
+    "started_at": "2026-10-14T21:16:53.673627Z",
+    "finished_at": "2026-10-14T21:17:21.470620Z",
+    "provenance": {
+      "provider": {
+        "name": "codex",
+        "version": "codex-cli 0.162.0-alpha.17.2",
+        "surface": "cli"
+      },
+      "harness": {
+        "name": "codex-cli",
+        "version": "codex-cli 0.162.0-alpha.17.2"
+      },
+      "adapter": {
+        "name": "none",
+        "version": null,
+        "invocation": "provider"
+      },
+      "os": {
+        "name": "Windows",
+        "version": null,
+        "architecture": "AMD64"
+      },
+      "source": {
+        "kind": "generated-workload",
+        "sanitized_reference": "wd163-pre-tool-mcp-rewrite"
+      },
+      "model": {
+        "name": "gpt-6.1-sol",
+        "reasoning_effort": "low"
+      }
+    },
+    "scope": {
+      "isolation": "Isolated Codex home and scratch Git repository outside registered projects",
+      "expected_callback_kinds": [
+        "PreToolUse"
+      ],
+      "expected_deliveries": 0,
+      "notes": "Noninteractive codex exec",
+      "tool_path": "default",
+      "callback_minimums": {
+        "PreToolUse": 1
+      }
+    },
+    "stages": {
+      "provider_dispatch": {
+        "state": "confirmed",
+        "attempts": 1,
+        "evidence": "Observed hook callbacks and owned CLI exit status",
+        "detail": null
+      },
+      "adapter": {
+        "state": "not_invoked",
+        "starts": 0,
+        "failure_category": null,
+        "evidence": "The probe calls no Watchdog adapter."
+      },
+      "callbacks": {
+        "expected": 1,
+        "observed": 1,
+        "missing": 0,
+        "missing_attribution": "not_applicable",
+        "evidence": "Expected callback counts and sanitized input shapes are in capabilities."
+      },
+      "retries": {
+        "count": 0,
+        "scopes": [],
+        "reason": null,
+        "outcome": "not_attempted",
+        "evidence": "One run per case."
+      },
+      "persistence": {
+        "accepted": 0,
+        "losses": [],
+        "evidence": "Not applicable: the probe does not exercise Watchdog persistence."
+      },
+      "end_to_end_delivery": {
+        "expected": 0,
+        "persisted": 0,
+        "read_back": 0,
+        "state": "not_applicable",
+        "failure_attribution": "not_applicable",
+        "failure_detail": null,
+        "evidence": "No Watchdog store; provider effect is recorded separately in capabilities."
+      }
+    },
+    "capabilities": {
+      "pre-tool-mcp-rewrite": {
+        "state": "supported",
+        "response_shape": "hookSpecificOutput.permissionDecision=allow,updatedInput.text",
+        "callbacks": {
+          "PreToolUse": {
+            "observed": 1,
+            "input_fields": [
+              "cwd",
+              "hook_event_name",
+              "model",
+              "permission_mode",
+              "session_id",
+              "tool_input",
+              "tool_name",
+              "tool_use_id",
+              "transcript_path",
+              "turn_id"
+            ],
+            "tool_names": [
+              "mcp__probe__emit"
+            ],
+            "tool_input_types": {
+              "text": "str"
+            }
+          }
+        },
+        "observed_effect": "supported"
+      }
+    },
+    "cleanup": {
+      "resources": [
+        {
+          "kind": "process",
+          "alias": "owned-cli-process-tree",
+          "action": "stopped",
+          "state": "confirmed",
+          "failure_attribution": "not_applicable",
+          "detail": null,
+          "evidence": "Windows job accounting reports zero active processes"
+        },
+        {
+          "kind": "hook_installation",
+          "alias": "isolated-codex-home",
+          "action": "removed",
+          "state": "confirmed",
+          "failure_attribution": "not_applicable",
+          "detail": null,
+          "evidence": "Isolated home removal check; active profile was not modified"
+        },
+        {
+          "kind": "temporary_state",
+          "alias": "scratch-and-rollouts",
+          "action": "removed",
+          "state": "confirmed",
+          "failure_attribution": "not_applicable",
+          "detail": null,
+          "evidence": "Scratch removal check, including authentication copy and provider rollouts"
+        },
+        {
+          "kind": "temporary_state",
+          "alias": "operator-debug-log",
+          "action": "retained",
+          "state": "confirmed",
+          "failure_attribution": "not_applicable",
+          "detail": "Raw diagnostics retained in git-ignored tests/local only.",
+          "evidence": "Exclusive debug-log write completed"
+        }
+      ],
+      "complete": true,
+      "remaining_state": null
+    },
+    "result": {
+      "state": "passed",
+      "limitations": [
+        "One Windows CLI build and one isolated attempt; no cross-version inference."
+      ]
+    },
+    "effect": {
+      "state": "supported",
+      "evidence": "Filtered model/tool output and isolated sentinel read-back",
+      "notes": []
+    },
+    "execution": {
+      "exit_code": 0,
+      "observed_tool_paths": [
+        "exec"
+      ],
+      "effective_sandbox": "workspace-write"
+    },
+    "assessment_version": "wd163.1"
+  },
+  {
+    "format_version": "watchdog.probe-result.v1",
+    "record_id": "wd163-codex-cli-pre-compact-context-11337a9fb85c475182966e1d63e54742",
+    "classification": "live_provider",
+    "started_at": "2026-10-14T21:19:21.405176Z",
+    "finished_at": "2026-10-14T21:21:49.366268Z",
+    "provenance": {
+      "provider": {
+        "name": "codex",
+        "version": "codex-cli 0.162.0-alpha.17.2",
+        "surface": "cli"
+      },
+      "harness": {
+        "name": "codex-cli",
+        "version": "codex-cli 0.162.0-alpha.17.2"
+      },
+      "adapter": {
+        "name": "none",
+        "version": null,
+        "invocation": "provider"
+      },
+      "os": {
+        "name": "Windows",
+        "version": null,
+        "architecture": "AMD64"
+      },
+      "source": {
+        "kind": "generated-workload",
+        "sanitized_reference": "wd163-pre-compact-context"
+      },
+      "model": {
+        "name": "gpt-6.1-sol",
+        "reasoning_effort": "low"
+      }
+    },
+    "scope": {
+      "isolation": "Isolated Codex home and scratch Git repository outside registered projects",
+      "expected_callback_kinds": [
+        "PreCompact"
+      ],
+      "expected_deliveries": 0,
+      "notes": "Interactive CLI",
+      "tool_path": "default",
+      "callback_minimums": {
+        "PreCompact": 1
+      }
+    },
+    "stages": {
+      "provider_dispatch": {
+        "state": "confirmed",
+        "attempts": 1,
+        "evidence": "Observed hook callbacks and owned CLI exit status",
+        "detail": null
+      },
+      "adapter": {
+        "state": "not_invoked",
+        "starts": 0,
+        "failure_category": null,
+        "evidence": "The probe calls no Watchdog adapter."
+      },
+      "callbacks": {
+        "expected": 1,
+        "observed": 1,
+        "missing": 0,
+        "missing_attribution": "not_applicable",
+        "evidence": "Expected callback counts and sanitized input shapes are in capabilities."
+      },
+      "retries": {
+        "count": 0,
+        "scopes": [],
+        "reason": null,
+        "outcome": "not_attempted",
+        "evidence": "One run per case."
+      },
+      "persistence": {
+        "accepted": 0,
+        "losses": [],
+        "evidence": "Not applicable: the probe does not exercise Watchdog persistence."
+      },
+      "end_to_end_delivery": {
+        "expected": 0,
+        "persisted": 0,
+        "read_back": 0,
+        "state": "not_applicable",
+        "failure_attribution": "not_applicable",
+        "failure_detail": null,
+        "evidence": "No Watchdog store; provider effect is recorded separately in capabilities."
+      }
+    },
+    "capabilities": {
+      "pre-compact-context": {
+        "state": "unsupported",
+        "response_shape": "hookSpecificOutput.additionalContext",
+        "callbacks": {
+          "PreCompact": {
+            "observed": 1,
+            "input_fields": [
+              "cwd",
+              "hook_event_name",
+              "model",
+              "session_id",
+              "transcript_path",
+              "trigger",
+              "turn_id"
+            ],
+            "tool_names": [],
+            "tool_input_types": {}
+          }
+        },
+        "observed_effect": "unsupported"
+      }
+    },
+    "cleanup": {
+      "resources": [
+        {
+          "kind": "process",
+          "alias": "owned-cli-process-tree",
+          "action": "stopped",
+          "state": "confirmed",
+          "failure_attribution": "not_applicable",
+          "detail": null,
+          "evidence": "Windows job accounting reports zero active processes"
+        },
+        {
+          "kind": "hook_installation",
+          "alias": "isolated-codex-home",
+          "action": "removed",
+          "state": "confirmed",
+          "failure_attribution": "not_applicable",
+          "detail": null,
+          "evidence": "Isolated home removal check; active profile was not modified"
+        },
+        {
+          "kind": "temporary_state",
+          "alias": "scratch-and-rollouts",
+          "action": "removed",
+          "state": "confirmed",
+          "failure_attribution": "not_applicable",
+          "detail": null,
+          "evidence": "Scratch removal check, including authentication copy and provider rollouts"
+        },
+        {
+          "kind": "temporary_state",
+          "alias": "operator-debug-log",
+          "action": "retained",
+          "state": "confirmed",
+          "failure_attribution": "not_applicable",
+          "detail": "Raw diagnostics retained in git-ignored tests/local only.",
+          "evidence": "Exclusive debug-log write completed"
+        }
+      ],
+      "complete": true,
+      "remaining_state": null
+    },
+    "result": {
+      "state": "failed",
+      "limitations": [
+        "PreCompact ran but its context marker was not model-visible",
+        "One Windows CLI build and one isolated attempt; no cross-version inference."
+      ]
+    },
+    "effect": {
+      "state": "unsupported",
+      "evidence": "Filtered model/tool output and isolated sentinel read-back",
+      "notes": [
+        "PreCompact ran but its context marker was not model-visible"
+      ]
+    },
+    "execution": {
+      "exit_code": 0,
+      "observed_tool_paths": [],
+      "effective_sandbox": "read-only"
+    },
+    "assessment_version": "wd163.1"
+  },
+  {
+    "format_version": "watchdog.probe-result.v1",
+    "record_id": "wd163-codex-cli-post-tool-local-context-c791bacc70744aeaad0ac1ec8f9bad0d",
+    "classification": "live_provider",
+    "started_at": "2026-10-14T21:19:34.969037Z",
+    "finished_at": "2026-10-14T21:19:49.305636Z",
+    "provenance": {
+      "provider": {
+        "name": "codex",
+        "version": "codex-cli 0.162.0-alpha.17.2",
+        "surface": "cli"
+      },
+      "harness": {
+        "name": "codex-cli",
+        "version": "codex-cli 0.162.0-alpha.17.2"
+      },
+      "adapter": {
+        "name": "none",
+        "version": null,
+        "invocation": "provider"
+      },
+      "os": {
+        "name": "Windows",
+        "version": null,
+        "architecture": "AMD64"
+      },
+      "source": {
+        "kind": "generated-workload",
+        "sanitized_reference": "wd163-post-tool-local-context"
+      },
+      "model": {
+        "name": "gpt-6.1-sol",
+        "reasoning_effort": "low"
+      }
+    },
+    "scope": {
+      "isolation": "Isolated Codex home and scratch Git repository outside registered projects",
+      "expected_callback_kinds": [
+        "PostToolUse"
+      ],
+      "expected_deliveries": 0,
+      "notes": "Noninteractive codex exec",
+      "tool_path": "default",
+      "callback_minimums": {
+        "PostToolUse": 1
+      }
+    },
+    "stages": {
+      "provider_dispatch": {
+        "state": "missing",
+        "attempts": 1,
+        "evidence": "Observed hook callbacks and owned CLI exit status",
+        "detail": null
+      },
+      "adapter": {
+        "state": "not_invoked",
+        "starts": 0,
+        "failure_category": null,
+        "evidence": "The probe calls no Watchdog adapter."
+      },
+      "callbacks": {
+        "expected": 1,
+        "observed": 0,
+        "missing": 1,
+        "missing_attribution": "unknown",
+        "evidence": "Expected callback counts and sanitized input shapes are in capabilities."
+      },
+      "retries": {
+        "count": 0,
+        "scopes": [],
+        "reason": null,
+        "outcome": "not_attempted",
+        "evidence": "One run per case."
+      },
+      "persistence": {
+        "accepted": 0,
+        "losses": [],
+        "evidence": "Not applicable: the probe does not exercise Watchdog persistence."
+      },
+      "end_to_end_delivery": {
+        "expected": 0,
+        "persisted": 0,
+        "read_back": 0,
+        "state": "not_applicable",
+        "failure_attribution": "not_applicable",
+        "failure_detail": null,
+        "evidence": "No Watchdog store; provider effect is recorded separately in capabilities."
+      }
+    },
+    "capabilities": {
+      "post-tool-local-context": {
+        "state": "inconclusive",
+        "response_shape": "hookSpecificOutput.additionalContext",
+        "callbacks": {
+          "PostToolUse": {
+            "observed": 0,
+            "input_fields": [],
+            "tool_names": [],
+            "tool_input_types": {}
+          }
+        },
+        "observed_effect": "inconclusive"
+      }
+    },
+    "cleanup": {
+      "resources": [
+        {
+          "kind": "process",
+          "alias": "owned-cli-process-tree",
+          "action": "stopped",
+          "state": "confirmed",
+          "failure_attribution": "not_applicable",
+          "detail": null,
+          "evidence": "Windows job accounting reports zero active processes"
+        },
+        {
+          "kind": "hook_installation",
+          "alias": "isolated-codex-home",
+          "action": "removed",
+          "state": "confirmed",
+          "failure_attribution": "not_applicable",
+          "detail": null,
+          "evidence": "Isolated home removal check; active profile was not modified"
+        },
+        {
+          "kind": "temporary_state",
+          "alias": "scratch-and-rollouts",
+          "action": "removed",
+          "state": "confirmed",
+          "failure_attribution": "not_applicable",
+          "detail": null,
+          "evidence": "Scratch removal check, including authentication copy and provider rollouts"
+        },
+        {
+          "kind": "temporary_state",
+          "alias": "operator-debug-log",
+          "action": "retained",
+          "state": "confirmed",
+          "failure_attribution": "not_applicable",
+          "detail": "Raw diagnostics retained in git-ignored tests/local only.",
+          "evidence": "Exclusive debug-log write completed"
+        }
+      ],
+      "complete": true,
+      "remaining_state": null
+    },
+    "result": {
+      "state": "incomplete",
+      "limitations": [
+        "missing callback: PostToolUse",
+        "One Windows CLI build and one isolated attempt; no cross-version inference."
+      ]
+    },
+    "effect": {
+      "state": "inconclusive",
+      "evidence": "Filtered model/tool output and isolated sentinel read-back",
+      "notes": [
+        "missing callback: PostToolUse"
+      ]
+    },
+    "execution": {
+      "exit_code": 0,
+      "observed_tool_paths": [
+        "spawn_agent"
+      ],
+      "effective_sandbox": "read-only"
+    },
+    "assessment_version": "wd163.1"
+  },
+  {
+    "format_version": "watchdog.probe-result.v1",
+    "record_id": "wd163-codex-cli-post-tool-local-context-code-mode-35d898de82054b03b9d4299ea48e4ac5",
+    "classification": "live_provider",
+    "started_at": "2026-10-14T21:19:50.002860Z",
+    "finished_at": "2026-10-14T21:20:08.902715Z",
+    "provenance": {
+      "provider": {
+        "name": "codex",
+        "version": "codex-cli 0.162.0-alpha.17.2",
+        "surface": "cli"
+      },
+      "harness": {
+        "name": "codex-cli",
+        "version": "codex-cli 0.162.0-alpha.17.2"
+      },
+      "adapter": {
+        "name": "none",
+        "version": null,
+        "invocation": "provider"
+      },
+      "os": {
+        "name": "Windows",
+        "version": null,
+        "architecture": "AMD64"
+      },
+      "source": {
+        "kind": "generated-workload",
+        "sanitized_reference": "wd163-post-tool-local-context-code-mode"
+      },
+      "model": {
+        "name": "gpt-6.1-sol",
+        "reasoning_effort": "low"
+      }
+    },
+    "scope": {
+      "isolation": "Isolated Codex home and scratch Git repository outside registered projects",
+      "expected_callback_kinds": [
+        "PostToolUse"
+      ],
+      "expected_deliveries": 0,
+      "notes": "Noninteractive codex exec",
+      "tool_path": "code_mode",
+      "callback_minimums": {
+        "PostToolUse": 1
+      }
+    },
+    "stages": {
+      "provider_dispatch": {
+        "state": "missing",
+        "attempts": 1,
+        "evidence": "Observed hook callbacks and owned CLI exit status",
+        "detail": null
+      },
+      "adapter": {
+        "state": "not_invoked",
+        "starts": 0,
+        "failure_category": null,
+        "evidence": "The probe calls no Watchdog adapter."
+      },
+      "callbacks": {
+        "expected": 1,
+        "observed": 0,
+        "missing": 1,
+        "missing_attribution": "unknown",
+        "evidence": "Expected callback counts and sanitized input shapes are in capabilities."
+      },
+      "retries": {
+        "count": 0,
+        "scopes": [],
+        "reason": null,
+        "outcome": "not_attempted",
+        "evidence": "One run per case."
+      },
+      "persistence": {
+        "accepted": 0,
+        "losses": [],
+        "evidence": "Not applicable: the probe does not exercise Watchdog persistence."
+      },
+      "end_to_end_delivery": {
+        "expected": 0,
+        "persisted": 0,
+        "read_back": 0,
+        "state": "not_applicable",
+        "failure_attribution": "not_applicable",
+        "failure_detail": null,
+        "evidence": "No Watchdog store; provider effect is recorded separately in capabilities."
+      }
+    },
+    "capabilities": {
+      "post-tool-local-context-code-mode": {
+        "state": "inconclusive",
+        "response_shape": "hookSpecificOutput.additionalContext",
+        "callbacks": {
+          "PostToolUse": {
+            "observed": 0,
+            "input_fields": [],
+            "tool_names": [],
+            "tool_input_types": {}
+          }
+        },
+        "observed_effect": "inconclusive"
+      }
+    },
+    "cleanup": {
+      "resources": [
+        {
+          "kind": "process",
+          "alias": "owned-cli-process-tree",
+          "action": "stopped",
+          "state": "confirmed",
+          "failure_attribution": "not_applicable",
+          "detail": null,
+          "evidence": "Windows job accounting reports zero active processes"
+        },
+        {
+          "kind": "hook_installation",
+          "alias": "isolated-codex-home",
+          "action": "removed",
+          "state": "confirmed",
+          "failure_attribution": "not_applicable",
+          "detail": null,
+          "evidence": "Isolated home removal check; active profile was not modified"
+        },
+        {
+          "kind": "temporary_state",
+          "alias": "scratch-and-rollouts",
+          "action": "removed",
+          "state": "confirmed",
+          "failure_attribution": "not_applicable",
+          "detail": null,
+          "evidence": "Scratch removal check, including authentication copy and provider rollouts"
+        },
+        {
+          "kind": "temporary_state",
+          "alias": "operator-debug-log",
+          "action": "retained",
+          "state": "confirmed",
+          "failure_attribution": "not_applicable",
+          "detail": "Raw diagnostics retained in git-ignored tests/local only.",
+          "evidence": "Exclusive debug-log write completed"
+        }
+      ],
+      "complete": true,
+      "remaining_state": null
+    },
+    "result": {
+      "state": "incomplete",
+      "limitations": [
+        "missing callback: PostToolUse",
+        "One Windows CLI build and one isolated attempt; no cross-version inference."
+      ]
+    },
+    "effect": {
+      "state": "inconclusive",
+      "evidence": "Filtered model/tool output and isolated sentinel read-back",
+      "notes": [
+        "missing callback: PostToolUse"
+      ]
+    },
+    "execution": {
+      "exit_code": 0,
+      "observed_tool_paths": [
+        "spawn_agent"
+      ],
+      "effective_sandbox": "read-only"
+    },
+    "assessment_version": "wd163.1"
+  },
+  {
+    "format_version": "watchdog.probe-result.v1",
+    "record_id": "wd163-codex-cli-pre-tool-mcp-rewrite-code-mode-1d1cfe6dfa044ec39793c51842c3e20e",
+    "classification": "live_provider",
+    "started_at": "2026-10-14T21:20:09.589442Z",
+    "finished_at": "2026-10-14T21:20:22.390323Z",
+    "provenance": {
+      "provider": {
+        "name": "codex",
+        "version": "codex-cli 0.162.0-alpha.17.2",
+        "surface": "cli"
+      },
+      "harness": {
+        "name": "codex-cli",
+        "version": "codex-cli 0.162.0-alpha.17.2"
+      },
+      "adapter": {
+        "name": "none",
+        "version": null,
+        "invocation": "provider"
+      },
+      "os": {
+        "name": "Windows",
+        "version": null,
+        "architecture": "AMD64"
+      },
+      "source": {
+        "kind": "generated-workload",
+        "sanitized_reference": "wd163-pre-tool-mcp-rewrite-code-mode"
+      },
+      "model": {
+        "name": "gpt-6.1-sol",
+        "reasoning_effort": "low"
+      }
+    },
+    "scope": {
+      "isolation": "Isolated Codex home and scratch Git repository outside registered projects",
+      "expected_callback_kinds": [
+        "PreToolUse"
+      ],
+      "expected_deliveries": 0,
+      "notes": "Noninteractive codex exec",
+      "tool_path": "code_mode",
+      "callback_minimums": {
+        "PreToolUse": 1
+      }
+    },
+    "stages": {
+      "provider_dispatch": {
+        "state": "confirmed",
+        "attempts": 1,
+        "evidence": "Observed hook callbacks and owned CLI exit status",
+        "detail": null
+      },
+      "adapter": {
+        "state": "not_invoked",
+        "starts": 0,
+        "failure_category": null,
+        "evidence": "The probe calls no Watchdog adapter."
+      },
+      "callbacks": {
+        "expected": 1,
+        "observed": 1,
+        "missing": 0,
+        "missing_attribution": "not_applicable",
+        "evidence": "Expected callback counts and sanitized input shapes are in capabilities."
+      },
+      "retries": {
+        "count": 0,
+        "scopes": [],
+        "reason": null,
+        "outcome": "not_attempted",
+        "evidence": "One run per case."
+      },
+      "persistence": {
+        "accepted": 0,
+        "losses": [],
+        "evidence": "Not applicable: the probe does not exercise Watchdog persistence."
+      },
+      "end_to_end_delivery": {
+        "expected": 0,
+        "persisted": 0,
+        "read_back": 0,
+        "state": "not_applicable",
+        "failure_attribution": "not_applicable",
+        "failure_detail": null,
+        "evidence": "No Watchdog store; provider effect is recorded separately in capabilities."
+      }
+    },
+    "capabilities": {
+      "pre-tool-mcp-rewrite-code-mode": {
+        "state": "supported",
+        "response_shape": "hookSpecificOutput.permissionDecision=allow,updatedInput.text",
+        "callbacks": {
+          "PreToolUse": {
+            "observed": 1,
+            "input_fields": [
+              "cwd",
+              "hook_event_name",
+              "model",
+              "permission_mode",
+              "session_id",
+              "tool_input",
+              "tool_name",
+              "tool_use_id",
+              "transcript_path",
+              "turn_id"
+            ],
+            "tool_names": [
+              "mcp__probe__emit"
+            ],
+            "tool_input_types": {
+              "text": "str"
+            }
+          }
+        },
+        "observed_effect": "supported"
+      }
+    },
+    "cleanup": {
+      "resources": [
+        {
+          "kind": "process",
+          "alias": "owned-cli-process-tree",
+          "action": "stopped",
+          "state": "confirmed",
+          "failure_attribution": "not_applicable",
+          "detail": null,
+          "evidence": "Windows job accounting reports zero active processes"
+        },
+        {
+          "kind": "hook_installation",
+          "alias": "isolated-codex-home",
+          "action": "removed",
+          "state": "confirmed",
+          "failure_attribution": "not_applicable",
+          "detail": null,
+          "evidence": "Isolated home removal check; active profile was not modified"
+        },
+        {
+          "kind": "temporary_state",
+          "alias": "scratch-and-rollouts",
+          "action": "removed",
+          "state": "confirmed",
+          "failure_attribution": "not_applicable",
+          "detail": null,
+          "evidence": "Scratch removal check, including authentication copy and provider rollouts"
+        },
+        {
+          "kind": "temporary_state",
+          "alias": "operator-debug-log",
+          "action": "retained",
+          "state": "confirmed",
+          "failure_attribution": "not_applicable",
+          "detail": "Raw diagnostics retained in git-ignored tests/local only.",
+          "evidence": "Exclusive debug-log write completed"
+        }
+      ],
+      "complete": true,
+      "remaining_state": null
+    },
+    "result": {
+      "state": "passed",
+      "limitations": [
+        "One Windows CLI build and one isolated attempt; no cross-version inference."
+      ]
+    },
+    "effect": {
+      "state": "supported",
+      "evidence": "Filtered model/tool output and isolated sentinel read-back",
+      "notes": []
+    },
+    "execution": {
+      "exit_code": 0,
+      "observed_tool_paths": [
+        "exec"
+      ],
+      "effective_sandbox": "workspace-write"
+    },
+    "assessment_version": "wd163.1"
+  },
+  {
+    "format_version": "watchdog.probe-result.v1",
+    "record_id": "wd163-codex-cli-pre-tool-apply-patch-rewrite-code-mode-4f953a4c59974529a46d2b02a9400a15",
+    "classification": "live_provider",
+    "started_at": "2026-10-14T21:20:23.046525Z",
+    "finished_at": "2026-10-14T21:20:40.299126Z",
+    "provenance": {
+      "provider": {
+        "name": "codex",
+        "version": "codex-cli 0.162.0-alpha.17.2",
+        "surface": "cli"
+      },
+      "harness": {
+        "name": "codex-cli",
+        "version": "codex-cli 0.162.0-alpha.17.2"
+      },
+      "adapter": {
+        "name": "none",
+        "version": null,
+        "invocation": "provider"
+      },
+      "os": {
+        "name": "Windows",
+        "version": null,
+        "architecture": "AMD64"
+      },
+      "source": {
+        "kind": "generated-workload",
+        "sanitized_reference": "wd163-pre-tool-apply-patch-rewrite-code-mode"
+      },
+      "model": {
+        "name": "gpt-6.1-sol",
+        "reasoning_effort": "low"
+      }
+    },
+    "scope": {
+      "isolation": "Isolated Codex home and scratch Git repository outside registered projects",
+      "expected_callback_kinds": [
+        "PreToolUse"
+      ],
+      "expected_deliveries": 0,
+      "notes": "Noninteractive codex exec",
+      "tool_path": "code_mode",
+      "callback_minimums": {
+        "PreToolUse": 1
+      }
+    },
+    "stages": {
+      "provider_dispatch": {
+        "state": "confirmed",
+        "attempts": 1,
+        "evidence": "Observed hook callbacks and owned CLI exit status",
+        "detail": null
+      },
+      "adapter": {
+        "state": "not_invoked",
+        "starts": 0,
+        "failure_category": null,
+        "evidence": "The probe calls no Watchdog adapter."
+      },
+      "callbacks": {
+        "expected": 2,
+        "observed": 2,
+        "missing": 0,
+        "missing_attribution": "not_applicable",
+        "evidence": "Expected callback counts and sanitized input shapes are in capabilities."
+      },
+      "retries": {
+        "count": 0,
+        "scopes": [],
+        "reason": null,
+        "outcome": "not_attempted",
+        "evidence": "One run per case."
+      },
+      "persistence": {
+        "accepted": 0,
+        "losses": [],
+        "evidence": "Not applicable: the probe does not exercise Watchdog persistence."
+      },
+      "end_to_end_delivery": {
+        "expected": 0,
+        "persisted": 0,
+        "read_back": 0,
+        "state": "not_applicable",
+        "failure_attribution": "not_applicable",
+        "failure_detail": null,
+        "evidence": "No Watchdog store; provider effect is recorded separately in capabilities."
+      }
+    },
+    "capabilities": {
+      "pre-tool-apply-patch-rewrite-code-mode": {
+        "state": "inconclusive",
+        "response_shape": "hookSpecificOutput.permissionDecision=allow,updatedInput.command",
+        "callbacks": {
+          "PreToolUse": {
+            "observed": 2,
+            "input_fields": [
+              "cwd",
+              "hook_event_name",
+              "model",
+              "permission_mode",
+              "session_id",
+              "tool_input",
+              "tool_name",
+              "tool_use_id",
+              "transcript_path",
+              "turn_id"
+            ],
+            "tool_names": [
+              "apply_patch"
+            ],
+            "tool_input_types": {
+              "command": "str"
+            }
+          }
+        },
+        "observed_effect": "inconclusive"
+      }
+    },
+    "cleanup": {
+      "resources": [
+        {
+          "kind": "process",
+          "alias": "owned-cli-process-tree",
+          "action": "stopped",
+          "state": "confirmed",
+          "failure_attribution": "not_applicable",
+          "detail": null,
+          "evidence": "Windows job accounting reports zero active processes"
+        },
+        {
+          "kind": "hook_installation",
+          "alias": "isolated-codex-home",
+          "action": "removed",
+          "state": "confirmed",
+          "failure_attribution": "not_applicable",
+          "detail": null,
+          "evidence": "Isolated home removal check; active profile was not modified"
+        },
+        {
+          "kind": "temporary_state",
+          "alias": "scratch-and-rollouts",
+          "action": "removed",
+          "state": "confirmed",
+          "failure_attribution": "not_applicable",
+          "detail": null,
+          "evidence": "Scratch removal check, including authentication copy and provider rollouts"
+        },
+        {
+          "kind": "temporary_state",
+          "alias": "operator-debug-log",
+          "action": "retained",
+          "state": "confirmed",
+          "failure_attribution": "not_applicable",
+          "detail": "Raw diagnostics retained in git-ignored tests/local only.",
+          "evidence": "Exclusive debug-log write completed"
+        }
+      ],
+      "complete": true,
+      "remaining_state": null
+    },
+    "result": {
+      "state": "incomplete",
+      "limitations": [
+        "the rewritten patch effect was not read back from the sentinel",
+        "One Windows CLI build and one isolated attempt; no cross-version inference."
+      ]
+    },
+    "effect": {
+      "state": "inconclusive",
+      "evidence": "Filtered model/tool output and isolated sentinel read-back",
+      "notes": [
+        "the rewritten patch effect was not read back from the sentinel"
+      ]
+    },
+    "execution": {
+      "exit_code": 0,
+      "observed_tool_paths": [
+        "exec"
+      ],
+      "effective_sandbox": "workspace-write"
+    },
+    "assessment_version": "wd163.1"
+  },
+  {
+    "format_version": "watchdog.probe-result.v1",
+    "record_id": "wd163-codex-cli-pre-tool-bash-rewrite-code-mode-c1f208d0841b439b99e5ef2b3cddb04c",
+    "classification": "live_provider",
+    "started_at": "2026-10-14T21:20:40.955035Z",
+    "finished_at": "2026-10-14T21:20:53.444395Z",
+    "provenance": {
+      "provider": {
+        "name": "codex",
+        "version": "codex-cli 0.162.0-alpha.17.2",
+        "surface": "cli"
+      },
+      "harness": {
+        "name": "codex-cli",
+        "version": "codex-cli 0.162.0-alpha.17.2"
+      },
+      "adapter": {
+        "name": "none",
+        "version": null,
+        "invocation": "provider"
+      },
+      "os": {
+        "name": "Windows",
+        "version": null,
+        "architecture": "AMD64"
+      },
+      "source": {
+        "kind": "generated-workload",
+        "sanitized_reference": "wd163-pre-tool-bash-rewrite-code-mode"
+      },
+      "model": {
+        "name": "gpt-6.1-sol",
+        "reasoning_effort": "low"
+      }
+    },
+    "scope": {
+      "isolation": "Isolated Codex home and scratch Git repository outside registered projects",
+      "expected_callback_kinds": [
+        "PreToolUse"
+      ],
+      "expected_deliveries": 0,
+      "notes": "Noninteractive codex exec",
+      "tool_path": "code_mode",
+      "callback_minimums": {
+        "PreToolUse": 1
+      }
+    },
+    "stages": {
+      "provider_dispatch": {
+        "state": "confirmed",
+        "attempts": 1,
+        "evidence": "Observed hook callbacks and owned CLI exit status",
+        "detail": null
+      },
+      "adapter": {
+        "state": "not_invoked",
+        "starts": 0,
+        "failure_category": null,
+        "evidence": "The probe calls no Watchdog adapter."
+      },
+      "callbacks": {
+        "expected": 1,
+        "observed": 1,
+        "missing": 0,
+        "missing_attribution": "not_applicable",
+        "evidence": "Expected callback counts and sanitized input shapes are in capabilities."
+      },
+      "retries": {
+        "count": 0,
+        "scopes": [],
+        "reason": null,
+        "outcome": "not_attempted",
+        "evidence": "One run per case."
+      },
+      "persistence": {
+        "accepted": 0,
+        "losses": [],
+        "evidence": "Not applicable: the probe does not exercise Watchdog persistence."
+      },
+      "end_to_end_delivery": {
+        "expected": 0,
+        "persisted": 0,
+        "read_back": 0,
+        "state": "not_applicable",
+        "failure_attribution": "not_applicable",
+        "failure_detail": null,
+        "evidence": "No Watchdog store; provider effect is recorded separately in capabilities."
+      }
+    },
+    "capabilities": {
+      "pre-tool-bash-rewrite-code-mode": {
+        "state": "inconclusive",
+        "response_shape": "hookSpecificOutput.permissionDecision=allow,updatedInput.command",
+        "callbacks": {
+          "PreToolUse": {
+            "observed": 1,
+            "input_fields": [
+              "cwd",
+              "hook_event_name",
+              "model",
+              "permission_mode",
+              "session_id",
+              "tool_input",
+              "tool_name",
+              "tool_use_id",
+              "transcript_path",
+              "turn_id"
+            ],
+            "tool_names": [
+              "Bash"
+            ],
+            "tool_input_types": {
+              "command": "str"
+            }
+          }
+        },
+        "observed_effect": "inconclusive"
+      }
+    },
+    "cleanup": {
+      "resources": [
+        {
+          "kind": "process",
+          "alias": "owned-cli-process-tree",
+          "action": "stopped",
+          "state": "confirmed",
+          "failure_attribution": "not_applicable",
+          "detail": null,
+          "evidence": "Windows job accounting reports zero active processes"
+        },
+        {
+          "kind": "hook_installation",
+          "alias": "isolated-codex-home",
+          "action": "removed",
+          "state": "confirmed",
+          "failure_attribution": "not_applicable",
+          "detail": null,
+          "evidence": "Isolated home removal check; active profile was not modified"
+        },
+        {
+          "kind": "temporary_state",
+          "alias": "scratch-and-rollouts",
+          "action": "removed",
+          "state": "confirmed",
+          "failure_attribution": "not_applicable",
+          "detail": null,
+          "evidence": "Scratch removal check, including authentication copy and provider rollouts"
+        },
+        {
+          "kind": "temporary_state",
+          "alias": "operator-debug-log",
+          "action": "retained",
+          "state": "confirmed",
+          "failure_attribution": "not_applicable",
+          "detail": "Raw diagnostics retained in git-ignored tests/local only.",
+          "evidence": "Exclusive debug-log write completed"
+        }
+      ],
+      "complete": true,
+      "remaining_state": null
+    },
+    "result": {
+      "state": "incomplete",
+      "limitations": [
+        "neither rewritten nor original output was read back",
+        "One Windows CLI build and one isolated attempt; no cross-version inference."
+      ]
+    },
+    "effect": {
+      "state": "inconclusive",
+      "evidence": "Filtered model/tool output and isolated sentinel read-back",
+      "notes": [
+        "neither rewritten nor original output was read back"
+      ]
+    },
+    "execution": {
+      "exit_code": 0,
+      "observed_tool_paths": [
+        "exec"
+      ],
+      "effective_sandbox": "read-only"
+    },
+    "assessment_version": "wd163.1"
+  },
+  {
+    "format_version": "watchdog.probe-result.v1",
+    "record_id": "wd163-codex-cli-post-compact-context-d027e26a02554b028ba070d6872381fa",
+    "classification": "live_provider",
+    "started_at": "2026-10-14T21:21:28.721710Z",
+    "finished_at": "2026-10-14T21:24:29.157110Z",
+    "provenance": {
+      "provider": {
+        "name": "codex",
+        "version": "codex-cli 0.162.0-alpha.17.2",
+        "surface": "cli"
+      },
+      "harness": {
+        "name": "codex-cli",
+        "version": "codex-cli 0.162.0-alpha.17.2"
+      },
+      "adapter": {
+        "name": "none",
+        "version": null,
+        "invocation": "provider"
+      },
+      "os": {
+        "name": "Windows",
+        "version": null,
+        "architecture": "AMD64"
+      },
+      "source": {
+        "kind": "generated-workload",
+        "sanitized_reference": "wd163-post-compact-context"
+      },
+      "model": {
+        "name": "gpt-6.1-sol",
+        "reasoning_effort": "low"
+      }
+    },
+    "scope": {
+      "isolation": "Isolated Codex home and scratch Git repository outside registered projects",
+      "expected_callback_kinds": [
+        "PostCompact"
+      ],
+      "expected_deliveries": 0,
+      "notes": "Interactive CLI",
+      "tool_path": "default",
+      "callback_minimums": {
+        "PostCompact": 1
+      }
+    },
+    "stages": {
+      "provider_dispatch": {
+        "state": "confirmed",
+        "attempts": 1,
+        "evidence": "Observed hook callbacks and owned CLI exit status",
+        "detail": null
+      },
+      "adapter": {
+        "state": "not_invoked",
+        "starts": 0,
+        "failure_category": null,
+        "evidence": "The probe calls no Watchdog adapter."
+      },
+      "callbacks": {
+        "expected": 1,
+        "observed": 1,
+        "missing": 0,
+        "missing_attribution": "not_applicable",
+        "evidence": "Expected callback counts and sanitized input shapes are in capabilities."
+      },
+      "retries": {
+        "count": 0,
+        "scopes": [],
+        "reason": null,
+        "outcome": "not_attempted",
+        "evidence": "One run per case."
+      },
+      "persistence": {
+        "accepted": 0,
+        "losses": [],
+        "evidence": "Not applicable: the probe does not exercise Watchdog persistence."
+      },
+      "end_to_end_delivery": {
+        "expected": 0,
+        "persisted": 0,
+        "read_back": 0,
+        "state": "not_applicable",
+        "failure_attribution": "not_applicable",
+        "failure_detail": null,
+        "evidence": "No Watchdog store; provider effect is recorded separately in capabilities."
+      }
+    },
+    "capabilities": {
+      "post-compact-context": {
+        "state": "inconclusive",
+        "response_shape": "hookSpecificOutput.additionalContext",
+        "callbacks": {
+          "PostCompact": {
+            "observed": 1,
+            "input_fields": [
+              "cwd",
+              "hook_event_name",
+              "model",
+              "session_id",
+              "transcript_path",
+              "trigger",
+              "turn_id"
+            ],
+            "tool_names": [],
+            "tool_input_types": {}
+          }
+        },
+        "observed_effect": "inconclusive"
+      }
+    },
+    "cleanup": {
+      "resources": [
+        {
+          "kind": "process",
+          "alias": "owned-cli-process-tree",
+          "action": "stopped",
+          "state": "confirmed",
+          "failure_attribution": "not_applicable",
+          "detail": null,
+          "evidence": "Windows job accounting reports zero active processes"
+        },
+        {
+          "kind": "hook_installation",
+          "alias": "isolated-codex-home",
+          "action": "removed",
+          "state": "confirmed",
+          "failure_attribution": "not_applicable",
+          "detail": null,
+          "evidence": "Isolated home removal check; active profile was not modified"
+        },
+        {
+          "kind": "temporary_state",
+          "alias": "scratch-and-rollouts",
+          "action": "removed",
+          "state": "confirmed",
+          "failure_attribution": "not_applicable",
+          "detail": null,
+          "evidence": "Scratch removal check, including authentication copy and provider rollouts"
+        },
+        {
+          "kind": "temporary_state",
+          "alias": "operator-debug-log",
+          "action": "retained",
+          "state": "confirmed",
+          "failure_attribution": "not_applicable",
+          "detail": "Raw diagnostics retained in git-ignored tests/local only.",
+          "evidence": "Exclusive debug-log write completed"
+        }
+      ],
+      "complete": true,
+      "remaining_state": null
+    },
+    "result": {
+      "state": "incomplete",
+      "limitations": [
+        "Codex timed out before the probe completed",
+        "Codex did not complete the probe",
+        "One Windows CLI build and one isolated attempt; no cross-version inference."
+      ]
+    },
+    "effect": {
+      "state": "inconclusive",
+      "evidence": "Filtered model/tool output and isolated sentinel read-back",
+      "notes": [
+        "Codex timed out before the probe completed",
+        "Codex did not complete the probe"
+      ]
+    },
+    "execution": {
+      "exit_code": 0,
+      "observed_tool_paths": [],
+      "effective_sandbox": "read-only"
+    },
+    "assessment_version": "wd163.1"
+  },
+  {
+    "format_version": "watchdog.probe-result.v1",
+    "record_id": "wd163-codex-cli-interrupt-observe-865b3c2955cf4f19a5169879b50a770f",
+    "classification": "live_provider",
+    "started_at": "2026-10-14T21:23:06.839300Z",
+    "finished_at": "2026-10-14T21:24:59.460848Z",
+    "provenance": {
+      "provider": {
+        "name": "codex",
+        "version": "codex-cli 0.162.0-alpha.17.2",
+        "surface": "cli"
+      },
+      "harness": {
+        "name": "codex-cli",
+        "version": "codex-cli 0.162.0-alpha.17.2"
+      },
+      "adapter": {
+        "name": "none",
+        "version": null,
+        "invocation": "provider"
+      },
+      "os": {
+        "name": "Windows",
+        "version": null,
+        "architecture": "AMD64"
+      },
+      "source": {
+        "kind": "generated-workload",
+        "sanitized_reference": "wd163-interrupt-observe"
+      },
+      "model": {
+        "name": "gpt-6.1-sol",
+        "reasoning_effort": "low"
+      }
+    },
+    "scope": {
+      "isolation": "Isolated Codex home and scratch Git repository outside registered projects",
+      "expected_callback_kinds": [
+        "Interrupt"
+      ],
+      "expected_deliveries": 0,
+      "notes": "Interactive CLI",
+      "tool_path": "default",
+      "callback_minimums": {
+        "Interrupt": 1
+      }
+    },
+    "stages": {
+      "provider_dispatch": {
+        "state": "confirmed",
+        "attempts": 1,
+        "evidence": "Observed hook callbacks and owned CLI exit status",
+        "detail": null
+      },
+      "adapter": {
+        "state": "not_invoked",
+        "starts": 0,
+        "failure_category": null,
+        "evidence": "The probe calls no Watchdog adapter."
+      },
+      "callbacks": {
+        "expected": 1,
+        "observed": 1,
+        "missing": 0,
+        "missing_attribution": "not_applicable",
+        "evidence": "Expected callback counts and sanitized input shapes are in capabilities."
+      },
+      "retries": {
+        "count": 0,
+        "scopes": [],
+        "reason": null,
+        "outcome": "not_attempted",
+        "evidence": "One run per case."
+      },
+      "persistence": {
+        "accepted": 0,
+        "losses": [],
+        "evidence": "Not applicable: the probe does not exercise Watchdog persistence."
+      },
+      "end_to_end_delivery": {
+        "expected": 0,
+        "persisted": 0,
+        "read_back": 0,
+        "state": "not_applicable",
+        "failure_attribution": "not_applicable",
+        "failure_detail": null,
+        "evidence": "No Watchdog store; provider effect is recorded separately in capabilities."
+      }
+    },
+    "capabilities": {
+      "interrupt-observe": {
+        "state": "supported",
+        "response_shape": "{} (observation only)",
+        "callbacks": {
+          "Interrupt": {
+            "observed": 1,
+            "input_fields": [
+              "cwd",
+              "hook_event_name",
+              "model",
+              "permission_mode",
+              "session_id",
+              "transcript_path",
+              "turn_id"
+            ],
+            "tool_names": [],
+            "tool_input_types": {}
+          }
+        },
+        "observed_effect": "supported"
+      }
+    },
+    "cleanup": {
+      "resources": [
+        {
+          "kind": "process",
+          "alias": "owned-cli-process-tree",
+          "action": "stopped",
+          "state": "confirmed",
+          "failure_attribution": "not_applicable",
+          "detail": null,
+          "evidence": "Windows job accounting reports zero active processes"
+        },
+        {
+          "kind": "hook_installation",
+          "alias": "isolated-codex-home",
+          "action": "removed",
+          "state": "confirmed",
+          "failure_attribution": "not_applicable",
+          "detail": null,
+          "evidence": "Isolated home removal check; active profile was not modified"
+        },
+        {
+          "kind": "temporary_state",
+          "alias": "scratch-and-rollouts",
+          "action": "removed",
+          "state": "confirmed",
+          "failure_attribution": "not_applicable",
+          "detail": null,
+          "evidence": "Scratch removal check, including authentication copy and provider rollouts"
+        },
+        {
+          "kind": "temporary_state",
+          "alias": "operator-debug-log",
+          "action": "retained",
+          "state": "confirmed",
+          "failure_attribution": "not_applicable",
+          "detail": "Raw diagnostics retained in git-ignored tests/local only.",
+          "evidence": "Exclusive debug-log write completed"
+        }
+      ],
+      "complete": true,
+      "remaining_state": null
+    },
+    "result": {
+      "state": "passed",
+      "limitations": [
+        "Requires an operator to interrupt the active standalone CLI turn.",
+        "Interrupt callback delivery only; this event has no control effect",
+        "One Windows CLI build and one isolated attempt; no cross-version inference."
+      ]
+    },
+    "effect": {
+      "state": "supported",
+      "evidence": "Filtered model/tool output and isolated sentinel read-back",
+      "notes": [
+        "Interrupt callback delivery only; this event has no control effect"
+      ]
+    },
+    "execution": {
+      "exit_code": 0,
+      "observed_tool_paths": [
+        "exec"
+      ],
+      "effective_sandbox": "read-only"
+    },
+    "assessment_version": "wd163.1"
+  },
+  {
+    "format_version": "watchdog.probe-result.v1",
+    "record_id": "wd163-codex-cli-pre-tool-bash-ask-16c914080ce444f485812f5df9f1f898",
+    "classification": "live_provider",
+    "started_at": "2026-10-14T21:23:55.021382Z",
+    "finished_at": "2026-10-14T21:25:13.995259Z",
+    "provenance": {
+      "provider": {
+        "name": "codex",
+        "version": "codex-cli 0.162.0-alpha.17.2",
+        "surface": "cli"
+      },
+      "harness": {
+        "name": "codex-cli",
+        "version": "codex-cli 0.162.0-alpha.17.2"
+      },
+      "adapter": {
+        "name": "none",
+        "version": null,
+        "invocation": "provider"
+      },
+      "os": {
+        "name": "Windows",
+        "version": null,
+        "architecture": "AMD64"
+      },
+      "source": {
+        "kind": "generated-workload",
+        "sanitized_reference": "wd163-pre-tool-bash-ask"
+      },
+      "model": {
+        "name": "gpt-6.1-sol",
+        "reasoning_effort": "low"
+      }
+    },
+    "scope": {
+      "isolation": "Isolated Codex home and scratch Git repository outside registered projects",
+      "expected_callback_kinds": [
+        "PreToolUse"
+      ],
+      "expected_deliveries": 0,
+      "notes": "Interactive CLI",
+      "tool_path": "default",
+      "callback_minimums": {
+        "PreToolUse": 1
+      }
+    },
+    "stages": {
+      "provider_dispatch": {
+        "state": "confirmed",
+        "attempts": 1,
+        "evidence": "Observed hook callbacks and owned CLI exit status",
+        "detail": null
+      },
+      "adapter": {
+        "state": "not_invoked",
+        "starts": 0,
+        "failure_category": null,
+        "evidence": "The probe calls no Watchdog adapter."
+      },
+      "callbacks": {
+        "expected": 1,
+        "observed": 1,
+        "missing": 0,
+        "missing_attribution": "not_applicable",
+        "evidence": "Expected callback counts and sanitized input shapes are in capabilities."
+      },
+      "retries": {
+        "count": 0,
+        "scopes": [],
+        "reason": null,
+        "outcome": "not_attempted",
+        "evidence": "One run per case."
+      },
+      "persistence": {
+        "accepted": 0,
+        "losses": [],
+        "evidence": "Not applicable: the probe does not exercise Watchdog persistence."
+      },
+      "end_to_end_delivery": {
+        "expected": 0,
+        "persisted": 0,
+        "read_back": 0,
+        "state": "not_applicable",
+        "failure_attribution": "not_applicable",
+        "failure_detail": null,
+        "evidence": "No Watchdog store; provider effect is recorded separately in capabilities."
+      }
+    },
+    "capabilities": {
+      "pre-tool-bash-ask": {
+        "state": "inconclusive",
+        "response_shape": "hookSpecificOutput.permissionDecision=ask",
+        "callbacks": {
+          "PreToolUse": {
+            "observed": 1,
+            "input_fields": [
+              "cwd",
+              "hook_event_name",
+              "model",
+              "permission_mode",
+              "session_id",
+              "tool_input",
+              "tool_name",
+              "tool_use_id",
+              "transcript_path",
+              "turn_id"
+            ],
+            "tool_names": [
+              "Bash"
+            ],
+            "tool_input_types": {
+              "command": "str"
+            }
+          }
+        },
+        "observed_effect": "inconclusive"
+      }
+    },
+    "cleanup": {
+      "resources": [
+        {
+          "kind": "process",
+          "alias": "owned-cli-process-tree",
+          "action": "stopped",
+          "state": "confirmed",
+          "failure_attribution": "not_applicable",
+          "detail": null,
+          "evidence": "Windows job accounting reports zero active processes"
+        },
+        {
+          "kind": "hook_installation",
+          "alias": "isolated-codex-home",
+          "action": "removed",
+          "state": "confirmed",
+          "failure_attribution": "not_applicable",
+          "detail": null,
+          "evidence": "Isolated home removal check; active profile was not modified"
+        },
+        {
+          "kind": "temporary_state",
+          "alias": "scratch-and-rollouts",
+          "action": "removed",
+          "state": "confirmed",
+          "failure_attribution": "not_applicable",
+          "detail": null,
+          "evidence": "Scratch removal check, including authentication copy and provider rollouts"
+        },
+        {
+          "kind": "temporary_state",
+          "alias": "operator-debug-log",
+          "action": "retained",
+          "state": "confirmed",
+          "failure_attribution": "not_applicable",
+          "detail": "Raw diagnostics retained in git-ignored tests/local only.",
+          "evidence": "Exclusive debug-log write completed"
+        }
+      ],
+      "complete": true,
+      "remaining_state": null
+    },
+    "result": {
+      "state": "incomplete",
+      "limitations": [
+        "interactive ask effect needs explicit operator evidence",
+        "One Windows CLI build and one isolated attempt; no cross-version inference."
+      ]
+    },
+    "effect": {
+      "state": "inconclusive",
+      "evidence": "Filtered model/tool output and isolated sentinel read-back",
+      "notes": [
+        "interactive ask effect needs explicit operator evidence"
+      ]
+    },
+    "execution": {
+      "exit_code": 0,
+      "observed_tool_paths": [
+        "exec"
+      ],
+      "effective_sandbox": "workspace-write"
+    },
+    "assessment_version": "wd163.1"
+  },
+  {
+    "format_version": "watchdog.probe-result.v1",
+    "record_id": "wd163-codex-cli-pre-tool-apply-patch-rewrite-7d3c72d9fdf34cbeb0d05b0c60ca46d9",
+    "classification": "live_provider",
+    "started_at": "2026-10-14T21:25:37.178850Z",
+    "finished_at": "2026-10-14T21:26:46.329870Z",
+    "provenance": {
+      "provider": {
+        "name": "codex",
+        "version": "codex-cli 0.162.0-alpha.17.2",
+        "surface": "cli"
+      },
+      "harness": {
+        "name": "codex-cli",
+        "version": "codex-cli 0.162.0-alpha.17.2"
+      },
+      "adapter": {
+        "name": "none",
+        "version": null,
+        "invocation": "provider"
+      },
+      "os": {
+        "name": "Windows",
+        "version": null,
+        "architecture": "AMD64"
+      },
+      "source": {
+        "kind": "generated-workload",
+        "sanitized_reference": "wd163-pre-tool-apply-patch-rewrite"
+      },
+      "model": {
+        "name": "gpt-6.1-sol",
+        "reasoning_effort": "low"
+      }
+    },
+    "scope": {
+      "isolation": "Isolated Codex home and scratch Git repository outside registered projects",
+      "expected_callback_kinds": [
+        "PreToolUse"
+      ],
+      "expected_deliveries": 0,
+      "notes": "Interactive CLI",
+      "tool_path": "default",
+      "callback_minimums": {
+        "PreToolUse": 1
+      }
+    },
+    "stages": {
+      "provider_dispatch": {
+        "state": "confirmed",
+        "attempts": 1,
+        "evidence": "Observed hook callbacks and owned CLI exit status",
+        "detail": null
+      },
+      "adapter": {
+        "state": "not_invoked",
+        "starts": 0,
+        "failure_category": null,
+        "evidence": "The probe calls no Watchdog adapter."
+      },
+      "callbacks": {
+        "expected": 1,
+        "observed": 1,
+        "missing": 0,
+        "missing_attribution": "not_applicable",
+        "evidence": "Expected callback counts and sanitized input shapes are in capabilities."
+      },
+      "retries": {
+        "count": 0,
+        "scopes": [],
+        "reason": null,
+        "outcome": "not_attempted",
+        "evidence": "One run per case."
+      },
+      "persistence": {
+        "accepted": 0,
+        "losses": [],
+        "evidence": "Not applicable: the probe does not exercise Watchdog persistence."
+      },
+      "end_to_end_delivery": {
+        "expected": 0,
+        "persisted": 0,
+        "read_back": 0,
+        "state": "not_applicable",
+        "failure_attribution": "not_applicable",
+        "failure_detail": null,
+        "evidence": "No Watchdog store; provider effect is recorded separately in capabilities."
+      }
+    },
+    "capabilities": {
+      "pre-tool-apply-patch-rewrite": {
+        "state": "supported",
+        "response_shape": "hookSpecificOutput.permissionDecision=allow,updatedInput.command",
+        "callbacks": {
+          "PreToolUse": {
+            "observed": 1,
+            "input_fields": [
+              "cwd",
+              "hook_event_name",
+              "model",
+              "permission_mode",
+              "session_id",
+              "tool_input",
+              "tool_name",
+              "tool_use_id",
+              "transcript_path",
+              "turn_id"
+            ],
+            "tool_names": [
+              "apply_patch"
+            ],
+            "tool_input_types": {
+              "command": "str"
+            }
+          }
+        },
+        "observed_effect": "supported"
+      }
+    },
+    "cleanup": {
+      "resources": [
+        {
+          "kind": "process",
+          "alias": "owned-cli-process-tree",
+          "action": "stopped",
+          "state": "confirmed",
+          "failure_attribution": "not_applicable",
+          "detail": null,
+          "evidence": "Windows job accounting reports zero active processes"
+        },
+        {
+          "kind": "hook_installation",
+          "alias": "isolated-codex-home",
+          "action": "removed",
+          "state": "confirmed",
+          "failure_attribution": "not_applicable",
+          "detail": null,
+          "evidence": "Isolated home removal check; active profile was not modified"
+        },
+        {
+          "kind": "temporary_state",
+          "alias": "scratch-and-rollouts",
+          "action": "removed",
+          "state": "confirmed",
+          "failure_attribution": "not_applicable",
+          "detail": null,
+          "evidence": "Scratch removal check, including authentication copy and provider rollouts"
+        },
+        {
+          "kind": "temporary_state",
+          "alias": "operator-debug-log",
+          "action": "retained",
+          "state": "confirmed",
+          "failure_attribution": "not_applicable",
+          "detail": "Raw diagnostics retained in git-ignored tests/local only.",
+          "evidence": "Exclusive debug-log write completed"
+        }
+      ],
+      "complete": true,
+      "remaining_state": null
+    },
+    "result": {
+      "state": "passed",
+      "limitations": [
+        "One Windows CLI build and one isolated attempt; no cross-version inference."
+      ]
+    },
+    "effect": {
+      "state": "supported",
+      "evidence": "Filtered model/tool output and isolated sentinel read-back",
+      "notes": []
+    },
+    "execution": {
+      "exit_code": 0,
+      "observed_tool_paths": [
+        "exec"
+      ],
+      "effective_sandbox": "workspace-write"
+    },
+    "assessment_version": "wd163.1"
+  },
+  {
+    "format_version": "watchdog.probe-result.v1",
+    "record_id": "wd163-codex-cli-pre-tool-mcp-rewrite-a799a31196fc484b96c1c18f132d5fe4",
+    "classification": "live_provider",
+    "started_at": "2026-10-14T21:31:59.632815Z",
+    "finished_at": "2026-10-14T21:32:17.381460Z",
+    "provenance": {
+      "provider": {
+        "name": "codex",
+        "version": "codex-cli 0.162.0-alpha.17.2",
+        "surface": "cli"
+      },
+      "harness": {
+        "name": "codex-cli",
+        "version": "codex-cli 0.162.0-alpha.17.2"
+      },
+      "adapter": {
+        "name": "none",
+        "version": null,
+        "invocation": "provider"
+      },
+      "os": {
+        "name": "Windows",
+        "version": null,
+        "architecture": "AMD64"
+      },
+      "source": {
+        "kind": "generated-workload",
+        "sanitized_reference": "wd163-pre-tool-mcp-rewrite"
+      },
+      "model": {
+        "name": "gpt-6.1-sol",
+        "reasoning_effort": "low"
+      }
+    },
+    "scope": {
+      "isolation": "Isolated Codex home and scratch Git repository outside registered projects",
+      "expected_callback_kinds": [
+        "PreToolUse"
+      ],
+      "expected_deliveries": 0,
+      "notes": "Noninteractive codex exec",
+      "callback_minimums": {
+        "PreToolUse": 1
+      },
+      "tool_path": "default"
+    },
+    "stages": {
+      "provider_dispatch": {
+        "state": "confirmed",
+        "attempts": 1,
+        "evidence": "Observed hook callbacks and owned CLI exit status",
+        "detail": null
+      },
+      "adapter": {
+        "state": "not_invoked",
+        "starts": 0,
+        "failure_category": null,
+        "evidence": "The probe calls no Watchdog adapter."
+      },
+      "callbacks": {
+        "expected": 1,
+        "observed": 1,
+        "missing": 0,
+        "missing_attribution": "not_applicable",
+        "evidence": "Expected callback counts and sanitized input shapes are in capabilities."
+      },
+      "retries": {
+        "count": 0,
+        "scopes": [],
+        "reason": null,
+        "outcome": "not_attempted",
+        "evidence": "One run per case."
+      },
+      "persistence": {
+        "accepted": 0,
+        "losses": [],
+        "evidence": "Not applicable: the probe does not exercise Watchdog persistence."
+      },
+      "end_to_end_delivery": {
+        "expected": 0,
+        "persisted": 0,
+        "read_back": 0,
+        "state": "not_applicable",
+        "failure_attribution": "not_applicable",
+        "failure_detail": null,
+        "evidence": "No Watchdog store; provider effect is recorded separately in capabilities."
+      }
+    },
+    "capabilities": {
+      "pre-tool-mcp-rewrite": {
+        "state": "supported",
+        "response_shape": "hookSpecificOutput.permissionDecision=allow,updatedInput.text",
+        "callbacks": {
+          "PreToolUse": {
+            "observed": 1,
+            "input_fields": [
+              "cwd",
+              "hook_event_name",
+              "model",
+              "permission_mode",
+              "session_id",
+              "tool_input",
+              "tool_name",
+              "tool_use_id",
+              "transcript_path",
+              "turn_id"
+            ],
+            "tool_names": [
+              "mcp__probe__emit"
+            ],
+            "tool_input_types": {
+              "text": "str"
+            }
+          }
+        },
+        "observed_effect": "supported"
+      }
+    },
+    "cleanup": {
+      "resources": [
+        {
+          "kind": "process",
+          "alias": "owned-cli-process-tree",
+          "action": "stopped",
+          "state": "confirmed",
+          "failure_attribution": "not_applicable",
+          "detail": null,
+          "evidence": "Windows job accounting reports zero active processes"
+        },
+        {
+          "kind": "hook_installation",
+          "alias": "isolated-codex-home",
+          "action": "removed",
+          "state": "confirmed",
+          "failure_attribution": "not_applicable",
+          "detail": null,
+          "evidence": "Isolated home removal check; active profile was not modified"
+        },
+        {
+          "kind": "temporary_state",
+          "alias": "scratch-and-rollouts",
+          "action": "removed",
+          "state": "confirmed",
+          "failure_attribution": "not_applicable",
+          "detail": null,
+          "evidence": "Scratch removal check, including authentication copy and provider rollouts"
+        },
+        {
+          "kind": "temporary_state",
+          "alias": "operator-debug-log",
+          "action": "retained",
+          "state": "confirmed",
+          "failure_attribution": "not_applicable",
+          "detail": "Raw diagnostics retained in git-ignored tests/local only.",
+          "evidence": "Exclusive debug-log write completed"
+        }
+      ],
+      "complete": true,
+      "remaining_state": null
+    },
+    "result": {
+      "state": "passed",
+      "limitations": [
+        "One Windows CLI build and one isolated attempt; no cross-version inference."
+      ]
+    },
+    "effect": {
+      "state": "supported",
+      "evidence": "Filtered model/tool output and isolated sentinel read-back",
+      "notes": []
+    },
+    "execution": {
+      "exit_code": 0,
+      "timed_out": false,
+      "observed_tool_paths": [
+        "exec"
+      ],
+      "effective_sandbox": "workspace-write"
+    },
+    "assessment_version": "wd163.1"
+  }
+]

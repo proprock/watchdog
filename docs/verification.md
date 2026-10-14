@@ -273,6 +273,12 @@ reruns replace the original records for `apply_patch` rewrite and
 inconclusive. Offline coverage is in `tests/test_live_probe.py`; it never
 launches a provider.
 
+### WD-163 corrected Codex CLI control probes
+
+2026-10-14, Windows, primarily Codex CLI 0.162.0-alpha.17.2 (the first two attempts used 0.160.0). The [report](evidence/wd163.md) and [32 new v1 records](evidence/wd163-codex-cli-control.json) separate callbacks, provider effects, runner/version and cleanup. All owned process trees and scratch homes were cleaned. The corrected `apply_patch` rewrite uses `updatedInput.command`; an interactive run confirmed rewritten file contents after a one-time scratch-edit approval. The old WD-139c `updatedInput.patch` result above remains historical and cannot establish unsupported behavior for the correct field.
+
+Interactive permission allow/deny and Interrupt delivery passed; MCP fixture deny/rewrite passed, including a code-mode rewrite. Manual compaction delivered callbacks but rejected the context envelopes; ask's TUI rejected the response, while its machine record remains inconclusive. Generic local-tool and policy-blocked headless/code-mode cells remain gated. Hosted tools were not exercised. These probes change no production adapter renderability; WD-151 retains its surface/version gates. Local verification: full pytest 1,261 passed/1 skipped (85.03 s), focused probe tests 101 passed, Ruff, type check and package build passed. This is not a CI result.
+
 ### WD-139 Claude Code hook-control live probe
 
 2026-10-06, Windows AMD64, Claude Code 2.1.292, `--model haiku`. `scripts/live_probe.py claude-control --all` ran 16 cases, then a second run added 4 (`pre-tool-ask`, `subagent-start-context`, `subagent-stop-block`, `session-end-observe`), one capability per `claude -p` call, each in its own scratch Git repository outside every registered project. Isolation: `--setting-sources ""` plus a per-case `--settings` file holding only that case's hooks (`--safe-mode` and `--bare` disable hooks, so they cannot be used); the installed Watchdog hooks never fired. Read-back comes from `--output-format stream-json`, so no transcript was persisted. The first auth attempt failed (`loggedIn: false`) and the run was repeated after login; one earlier `pre-tool-deny` smoke run gave the same result and is not a separate record.

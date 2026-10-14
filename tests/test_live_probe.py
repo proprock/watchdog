@@ -273,7 +273,7 @@ def test_codex_apply_patch_rewrite_preserves_the_tool_input_shape(monkeypatch, c
     log = tmp_path / "probe.ndjson"
     payload = {
         "hook_event_name": "PreToolUse",
-        "tool_input": {"patch": "*** Begin Patch\n*** End Patch", "other": "preserved"},
+        "tool_input": {"command": "*** Begin Patch\n*** End Patch", "other": "preserved"},
     }
     monkeypatch.setattr(
         live_probe.sys, "stdin", io.TextIOWrapper(io.BytesIO(json.dumps(payload).encode()))
@@ -283,13 +283,14 @@ def test_codex_apply_patch_rewrite_preserves_the_tool_input_shape(monkeypatch, c
 
     output = json.loads(capsys.readouterr().out)["hookSpecificOutput"]["updatedInput"]
     assert output["other"] == "preserved"
-    assert output["patch"] == live_probe._CODEX_APPLY_PATCH_REWRITTEN
+    assert output["command"] == live_probe._CODEX_APPLY_PATCH_REWRITTEN
+    assert "patch" not in output
 
 
 def test_codex_control_response_shapes_name_the_rewritten_input_field():
     assert "updatedInput.command" in live_probe.CODEX_CASES["pre-tool-bash-rewrite"].response_shape
     assert (
-        "updatedInput.patch"
+        "updatedInput.command"
         in live_probe.CODEX_CASES["pre-tool-apply-patch-rewrite"].response_shape
     )
 
