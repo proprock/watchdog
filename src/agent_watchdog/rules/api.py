@@ -1,5 +1,6 @@
 """Decision vocabulary shared by the daemon's decision channel and its rules."""
 
+import sys
 from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Literal
@@ -13,13 +14,8 @@ Action = Literal["allow", "log", "deny", "ask", "rewrite", "context", "block"]
 
 ACTIONS: frozenset[str] = frozenset({"allow", "log", "deny", "ask", "rewrite", "context", "block"})
 
-# The provider/event/action cells the native adapter can render, limited to the
-# cells WD-139 confirmed live on Claude Code (docs/provider-compatibility.md,
-# "Control capability"). Anything else is silence there, so the daemon never
-# reports an action as delivered that the adapter would drop. Codex is
-# intentionally absent until WD-151 confirms which cells it honours; nothing is
-# returned to Codex without live evidence. Keep in step with `render` in
-# native/src/main.rs.
+# Keep the capability contracts in step with `render` in native/src/main.rs.
+# These are provider-probe cells, not production-adapter live acceptance.
 _RENDERABLE: Mapping[str, Mapping[str, frozenset[str]]] = {
     "claude": {
         "PreToolUse": frozenset({"deny", "ask", "rewrite", "context"}),
@@ -33,6 +29,51 @@ _RENDERABLE: Mapping[str, Mapping[str, frozenset[str]]] = {
         "PreCompact": frozenset({"context"}),
     }
 }
+
+_WINDOWS = sys.platform == "win32"
+# Exact deployment profiles are explicitly selected by the installation command,
+# never inferred from hook payloads, PATH, or another surface's installed CLI.
+# A None tool means the event itself is scoped, rather than an arbitrary tool.
+CODEX_CELLS: Mapping[str, tuple[tuple[str, str | None, str], ...]] = {
+    "windows-cli-0.160.0": (
+        ("SessionStart", None, "context"),
+        ("UserPromptSubmit", None, "context"),
+        ("PostToolUse", "Bash", "context"),
+        ("PreToolUse", "Bash", "deny"),
+        ("PreToolUse", "Bash", "rewrite"),
+        ("SubagentStop", None, "block"),
+    ),
+    "windows-cli-exec-0.162.0-alpha.17.2": (
+        ("PreToolUse", "Bash", "context"),
+        ("PreToolUse", "apply_patch", "context"),
+        ("PreToolUse", "apply_patch", "deny"),
+        ("SubagentStart", None, "context"),
+        ("Stop", None, "block"),
+    ),
+    "windows-cli-interactive-0.162.0-alpha.17.2": (("PreToolUse", "apply_patch", "rewrite"),),
+}
+
+
+def subscription_tools(
+    provider: str, event: str, action: str, tool: str | None
+) -> tuple[str | None, ...]:
+    """Possible scoped tools for rule validation and discovery, before a request.
+
+    A wildcard rule is narrowed to the union of probed tools. Runtime delivery
+    still requires the exact deployment profile; discovery grants no permission.
+    """
+    if action == "log":
+        return (tool,)
+    if provider != "codex":
+        return (tool,) if renderable(provider, event, action) else ()
+    found = {
+        scoped_tool
+        for cells in CODEX_CELLS.values()
+        for scoped_event, scoped_tool, scoped_action in cells
+        if (event, action) == (scoped_event, scoped_action)
+        and (tool is None or tool == scoped_tool)
+    }
+    return tuple(sorted(found, key=lambda value: value or ""))
 
 
 @dataclass(frozen=True, slots=True)
@@ -61,11 +102,29 @@ class Decision:
     updated_input: Mapping[str, object] | None = None
     context: str | None = None
     project_id: UUID | None = None
+    capability_gap: str | None = None
+    requested_action: str | None = None
+    codex_control_profile: str | None = None
 
 
 ALLOW = Decision()
 
 
-def renderable(provider: str, event: str, action: str) -> bool:
+def renderable(
+    provider: str,
+    event: str,
+    action: str,
+    *,
+    tool: object = None,
+    codex_control_profile: object = None,
+) -> bool:
     """Whether the adapter can render ``action`` for ``event`` on ``provider``."""
-    return action in _RENDERABLE.get(provider, {}).get(event, frozenset())
+    if provider != "codex":
+        return action in _RENDERABLE.get(provider, {}).get(event, frozenset())
+    if not _WINDOWS or not isinstance(codex_control_profile, str):
+        return False
+    return any(
+        (event, action) == (scoped_event, scoped_action)
+        and (scoped_tool is None or tool == scoped_tool)
+        for scoped_event, scoped_tool, scoped_action in CODEX_CELLS.get(codex_control_profile, ())
+    )

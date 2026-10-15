@@ -78,7 +78,9 @@ Without overrides, locations come from platformdirs. No login service is install
   [rules.md](rules.md)); the first non-`allow` action the adapter can render for
   that provider and event wins. A rule whose `log` action matches answers
   `allow` on the wire and is only recorded, and it is recorded only when no
-  earlier rule delivered an action. Codex always gets `allow` until WD-151.
+  earlier rule delivered an action. Codex control requires an explicit
+  installation-scoped Windows CLI profile and a matching probed cell
+  ([WD-151](evidence/wd151.md)); other deployments remain observation-only.
   The answer is `allow` when the project cannot be resolved from `cwd`, and
   while either kill switch (`[defaults] policy_intervene`, or the project's own)
   is off; the global one cannot be switched back on by a project.

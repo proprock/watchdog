@@ -23,13 +23,18 @@ struct Paths {
     python: PathBuf,
 }
 
-fn arguments() -> Result<(Paths, String)> {
+fn arguments() -> Result<(Paths, String, Option<String>)> {
     let mut values = std::collections::HashMap::new();
     let mut positionals: Vec<String> = Vec::new();
     let mut args = std::env::args().skip(1);
     while let Some(arg) = args.next() {
         match arg.as_str() {
-            "--config" | "--data" | "--runtime" | "--python" | "--installation" => {
+            "--config"
+            | "--data"
+            | "--runtime"
+            | "--python"
+            | "--installation"
+            | "--codex-control-profile" => {
                 values.insert(arg, args.next().ok_or("missing argument")?);
             }
             other if other.starts_with("--") => return Err("unknown argument".into()),
@@ -42,22 +47,23 @@ fn arguments() -> Result<(Paths, String)> {
         }
         _ => return Err("expected: hook <codex|claude>".into()),
     };
-    let mut path = |name: &str| -> Result<PathBuf> {
-        let path = PathBuf::from(values.remove(name).ok_or("missing path")?);
-        if !path.is_absolute() {
-            return Err("absolute paths required".into());
-        }
-        Ok(path)
-    };
-    Ok((
+    let paths = {
+        let mut path = |name: &str| -> Result<PathBuf> {
+            let path = PathBuf::from(values.remove(name).ok_or("missing path")?);
+            if !path.is_absolute() {
+                return Err("absolute paths required".into());
+            }
+            Ok(path)
+        };
         Paths {
             config: path("--config")?,
             data: path("--data")?,
             runtime: path("--runtime")?,
             python: path("--python")?,
-        },
-        provider,
-    ))
+        }
+    };
+    let codex_control_profile = values.remove("--codex-control-profile");
+    Ok((paths, provider, codex_control_profile))
 }
 
 fn paused(paths: &Paths) -> Result<bool> {
@@ -235,6 +241,7 @@ struct Decision {
 fn ask_decision(
     socket: &PolicySocket,
     provider: &str,
+    codex_control_profile: Option<&str>,
     input: &Value,
     event_id: &Uuid,
 ) -> Option<Decision> {
@@ -248,6 +255,7 @@ fn ask_decision(
         "schema_version": DECISION_SCHEMA,
         "token": socket.token,
         "provider": provider,
+        "codex_control_profile": codex_control_profile,
         "event_id": event_id,
         "input": input,
     });
@@ -300,17 +308,26 @@ fn ask_decision(
     })
 }
 
-/// Render a decision as the hook's stdout. Only the Claude cells WD-139
-/// confirmed live are rendered; every other combination is `None` (silence),
+/// Render a decision as the hook's stdout. Only Claude WD-139 and the
+/// installation-scoped Codex WD-151 cells confirmed live are rendered;
+/// every other combination is `None` (silence),
 /// and `allow` is always silence -- an explicit `permissionDecision: "allow"`
-/// would auto-approve the tool and bypass the user's permission rules. Codex
-/// is never rendered here (WD-151). Keep in step with `_RENDERABLE` in
+/// would auto-approve the tool and bypass the user's permission rules. Keep in
+/// step with `_RENDERABLE` in
 /// `agent_watchdog/rules/api.py`.
-fn render(provider: &str, input: &Value, decision: &Decision) -> Option<Value> {
+fn render(
+    provider: &str,
+    codex_control_profile: Option<&str>,
+    input: &Value,
+    decision: &Decision,
+) -> Option<Value> {
+    let event = identifier(input, "hook_event_name")?;
+    if provider == "codex" {
+        return render_codex(codex_control_profile?, event, input, decision);
+    }
     if provider != "claude" {
         return None;
     }
-    let event = identifier(input, "hook_event_name")?;
     let reason = || {
         decision
             .reason
@@ -349,6 +366,72 @@ fn render(provider: &str, input: &Value, decision: &Decision) -> Option<Value> {
         }
         _ => None,
     }
+}
+
+fn render_codex(profile: &str, event: &str, input: &Value, decision: &Decision) -> Option<Value> {
+    if !cfg!(windows) {
+        return None;
+    }
+    let tool = identifier(input, "tool_name");
+    let reason = || {
+        decision
+            .reason
+            .clone()
+            .unwrap_or_else(|| "Blocked by a Watchdog rule.".to_owned())
+    };
+    let output = match (profile, event, tool, decision.action.as_str()) {
+        ("windows-cli-0.160.0", "SessionStart" | "UserPromptSubmit", _, "context")
+        | ("windows-cli-0.160.0", "PostToolUse", Some("Bash"), "context")
+        | ("windows-cli-exec-0.162.0-alpha.17.2", "PreToolUse", Some("Bash"), "context")
+        | ("windows-cli-exec-0.162.0-alpha.17.2", "PreToolUse", Some("apply_patch"), "context")
+        | ("windows-cli-exec-0.162.0-alpha.17.2", "SubagentStart", _, "context") => json!({
+            "hookSpecificOutput": {
+                "hookEventName": event,
+                "additionalContext": decision.context.clone()?,
+            }
+        }),
+        ("windows-cli-0.160.0", "PreToolUse", Some("Bash"), "deny")
+        | ("windows-cli-exec-0.162.0-alpha.17.2", "PreToolUse", Some("apply_patch"), "deny") => {
+            json!({
+                "hookSpecificOutput": {
+                    "hookEventName": event,
+                    "permissionDecision": "deny",
+                    "permissionDecisionReason": reason(),
+                }
+            })
+        }
+        ("windows-cli-0.160.0", "PreToolUse", Some("Bash"), "rewrite")
+        | (
+            "windows-cli-interactive-0.162.0-alpha.17.2",
+            "PreToolUse",
+            Some("apply_patch"),
+            "rewrite",
+        ) if input["tool_input"].is_object()
+            && input["tool_input"]["command"].is_string()
+            && decision
+                .updated_input
+                .as_ref()
+                .is_some_and(|updated| updated.is_object() && updated["command"].is_string()) =>
+        {
+            json!({
+                "hookSpecificOutput": {
+                    "hookEventName": event,
+                    "updatedInput": decision.updated_input.clone()?,
+                }
+            })
+        }
+        ("windows-cli-0.160.0", "SubagentStop", _, "block")
+        | ("windows-cli-exec-0.162.0-alpha.17.2", "Stop", _, "block")
+            if !stop_continuing(event, input) =>
+        {
+            json!({
+                "decision": "block",
+                "reason": reason(),
+            })
+        }
+        _ => return None,
+    };
+    Some(output)
 }
 
 /// A `Stop`/`SubagentStop` already continuing from an earlier block carries
@@ -422,6 +505,7 @@ fn ensure_daemon(paths: &Paths) -> Result<()> {
 fn observe(
     paths: &Paths,
     provider: &str,
+    codex_control_profile: Option<&str>,
     event_hint: &mut Option<String>,
 ) -> Result<Option<Value>> {
     if paused(paths)? || !paths.config.exists() {
@@ -467,8 +551,8 @@ fn observe(
             if socket.subscribed(provider, event, identifier(&input, "tool_name"))
                 && !stop_continuing(event, &input) =>
         {
-            ask_decision(&socket, provider, &input, &event_id)
-                .and_then(|decision| render(provider, &input, &decision))
+            ask_decision(&socket, provider, codex_control_profile, &input, &event_id)
+                .and_then(|decision| render(provider, codex_control_profile, &input, &decision))
         }
         _ => None,
     };
@@ -547,14 +631,20 @@ fn main() {
     if std::env::args().any(|arg| arg == "--help") {
         println!(
             "agent-watchdog-hook --python PATH --config PATH --data PATH --runtime PATH \
+             [--codex-control-profile VALUE] \
              hook <codex|claude>"
         );
         return;
     }
     let mut deny_stdout: Option<Value> = None;
-    if let Ok((paths, provider)) = arguments() {
+    if let Ok((paths, provider, codex_control_profile)) = arguments() {
         let mut event_hint = None;
-        match observe(&paths, &provider, &mut event_hint) {
+        match observe(
+            &paths,
+            &provider,
+            codex_control_profile.as_deref(),
+            &mut event_hint,
+        ) {
             Ok(value) => deny_stdout = value,
             Err(error) => {
                 disk::loss(&paths.data, 2);
@@ -621,7 +711,7 @@ mod tests {
     #[test]
     fn render_denies_a_claude_pretooluse_with_the_reason() {
         let input = json!({"hook_event_name": "PreToolUse"});
-        let output = render("claude", &input, &decision("deny")).unwrap();
+        let output = render("claude", None, &input, &decision("deny")).unwrap();
         assert_eq!(output["hookSpecificOutput"]["permissionDecision"], "deny");
         assert_eq!(
             output["hookSpecificOutput"]["permissionDecisionReason"],
@@ -632,17 +722,17 @@ mod tests {
     #[test]
     fn render_keeps_allow_and_codex_silent() {
         let input = json!({"hook_event_name": "PreToolUse"});
-        assert!(render("claude", &input, &decision("allow")).is_none());
-        assert!(render("codex", &input, &decision("deny")).is_none());
+        assert!(render("claude", None, &input, &decision("allow")).is_none());
+        assert!(render("codex", None, &input, &decision("deny")).is_none());
     }
 
     #[test]
     fn render_never_blocks_a_stop_that_is_already_continuing() {
         let continuing = json!({"hook_event_name": "Stop", "stop_hook_active": true});
         let first = json!({"hook_event_name": "Stop", "stop_hook_active": false});
-        assert!(render("claude", &continuing, &decision("block")).is_none());
+        assert!(render("claude", None, &continuing, &decision("block")).is_none());
         assert_eq!(
-            render("claude", &first, &decision("block")).unwrap()["decision"],
+            render("claude", None, &first, &decision("block")).unwrap()["decision"],
             "block"
         );
     }
@@ -650,10 +740,10 @@ mod tests {
     #[test]
     fn render_needs_an_object_to_rewrite() {
         let input = json!({"hook_event_name": "PreToolUse"});
-        assert!(render("claude", &input, &decision("rewrite")).is_none());
+        assert!(render("claude", None, &input, &decision("rewrite")).is_none());
         let mut with_input = decision("rewrite");
         with_input.updated_input = Some(json!({"command": "ls"}));
-        let output = render("claude", &input, &with_input).unwrap();
+        let output = render("claude", None, &input, &with_input).unwrap();
         assert_eq!(output["hookSpecificOutput"]["permissionDecision"], "allow");
         assert_eq!(
             output["hookSpecificOutput"]["updatedInput"]["command"],
@@ -714,7 +804,7 @@ mod tests {
             subscriptions: Vec::new(),
         };
         let input = json!({"hook_event_name": "PreToolUse"});
-        let decision = ask_decision(&socket, "claude", &input, &Uuid::new_v4()).unwrap();
+        let decision = ask_decision(&socket, "claude", None, &input, &Uuid::new_v4()).unwrap();
         server.join().unwrap();
         assert_eq!(decision.action, "deny");
         assert_eq!(decision.reason.as_deref(), Some("no"));

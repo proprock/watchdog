@@ -22,7 +22,7 @@ from pydantic import ValidationError, field_validator, model_validator
 from agent_watchdog.analysis import model_family_matches
 from agent_watchdog.config import RuleName
 from agent_watchdog.models import NonNegative, Positive, StrictModel, Versioned
-from agent_watchdog.rules.api import ALLOW, Context, Decision, renderable
+from agent_watchdog.rules.api import ALLOW, Context, Decision, subscription_tools
 from agent_watchdog.state import SessionState, trailing_repeats
 
 # The scan window for `input_regex`/`error_regex`, so a pathological pattern meets
@@ -45,6 +45,7 @@ HookEvent = Literal[
     "UserPromptSubmit",
     "Stop",
     "SubagentStop",
+    "SubagentStart",
     "SessionStart",
     "PreCompact",
 ]
@@ -189,7 +190,9 @@ class DeclarativeRule(Versioned):
         # Recording an action as sent while the adapter drops it would be a false
         # audit trail, so a rule may only ask for what some listed provider renders.
         kind = self.action.kind
-        if kind != "log" and not any(renderable(p, self.event, kind) for p in self.provider):
+        if not any(
+            subscription_tools(p, self.event, kind, self.match.tool_name) for p in self.provider
+        ):
             raise ValueError(f"The {kind} action cannot be delivered on {self.event}")
         return self
 

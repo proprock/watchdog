@@ -633,8 +633,8 @@ def test_decide_only_judges_a_claude_agent_spawn_with_a_model(paths, tmp_path, v
     assert _decide(paths, hook_input, session=_coordinator()).action == "allow"
 
 
-def test_decide_never_returns_an_action_for_codex(paths, tmp_path):
-    """Nothing is returned to Codex without live evidence (WD-151)."""
+def test_claude_agent_rule_does_not_apply_to_codex(paths, tmp_path):
+    """The Claude model-tier policy does not infer Codex model capabilities."""
     root, _ = _same_model_setup(paths, tmp_path)
     session = SessionState("codex", "session-1", "", coordinator_model="claude-opus-5-5")
     decision = _decide(paths, _agent_input(root, model="opus"), provider="codex", session=session)

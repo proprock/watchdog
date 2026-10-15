@@ -1,0 +1,197 @@
+{
+  "format_version": "watchdog.probe-result.v1",
+  "record_id": "wd151-production-pre-tool-apply-patch-deny-81f8bf0781e447989aefee29b6be2de9",
+  "classification": "live_provider",
+  "started_at": "2026-10-14T22:11:20.599364Z",
+  "finished_at": "2026-10-14T22:11:42.094591Z",
+  "provenance": {
+    "provider": {
+      "name": "codex",
+      "version": "codex-cli 0.162.0-alpha.17.2",
+      "surface": "cli"
+    },
+    "harness": {
+      "name": "codex-cli",
+      "version": "codex-cli 0.162.0-alpha.17.2"
+    },
+    "adapter": {
+      "name": "agent-watchdog-hook",
+      "version": "agent-watchdog-hook 0.1.5 (providers: codex, claude; decision schema 2)",
+      "invocation": "scratch Codex hook wrapper invoking native adapter"
+    },
+    "os": {
+      "name": "Windows",
+      "version": null,
+      "architecture": "AMD64"
+    },
+    "source": {
+      "kind": "generated-workload",
+      "sanitized_reference": "wd151-production-scratch"
+    },
+    "model": {
+      "name": "gpt-6.1-sol",
+      "reasoning_effort": "low"
+    }
+  },
+  "scope": {
+    "isolation": "Scratch Codex home, project, Watchdog config, data, and runtime",
+    "expected_callback_kinds": [
+      "PreToolUse"
+    ],
+    "expected_deliveries": 1,
+    "notes": "Real native adapter and in-process daemon decision channel; native spool ingested with daemon implementation",
+    "callback_minimums": {
+      "PreToolUse": 1
+    },
+    "tool_path": "default"
+  },
+  "stages": {
+    "provider_dispatch": {
+      "state": "confirmed",
+      "attempts": 1,
+      "evidence": "Observed hook callbacks and owned CLI exit status",
+      "detail": null
+    },
+    "adapter": {
+      "state": "failed",
+      "starts": 3,
+      "failure_category": "response_not_rendered",
+      "evidence": "Native stdout parsed from same-run callback diagnostics"
+    },
+    "callbacks": {
+      "expected": 2,
+      "observed": 2,
+      "missing": 0,
+      "missing_attribution": "not_applicable",
+      "evidence": "Expected callback counts and sanitized input shapes are in capabilities."
+    },
+    "retries": {
+      "count": 0,
+      "scopes": [],
+      "reason": null,
+      "outcome": "not_attempted",
+      "evidence": "One run per case."
+    },
+    "persistence": {
+      "accepted": 3,
+      "losses": [],
+      "evidence": "Native spool ingested via daemon _drain_spool and Store Inbox.drain"
+    },
+    "end_to_end_delivery": {
+      "expected": 1,
+      "persisted": 0,
+      "read_back": 0,
+      "state": "missing",
+      "failure_attribution": "daemon_or_store",
+      "failure_detail": null,
+      "evidence": "Approved deny envelope linked to native PreToolUse read back from scratch Store"
+    }
+  },
+  "capabilities": {
+    "pre-tool-apply-patch-deny": {
+      "state": "inconclusive",
+      "response_shape": "hookSpecificOutput.permissionDecision=deny",
+      "callbacks": {
+        "PreToolUse": {
+          "observed": 2,
+          "input_fields": [
+            "cwd",
+            "hook_event_name",
+            "model",
+            "permission_mode",
+            "session_id",
+            "tool_input",
+            "tool_name",
+            "tool_use_id",
+            "transcript_path",
+            "turn_id"
+          ],
+          "tool_names": [
+            "apply_patch"
+          ],
+          "tool_input_types": {
+            "command": "str"
+          }
+        }
+      },
+      "observed_effect": "inconclusive"
+    }
+  },
+  "cleanup": {
+    "resources": [
+      {
+        "kind": "process",
+        "alias": "owned-cli-process-tree",
+        "action": "stopped",
+        "state": "confirmed",
+        "failure_attribution": "not_applicable",
+        "detail": null,
+        "evidence": "Windows job accounting reports zero active processes"
+      },
+      {
+        "kind": "hook_installation",
+        "alias": "isolated-codex-home",
+        "action": "removed",
+        "state": "confirmed",
+        "failure_attribution": "not_applicable",
+        "detail": null,
+        "evidence": "Isolated home removal check; active profile was not modified"
+      },
+      {
+        "kind": "temporary_state",
+        "alias": "scratch-and-rollouts",
+        "action": "removed",
+        "state": "confirmed",
+        "failure_attribution": "not_applicable",
+        "detail": null,
+        "evidence": "Scratch removal check, including authentication copy and provider rollouts"
+      },
+      {
+        "kind": "temporary_state",
+        "alias": "operator-debug-log",
+        "action": "retained",
+        "state": "confirmed",
+        "failure_attribution": "not_applicable",
+        "detail": "Raw diagnostics retained in git-ignored tests/local only.",
+        "evidence": "Exclusive debug-log write completed"
+      }
+    ],
+    "complete": true,
+    "remaining_state": null
+  },
+  "result": {
+    "state": "incomplete",
+    "limitations": [
+      "the operation did not run but the deny reason was not read back",
+      "One Windows CLI build and one isolated attempt; no cross-version inference.",
+      "Production control requires adapter rendering, provider effect, persisted control, and cleanup"
+    ]
+  },
+  "effect": {
+    "state": "inconclusive",
+    "evidence": "Filtered model/tool output and isolated sentinel read-back",
+    "notes": [
+      "the operation did not run but the deny reason was not read back"
+    ]
+  },
+  "production_adapter": {
+    "version": "agent-watchdog-hook 0.1.5 (providers: codex, claude; decision schema 2)",
+    "decision_schema": 2,
+    "control_profile": "windows-cli-exec-0.162.0-alpha.17.2",
+    "callback_count": 2,
+    "rendered_deny": false,
+    "spooled_events": 3,
+    "spooled_patch_events": 2,
+    "stored_control_events": 0,
+    "persisted_controls": 0,
+    "ingestion": "in-process daemon _drain_spool and Store Inbox.drain"
+  },
+  "execution": {
+    "exit_code": 0,
+    "timed_out": false,
+    "observed_tool_paths": [
+      "exec"
+    ],
+    "effective_sandbox": "workspace-write"
+  }
+}

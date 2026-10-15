@@ -1,3 +1,4 @@
+import hashlib
 import io
 import json
 import socket
@@ -15,11 +16,17 @@ from agent_watchdog.config import (
     ConfigError,
     Limits,
     Project,
+    Rules,
     UserPaths,
     load_config,
     save_config,
 )
-from agent_watchdog.daemon import _drain_spool, write_spool_limits
+from agent_watchdog.daemon import (
+    _drain_spool,
+    _policy_server,
+    _SessionTracker,
+    write_spool_limits,
+)
 from agent_watchdog.events import Envelope
 from agent_watchdog.storage import Inbox, Store, writer_lock
 
@@ -37,7 +44,9 @@ def native_setup(tmp_path):
         yield paths, project
 
 
-def invoke(binary, paths, payload, provider="codex", extra_args=()):
+def invoke(binary, paths, payload, provider="codex", extra_args=(), control_profile=None):
+    if control_profile is not None:
+        extra_args = (*extra_args, "--codex-control-profile", control_profile)
     return subprocess.run(
         [
             str(binary),
@@ -1088,6 +1097,299 @@ def test_native_never_renders_a_decision_for_codex(rust_adapter, native_setup):
         server.close()
     assert result.stdout == "{}\n"
     assert spool_files(paths)
+
+
+@pytest.mark.skipif(sys.platform != "win32", reason="Codex control profiles are Windows-only")
+@pytest.mark.parametrize(
+    ("profile", "event", "tool", "action", "updated", "context", "expected"),
+    [
+        ("windows-cli-0.160.0", "SessionStart", None, "context", None, "ctx", "context"),
+        ("windows-cli-0.160.0", "UserPromptSubmit", None, "context", None, "ctx", "context"),
+        ("windows-cli-0.160.0", "PostToolUse", "Bash", "context", None, "ctx", "context"),
+        ("windows-cli-0.160.0", "PreToolUse", "Bash", "deny", None, None, "deny"),
+        (
+            "windows-cli-0.160.0",
+            "PreToolUse",
+            "Bash",
+            "rewrite",
+            {"command": "echo changed"},
+            None,
+            "rewrite",
+        ),
+        ("windows-cli-0.160.0", "SubagentStop", None, "block", None, None, "block"),
+        (
+            "windows-cli-exec-0.162.0-alpha.17.2",
+            "PreToolUse",
+            "Bash",
+            "context",
+            None,
+            "ctx",
+            "context",
+        ),
+        (
+            "windows-cli-exec-0.162.0-alpha.17.2",
+            "PreToolUse",
+            "apply_patch",
+            "deny",
+            None,
+            None,
+            "deny",
+        ),
+        (
+            "windows-cli-exec-0.162.0-alpha.17.2",
+            "PreToolUse",
+            "apply_patch",
+            "context",
+            None,
+            "ctx",
+            "context",
+        ),
+        (
+            "windows-cli-exec-0.162.0-alpha.17.2",
+            "SubagentStart",
+            None,
+            "context",
+            None,
+            "ctx",
+            "context",
+        ),
+        ("windows-cli-exec-0.162.0-alpha.17.2", "Stop", None, "block", None, None, "block"),
+        (
+            "windows-cli-interactive-0.162.0-alpha.17.2",
+            "PreToolUse",
+            "apply_patch",
+            "rewrite",
+            {"command": "echo changed"},
+            None,
+            "rewrite",
+        ),
+        # Same event/action with an unsupported tool or profile must stay silent.
+        ("windows-cli-0.160.0", "PreToolUse", "apply_patch", "deny", None, None, None),
+        ("windows-cli-0.160.0", "SessionStart", None, "deny", None, None, None),
+        ("windows-cli-exec-0.162.0-alpha.17.2", "PreToolUse", "Bash", "deny", None, None, None),
+        (
+            "windows-cli-interactive-0.162.0-alpha.17.2",
+            "PreToolUse",
+            "apply_patch",
+            "deny",
+            None,
+            None,
+            None,
+        ),
+        (
+            "windows-cli-interactive-0.162.0-alpha.17.2",
+            "PreToolUse",
+            "Bash",
+            "rewrite",
+            {"command": "echo changed"},
+            None,
+            None,
+        ),
+        ("unknown-profile", "PreToolUse", "Bash", "deny", None, None, None),
+    ],
+)
+def test_native_codex_control_profiles_render_only_confirmed_cells(
+    rust_adapter, native_setup, profile, event, tool, action, updated, context, expected
+):
+    from agent_watchdog.rules.api import renderable
+
+    paths, project = native_setup
+    subscriptions = [{"provider": "codex", "hook_event_name": event, "tool_name": tool}]
+    server = _FakePolicyServer(paths, subscriptions=subscriptions).respond(
+        action, reason="reason", context=context, updated_input=updated
+    )
+    payload = hook_input(project, event, tool_name=tool, tool_input={"command": "echo original"})
+    payload["codex_control_profile"] = "spoofed-by-payload"
+    try:
+        result = invoke(
+            rust_adapter,
+            paths,
+            payload,
+            provider="codex",
+            control_profile=profile,
+        )
+    finally:
+        server.close()
+
+    output = json.loads(result.stdout)
+    assert (output != {}) == renderable(
+        "codex", event, action, tool=tool, codex_control_profile=profile
+    )
+    if expected is None:
+        assert output == {}
+    elif expected == "context":
+        assert output == {
+            "hookSpecificOutput": {"hookEventName": event, "additionalContext": "ctx"}
+        }
+    elif expected == "deny":
+        assert output == {
+            "hookSpecificOutput": {
+                "hookEventName": event,
+                "permissionDecision": "deny",
+                "permissionDecisionReason": "reason",
+            }
+        }
+    elif expected == "rewrite":
+        assert output == {"hookSpecificOutput": {"hookEventName": event, "updatedInput": updated}}
+        assert "permissionDecision" not in output["hookSpecificOutput"]
+    else:
+        assert output == {"decision": "block", "reason": "reason"}
+
+    assert server.requests[0]["codex_control_profile"] == profile
+    assert server.requests[0]["input"]["codex_control_profile"] == "spoofed-by-payload"
+
+
+@pytest.mark.skipif(sys.platform != "win32", reason="Codex control profiles are Windows-only")
+def test_native_codex_control_is_silent_without_installation_profile(rust_adapter, native_setup):
+    paths, project = native_setup
+    server = _FakePolicyServer(
+        paths,
+        subscriptions=[{"provider": "codex", "hook_event_name": "PreToolUse", "tool_name": "Bash"}],
+    ).respond("deny", reason="no")
+    try:
+        result = invoke(
+            rust_adapter,
+            paths,
+            hook_input(project, "PreToolUse", tool_name="Bash", tool_input={"command": "ls"}),
+        )
+    finally:
+        server.close()
+    assert result.stdout == "{}\n"
+    assert server.requests[0].get("codex_control_profile") is None
+
+
+@pytest.mark.skipif(sys.platform != "win32", reason="Codex control profiles are Windows-only")
+@pytest.mark.parametrize("bad_response", ["malformed", "invalid-rewrite"])
+def test_native_codex_control_fails_open_on_bad_daemon_response(
+    rust_adapter, native_setup, bad_response
+):
+    paths, project = native_setup
+    server = _FakePolicyServer(
+        paths,
+        subscriptions=[{"provider": "codex", "hook_event_name": "PreToolUse", "tool_name": "Bash"}],
+    )
+    if bad_response == "malformed":
+        server.respond_malformed()
+    else:
+        server.respond("rewrite", updated_input={"command": 42})
+    try:
+        result = invoke(
+            rust_adapter,
+            paths,
+            hook_input(
+                project, "PreToolUse", tool_name="Bash", tool_input={"command": "echo original"}
+            ),
+            control_profile="windows-cli-0.160.0",
+        )
+    finally:
+        server.close()
+    assert result.stdout == "{}\n"
+
+
+@pytest.mark.skipif(sys.platform != "win32", reason="Codex control profiles are Windows-only")
+def test_native_codex_stop_guard_does_not_query_daemon_while_continuing(rust_adapter, native_setup):
+    paths, project = native_setup
+    server = _FakePolicyServer(
+        paths, subscriptions=[{"provider": "codex", "hook_event_name": "Stop", "tool_name": None}]
+    ).respond("block", reason="do not loop")
+    try:
+        result = invoke(
+            rust_adapter,
+            paths,
+            {
+                "cwd": str(project.root),
+                "hook_event_name": "Stop",
+                "stop_hook_active": True,
+            },
+            control_profile="windows-cli-exec-0.162.0-alpha.17.2",
+        )
+    finally:
+        server.close()
+    assert result.stdout == "{}\n"
+    assert server.connections == 0
+
+
+@pytest.mark.skipif(sys.platform != "win32", reason="Codex control profiles are Windows-only")
+@pytest.mark.parametrize(
+    ("profile", "event", "tool", "action", "expected"),
+    [
+        ("windows-cli-0.160.0", "SessionStart", None, "context", "context"),
+        ("windows-cli-0.160.0", "UserPromptSubmit", None, "context", "context"),
+        ("windows-cli-0.160.0", "PostToolUse", "Bash", "context", "context"),
+        ("windows-cli-0.160.0", "PreToolUse", "Bash", "deny", "deny"),
+        ("windows-cli-0.160.0", "PreToolUse", "Bash", "rewrite", "rewrite"),
+        ("windows-cli-0.160.0", "SubagentStop", None, "block", "block"),
+        ("windows-cli-exec-0.162.0-alpha.17.2", "PreToolUse", "Bash", "context", "context"),
+        ("windows-cli-exec-0.162.0-alpha.17.2", "PreToolUse", "apply_patch", "deny", "deny"),
+        ("windows-cli-exec-0.162.0-alpha.17.2", "PreToolUse", "apply_patch", "context", "context"),
+        ("windows-cli-exec-0.162.0-alpha.17.2", "SubagentStart", None, "context", "context"),
+        ("windows-cli-exec-0.162.0-alpha.17.2", "Stop", None, "block", "block"),
+        (
+            "windows-cli-interactive-0.162.0-alpha.17.2",
+            "PreToolUse",
+            "apply_patch",
+            "rewrite",
+            "rewrite",
+        ),
+    ],
+)
+def test_native_codex_profile_round_trips_through_approved_daemon_rule(
+    rust_adapter, native_setup, profile, event, tool, action, expected
+):
+    import tomli_w
+
+    paths, project = native_setup
+    rule_path = paths.config.parent / "rules" / "native_codex_control.toml"
+    rule_path.parent.mkdir(exist_ok=True)
+    rule = {
+        "schema_version": 1,
+        "name": "native_codex_control",
+        "version": "1",
+        "origin": "user",
+        "provider": ["codex"],
+        "event": event,
+        "match": {} if tool is None else {"tool_name": tool},
+        "action": {"kind": action, "message": "Watchdog native control test."},
+    }
+    if action == "rewrite":
+        rule["action"]["rewrite"] = {"tool_input.command": "echo rewritten"}
+    rule_path.write_text(tomli_w.dumps(rule), encoding="utf-8")
+    config = load_config(paths.config)
+    digest = hashlib.sha256(rule_path.read_bytes()).hexdigest()
+    save_config(
+        paths.config,
+        config.model_copy(update={"rules": Rules(approved={"native_codex_control": digest})}),
+    )
+    payload = hook_input(
+        project,
+        event,
+        tool_name=tool,
+        tool_input={"command": "echo original"} if tool is not None else None,
+    )
+    # The adapter's flag is authoritative; this untrusted payload field must not win.
+    payload["codex_control_profile"] = "spoofed-by-payload"
+
+    with _policy_server(paths, _SessionTracker()):
+        result = invoke(
+            rust_adapter,
+            paths,
+            payload,
+            provider="codex",
+            control_profile=profile,
+        )
+
+    output = json.loads(result.stdout)
+    if expected == "context":
+        assert output["hookSpecificOutput"]["hookEventName"] == event
+        assert output["hookSpecificOutput"]["additionalContext"]
+    elif expected == "deny":
+        assert output["hookSpecificOutput"]["permissionDecision"] == "deny"
+    elif expected == "rewrite":
+        specific = output["hookSpecificOutput"]
+        assert specific["updatedInput"]["command"] == "echo rewritten"
+        assert "permissionDecision" not in specific
+    else:
+        assert output == {"decision": "block", "reason": "Watchdog native control test."}
 
 
 @pytest.mark.parametrize(

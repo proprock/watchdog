@@ -10,13 +10,13 @@ a few comparisons.
 import threading
 import time
 from collections.abc import Callable, Mapping
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime
 from pathlib import Path
 
 from agent_watchdog.config import Config, Project, UserPaths
 from agent_watchdog.registry import Registry
-from agent_watchdog.rules.api import ALLOW, Context, Decision, renderable
+from agent_watchdog.rules.api import ALLOW, CODEX_CELLS, Context, Decision, renderable
 from agent_watchdog.rules.declarative import DeclarativeRule, evaluate
 from agent_watchdog.rules.registry import RuleRegistry
 from agent_watchdog.state import SessionState
@@ -92,6 +92,26 @@ class _Throttle:
 class Engine:
     registry: RuleRegistry
     throttle: _Throttle
+    gaps: dict[tuple[str, str, str, str], float] = field(default_factory=dict)
+    gap_lock: threading.Lock = field(default_factory=threading.Lock)
+
+    def record_gap(self, rule: DeclarativeRule, profile: object, project: Project) -> bool:
+        """At most one gap per rule/version/profile/project per ten minutes.
+
+        Unrecognized attribution shares one bucket; payload data cannot grow the
+        keys. Gap reporting never consumes the actual control action's throttle.
+        """
+        known = profile if isinstance(profile, str) and profile in CODEX_CELLS else "unknown"
+        key = (rule.name, rule.version, known, str(project.id))
+        now = time.monotonic()
+        with self.gap_lock:
+            previous = self.gaps.get(key)
+            if previous is not None and now - previous < 600:
+                return False
+            if len(self.gaps) >= _THROTTLE_LIMIT:
+                self.gaps.pop(next(iter(self.gaps)))
+            self.gaps[key] = now
+        return True
 
 
 _engines: dict[Path, Engine] = {}
@@ -147,12 +167,13 @@ def decide(
     *,
     session: SessionState | None = None,
     on_error: ErrorHandler | None = None,
+    codex_control_profile: object = None,
 ) -> Decision:
     """Return the first decision the adapter can actually deliver, else ``allow``.
 
     Only actions the adapter renders for this provider and event are returned,
-    so a delivered action is never silently dropped on the other side; Codex
-    gets ``allow`` until WD-151. ``Stop`` and ``SubagentStop`` never see a block
+    with Codex limited to explicitly selected installation profiles.
+    ``Stop`` and ``SubagentStop`` never see a block
     while ``stop_hook_active`` is set, so a block cannot loop the harness. A
     ``log`` decision is returned only when no earlier rule delivered an action.
     An unresolved project or a switched-off project answers ``allow``: a false
@@ -161,7 +182,11 @@ def decide(
     event = hook_input.get("hook_event_name")
     if not isinstance(event, str):
         return ALLOW
-    if event in {"Stop", "SubagentStop"} and hook_input.get("stop_hook_active") is True:
+    if (
+        event in {"Stop", "SubagentStop"}
+        and "stop_hook_active" in hook_input
+        and hook_input["stop_hook_active"] is not False
+    ):
         return ALLOW
     engine = engine_for(paths)
     context = Context(paths, config, provider, hook_input, session)
@@ -181,8 +206,29 @@ def decide(
             continue
         if decision.action == "allow":
             continue
-        if decision.action != "log" and not renderable(provider, event, decision.action):
+        gap = decision.action != "log" and not renderable(
+            provider,
+            event,
+            decision.action,
+            tool=hook_input.get("tool_name"),
+            codex_control_profile=codex_control_profile,
+        )
+        if gap and provider != "codex":
             continue
+        # Bash and patch rewrites have a string command contract. An arbitrary
+        # replacement object is not evidence that the provider can apply it.
+        original_input = hook_input.get("tool_input")
+        if (
+            provider == "codex"
+            and decision.action == "rewrite"
+            and (
+                not isinstance(original_input, Mapping)
+                or not isinstance(original_input.get("command"), str)
+                or decision.updated_input is None
+                or not isinstance(decision.updated_input.get("command"), str)
+            )
+        ):
+            gap = True
         if not engine.throttle.permits(rule, context, mono):
             continue
         if not looked_up:
@@ -194,8 +240,36 @@ def decide(
         # cannot switch the channel back on once the global default is off.
         if not (config.defaults.policy_intervene and limits.policy_intervene):
             return ALLOW
+        if gap:
+            if engine.record_gap(rule, codex_control_profile, project):
+                logged = logged or replace(
+                    decision,
+                    action="log",
+                    project_id=project.id,
+                    requested_action=decision.action,
+                    capability_gap="unsupported_codex_cell",
+                    codex_control_profile=codex_control_profile
+                    if isinstance(codex_control_profile, str)
+                    and codex_control_profile in CODEX_CELLS
+                    else None,
+                    reason=(
+                        "Watchdog: requested control is unavailable for this Codex "
+                        "deployment or cell."
+                    ),
+                    context=None,
+                    updated_input=None,
+                )
+            continue
         engine.throttle.record(rule, context, mono)
-        decision = replace(decision, project_id=project.id)
+        decision = replace(
+            decision,
+            project_id=project.id,
+            codex_control_profile=codex_control_profile
+            if provider == "codex"
+            and isinstance(codex_control_profile, str)
+            and codex_control_profile in CODEX_CELLS
+            else None,
+        )
         if decision.action == "log":
             logged = logged or decision
             continue

@@ -1070,7 +1070,22 @@ def _record_control(
                     # The text the model was sent: a reason, or injected context.
                     "text": decision.reason or decision.context,
                     "evidence_ids": [str(event_id)],
-                    "delivered_at": datetime.now(UTC).isoformat(),
+                    "delivered_at": None
+                    if decision.capability_gap
+                    else datetime.now(UTC).isoformat(),
+                    **(
+                        {
+                            "capability_gap": decision.capability_gap,
+                            "requested_action": decision.requested_action,
+                        }
+                        if decision.capability_gap
+                        else {}
+                    ),
+                    **(
+                        {"codex_control_profile": decision.codex_control_profile}
+                        if decision.codex_control_profile
+                        else {}
+                    ),
                 }
             },
         )
@@ -1169,6 +1184,7 @@ class _PolicyRequestHandler(socketserver.StreamRequestHandler):
                 hook_input,
                 session=self._session(str(provider), hook_input),
                 on_error=self._rule_failed,
+                codex_control_profile=request.get("codex_control_profile"),
             )
         except ConfigError:
             return

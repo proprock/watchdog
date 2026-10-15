@@ -284,3 +284,35 @@ def test_auth_copy_failure_records_no_dispatch_and_cleans_scratch(monkeypatch, t
     assert record["stages"]["provider_dispatch"]["state"] == "failed"
     assert record["cleanup"]["complete"] is True
     assert not scratch.exists()
+
+
+@pytest.mark.skipif(os.name != "nt", reason="Windows runner preflight")
+def test_production_runner_initializes_git_before_registering_scratch(monkeypatch, tmp_path):
+    monkeypatch.setattr(probe.probes, "resolve_codex", lambda _: "unused")
+    monkeypatch.setattr(probe.probes, "codex_version", lambda _: "codex-cli 0.162.0-alpha.17.2")
+    monkeypatch.setattr(probe.probes, "registered_roots", lambda _: [])
+    monkeypatch.setattr(probe.production, "adapter_version", lambda _: "adapter schema 2")
+    scratch = tmp_path / "scratch"
+    scratch.mkdir()
+    monkeypatch.setattr(probe.tempfile, "mkdtemp", lambda **_: str(scratch))
+    monkeypatch.setattr(probe.shutil, "copyfile", lambda _source, dest: dest.write_text("auth"))
+    observed = []
+
+    def stop_at_registration(_scratch, work, _log, _adapter):
+        observed.append((work / ".git").is_dir())
+        assert observed[-1], "scratch checkout must exist before rule registration"
+        raise RuntimeError("stop before provider dispatch")
+
+    monkeypatch.setattr(probe.production, "configure", stop_at_registration)
+    args = argparse.Namespace(
+        codex="unused",
+        config=None,
+        interactive=False,
+        debug_log=None,
+        production_adapter=tmp_path / "adapter.exe",
+        timeout=5,
+    )
+    record = probe.run_case(args, live_probe.CODEX_CASES["pre-tool-apply-patch-deny"])
+    assert observed == [True]
+    assert record["stages"]["provider_dispatch"]["attempts"] == 0
+    assert record["cleanup"]["complete"] is True

@@ -4,8 +4,10 @@ A rule tells the daemon what to do when a hook call matches. The daemon answers
 through the [decision channel](daemon.md); the adapter renders the answer for the
 provider ([hooks.md](hooks.md#adapter-behavior)). WD-142 added **declarative
 rules**: TOML data with a closed set of predicates and actions. They never execute
-code. Python rules are planned separately (WD-143); this document will grow with
-them.
+code. Approved declarative rules may target confirmed Codex CLI cells when the
+native installation has an exact `--codex-control-profile` gate; Codex desktop is
+not enabled. Python rules are planned separately (WD-143); this document will
+grow with them.
 
 Every action a rule causes is recorded as a `control` event and shows up as a
 finding with `rule`, `rule_version`, `action`, `evidence_ids`, `delivered_at` and
@@ -50,9 +52,9 @@ name = "my_rule"            # [a-z][a-z0-9_]{0,63}; equals the file name
 version = "1"               # recorded on every finding
 origin = "user"             # free text: who or what wrote it
 description = ""
-provider = ["claude"]       # only "claude" is rendered today (WD-151 for Codex)
+provider = ["claude"]       # use ["codex"] only for a confirmed CLI profile cell
 event = "PreToolUse"        # PreToolUse PostToolUse PostToolUseFailure UserPromptSubmit
-                            # Stop SubagentStop SessionStart PreCompact
+                            # Stop SubagentStart SubagentStop SessionStart PreCompact
 priority = 100              # user rules run in ascending order, after the built-ins
 default_enabled = true      # built-ins only; false ships the rule off
 
@@ -119,8 +121,13 @@ entry of `[rules] tiers`; if it cannot be resolved the rule does not fire.
 Messages may use `{repeats}`, `{failures}`, `{coordinator_model}`,
 `{candidate_model}` and `{lower_tier}`; an unknown value prints `unknown`.
 
-A rewrite is rendered as `permissionDecision: allow`, so a user rule that rewrites
-a `Bash` call also approves it.
+A Claude rewrite is rendered as `permissionDecision: allow`, so a user rule that
+rewrites a Claude `Bash` call also approves it. Codex rewrite follows Codex's
+separately probed `updatedInput.command` contract: the replacement must include a
+string `command`, and the native response omits a permission-decision allow field.
+Do not infer that a Claude rewrite rule is safe or supported on Codex. In
+particular, the interactive 0.162.0 profile allows only an operator-approved
+scratch `apply_patch` rewrite.
 
 ### Limits
 
@@ -169,8 +176,49 @@ reviewed). Verdicts use the ordinary `verdict` command or
 Control findings carry an `action` and are reported apart from the M2/M3 shadow
 rules; they never enter the precision gate.
 
+### Minimal Codex rule and approval
+
+This example requests context only at the 0.160.0 CLI `SessionStart` cell. Save it
+as `<config-dir>/rules/codex_start_context.toml`, inspect it, then explicitly
+approve the exact bytes. The installation must separately use the matching
+`windows-cli-0.160.0` profile.
+
+```toml
+schema_version = 1
+name = "codex_start_context"
+version = "1"
+origin = "user"
+description = "Add a short startup reminder in the probed Codex CLI cell."
+provider = ["codex"]
+event = "SessionStart"
+priority = 100
+
+[match]
+
+[action]
+kind = "context"
+message = "Use the registered project guidance."
+```
+
+```console
+agent-watchdog rules show codex_start_context
+agent-watchdog rules approve codex_start_context
+agent-watchdog rules list
+```
+
+Approval authorizes this rule body, not a provider capability. The native
+installation's exact profile, event, tool and action gates still decide whether
+an action can be delivered. A matching unsupported request creates a bounded
+capability gap with reason `unsupported_codex_cell`, requested action and
+`delivered_at = null`; it does not consume the control throttle. Gaps deduplicate
+for ten minutes by rule, rule version, profile and project. A non-null
+`delivered_at` continues to mean the daemon sent its socket response, not that a
+provider applied it.
+
 ## Not implemented here
 
 Python rules and replay (`rules test`, WD-143), model-written rule candidates
-(`rules propose`, WD-144), promotion between actions (WD-147) and Codex rendering
-(WD-151).
+(`rules propose`, WD-144), and promotion between actions (WD-147). Codex CLI
+rendering is verified offline for the explicit profiles, with one production
+live deny case recorded in [WD-151 evidence](evidence/wd151.md). Codex desktop
+remains gated by WD-153.

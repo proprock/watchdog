@@ -16,7 +16,7 @@ from pathlib import Path
 from typing import Literal
 
 from agent_watchdog.config import Config, Rules, UserPaths
-from agent_watchdog.rules.api import renderable
+from agent_watchdog.rules.api import subscription_tools
 from agent_watchdog.rules.declarative import DeclarativeRule, RuleError, parse_rule
 
 Status = Literal["approved", "proposed", "stale", "disabled", "invalid"]
@@ -210,8 +210,10 @@ class RuleRegistry:
             if rule is None:
                 continue
             for provider in rule.provider:
-                if rule.action.kind == "log" or renderable(provider, rule.event, rule.action.kind):
-                    cells.add((provider, rule.event, rule.match.tool_name))
+                for tool in subscription_tools(
+                    provider, rule.event, rule.action.kind, rule.match.tool_name
+                ):
+                    cells.add((provider, rule.event, tool))
         return [
             {"provider": provider, "hook_event_name": event, "tool_name": tool}
             for provider, event, tool in sorted(

@@ -52,11 +52,43 @@ Claude desktop uses project-local `.claude/settings.local.json` in a dedicated s
 
 Codex desktop, `Notification`, and an interactive Claude CLI session are unprobed (WD-153). The Claude CLI cases ran one capability per `claude -p` call, so they prove the headless path. The Claude desktop cases ran in app chats of one scratch folder through a routing hook ([verification](verification.md#wd-139-claude-code-hook-control-live-probe)); the app model was Haiku and the app version was not recorded, only the engine version from the transcript.
 
-WD-163 applicability: [32 new versioned records](evidence/wd163-codex-cli-control.json) separate callbacks, provider effects and confirmed cleanup. The original WD-139/WD-139c evidence is unchanged. The [official contract](https://learn.chatgpt.com/docs/hooks) requires a string `updatedInput.command` for Bash and `apply_patch`. Generic local-function `PostToolUse` attempts (including an observed `spawn_agent` call), and code-mode Bash/patch rewrite attempts, remain inconclusive; the code-mode MCP result is limited to the named fixture and observed `exec` wrapper. No hosted-tool coverage was exercised. These probe results do not activate adapter or daemon permissions: WD-151 must enforce the exact surface/version/event/tool/action gates.
+WD-163 applicability: [32 new versioned records](evidence/wd163-codex-cli-control.json) separate callbacks, provider effects and confirmed cleanup. The original WD-139/WD-139c evidence is unchanged. The [official contract](https://learn.chatgpt.com/docs/hooks) requires a string `updatedInput.command` for Bash and `apply_patch`. Generic local-function `PostToolUse` attempts (including an observed `spawn_agent` call), and code-mode Bash/patch rewrite attempts, remain inconclusive; the code-mode MCP result is limited to the named fixture and observed `exec` wrapper. No hosted-tool coverage was exercised. These probe results do not activate adapter or daemon permissions by themselves: WD-151's exact installation profile also gates event, tool and action.
+
+### WD-151 Codex CLI runtime profiles
+
+The implementation selects a profile through the installation-scoped native
+flag `--codex-control-profile VALUE`. The adapter emits a separate top-level
+`codex_control_profile`; raw input is preserved independently. The runtime is
+Windows-only. An operator must confirm the exact executable version and mode
+before configuring the matching profile. No greater-version inheritance is
+allowed, and payload `surface` or `provider_version` cannot select or enable a
+profile. Default and unknown profiles remain silent. Shared CLI-and-desktop
+hook commands must not carry this CLI profile; Codex desktop remains unprobed
+under WD-153.
+
+| Exact profile | Allowed cells |
+|---|---|
+| `windows-cli-0.160.0` | `SessionStart`/context; `UserPromptSubmit`/context; `PostToolUse` with tool `Bash`/context; `PreToolUse` with tool `Bash`/deny or rewrite; `SubagentStop`/block |
+| `windows-cli-exec-0.162.0-alpha.17.2` | `PreToolUse` with tool `Bash`/context; `PreToolUse` with tool `apply_patch`/deny or context; `SubagentStart`/context; `Stop`/block |
+| `windows-cli-interactive-0.162.0-alpha.17.2` | `PreToolUse` with tool `apply_patch`/rewrite only, based on the operator-approved scratch-edit probe |
+
+`PermissionRequest` and the named MCP fixture are not enabled despite historical
+probe observations. Native apply-patch rewrite requires a string
+`updatedInput.command` and omits `permissionDecision: allow`. A matching rule
+that requests an unavailable Codex cell produces a bounded log-only `capability_gap` with reason
+`unsupported_codex_cell`, including `requested_action` and `delivered_at: null`.
+Deduplication is ten minutes per rule/version/profile/project and consumes no
+control throttle. A real `delivered_at` remains the time the daemon sent its
+socket response, not evidence of provider application. All 12 allowed cells
+have offline production-adapter/daemon round trips. A separate Windows CLI
+0.162.0-alpha.17.2 production-adapter run confirmed `PreToolUse`/`apply_patch`
+deny, native rendering, provider effect and a linked stored deny envelope
+([WD-151 evidence](evidence/wd151.md)). That live result covers this exact cell;
+other table entries retain their original provider-probe evidence.
 
 The first rule is same-model subagent spawn (WD-014; since WD-142 the built-in `subagent_same_model`, which rewrites the subagent's model one tier down instead of denying, see [rules.md](rules.md)): the daemon compares the alias against the coordinating conversation's most recently observed resolved model, at the family level (`agent_watchdog.analysis.model_family_matches`), since the full resolved id is never visible at `PreToolUse` time. A subagent spawned without an explicit `model` override — the common case, resolved later from `.claude/agents/*.md` frontmatter or inherited defaults — has no model visible at this point at all and is never evaluated; this is an accepted, documented recall gap, not a bug. A candidate already at the lowest tier of the configured `[rules] tiers` (`haiku` by default) is never changed, matched or not — there is nowhere lower to go. The rule ships enabled by default; `rules disable subagent_same_model` turns it off alone and `policy_intervene` (`[defaults]`/`[projects.overrides]`) switches every rule (the narrower `policy_intervene_same_model_subagent_spawn` alias was removed by WD-171); disabling it never affects the rule's own `log` half. Verified offline and at the local-adapter evidence level end to end (a real adapter binary against a real running daemon over the loopback policy socket, `tests/test_rust_adapter.py::test_native_deny_round_trips_through_a_real_running_daemon`) — per the [probe-result-record-v1](evidence/probe-result-record-v1.md) evidence classification, this is `local_adapter` evidence, not `live_provider` evidence, and is not claimed as "supported" against a real Claude Code session. The WD-139 live probe has since confirmed, on Claude Code 2.1.292, the Agent tool's `PreToolUse` payload (`tool_name` `Agent`, `tool_input` with `model`) and that the `hookSpecificOutput`/`permissionDecision` deny is honored (table above); the rule itself has not been run against a live session.
 
-Since WD-140 that rule runs inside the daemon's generic decision channel (`agent_watchdog.rules.engine`), and the adapter renders only the Claude cells in the table above: `PreToolUse` `deny`, `ask`, `rewrite` (`updatedInput`) and `context`; `PostToolUse`, `UserPromptSubmit`, `SessionStart` and `PreCompact` `context`; `PostToolUse`, `Stop` and `SubagentStop` `block` (`PreCompact` block rests on weak evidence and is not rendered). Codex is never rendered; its cells stay as recorded above until WD-151. Since WD-142 the channel is subscribed to what the enabled rules need: with the built-ins, `PreToolUse` on `Agent` and `Bash` and `PostToolUse` on every tool, plus `Stop` once `stop_without_verification` is enabled. A rule is accepted only for an event and action in the rendered cells above, so no rule can promise delivery the adapter would drop. The `Agent` model rewrite is evidenced on Claude CLI only; it is not evaluated on Claude desktop. See [rules.md](rules.md), [hooks.md](hooks.md#adapter-behavior) and [daemon.md](daemon.md).
+Since WD-140 the adapter renders the confirmed Claude cells in the table above: `PreToolUse` `deny`, `ask`, `rewrite` (`updatedInput`) and `context`; `PostToolUse`, `UserPromptSubmit`, `SessionStart` and `PreCompact` `context`; `PostToolUse`, `Stop` and `SubagentStop` `block` (`PreCompact` block rests on weak evidence and is not rendered). WD-151 adds only the exact Codex CLI cells and profiles documented above; it does not activate Codex desktop. Since WD-142 the channel subscribes to the enabled rules' needs, with tool subscriptions narrowed to the union required by enabled, confirmed rules. A rule is accepted only for an event, tool and action the runtime gate can render, so no rule can promise delivery the adapter would drop. The `Agent` model rewrite is evidenced on Claude CLI only; it is not evaluated on Claude desktop. See [rules.md](rules.md), [hooks.md](hooks.md#adapter-behavior) and [daemon.md](daemon.md).
 
 ## Payload and installation findings
 

@@ -16,14 +16,19 @@ import sys
 import tempfile
 import time
 from collections.abc import Mapping
+from contextlib import ExitStack
 from dataclasses import replace
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 from uuid import uuid4
 
+import codex_production_probe as production
 import live_probe as probes
 from codex_hook_canary import OwnedProcessJob
+
+from agent_watchdog.daemon import _policy_server, _SessionTracker
+from agent_watchdog.storage import writer_lock
 
 INTERACTIVE_CASES = {
     "permission-bash-allow",
@@ -334,12 +339,32 @@ def rollout_facts(rollout: str) -> dict[str, object]:
     return {"observed_tool_paths": sorted(tools), "effective_sandbox": permissions}
 
 
+def adapter_rendered_deny(record: Mapping[str, object]) -> bool:
+    output = record.get("output")
+    if not isinstance(output, dict):
+        return False
+    hook = output.get("hookSpecificOutput")
+    return (
+        isinstance(hook, dict)
+        and hook.get("permissionDecision") == "deny"
+        and record.get("adapter_exit_code") == 0
+    )
+
+
 def run_case(args, case):
     if os.name != "nt":
         raise RuntimeError("WD-163 owned-process runner currently requires Windows")
     started_at = datetime.now(UTC).isoformat().replace("+00:00", "Z")
     codex = probes.resolve_codex(args.codex)
     version = probes.codex_version(codex)
+    production_adapter = getattr(args, "production_adapter", None)
+    if production_adapter is not None:
+        production.require_provider_version(version)
+        if case.name != production.CASE or args.interactive:
+            raise ValueError("production adapter currently supports only noninteractive patch deny")
+        adapter_banner = production.adapter_version(production_adapter)
+    else:
+        adapter_banner = None
     roots = probes.registered_roots(args.config)
     source_home = Path(os.environ.get("CODEX_HOME", Path.home() / ".codex"))
     scratch = Path(tempfile.mkdtemp(prefix="watchdog-wd163-"))
@@ -356,6 +381,9 @@ def run_case(args, case):
     debug = {}
     facts = {}
     failure = None
+    stack = ExitStack()
+    readback: dict[str, int] = {}
+    channel_schema = None
     evidence = probes.CodexEvidence(
         records=[], stdout="", rollout="", files=frozenset(), completed=False
     )
@@ -363,6 +391,11 @@ def run_case(args, case):
         probes.ensure_scratch_outside_roots(scratch, roots)
         home.mkdir()
         work.mkdir()
+        subprocess.run(
+            ["git", "init", "--quiet", str(work)],
+            check=True,
+            creationflags=probes.hidden_creationflags(),
+        )
         # Only the credential file is copied. Global hooks, plugins and MCP servers stay out.
         shutil.copyfile(source_home / "auth.json", home / "auth.json")
         config = 'model = "gpt-6.1-sol"\nmodel_reasoning_effort = "low"\n'
@@ -387,15 +420,20 @@ def run_case(args, case):
         if not any(event == "SessionStart" for event, _matcher in events):
             events = (*events, ("SessionStart", "^startup$"))
         configuration_case = replace(case, events=events)
-        config += probes.codex_profile_configuration(
-            configuration_case, Path(probes.__file__).resolve(), log
-        )
+        if production_adapter is None:
+            config += probes.codex_profile_configuration(
+                configuration_case, Path(probes.__file__).resolve(), log
+            )
+        else:
+            paths, hooks = production.configure(scratch, work, log, production_adapter)
+            config += hooks
+            stack.enter_context(writer_lock(paths.data / "daemon.lock"))
+            stack.enter_context(_policy_server(paths, _SessionTracker()))
+            discovery = json.loads((paths.data / "policy" / "socket.json").read_text())
+            channel_schema = discovery.get("schema_version")
+            if channel_schema != 2:
+                raise RuntimeError("scratch decision channel did not publish schema 2")
         (home / "config.toml").write_text(config, encoding="utf-8", newline="\n")
-        subprocess.run(
-            ["git", "init", "--quiet", str(work)],
-            check=True,
-            creationflags=probes.hidden_creationflags(),
-        )
         command = command_line(codex, case, work, interactive=args.interactive)
         print(
             f"WD-163 case {case.name}; isolated home; timeout {args.timeout}s",
@@ -456,10 +494,14 @@ def run_case(args, case):
             completed=completed,
             timed_out=timed_out,
         )
+        if production_adapter is not None:
+            stack.close()
+            readback = production.readback(paths)
     except (OSError, RuntimeError, ValueError, subprocess.SubprocessError) as error:
         failure = type(error).__name__
         debug["failure"] = str(error)
     finally:
+        stack.close()
         if job is not None and process is not None:
             cleanup["process"] = stop_job(job, process)
         elif process is not None and process.poll() is None:
@@ -478,6 +520,74 @@ def run_case(args, case):
         cleanup=cleanup,
         interactive=args.interactive,
     )
+    if production_adapter is not None:
+        record["record_id"] = f"wd151-production-{case.name}-{uuid4().hex}"
+        record["provenance"]["source"]["sanitized_reference"] = "wd151-production-scratch"
+        record["provenance"]["adapter"] = {
+            "name": "agent-watchdog-hook",
+            "version": adapter_banner,
+            "invocation": "scratch Codex hook wrapper invoking native adapter",
+        }
+        record["scope"]["isolation"] = (
+            "Scratch Codex home, project, Watchdog config, data, and runtime"
+        )
+        record["scope"]["notes"] = (
+            "Real native adapter and in-process daemon decision channel; "
+            "native spool ingested with daemon implementation"
+        )
+        record["scope"]["expected_deliveries"] = 1
+        rendered = any(adapter_rendered_deny(item) for item in evidence.records)
+        persisted = readback.get("persisted_controls", 0)
+        delivery = record["stages"]["end_to_end_delivery"]
+        record["stages"]["adapter"] = {
+            "state": "confirmed" if rendered else "failed",
+            "starts": sum(item.get("adapter_exit_code") is not None for item in evidence.records),
+            "failure_category": None if rendered else "response_not_rendered",
+            "evidence": "Native stdout parsed from same-run callback diagnostics",
+        }
+        record["stages"]["persistence"] = {
+            "accepted": readback.get("spooled", 0),
+            "losses": [],
+            "evidence": "Native spool ingested via daemon _drain_spool and Store Inbox.drain",
+        }
+        delivery.update(
+            expected=1,
+            persisted=persisted,
+            read_back=persisted,
+            state="confirmed" if persisted else "missing",
+            failure_attribution="not_applicable" if persisted else "daemon_or_store",
+            failure_detail=None,
+            evidence=(
+                "Approved deny envelope linked to native PreToolUse read back from scratch Store"
+            ),
+        )
+        record["production_adapter"] = {
+            "version": adapter_banner,
+            "decision_schema": channel_schema,
+            "control_profile": production.PROFILE,
+            "callback_count": len(evidence.calls("PreToolUse")),
+            "rendered_deny": rendered,
+            "spooled_events": readback.get("spooled", 0),
+            "spooled_patch_events": readback.get("spooled_patch_events", 0),
+            "stored_control_events": readback.get("stored_controls", 0),
+            "persisted_controls": persisted,
+            "ingestion": "in-process daemon _drain_spool and Store Inbox.drain",
+        }
+        if not (
+            record["capabilities"][case.name]["observed_effect"] == "supported"
+            and rendered
+            and persisted > 0
+            and readback.get("spooled", 0) > 0
+            and readback.get("spooled_patch_events", 0) > 0
+            and channel_schema == 2
+            and record["cleanup"]["complete"]
+        ):
+            record["capabilities"][case.name]["state"] = "inconclusive"
+            record["result"]["state"] = "incomplete"
+            record["result"]["limitations"].append(
+                "Production control requires adapter rendering, provider effect, "
+                "persisted control, and cleanup"
+            )
     record["execution"] = {
         "exit_code": process.returncode if process is not None else None,
         "timed_out": timed_out,
@@ -519,6 +629,11 @@ def main():
     parser.add_argument("--case", required=True, choices=sorted(probes.CODEX_CASES))
     parser.add_argument("--codex", required=True, help="Explicit CLI executable to pin its version")
     parser.add_argument("--config", type=Path)
+    parser.add_argument(
+        "--production-adapter",
+        type=Path,
+        help="Opt in to scratch production-adapter patch-deny probe with an absolute native binary",
+    )
     parser.add_argument("--interactive", action="store_true")
     parser.add_argument("--timeout", type=float, default=120)
     parser.add_argument("--output", type=Path, required=True)
@@ -539,6 +654,15 @@ def main():
         ):
             parser.error("--debug-log must be a new file under tests/local")
     case = probes.CODEX_CASES[args.case]
+    if args.production_adapter is not None and (
+        not args.production_adapter.is_absolute()
+        or not args.production_adapter.is_file()
+        or case.name != production.CASE
+        or args.interactive
+    ):
+        parser.error(
+            "--production-adapter requires an absolute binary and noninteractive patch-deny case"
+        )
     command_line(args.codex, case, Path("."), interactive=args.interactive)
     record = run_case(args, case)
     # Exclusive creation prevents silently replacing an earlier attempt.

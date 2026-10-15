@@ -103,6 +103,29 @@ Review in the profile actually used by each surface: in the Windows probe,
 native review without that profile. Do not copy trust hashes between files.
 See the [official hook reference](https://learn.chatgpt.com/docs/hooks).
 
+### Codex CLI control profile
+
+Control-enabled Codex CLI installations use the native adapter option
+`--codex-control-profile VALUE`. This value is installation-scoped and belongs
+only in that CLI installation's native hook command. Configure it only after
+confirming the executable and mode for that installation. Do not add it to a
+shared CLI-and-desktop command or a global hook source: desktop control has no probe
+evidence (WD-153). Confirm the running executable's exact version and invocation
+mode before selecting a profile. A newer version, a payload's `provider_version`,
+or its claimed surface does not inherit a profile. Unknown or missing profiles
+remain observation-only.
+
+| Profile | Permitted controls |
+|---|---|
+| `windows-cli-0.160.0` | `SessionStart` and `UserPromptSubmit` context; `PostToolUse`/`Bash` context; `PreToolUse`/`Bash` deny or rewrite; `SubagentStop` block |
+| `windows-cli-exec-0.162.0-alpha.17.2` | `PreToolUse`/`Bash` context; `PreToolUse`/`apply_patch` deny or context; `SubagentStart` context; `Stop` block |
+| `windows-cli-interactive-0.162.0-alpha.17.2` | `PreToolUse`/`apply_patch` rewrite only; the evidence is an operator-approved scratch edit |
+
+The profile is an exact allowlist, not a general compatibility claim. For an
+unsupported matched request the hook stays fail-open and records only the bounded
+`unsupported_codex_cell` capability gap described in [rules.md](rules.md#minimal-codex-rule-and-approval).
+`PermissionRequest` and the named MCP fixture are not enabled by these profiles.
+
 ## Ownership and recovery
 
 The installer adds one separate matcher group for each of 11 observed Codex events.
@@ -211,9 +234,11 @@ the normal default. Each path has a test in `tests/test_rust_adapter.py`. A
 mismatched adapter and daemon (schema 1 against schema 2) therefore fails open;
 upgrade both together.
 
-Rendering is per provider and limited to the cells WD-139 confirmed live on
-Claude Code (see "Control capability" in
-[provider-compatibility.md](provider-compatibility.md)); every other
+Rendering is per provider and limited to the cells recorded in
+[provider-compatibility.md](provider-compatibility.md). Claude uses the
+confirmed cells listed there. Codex CLI control is additionally gated by the
+installation-scoped `--codex-control-profile VALUE` on its native command; it is
+never inferred from payload fields. Every other
 combination, and `allow`, prints nothing:
 
 | Event | Action | Claude stdout |
@@ -224,10 +249,13 @@ combination, and `allow`, prints nothing:
 | `PostToolUse`, `Stop`, `SubagentStop` | `block` | `{"decision": "block", "reason": …}` (`PreCompact` block is only weakly evidenced, so it is not rendered) |
 
 `allow` is never rendered as `permissionDecision: "allow"`: that would
-auto-approve the tool. Codex is never rendered (it prints `{}` as before) until
-WD-151 records live evidence. The daemon only answers with actions that are
-renderable for the provider and event, so the `control` events it records do not
-claim actions the adapter would drop.
+auto-approve the tool. The Codex CLI profile gate is exact-version and
+installation-scoped. It does not apply to shared CLI-and-desktop hook commands;
+Codex desktop remains unprobed and gated by WD-153. The daemon only answers with
+actions renderable for the provider, event, tool and selected profile, so the
+`control` events it records do not claim actions the adapter would drop. Native
+rewrite uses `updatedInput.command` (a required string) and omits
+`permissionDecision: "allow"`.
 
 Normal completion and handled failures emit exactly `{}` (codex) or nothing
 (claude) and exit zero, unless the decision channel answered a subscribed hook
