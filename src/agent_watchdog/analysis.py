@@ -16,6 +16,8 @@ from typing import Any, Literal
 
 from agent_watchdog._proc import run as _run
 from agent_watchdog.events import Envelope
+from agent_watchdog.execution import VERSION as EXECUTION_VERSION
+from agent_watchdog.execution import normalize_events, tool_result
 from agent_watchdog.facts import USAGE_COLUMNS, claude_response_usage
 
 REPORT_SCHEMA_VERSION = 3
@@ -321,14 +323,20 @@ def tool_outcome(provider_payload: Mapping[str, Any], provider: str) -> str:
     Order: Claude's own failure hook (a user interrupt is not an agent error),
     then a structured exit code or ``isError`` in a captured response, then
     Claude's ``PostToolUse``, which the provider fires only after a success.
-    Codex has no failure hook and its responses carry no verdict without an
-    exit code, so those stay ``unknown``: unknown is not success.
+    Codex reads the shared execution projection or the same single-call result
+    classifier. Missing results and code-mode wrapper completion stay unknown.
     """
+    if provider == "codex":
+        execution = provider_payload.get("execution")
+        if isinstance(execution, Mapping) and execution.get("version") == EXECUTION_VERSION:
+            return str(execution.get("outcome", "unknown"))
     hook = provider_payload.get("hook_event_name")
     if hook == "PostToolUseFailure":
         metadata = provider_payload.get("metadata")
         interrupted = isinstance(metadata, dict) and metadata.get("is_interrupt") is True
         return "interrupt" if interrupted else "failure"
+    if provider == "codex":
+        return tool_result(provider_payload).outcome
     response = captured_content(provider_payload).get("tool_response")
     code = exit_code(response)
     if code is not None:
@@ -804,7 +812,9 @@ def analyze(
     Missing observations are surfaced as gaps.  In particular, this function
     intentionally does not infer a stall or a successful task outcome.
     """
-    ordered = sorted(events, key=lambda event: (event.received_at, str(event.event_id)))
+    ordered = normalize_events(
+        sorted(events, key=lambda event: (event.received_at, str(event.event_id)))
+    )
     kinds = Counter(event.kind for event in ordered)
     event_ids = [str(event.event_id) for event in ordered]
     sessions = sorted({event.session_id for event in ordered if event.session_id is not None})
@@ -835,7 +845,7 @@ def analyze(
         unmatched_turn_boundary = True
     active = None if unmatched_turn_boundary else active_seconds
 
-    tool_starts: dict[tuple[str, str, str], datetime] = {}
+    tool_starts: dict[tuple[str, str, str | None, str], datetime] = {}
     tool_durations: list[float] = []
     for event in ordered:
         if event.session_id is None:
@@ -843,7 +853,7 @@ def analyze(
         tool_use_id = _provider(event).get("tool_use_id")
         if not isinstance(tool_use_id, str) or not tool_use_id:
             continue
-        key = (event.provider, event.session_id, tool_use_id)
+        key = (event.provider, event.session_id, event.agent_id, tool_use_id)
         if event.kind == "tool.start":
             tool_starts[key] = event.received_at
         elif event.kind == "tool.finish":
@@ -854,7 +864,7 @@ def analyze(
     outcomes: Counter[str] = Counter()
     output_bytes = 0
     output_available = 0
-    edits_seen: Counter[tuple[str, str | None]] = Counter()
+    edits_seen: Counter[tuple[str, str | None, str | None]] = Counter()
     repeated: dict[tuple[tuple[str, str | None, str | None], str], list[_Run]] = defaultdict(list)
     errors: dict[str, list[str]] = defaultdict(list)
     failing_tests: dict[str, list[str]] = defaultdict(list)
@@ -917,7 +927,11 @@ def analyze(
         response = captured.get("tool_response")
         outcome = tool_outcome(provider, event.provider)
         outcomes[outcome] += 1
-        session = (event.provider, event.session_id)
+        session = (
+            event.provider,
+            event.session_id,
+            event.agent_id if event.provider == "codex" else None,
+        )
         edits_before = edits_seen[session]
         if _is_edit(event):
             edits_seen[session] += 1
@@ -1006,6 +1020,27 @@ def analyze(
         findings.append(oscillation)
     findings.extend(same_model_subagent_spawn(ordered))
     findings.extend(control_findings(ordered))
+    execution_evidence = {
+        str(event.event_id): _provider(event)["execution"]
+        for event in ordered
+        if event.provider == "codex" and isinstance(_provider(event).get("execution"), Mapping)
+    }
+    for finding in findings:
+        evidence = [
+            execution_evidence[item]
+            for item in finding["evidence_ids"]
+            if item in execution_evidence
+        ]
+        if finding["rule_version"] == RULE_VERSION and evidence:
+            # Keep the statistical rule body/version unchanged, while preventing
+            # old Codex verdicts from silently accepting a new fact projection.
+            finding["execution_projection"] = EXECUTION_VERSION
+            finding["execution_evidence_ids"] = sorted(
+                {item for fact in evidence for item in fact["evidence_ids"]}
+            )
+            finding["fingerprint"] = finding_fingerprint(
+                str(finding["rule"]), f"{RULE_VERSION}|{EXECUTION_VERSION}", finding["evidence_ids"]
+            )
     findings.sort(key=lambda finding: (str(finding["rule"]), list(finding["evidence_ids"])))
 
     gaps = ["task_outcome_unknown"]
@@ -1018,6 +1053,7 @@ def analyze(
     return {
         "schema_version": REPORT_SCHEMA_VERSION,
         "rule_version": RULE_VERSION,
+        "execution_projection": EXECUTION_VERSION,
         "event_ids": event_ids,
         "session_ids": sessions,
         "timeline": {

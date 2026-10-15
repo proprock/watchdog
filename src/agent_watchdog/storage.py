@@ -40,6 +40,7 @@ TRANSCRIPT_TAIL_BYTES = 33 * 1024**2
 SQLITE_INTEGER_MIN = -(2**63)
 SQLITE_INTEGER_MAX = 2**63 - 1
 SQLITE_UNSIGNED_INTEGER_MAX = 2**64 - 1
+CODEX_STATE_PROJECTION_VERSION = "wd-164.v1"
 
 
 class StorageError(ValueError):
@@ -156,6 +157,7 @@ class Store:
         self._stack = ExitStack()
         # Session states written since this store opened; also the read-through cache.
         self.touched: dict[StateKey, SessionState] = {}
+        self._codex_state_deferred = False
 
     @property
     def connection(self) -> sqlite3.Connection:
@@ -177,6 +179,7 @@ class Store:
             self._connection = connection
             with resources.admission(self.root):
                 self._initialize()
+                self._flush_codex_state()
         except BaseException:
             self._connection = None
             stack.close()
@@ -379,6 +382,7 @@ class Store:
             with self._transaction():
                 self._migrate_v8()
                 db.execute("PRAGMA user_version=8")
+        self._refresh_codex_state_projection()
         # Existing v1 stores need a one-time rebuild to support physical reclamation.
         if db.execute("PRAGMA auto_vacuum").fetchone()[0] != 2:
             size = (self.root / "events.sqlite3").stat().st_size
@@ -386,6 +390,49 @@ class Store:
                 raise QuotaExceeded("Insufficient migration space")
             db.execute("PRAGMA auto_vacuum=INCREMENTAL")
             db.execute("VACUUM")
+
+    def _refresh_codex_state_projection(self) -> None:
+        """Invalidate only the execution-state cache affected by WD-164.
+
+        Broader rule and analysis cache versioning belongs to WD-162. This marker
+        repairs v8 Codex states without changing authoritative events or replaying
+        unrelated providers every time a store opens.
+        """
+        with self._transaction() as db:
+            db.execute(
+                "CREATE TABLE IF NOT EXISTS state_projection_versions ("
+                "provider TEXT PRIMARY KEY, version TEXT NOT NULL)"
+            )
+            db.execute(
+                "CREATE TABLE IF NOT EXISTS codex_state_dirty ("
+                "session_id TEXT NOT NULL, agent_id TEXT NOT NULL, "
+                "PRIMARY KEY(session_id, agent_id))"
+            )
+            row = db.execute(
+                "SELECT version FROM state_projection_versions WHERE provider='codex'"
+            ).fetchone()
+            if row == (CODEX_STATE_PROJECTION_VERSION,):
+                return
+            db.execute("DELETE FROM session_state WHERE provider='codex'")
+            sessions = db.execute(
+                "SELECT DISTINCT session_id FROM events "
+                "WHERE provider='codex' AND session_id IS NOT NULL"
+            ).fetchall()
+            for (session_id,) in sessions:
+                documents = (
+                    json.loads(row[0])
+                    for row in db.execute(
+                        "SELECT envelope FROM events WHERE provider='codex' AND session_id=? "
+                        "ORDER BY received_at, rowid",
+                        (session_id,),
+                    )
+                )
+                for state in fold(documents).values():
+                    self._write_state(db, state)
+            db.execute(
+                "INSERT OR REPLACE INTO state_projection_versions VALUES ('codex', ?)",
+                (CODEX_STATE_PROJECTION_VERSION,),
+            )
 
     @staticmethod
     def _fingerprint(document: str, references: Mapping[str, str]) -> str:
@@ -500,13 +547,74 @@ class Store:
             self.touched[applied.provider, applied.session_id, applied.agent_id] = applied
         return True
 
+    @contextmanager
+    def defer_codex_state(self) -> Iterator[None]:
+        """Replay each affected Codex identity once after a reader window.
+
+        Raw observations and dirty identities commit together. An interrupted
+        window or failed replay keeps its recovery marker for the next open.
+        """
+        if self._codex_state_deferred:
+            raise StorageError("Codex state is already deferred")
+        self._codex_state_deferred = True
+        try:
+            yield
+        except BaseException:
+            raise
+        else:
+            with resources.admission(self.root):
+                self._flush_codex_state()
+        finally:
+            self._codex_state_deferred = False
+
+    def _flush_codex_state(self) -> None:
+        keys = self.connection.execute(
+            "SELECT session_id, agent_id FROM codex_state_dirty ORDER BY session_id, agent_id"
+        ).fetchall()
+        for session_id, agent_id in keys:
+            key = ("codex", session_id, agent_id)
+            with self._transaction() as db:
+                updated = self._replay_codex_state(db, key)
+                self._write_state(db, updated)
+                db.execute(
+                    "DELETE FROM codex_state_dirty WHERE session_id=? AND agent_id=?", key[1:]
+                )
+            self.touched[key] = updated
+
+    @staticmethod
+    def _replay_codex_state(db: sqlite3.Connection, key: StateKey) -> SessionState:
+        # Rollout delivery may enrich an earlier hook completion. Replay it at
+        # that completion's position, preserving newer turns and edit order.
+        documents = (
+            json.loads(row[0])
+            for row in db.execute(
+                "SELECT envelope FROM events WHERE provider=? AND session_id=? "
+                "ORDER BY received_at, rowid",
+                key[:2],
+            )
+        )
+        return fold(item for item in documents if key_of(item) == key).get(key) or initial(*key)
+
     def _apply_state(self, db: sqlite3.Connection, envelope: dict) -> SessionState | None:
         """Fold the event into its session state row, atomically with the event itself."""
         key = key_of(envelope)
         if key is None:
             return None
-        current = self.touched.get(key) or self._load_state(db, key) or initial(*key)
-        updated = apply_state(current, envelope)
+        dirty = (
+            key[0] == "codex"
+            and db.execute(
+                "SELECT 1 FROM codex_state_dirty WHERE session_id=? AND agent_id=?", key[1:]
+            ).fetchone()
+        )
+        if key[0] == "codex" and (envelope.get("kind") in ("tool.start", "tool.finish") or dirty):
+            if self._codex_state_deferred:
+                db.execute("INSERT OR IGNORE INTO codex_state_dirty VALUES (?, ?)", key[1:])
+                return None
+            updated = self._replay_codex_state(db, key)
+            db.execute("DELETE FROM codex_state_dirty WHERE session_id=? AND agent_id=?", key[1:])
+        else:
+            current = self.touched.get(key) or self._load_state(db, key) or initial(*key)
+            updated = apply_state(current, envelope)
         self._write_state(db, updated)
         return updated
 
@@ -1041,6 +1149,8 @@ class Store:
                 db.execute(
                     f"DELETE FROM {table} WHERE provider=? AND session_id=?", (provider, session_id)
                 )
+            if provider == "codex":
+                db.execute("DELETE FROM codex_state_dirty WHERE session_id=?", (session_id,))
             for key in [key for key in self.touched if key[:2] == (provider, session_id)]:
                 del self.touched[key]
             db.execute(
@@ -1088,6 +1198,10 @@ class Store:
                 f"DELETE FROM {table} WHERE NOT EXISTS (SELECT 1 FROM events e "
                 f"WHERE e.session_id = {table}.session_id AND e.provider = {table}.provider)"
             )
+        self.connection.execute(
+            "DELETE FROM codex_state_dirty WHERE NOT EXISTS (SELECT 1 FROM events e "
+            "WHERE e.provider='codex' AND e.session_id=codex_state_dirty.session_id)"
+        )
         self.touched = {
             key: state
             for key, state in self.touched.items()

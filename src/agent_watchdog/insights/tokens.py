@@ -90,7 +90,11 @@ def command_class(tool: str, tool_input: Any) -> str:
     """Group shell calls by program and subcommand, never by arguments."""
     if tool not in _SHELL_TOOLS:
         return tool
-    command = tool_input.get("command") if isinstance(tool_input, dict) else tool_input
+    command = (
+        tool_input.get("command", tool_input.get("cmd"))
+        if isinstance(tool_input, dict)
+        else tool_input
+    )
     if isinstance(command, list):
         command = " ".join(str(part) for part in command)
     if not isinstance(command, str) or not command.strip():

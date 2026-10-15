@@ -18,6 +18,7 @@ from agent_watchdog.config import (
     project_for_reference,
 )
 from agent_watchdog.events import Envelope
+from agent_watchdog.execution import normalize_events
 from agent_watchdog.registry import Registry
 from agent_watchdog.storage import PENDING_SESSIONS, StorageError, persisted_envelope
 
@@ -616,9 +617,9 @@ def tool_finishes(
     since: datetime | None,
     until: datetime | None,
 ) -> tuple[dict[str, str], list[Envelope]]:
-    """Return subagent types by agent ID and the window's tool.finish events in received order."""
+    """Return agent types and completed calls, retaining context from before the window."""
     with database(paths, project) as db:
-        condition = "kind IN ('tool.finish', 'agent.start')"
+        condition = "kind IN ('tool.start', 'tool.finish', 'agent.start')"
         parameters: list[object] = []
         if provider is not None:
             condition += " AND json_extract(envelope, '$.provider')=?"
@@ -632,14 +633,15 @@ def tool_finishes(
 
     agent_types: dict[str, str] = {}
     finishes: list[Envelope] = []
-    for (document,) in rows:
-        event = persisted_envelope(document)
+    for event in normalize_events(persisted_envelope(document) for (document,) in rows):
         if event.kind == "agent.start":
             payload = event.payload.get(event.provider)
             metadata = payload.get("metadata") if isinstance(payload, dict) else None
             agent_type = metadata.get("agent_type") if isinstance(metadata, dict) else None
             if event.agent_id is not None and isinstance(agent_type, str):
                 agent_types[event.agent_id] = agent_type
+            continue
+        if event.kind != "tool.finish":
             continue
         if since is not None and event.received_at < since:
             continue

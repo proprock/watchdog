@@ -12,6 +12,7 @@ machinery below, and neither emits a response already stored for the same
 conversation agent, under any event id.
 """
 
+import hashlib
 import json
 import re
 from collections.abc import Mapping
@@ -29,6 +30,10 @@ if TYPE_CHECKING:
 
 
 READER = "codex-rollout-v1"
+TOOL_READER = "codex-tools-v1"
+# The tool grammar is fixture-bound; accepting an unknown usage version does
+# not establish that its execution records have the same meaning.
+CODEX_TOOL_VERSIONS = frozenset({"0.153.4", "0.160.0", "0.162.0-alpha.17.2"})
 CLAUDE_READER = "claude-transcript-v1"
 READ_BYTES = 1024**2
 # One line is read whole up to this size, even across read windows. The longest
@@ -371,6 +376,183 @@ def _occurred_at(value: object) -> datetime | None:
     return candidate if candidate.tzinfo is not None else None
 
 
+def _put_tool_observation(store: "Store", event: Envelope) -> bool:
+    # A replay has a new receipt time, but is still the same native observation.
+    # Receipts survive content expiry, so expired raw content is not resurrected.
+    if store.connection.execute(
+        "SELECT 1 FROM receipts WHERE event_id=?", (str(event.event_id),)
+    ).fetchone():
+        return False
+    return store.put(event)
+
+
+def _tool_gap(store: "Store", source: dict[str, object], version: str) -> None:
+    agent_id = _rollout_agent(source)
+    event_id = uuid5(
+        NAMESPACE_URL,
+        f"{TOOL_READER}|gap|{source['session_id']}|{agent_id or ''}|{version}",
+    )
+    _put_tool_observation(
+        store,
+        Envelope(
+            event_id=event_id,
+            provider="codex",
+            provider_version=version or None,
+            project_id=store.project_id,
+            session_id=str(source["session_id"]),
+            agent_id=agent_id,
+            native_event_id=f"transcript-tool-gap:{event_id.hex}",
+            kind="observation.gap",
+            source="transcript",
+            payload={"codex": {"reader": TOOL_READER, "reason": "tool_version_unsupported"}},
+            availability={"tool_execution": "unavailable", "tool_outcome": "unavailable"},
+        ),
+    )
+
+
+def _tool_event(
+    store: "Store", source: dict[str, object], record: dict[str, Any], version: str
+) -> Envelope | None:
+    """Retain native observations; correlation and outcome classification happen later.
+
+    In particular an ``exec`` code body is opaque data, and a yielded result is
+    only the completion of that native tool call, not of its underlying command.
+    """
+    payload = record.get("payload")
+    if not isinstance(payload, dict):
+        return None
+    record_type = payload.get("type")
+    kind: Literal["tool.start", "tool.finish", "observation.gap"]
+    tool_name: str | None = None
+    native_item: dict[str, Any] | None = None
+    content: dict[str, Any]
+    if record.get("type") == "response_item":
+        if record_type in ("function_call", "custom_tool_call"):
+            kind = "tool.start"
+            tool_name = payload.get("name") if isinstance(payload.get("name"), str) else None
+            key = "arguments" if record_type == "function_call" else "input"
+            content = {"tool_input": payload.get(key), "record": payload}
+        elif record_type in ("function_call_output", "custom_tool_call_output"):
+            kind = "tool.finish"
+            content = {"tool_response": payload.get("output"), "record": payload}
+        else:
+            return None
+    elif record.get("type") == "event_msg" and record_type in (
+        "exec_command_begin",
+        "exec_command_end",
+        "patch_apply_begin",
+        "patch_apply_end",
+    ):
+        kind = "tool.start" if record_type.endswith("_begin") else "tool.finish"
+        tool_name = "exec_command" if record_type.startswith("exec_command_") else "apply_patch"
+        content = {
+            "tool_input" if kind == "tool.start" else "tool_response": payload,
+            "record": payload,
+        }
+    elif (
+        record.get("type") == "event_msg"
+        and version == "0.162.0-alpha.17.2"
+        and record_type in ("item_started", "item_completed")
+        and isinstance(payload.get("item"), dict)
+        and payload["item"].get("type") in ("CommandExecution", "FileChange")
+    ):
+        # This is explicit native evidence of a nested code-mode execution.
+        # Its item id is independent of the opaque outer ``exec`` call id.
+        native_item = payload["item"]
+        kind = "tool.start" if record_type == "item_started" else "tool.finish"
+        if native_item["type"] == "CommandExecution":
+            tool_name = "exec_command"
+            response = {
+                "exit_code": native_item.get("exit_code"),
+                "output": native_item.get("aggregated_output"),
+                "status": native_item.get("status"),
+            }
+            if native_item.get("status") in ("running", "in_progress"):
+                response["session_id"] = native_item.get("process_id")
+            tool_input = {"cmd": native_item.get("command"), "workdir": native_item.get("cwd")}
+        else:
+            tool_name = "apply_patch"
+            response = {key: native_item.get(key) for key in ("status", "stdout", "stderr")}
+            tool_input = {"changes": native_item.get("changes")}
+        content = {"tool_input": tool_input, "tool_response": response, "record": payload}
+    else:
+        return None
+    call_id = native_item.get("id") if native_item is not None else payload.get("call_id")
+    call_id = call_id if isinstance(call_id, str) and call_id else None
+    agent_id = _rollout_agent(source)
+    digest = hashlib.sha256(
+        json.dumps(payload, sort_keys=True, separators=(",", ":")).encode()
+    ).hexdigest()
+    event_id = uuid5(
+        NAMESPACE_URL,
+        f"{TOOL_READER}|{source['session_id']}|{agent_id or ''}|{record_type}|{call_id}|{digest}",
+    )
+    metadata = {
+        key: payload[key]
+        for key in ("turn_id", "process_id", "session_id", "thread_id", "id")
+        if isinstance(payload.get(key), (str, int))
+    }
+    metadata.update({"record_type": record_type, "provider_version": version})
+    if call_id is None:
+        metadata["correlation"] = "native_call_id_unavailable"
+        metadata["reason"] = "tool_call_id_unavailable"
+        kind = "observation.gap"
+    thread_id = payload.get("thread_id")
+    if thread_id is not None and thread_id != (agent_id or source["session_id"]):
+        kind = "observation.gap"
+        metadata["reason"] = "tool_thread_mismatch"
+    if native_item is not None:
+        metadata["nested_native_item"] = True
+        metadata["native_item_type"] = native_item["type"]
+    event = Envelope(
+        event_id=event_id,
+        provider="codex",
+        provider_version=version,
+        project_id=store.project_id,
+        session_id=str(source["session_id"]),
+        agent_id=agent_id,
+        turn_id=payload.get("turn_id") if isinstance(payload.get("turn_id"), str) else None,
+        native_event_id=call_id,
+        kind=kind,
+        occurred_at=_occurred_at(record.get("timestamp")),
+        source="transcript",
+        payload={
+            "codex": {
+                "reader": TOOL_READER,
+                "tool_use_id": call_id,
+                "tool_name": tool_name,
+                "content": content if store.limits.capture_content else "omitted",
+                "metadata": metadata,
+            }
+        },
+        availability={
+            "content": "observed" if store.limits.capture_content else "unavailable",
+            "tool_outcome": "unknown",
+            "provider_version": "observed",
+            "occurred_at": "observed" if _occurred_at(record.get("timestamp")) else "unavailable",
+        },
+    )
+    if len(event.model_dump_json().encode()) > store.limits.payload_bytes:
+        # Tool output can exceed the envelope bound while still fitting a valid
+        # rollout line. Keep its identity, and continue to later usage records.
+        metadata["omission_reason"] = "payload_limit"
+        event = event.model_copy(
+            update={
+                "payload": {
+                    "codex": {
+                        "reader": TOOL_READER,
+                        "tool_use_id": call_id,
+                        "tool_name": tool_name,
+                        "content": "omitted",
+                        "metadata": metadata,
+                    }
+                },
+                "availability": event.availability | {"content": "unavailable"},
+            }
+        )
+    return event
+
+
 def _split_subagent(source: Mapping[str, object]) -> tuple[str, str | None]:
     """Return ``(parent_session_id, agent_id)`` for a Claude reader row."""
     raw = str(source["session_id"])
@@ -632,6 +814,8 @@ def _process_source(store: "Store", source: dict[str, object]) -> EnrichmentResu
         or source["inode"] != inode
         or size < offset
         or (size == offset and source["mtime"] is not None and source["mtime"] != mtime)
+        # Upgrade the old usage-only cursor once, recovering raw tool history.
+        or (source["provider"] == "codex" and reader == READER)
     ):
         offset, tail, reader = 0, b"", None
     oversized = False
@@ -677,7 +861,11 @@ def _process_source(store: "Store", source: dict[str, object]) -> EnrichmentResu
     if source["provider"] == "claude":
         consumed = _consume_claude(store, source, lines, signature, stalled=stalled)
     else:
-        consumed = _consume_codex(store, source, lines, signature, reader, counters)
+        # Persist native observations individually, then replay each affected
+        # agent once per read window. Dirty identities survive a crash before
+        # replay, so the next Store open repairs state before serving rules.
+        with store.defer_codex_state():
+            consumed = _consume_codex(store, source, lines, signature, reader, counters)
     failures = list(consumed.failures)
     if skip_to is not None and consumed.error is None:
         _gap(store, source, "transcript_line_oversized", signature)
@@ -791,10 +979,18 @@ def _consume_codex(
                 raise UnsupportedTranscript("rollout_line_invalid") from exc
             if reader is None:
                 _meta_record(record, str(source["session_id"]), agent_id)
-                reader = READER
+                version = record["payload"]["cli_version"]
+                reader = f"{READER}|{TOOL_READER}|{version}"
+                if version not in CODEX_TOOL_VERSIONS:
+                    _tool_gap(store, source, version)
                 continue
             if not isinstance(record, dict):
                 raise UnsupportedTranscript("rollout_record_invalid")
+            version = reader.split("|", 2)[-1] if "|" in reader else ""
+            if version in CODEX_TOOL_VERSIONS:
+                tool = _tool_event(store, source, record, version)
+                if tool is not None and _put_tool_observation(store, tool):
+                    accepted += 1
             if record.get("type") != "token_usage_record":
                 continue
             payload, current = _usage_record(record, str(source["session_id"]))

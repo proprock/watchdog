@@ -16,6 +16,7 @@ from typing import Any
 
 from agent_watchdog.analysis import captured_content
 from agent_watchdog.events import Envelope
+from agent_watchdog.execution import normalize_events
 from agent_watchdog.storage import persisted_envelope
 
 Key = tuple[str, str | None, str | None]
@@ -198,22 +199,29 @@ def events(
     since: datetime | None,
     until: datetime | None,
 ) -> list[Envelope]:
-    """Load envelopes of the given kinds (all when None) in received order, window-filtered."""
+    """Load derived events, normalizing call context before applying the window."""
     where, params = "1 = 1", []
     if kinds is not None:
-        where = f"kind IN ({', '.join('?' for _ in kinds)})"
-        params = list(kinds)
+        # A finish can refer to an earlier start or yielded command outside the window.
+        call_kinds = (
+            ("tool.start", "tool.finish")
+            if set(kinds) & {"tool.start", "tool.finish", "waiting"}
+            else ()
+        )
+        loaded_kinds = tuple(dict.fromkeys((*kinds, *call_kinds)))
+        where = f"kind IN ({', '.join('?' for _ in loaded_kinds)})"
+        params = list(loaded_kinds)
     if provider is not None:
         where += " AND json_extract(envelope, '$.provider') = ?"
         params.append(provider)
     if session_id is not None:
         where += " AND session_id = ?"
         params.append(session_id)
+    rows = db.execute(f"SELECT envelope FROM events WHERE {where} ORDER BY received_at", params)
     result = []
-    for (document,) in db.execute(
-        f"SELECT envelope FROM events WHERE {where} ORDER BY received_at", params
-    ):
-        event = persisted_envelope(document)
+    for event in normalize_events(persisted_envelope(document) for (document,) in rows):
+        if kinds is not None and event.kind not in kinds:
+            continue
         if since is not None and event.received_at < since:
             continue
         if until is not None and event.received_at >= until:

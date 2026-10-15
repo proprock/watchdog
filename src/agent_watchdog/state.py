@@ -13,6 +13,8 @@ from datetime import datetime
 from typing import Any
 
 from agent_watchdog.analysis import EDIT_TOOLS, _fingerprint, captured_content, tool_outcome
+from agent_watchdog.events import Envelope
+from agent_watchdog.execution import normalize_events
 from agent_watchdog.facts import observed_model, turn_of
 
 SIGNATURE_LIMIT = 16
@@ -168,7 +170,7 @@ def _finished_call(
     verified = pending.get("verified_since_edit", state.verified_since_edit)
     if edited:
         edits_in_turn, verified = edits_in_turn + 1, False
-    elif _may_have_run_tests(tool, content.get("tool_input")):
+    elif _verified_call(state.provider, provider_payload, tool, content.get("tool_input"), outcome):
         verified = True
     return {
         "calls": state.calls + 1,
@@ -179,6 +181,27 @@ def _finished_call(
         "edits_in_turn": edits_in_turn,
         "verified_since_edit": verified,
     }
+
+
+def _verified_call(
+    provider: str, payload: Mapping[str, Any], tool: object, tool_input: object, outcome: str
+) -> bool:
+    if provider != "codex":
+        return _may_have_run_tests(tool, tool_input)
+    execution = payload.get("execution")
+    command = tool_input.get("command") if isinstance(tool_input, Mapping) else None
+    if isinstance(command, list) and all(isinstance(part, str) for part in command):
+        command = " ".join(command)
+    # A test command that yielded, was cancelled, or has no observed outcome did
+    # not prove that the test runner finished. Missing command content cannot
+    # prove which command completed either.
+    return (
+        isinstance(execution, Mapping)
+        and execution.get("phase") == "completed"
+        and outcome in ("success", "failure")
+        and isinstance(command, str)
+        and _may_have_run_tests(tool, {"command": command})
+    )
 
 
 def _may_have_run_tests(tool: object, tool_input: object) -> bool:
@@ -220,8 +243,18 @@ def trailing_repeats(state: SessionState) -> int:
 
 def fold(envelopes: Iterable[Mapping[str, Any]]) -> dict[StateKey, SessionState]:
     """Replay envelopes in order; the migration and tests share this with ``Store``."""
+    documents = list(envelopes)
+    codex = normalize_events(
+        Envelope.model_validate_json(json.dumps(item))
+        for item in documents
+        if item.get("provider") == "codex"
+    )
+    # Normalize only Codex so other providers retain their reducer contract and
+    # need no stronger envelope validation for pure replay.
+    normalized = [item for item in documents if item.get("provider") != "codex"]
+    normalized.extend(item.model_dump(mode="json") for item in codex)
     states: dict[StateKey, SessionState] = {}
-    for envelope in envelopes:
+    for envelope in normalized:
         key = key_of(envelope)
         if key is not None:
             states[key] = apply(states.get(key) or initial(*key), envelope)
