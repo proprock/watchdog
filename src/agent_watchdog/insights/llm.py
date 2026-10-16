@@ -11,6 +11,7 @@ reported, never retried.
 """
 
 import json
+import re
 import shutil
 import subprocess
 import tempfile
@@ -33,6 +34,7 @@ class Request:
     model: str
     effort: str | None
     timeout: float
+    backend: str = "claude"
 
 
 @dataclass(frozen=True)
@@ -45,6 +47,21 @@ class Result:
 
 
 Runner = Callable[[Request], Result]
+
+
+def runner(backend: str, *, forbidden_roots: Sequence[Path]) -> Runner:
+    """Select analysis independently of the observed provider, without fallback."""
+    implementations = {"claude": claude, "codex": codex}
+    if backend not in implementations:
+        raise ValueError(f"Unknown analysis backend: {backend}")
+    roots = tuple(forbidden_roots)
+
+    def selected(request: Request) -> Result:
+        if request.backend != backend:
+            return Result(None, "backend_mismatch", {"provider": backend})
+        return implementations[backend](request, forbidden_roots=roots)
+
+    return selected
 
 
 def _argv(executable: str, request: Request) -> list[str]:
@@ -227,3 +244,72 @@ def claude(request: Request, *, forbidden_roots: Sequence[Path]) -> Result:
     if answer is None:
         return Result(None, "malformed_output", provenance)
     return Result(answer, None, provenance)
+
+
+def codex(request: Request, *, forbidden_roots: Sequence[Path]) -> Result:
+    """Preflight Codex, refusing analysis until an isolation contract is established.
+
+    The inspected CLI has no proven equivalent of Claude's safe mode plus empty
+    tool set. Ignoring config, ephemeral sessions and a read-only sandbox do not
+    establish absence of instructions, skills, plugins, MCP, hooks and tools.
+    Never send the evidence or launch a session on this unverified path (WD-166).
+    """
+    executable = shutil.which("codex")
+    provenance: dict[str, Any] = {
+        "provider": "codex",
+        "executable": executable,
+        "requested_model": request.model,
+        "requested_effort": request.effort,
+        "usage": None,
+        "cost_usd": None,
+        "context_window": None,
+        "max_output_tokens": None,
+        "isolation": {"verified": False, "reason": "no_verified_isolation_contract"},
+    }
+    if executable is None:
+        return Result(None, "not_found", provenance)
+    workdir: Path | None = None
+    started = time.monotonic()
+    try:
+        workdir = Path(tempfile.mkdtemp(prefix="agent-watchdog-analysis-preflight-")).resolve()
+        if _inside(workdir, forbidden_roots):
+            provenance["isolation"]["reason"] = "scratch_inside_project"
+            return Result(None, "isolation_unavailable", provenance)
+        # Only informational commands run here. No authentication is copied or
+        # read and no model command is constructed, even for a newer CLI version.
+        deadline = started + min(PREFLIGHT_TIMEOUT, request.timeout)
+        for arguments in (["--version"], ["exec", "--help"]):
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                return Result(None, "timeout", provenance)
+            completed = _run(
+                [executable, *arguments],
+                timeout=remaining,
+                stdin=subprocess.DEVNULL,
+                cwd=workdir,
+            )
+            if completed.returncode != 0:
+                provenance["exit_code"] = completed.returncode
+                return Result(None, "isolation_unavailable", provenance)
+            if arguments == ["--version"]:
+                version = re.fullmatch(
+                    r"codex-cli (\d+\.\d+\.\d+(?:[-+][\w.+-]+)?)", completed.stdout.strip()
+                )
+                if version is None:
+                    return Result(None, "isolation_unavailable", provenance)
+                provenance["version"] = version[1]
+            else:
+                provenance["preflight_flags"] = [
+                    flag
+                    for flag in ("--ignore-user-config", "--ignore-rules", "--ephemeral")
+                    if flag in completed.stdout
+                ]
+        return Result(None, "isolation_unavailable", provenance)
+    except subprocess.TimeoutExpired:
+        return Result(None, "timeout", provenance)
+    except OSError:
+        return Result(None, "not_found", provenance)
+    finally:
+        provenance["wall_ms"] = round((time.monotonic() - started) * 1000)
+        if workdir is not None:
+            shutil.rmtree(workdir, ignore_errors=True)

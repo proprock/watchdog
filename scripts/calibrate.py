@@ -1040,13 +1040,24 @@ HELP = (
 
 
 def suggestion_runner(paths: UserPaths) -> llm.Runner:
-    """The isolated `claude -p` runner `insights` uses; tests replace this factory."""
+    """The isolated analysis runner; tests replace this factory."""
     roots = [project.root for project in load_config(paths.config).projects]
-    return lambda request: llm.claude(request, forbidden_roots=roots)
+    return lambda request: llm.runner(request.backend, forbidden_roots=roots)(request)
 
 
-def show_suggestion(paths: UserPaths, project, record: Mapping[str, Any]) -> None:
+def show_suggestion(
+    paths: UserPaths,
+    project,
+    record: Mapping[str, Any],
+    *,
+    backend: str = "claude",
+    model: str | None = None,
+    effort: str | None = None,
+) -> None:
     """Print a model's second opinion for this card; it never records a label or verdict."""
+    if backend == "codex" and (model is None or not model.strip()):
+        print("  no suggestion: select --model when using the Codex analysis backend")
+        return
     print("  asking a model for a second opinion (sends the redacted session bundle) ...")
     alias = project_aliases(load_config(paths.config).projects)[project.id]
     try:
@@ -1059,8 +1070,9 @@ def show_suggestion(paths: UserPaths, project, record: Mapping[str, Any]) -> Non
             session_id=record["session_id"],
             since=None,
             until=None,
-            model=insights.DEFAULT_MODEL,
-            effort=None,
+            model=model or insights.DEFAULT_MODEL,
+            backend=backend,
+            effort=effort,
             timeout=insights.DEFAULT_TIMEOUT,
             max_bundle_tokens=None,
             language="English",
@@ -1135,7 +1147,14 @@ def annotate(paths: UserPaths, args: argparse.Namespace) -> int:
         elif command in ("c", "checkout"):
             annotate_checkout_findings(paths, str(project.id), sample["checkout_findings"])
         elif command in ("s", "suggest"):
-            show_suggestion(paths, project, record)
+            show_suggestion(
+                paths,
+                project,
+                record,
+                backend=args.backend,
+                model=args.model,
+                effort=args.effort,
+            )
         elif command in ("o", "outcome"):
             outcome = choose("Task outcome", TASK_OUTCOMES, {}, state["label"]["task_outcome"])
             if outcome is not None:
@@ -1594,6 +1613,9 @@ def build_parser() -> argparse.ArgumentParser:
     review = commands.add_parser("annotate", help="Review the frozen cohort interactively")
     add_common(review)
     review.add_argument("--sample", default="docs/evidence/wd012-sample.json")
+    review.add_argument("--backend", choices=("claude", "codex"), default="claude")
+    review.add_argument("--model", help="Analysis model; required for Codex suggestions")
+    review.add_argument("--effort", choices=("low", "medium", "high", "xhigh", "max"))
 
     result = commands.add_parser("report", help="Emit the calibration evidence")
     add_common(result)

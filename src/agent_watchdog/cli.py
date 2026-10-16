@@ -227,7 +227,7 @@ def main() -> int:
     errors_view.add_argument("--offset", type=int, default=0)
     insights_view = commands.add_parser(
         "insights",
-        help="Ask one isolated `claude -p` call for recommendations over collected evidence",
+        help="Ask one isolated model call for recommendations over collected evidence",
     )
     insights_view.add_argument(
         "mode",
@@ -254,6 +254,7 @@ def main() -> int:
     insights_view.add_argument(
         "--provider", help="Limit to one provider namespace; default scans every provider"
     )
+    insights_view.add_argument("--backend", choices=("claude", "codex"), default="claude")
     insights_view.add_argument(
         "--session", help="Limit to one native session (requires --provider)"
     )
@@ -263,7 +264,7 @@ def main() -> int:
     )
     window.add_argument("--days", type=_days, help="Look back this many days instead of --since")
     insights_view.add_argument("--until", type=_since, help="ISO-8601 exclusive upper bound")
-    insights_view.add_argument("--model", default="sonnet", help="Claude model alias or name")
+    insights_view.add_argument("--model", help="Backend model alias or name; required for Codex")
     insights_view.add_argument("--effort", choices=("low", "medium", "high", "xhigh", "max"))
     insights_view.add_argument(
         "--timeout", type=float, default=600.0, help="Seconds before the call is abandoned"
@@ -427,6 +428,8 @@ def main() -> int:
 
             config = load_config(paths.config)
             roots = [item.root for item in config.projects]
+            if args.backend == "codex" and (args.model is None or not args.model.strip()):
+                raise StorageError("Select --model when using the Codex analysis backend")
             since = args.since
             if args.days is not None:
                 since = datetime.now(UTC) - timedelta(days=args.days)
@@ -435,14 +438,15 @@ def main() -> int:
                 "provider": args.provider,
                 "since": since,
                 "until": args.until,
-                "model": args.model,
+                "model": args.model or "sonnet",
+                "backend": args.backend,
                 "effort": args.effort,
                 "timeout": args.timeout,
                 "max_bundle_tokens": args.max_bundle_tokens,
                 "language": args.language,
                 "dry_run": args.dry_run,
                 "output": args.output,
-                "runner": lambda request: llm.claude(request, forbidden_roots=roots),
+                "runner": llm.runner(args.backend, forbidden_roots=roots),
             }
             if args.all_projects:
                 if args.session is not None:

@@ -141,6 +141,15 @@ This section is the M4 execution/control decision gate: it fixes how a semantic-
 - **Refusal.** The WD-014 refusal clause still applies: without `--safe-mode` the call is refused. A live probe confirmed that no analysis session reached any project store (see [verification](verification.md#wd-123-insights-live-probe)).
 - **Opt-in and limits.** For this manual command the explicit invocation is the opt-in, replacing a per-project `semantic_judge_enabled`. Its kill switch is `insights_llm_enabled` in `[defaults]` or project overrides. `--timeout` (default 600 s, well above a measured 148 s call because a window-scaled bundle adds input time) replaces `semantic_judge_timeout_seconds` for the manual path. The bundle budget scales with the context window the model reported on its previous call, remembered per model in the data directory. No daily budget applies to a call the user starts by hand.
 - **Reserved names.** `semantic_judge_enabled`, `semantic_judge_timeout_seconds` and `semantic_judge_daily_call_budget` remain reserved for any future automatic trigger.
+- **Backend selection (WD-166, partial).** Manual insights and calibration suggestions
+  select an analysis backend, model and effort independently of the observed session
+  provider. Both reuse `Request`/`Result`/`Runner`; Claude remains the default and no
+  failure changes providers. Context-size memories are namespaced by backend/model;
+  they are distinct from future daemon call budgets. The Codex backend currently
+  refuses analysis with `isolation_unavailable` after offline preflight because no
+  complete isolation contract has been established. It does not launch a model or
+  read/copy authentication. [WD-166 evidence](evidence/wd166.md) lists the remaining
+  execution and live-verification gates.
 - **Bundle.** It is a redacted evidence bundle, an export boundary under WD-115, ranked and fitted to a token budget. It is not the raw `export_sessions` event dump: real sessions exceed any context window (p90 per-session content was about 1 MB on the live store).
 - **Session triage (WD-133).** `insights sessions` reads every session of a project window into compact, trouble-ranked facets and makes one call that names candidate stuck, blocked, or abandoned sessions and recurring session-level patterns. It makes no per-session calls, never labels a session, and stores nothing; the user opens a candidate with `insights session`.
 - **Cross-mode digest (WD-134).** `insights digest` builds six modes' evidence for one window, fits each into a fixed share of the budget, and makes one call that links findings across modes and ranks a short action list. A link counts as cross-mode only when its cited item IDs span two modes; it changes nothing stored.

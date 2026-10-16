@@ -101,6 +101,7 @@ def run(
     since: datetime | None,
     until: datetime | None,
     model: str,
+    backend: str = "claude",
     effort: str | None,
     timeout: float,
     max_bundle_tokens: int | None,
@@ -152,6 +153,7 @@ def run(
         dry_run=dry_run,
         output=output,
         runner=runner,
+        backend=backend,
     )
 
 
@@ -163,6 +165,7 @@ def run_all(
     since: datetime | None,
     until: datetime | None,
     model: str,
+    backend: str = "claude",
     effort: str | None,
     timeout: float,
     max_bundle_tokens: int | None,
@@ -208,6 +211,7 @@ def run_all(
         dry_run=dry_run,
         output=output,
         runner=runner,
+        backend=backend,
     )
     if result["reason"] == "disabled":
         result["reason"] = "no_eligible_projects"
@@ -232,6 +236,7 @@ def _respond(
     now: datetime,
     enabled: Callable[[], bool],
     model: str,
+    backend: str = "claude",
     effort: str | None,
     timeout: float,
     max_bundle_tokens: int | None,
@@ -241,7 +246,7 @@ def _respond(
     runner: llm.Runner,
 ) -> dict[str, Any]:
     mode = module.MODE
-    budget_plan = budget.plan(paths, model, max_bundle_tokens)
+    budget_plan = budget.plan(paths, model, max_bundle_tokens, backend=backend)
     # A mode may fit its own bundle shape, as the digest does per sub-mode.
     fit = getattr(module, "fit", bundle.fit)
     fitted = fit(draft, mode=mode, window=window, max_tokens=budget_plan["max_bundle_tokens"])
@@ -249,6 +254,7 @@ def _respond(
     result: dict[str, Any] = {
         "project": label,
         "mode": mode,
+        "analysis": {"backend": backend, "model": model, "effort": effort},
         "status": "dry_run",
         "reason": None,
         "generated_at": now.isoformat(),
@@ -279,9 +285,10 @@ def _respond(
             model=model,
             effort=effort,
             timeout=timeout,
+            backend=backend,
         )
     )
-    budget.remember(paths, model, answer.provenance, now)
+    budget.remember(paths, model, answer.provenance, now, backend=backend)
     result["provenance"] = answer.provenance | {
         "bundle_sha256": hashlib.sha256(text.encode("utf-8")).hexdigest(),
         "bundle_bytes": len(text.encode("utf-8")),

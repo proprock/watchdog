@@ -343,7 +343,7 @@ A call with no observed finish may have been denied, interrupted, or lost. Promp
   and the rest is counted in `coverage.truncated`. `--dry-run` prints the exact
   redacted bundle and sends nothing.
 - **Budget.** `claude -p` reports a model's context window and answer limit only in
-  its result, so Watchdog remembers them per `--model` value in
+  its result, so Watchdog remembers them per analysis backend and `--model` value in
   `<data>/insights/model-windows.json` (provider-reported numbers only). The first call
   for a model uses 120000 tokens, which fits a 200K window. Later calls use
   `min(80% of the window, window - answer limit - 8000)`: 800000 for Sonnet 5's 1M
@@ -357,6 +357,16 @@ A call with no observed finish may have been denied, interrupted, or lost. Promp
   the bundle on stdin. Safe mode keeps the user's login but disables hooks, CLAUDE.md,
   skills, plugins, and MCP servers, so Watchdog cannot observe its own analysis. If the
   installed CLI has no `--safe-mode`, the command refuses rather than run un-isolated.
+- **Analysis backend (WD-166, partial).** `--backend claude|codex` selects the analysis
+  provider independently of the `--provider` observation filter. Claude remains the
+  default with model `sonnet`; Codex requires an explicit `--model`. `--effort` is
+  passed to the selected backend. Codex currently performs only bounded offline
+  version/help checks in a scratch directory, then returns `isolation_unavailable`
+  without sending the bundle or starting a model session. No Codex isolation
+  contract is verified, including for the inspected 0.163.0-alpha.10.2 CLI.
+  `--ignore-user-config`, `--ephemeral` and read-only mode alone are insufficient.
+  There is no provider fallback. Missing usage, cost and context-window values stay
+  unavailable. [Evidence and remaining acceptance work](evidence/wd166.md).
 - **Failures.** `status` is `ok`, `dry_run`, or `unavailable` (exit code 1) with a
   `reason`: `disabled` (`no_eligible_projects` with `--all-projects`), `not_found`, `timeout` (`--timeout`, default 600 s),
   `nonzero_exit`, `is_error`, `malformed_output`, or `isolation_unavailable`. Nothing is
@@ -405,7 +415,7 @@ A call with no observed finish may have been denied, interrupted, or lost. Promp
 - **Skipped projects.** A project with `insights_llm_enabled = false` is excluded from the bundle, including a dry run. A project without a readable database is skipped too. The bundle counts both in `coverage.projects_skipped` without naming them; the printed result lists their names under `projects`.
 - **Answer.** Each recommendation also carries `scope`, `target_file`, and `project`. User scope targets `~/.claude/CLAUDE.md`, `~/.codex/AGENTS.md`, or `~/.claude/settings.json`; project scope targets the project's own `CLAUDE.md`, `AGENTS.md`, or `.claude/settings.json`. Watchdog narrows a `user` recommendation to `project` when none of its cited items occurred in two projects, and records why in `scope_notes`.
 
-The default window is the last seven days unless `--since`, `--days`, or `--session` is given. `--days N` looks back N whole days from now and cannot be combined with `--since`. The window can reach back as far as the store does, but prompts, tool input and output, and error text survive only `content_days` (30 by default); older events keep their metrics only. `--session` requires `--provider`. `--model` defaults to `sonnet`, `--effort` passes through, and `--language` sets the prose language (commands and instruction drafts stay English).
+The default window is the last seven days unless `--since`, `--days`, or `--session` is given. `--days N` looks back N whole days from now and cannot be combined with `--since`. The window can reach back as far as the store does, but prompts, tool input and output, and error text survive only `content_days` (30 by default); older events keep their metrics only. `--session` requires `--provider`. With the default Claude backend, `--model` defaults to `sonnet`; Codex requires an explicit model. `--effort` passes through, and `--language` sets the prose language (commands and instruction drafts stay English).
 
 ## Labels, pins, export, and purge
 
@@ -553,6 +563,11 @@ the key is pressed, so the reviewer can judge first. It prints the state,
 confidence, rationale, and next step under "LLM suggestion, not a verdict". It
 records no label or verdict and stores nothing; the reviewer's own keys still
 decide. Comparing these suggestions with human labels is a separate, later task.
+
+`annotate --backend claude|codex --model MODEL --effort LEVEL` selects the analysis
+backend for `s` independently of each card's observed provider. Claude/`sonnet`
+remains the default; Codex requires a model and currently reports
+`isolation_unavailable`, without a model call or a fallback.
 
 The labelling rules themselves - what each progress state, outcome, and verdict
 means, and what a reviewer refuses to decide - are recorded in
