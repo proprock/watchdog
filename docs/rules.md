@@ -215,6 +215,34 @@ for ten minutes by rule, rule version, profile and project. A non-null
 `delivered_at` continues to mean the daemon sent its socket response, not that a
 provider applied it.
 
+## Control delivery stages (WD-168)
+
+Control records preserve the required action, rule, evidence IDs, text and
+`delivered_at`. `selected_at` records the daemon choosing the decision;
+`response_sent_at` and the historical `delivered_at` record a successful socket
+send. A send failure retains the selection with both send timestamps null.
+Neither timestamp establishes adapter rendering or provider application.
+
+The native adapter records `delivery.control` on its existing hook spool record
+when it attempts a subscribed decision request. It reports whether it received
+a compatible response and whether its renderer produced hook output. This
+acknowledgement is asynchronous and remains available with pipeline timing
+telemetry disabled. No extra connection, acknowledgement wait, or hook deadline
+is introduced. A missing spool record, old adapter, timeout or incompatible
+response leaves rendering unknown. Rendering does not prove stdout consumption
+or any provider effect. Disabled control and unsubscribed hooks create no
+control attempt acknowledgement.
+
+`rules stats` separates attempted actions, socket responses sent, acknowledged
+adapter rendering and unknown rendering from provider effects. Provider effects
+remain unknown until independently evidenced; neither a rule verdict nor an
+adapter acknowledgement proves one. Historical records retain their sent
+meaning and have unknown rendering/effect coverage. Capability gaps are
+control findings, separate from statistical findings, bounded to one per
+rule/version/profile/project/provider per ten minutes. They record the requested
+action, retain null delivery, and fail open. Offline checks in
+[WD-168 evidence](evidence/wd168.md) are not provider acceptance evidence.
+
 ## Not implemented here
 
 Python rules and replay (`rules test`, WD-143), model-written rule candidates

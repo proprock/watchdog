@@ -82,3 +82,5 @@ Historical records only: one line per task. The full text of every entry, includ
 - [x] **WD-004 - Inbox and project storage.** Added atomic envelope publication, bounded batch ingestion/quarantine, one OS-locked SQLite writer per project, WAL with an atomic initial schema migration, UUID replay/conflict checks, and content-addressed artifacts with ...
 
 - **WD-172 - Measure and raise spool-to-store ingestion throughput.** Completed 2026-10-16: durable 25-event transactions and deferred session replay; 2,000 events improve from 579.94 s to 122.31 s (4.74x), with the residual spool cost explaining the sub-5x result; recovery checks and live update verified. [Evidence](docs/evidence/wd172.md).
+
+- **WD-168 - Expose control delivery stages and capability degradation.** Selected, sent and adapter-rendered evidence remain distinct from unknown provider effects; bounded capability gaps and stage coverage in rules stats. Full offline suite: 1,503 passed, 1 skipped; static/package/Rust checks passed; local instance updated ([evidence](docs/evidence/wd168.md)).

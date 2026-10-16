@@ -92,17 +92,19 @@ class _Throttle:
 class Engine:
     registry: RuleRegistry
     throttle: _Throttle
-    gaps: dict[tuple[str, str, str, str], float] = field(default_factory=dict)
+    gaps: dict[tuple[str, str, str, str, str], float] = field(default_factory=dict)
     gap_lock: threading.Lock = field(default_factory=threading.Lock)
 
-    def record_gap(self, rule: DeclarativeRule, profile: object, project: Project) -> bool:
+    def record_gap(
+        self, rule: DeclarativeRule, profile: object, project: Project, provider: str
+    ) -> bool:
         """At most one gap per rule/version/profile/project per ten minutes.
 
         Unrecognized attribution shares one bucket; payload data cannot grow the
         keys. Gap reporting never consumes the actual control action's throttle.
         """
         known = profile if isinstance(profile, str) and profile in CODEX_CELLS else "unknown"
-        key = (rule.name, rule.version, known, str(project.id))
+        key = (rule.name, rule.version, known, str(project.id), provider)
         now = time.monotonic()
         with self.gap_lock:
             previous = self.gaps.get(key)
@@ -213,8 +215,6 @@ def decide(
             tool=hook_input.get("tool_name"),
             codex_control_profile=codex_control_profile,
         )
-        if gap and provider != "codex":
-            continue
         # Bash and patch rewrites have a string command contract. An arbitrary
         # replacement object is not evidence that the provider can apply it.
         original_input = hook_input.get("tool_input")
@@ -241,19 +241,21 @@ def decide(
         if not (config.defaults.policy_intervene and limits.policy_intervene):
             return ALLOW
         if gap:
-            if engine.record_gap(rule, codex_control_profile, project):
+            if engine.record_gap(rule, codex_control_profile, project, provider):
                 logged = logged or replace(
                     decision,
                     action="log",
                     project_id=project.id,
                     requested_action=decision.action,
-                    capability_gap="unsupported_codex_cell",
+                    capability_gap="unsupported_codex_cell"
+                    if provider == "codex"
+                    else "unsupported_cell",
                     codex_control_profile=codex_control_profile
                     if isinstance(codex_control_profile, str)
                     and codex_control_profile in CODEX_CELLS
                     else None,
                     reason=(
-                        "Watchdog: requested control is unavailable for this Codex "
+                        f"Watchdog: requested control is unavailable for this {provider} "
                         "deployment or cell."
                     ),
                     context=None,

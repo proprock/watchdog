@@ -295,6 +295,13 @@ def test_stats_counts_firings_verdicts_and_precision(monkeypatch, capsys, home):
     assert destructive["fired"] == 3 and destructive["actions"] == {"ask": 3}
     assert (destructive["true_positive"], destructive["false_positive"]) == (2, 1)
     assert destructive["precision"] == pytest.approx(2 / 3, abs=1e-3)
+    assert destructive["attempted"] == 3
+    assert destructive["response_sent"] == 0
+    assert destructive["adapter_rendered"] == 0
+    assert destructive["adapter_rendered_unknown"] == 3
+    assert destructive["provider_effect"] == 0
+    assert destructive["provider_effect_unknown"] == 3
+    assert destructive["capability_gaps"] == 0
     repeat = by_rule["repeat_same_input_same_output"]
     assert repeat["fired"] == 1 and repeat["precision"] is None and repeat["reviewed"] == 0
 
@@ -330,3 +337,78 @@ def test_stats_without_collected_data_is_empty_not_an_error(monkeypatch, capsys,
     code, stats, _ = run(monkeypatch, capsys, home, "rules", "stats")
 
     assert code == 0 and stats["rules"] == []
+
+
+def test_stats_keeps_stage_coverage_and_correlates_hooks_before_since(monkeypatch, capsys, home):
+    register(monkeypatch, capsys, home)
+    project = load_config(home / "config.toml").projects[0]
+    moment = datetime(2026, 10, 7, tzinfo=UTC)
+    with Store(home / "data" / "projects" / str(project.id), project.id) as store:
+        for rendered in (True, False):
+            hook = Envelope(
+                provider="claude",
+                project_id=project.id,
+                session_id="s1",
+                kind="tool.start",
+                source="hook",
+                received_at=moment - timedelta(seconds=1),
+                delivery={
+                    "control": {
+                        "response_received": True,
+                        "adapter_rendered": rendered,
+                        "requested_action": "ask",
+                    }
+                },
+            )
+            store.put(hook)
+            store.put(
+                Envelope(
+                    provider="claude",
+                    project_id=project.id,
+                    session_id="s1",
+                    kind="control",
+                    source="daemon",
+                    received_at=moment,
+                    payload={
+                        "claude": {
+                            "rule": "guard",
+                            "rule_version": "1",
+                            "action": "ask",
+                            "evidence_ids": [str(hook.event_id)],
+                            "delivered_at": moment.isoformat(),
+                        }
+                    },
+                )
+            )
+        for extra in ({"requested_action": "deny", "capability_gap": "unsupported_cell"}, {}):
+            store.put(
+                Envelope(
+                    provider="claude",
+                    project_id=project.id,
+                    session_id="s1",
+                    kind="control",
+                    source="daemon",
+                    received_at=moment,
+                    payload={
+                        "claude": {
+                            "rule": "guard",
+                            "rule_version": "1",
+                            "action": "log",
+                            "evidence_ids": [str(uuid4())],
+                            "delivered_at": None,
+                            **extra,
+                        }
+                    },
+                )
+            )
+    code, result, _ = run(
+        monkeypatch, capsys, home, "rules", "stats", "--since", moment.isoformat()
+    )
+    assert code == 0
+    (row,) = result["rules"]
+    assert row["fired"] == 4 and row["attempted"] == 3
+    assert row["response_sent"] == 2
+    assert row["adapter_rendered"] == row["adapter_unrenderable"] == 1
+    assert row["adapter_rendered_unknown"] == 1
+    assert row["capability_gaps"] == 2
+    assert row["provider_effect"] == 0 and row["provider_effect_unknown"] == 3

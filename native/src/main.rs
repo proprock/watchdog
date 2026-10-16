@@ -543,7 +543,7 @@ fn observe(
     // discovery file) never connect: the cost is one bounded file read. A
     // `Stop` already continuing from a block (`stop_hook_active`) is never
     // asked about, so a block cannot loop the harness.
-    let stdout = match (
+    let (stdout, control_delivery) = match (
         identifier(&input, "hook_event_name"),
         PolicySocket::read(&paths.data),
     ) {
@@ -551,10 +551,26 @@ fn observe(
             if socket.subscribed(provider, event, identifier(&input, "tool_name"))
                 && !stop_continuing(event, &input) =>
         {
-            ask_decision(&socket, provider, codex_control_profile, &input, &event_id)
-                .and_then(|decision| render(provider, codex_control_profile, &input, &decision))
+            let decision =
+                ask_decision(&socket, provider, codex_control_profile, &input, &event_id);
+            let response_received = decision.is_some();
+            let requested_action = decision.as_ref().map(|decision| decision.action.clone());
+            let stdout = decision
+                .as_ref()
+                .and_then(|decision| render(provider, codex_control_profile, &input, decision));
+            let adapter_rendered = decision
+                .as_ref()
+                .and_then(|decision| (decision.action != "allow").then_some(stdout.is_some()));
+            (
+                stdout,
+                Some(json!({
+                    "response_received": response_received,
+                    "adapter_rendered": adapter_rendered,
+                    "requested_action": requested_action,
+                })),
+            )
         }
-        _ => None,
+        _ => (None, None),
     };
 
     let mut forwarded = input;
@@ -576,18 +592,24 @@ fn observe(
         return Err("linked spool directory".into());
     }
     let (files, used) = disk::spool_footprint(&spool)?;
+    let mut delivery = json!({});
+    let delivery_object = delivery.as_object_mut().ok_or("invalid delivery")?;
     if let Some(adapter_started_at) = adapter_started_at {
-        record.as_object_mut().ok_or("invalid record")?.insert(
-            "delivery".to_owned(),
-            json!({
-                "adapter_started_at": adapter_started_at,
-                "spool_enqueued_at": utc_now(),
-                "spool_occupancy": {
-                    "files": files,
-                    "bytes": used,
-                },
-            }),
+        delivery_object.insert("adapter_started_at".to_owned(), json!(adapter_started_at));
+        delivery_object.insert("spool_enqueued_at".to_owned(), json!(utc_now()));
+        delivery_object.insert(
+            "spool_occupancy".to_owned(),
+            json!({"files": files, "bytes": used}),
         );
+    }
+    if let Some(control_delivery) = control_delivery {
+        delivery_object.insert("control".to_owned(), control_delivery);
+    }
+    if !delivery_object.is_empty() {
+        record
+            .as_object_mut()
+            .ok_or("invalid record")?
+            .insert("delivery".to_owned(), delivery);
     }
     let bytes = serde_json::to_vec(&record)?;
     if files.saturating_add(1) > limits.spool_files

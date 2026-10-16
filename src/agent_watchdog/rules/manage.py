@@ -142,29 +142,55 @@ def enable(paths: UserPaths, name: str) -> dict[str, object]:
 
 
 def stats(paths: UserPaths, config: Config, *, since: datetime | None) -> list[dict[str, object]]:
-    """Firings, verdicts and precision per rule, from the recorded control events.
+    """Firings, verdicts, precision and delivery-stage coverage per rule.
 
     Precision is true positives over reviewed true and false positives and stays
-    ``None`` while nothing is reviewed: unknown is not zero.
+    ``None`` while nothing is reviewed: unknown is not zero. Delivery coverage
+    counts observed stages independently; a verdict never proves provider effect.
     """
     from agent_watchdog import inspection
 
     fired: Counter[str] = Counter()
     actions: dict[str, Counter[str]] = {}
     verdicts: dict[str, Counter[str]] = {}
+    delivery: dict[str, Counter[str]] = {}
     for project in config.projects:
         try:
             with inspection.database(paths, project) as db:
                 rows = db.execute(
                     "SELECT ef.provider, ef.session_id, e.envelope FROM events e "
                     "JOIN event_facts ef ON ef.event_id = e.event_id "
-                    "WHERE ef.kind = 'control' ORDER BY e.received_at, e.event_id"
+                    "WHERE ef.kind = 'control' "
+                    "ORDER BY e.received_at, e.event_id"
                 ).fetchall()
                 sessions: dict[tuple[str, str], list[Envelope]] = {}
                 for provider, session_id, document in rows:
                     event = Envelope.model_validate_json(document)
                     if since is None or event.received_at >= since:
                         sessions.setdefault((provider, session_id or ""), []).append(event)
+                # Fetch only referenced acknowledgements, including hooks received
+                # before --since. Loading all hook traffic would scale with the
+                # entire observation history rather than the control history.
+                referenced: set[str] = set()
+                for controls in sessions.values():
+                    for control in controls:
+                        payload = control.payload.get(control.provider)
+                        ids = payload.get("evidence_ids") if isinstance(payload, dict) else None
+                        if isinstance(ids, list):
+                            referenced.update(item for item in ids if isinstance(item, str))
+                identifiers = sorted(referenced)
+                for offset in range(0, len(identifiers), 900):
+                    batch = identifiers[offset : offset + 900]
+                    placeholders = ",".join("?" for _ in batch)
+                    hook_rows = db.execute(
+                        f"SELECT envelope FROM events WHERE event_id IN ({placeholders})",
+                        batch,
+                    ).fetchall()
+                    for (document,) in hook_rows:
+                        hook = Envelope.model_validate_json(document)
+                        key = (hook.provider, hook.session_id or "")
+                        if hook.source == "hook" and key in sessions:
+                            sessions[key].append(hook)
                 for (provider, session_id), events in sessions.items():
                     recorded = {
                         (item["rule"], item["rule_version"], item["fingerprint"]): item["verdict"]
@@ -174,6 +200,27 @@ def stats(paths: UserPaths, config: Config, *, since: datetime | None) -> list[d
                         rule = str(finding["rule"])
                         fired[rule] += 1
                         actions.setdefault(rule, Counter())[str(finding["action"])] += 1
+                        is_attempt = finding["selected_action"] in {
+                            "deny",
+                            "ask",
+                            "rewrite",
+                            "context",
+                            "block",
+                        }
+                        if is_attempt:
+                            coverage = delivery.setdefault(rule, Counter())
+                            coverage["attempted"] += 1
+                            if finding["response_sent_at"]:
+                                coverage["response_sent"] += 1
+                            if finding["adapter_rendered"] is True:
+                                coverage["adapter_rendered"] += 1
+                            elif finding["adapter_rendered"] is False:
+                                coverage["adapter_unrenderable"] += 1
+                            elif finding["adapter_rendered"] is None:
+                                coverage["adapter_rendered_unknown"] += 1
+                            coverage["provider_effect_unknown"] += 1
+                            if finding["capability_gap"]:
+                                coverage["capability_gaps"] += 1
                         verdict = recorded.get(
                             (rule, finding["rule_version"], finding["fingerprint"])
                         )
@@ -185,6 +232,7 @@ def stats(paths: UserPaths, config: Config, *, since: datetime | None) -> list[d
     for rule in sorted(fired):
         counts = verdicts.get(rule, Counter())
         positive, negative = counts["true_positive"], counts["false_positive"]
+        coverage = delivery.get(rule, Counter())
         result.append(
             {
                 "rule": rule,
@@ -197,6 +245,14 @@ def stats(paths: UserPaths, config: Config, *, since: datetime | None) -> list[d
                 "precision": round(positive / (positive + negative), 4)
                 if positive + negative
                 else None,
+                "attempted": coverage["attempted"],
+                "response_sent": coverage["response_sent"],
+                "adapter_rendered": coverage["adapter_rendered"],
+                "adapter_rendered_unknown": coverage["adapter_rendered_unknown"],
+                "adapter_unrenderable": coverage["adapter_unrenderable"],
+                "provider_effect": 0,
+                "provider_effect_unknown": coverage["provider_effect_unknown"],
+                "capability_gaps": coverage["capability_gaps"],
             }
         )
     return result

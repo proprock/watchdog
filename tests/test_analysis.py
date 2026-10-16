@@ -201,6 +201,120 @@ def test_a_malformed_control_payload_is_skipped_not_fatal(payload):
     assert control_findings([event]) == []
 
 
+def control_hook(project, moment, event_id, **fields):
+    return Envelope(
+        provider="claude",
+        project_id=project,
+        session_id="session-1",
+        kind="tool.start",
+        source="hook",
+        received_at=moment,
+        event_id=event_id,
+        delivery={
+            "control": {
+                "response_received": True,
+                "adapter_rendered": True,
+                "requested_action": "ask",
+            }
+        },
+    ).model_copy(update=fields)
+
+
+def test_control_delivery_stages_keep_unknowns_and_correlate_native_rendering():
+    project, moment, hook_id = uuid4(), datetime(2026, 10, 7, tzinfo=UTC), uuid4()
+    control = control_event(project, moment, hook_event=hook_id)
+    (legacy,) = control_findings([control])
+    assert legacy["selected_action"] == "ask"
+    assert legacy["response_sent_at"] == moment.isoformat()
+    assert legacy["adapter_rendered"] is None
+    assert legacy["provider_effect"] is None
+    for rendered in (True, False):
+        hook = control_hook(
+            project,
+            moment,
+            hook_id,
+            delivery={
+                "control": {
+                    "response_received": True,
+                    "adapter_rendered": rendered,
+                    "requested_action": "ask",
+                }
+            },
+        )
+        (finding,) = control_findings([control, hook])
+        assert finding["adapter_rendered"] is rendered
+        assert finding["provider_effect"] is None
+        assert finding["capability_gap"] == (None if rendered else "adapter_unrenderable")
+
+
+@pytest.mark.parametrize(
+    "changes",
+    [
+        {"source": "transcript"},
+        {"provider": "codex"},
+        {"session_id": "other"},
+        {
+            "delivery": {
+                "control": {
+                    "response_received": False,
+                    "adapter_rendered": True,
+                    "requested_action": "ask",
+                }
+            }
+        },
+        {
+            "delivery": {
+                "control": {
+                    "response_received": True,
+                    "adapter_rendered": True,
+                    "requested_action": "deny",
+                }
+            }
+        },
+        {"delivery": {"control": {"response_received": True, "adapter_rendered": True}}},
+        {
+            "delivery": {
+                "control": {
+                    "response_received": True,
+                    "adapter_rendered": "true",
+                    "requested_action": "ask",
+                }
+            }
+        },
+    ],
+)
+def test_unrelated_or_incomplete_ack_is_never_render_success(changes):
+    project, moment, hook_id = uuid4(), datetime(2026, 10, 7, tzinfo=UTC), uuid4()
+    control = control_event(project, moment, hook_event=hook_id, provider_effect=True)
+    hook = control_hook(project, moment, hook_id, **changes)
+    (finding,) = control_findings([control, hook])
+    assert finding["adapter_rendered"] is None
+    assert finding["provider_effect"] is None
+
+
+@pytest.mark.parametrize("sent", [None, True, "later", "2026-10-07T12:00:00"])
+def test_invalid_or_unknown_send_stage_is_not_success(sent):
+    event = control_event(uuid4(), datetime(2026, 10, 7, tzinfo=UTC), response_sent_at=sent)
+    (finding,) = control_findings([event])
+    assert finding["response_sent_at"] is None
+
+
+def test_capability_gap_preserves_requested_action_and_unknown_effect():
+    event = control_event(
+        uuid4(),
+        datetime(2026, 10, 7, tzinfo=UTC),
+        action="log",
+        requested_action="deny",
+        capability_gap="unsupported_codex_cell",
+        delivered_at=None,
+    )
+    (finding,) = control_findings([event])
+    assert finding["action"] == "log" and finding["selected_action"] == "deny"
+    assert finding["capability_gap"] == "unsupported_codex_cell"
+    assert finding["response_sent_at"] is None
+    assert finding["adapter_rendered"] is None and finding["provider_effect"] is None
+
+
 def test_other_event_kinds_are_not_control_findings():
     project, moment = uuid4(), datetime(2026, 10, 7, tzinfo=UTC)
 

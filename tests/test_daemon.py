@@ -1013,6 +1013,10 @@ def test_policy_server_records_a_control_event_for_a_delivered_action(paths, tmp
     assert recorded["evidence_ids"] == [str(event_id)]
     assert "sonnet" in recorded["reason"] and recorded["text"] == recorded["reason"]
     assert datetime.fromisoformat(recorded["delivered_at"]).tzinfo is not None
+    assert recorded["response_sent_at"] == recorded["delivered_at"]
+    assert recorded["selected_at"] <= recorded["response_sent_at"]
+    assert recorded["adapter_rendered"] is None
+    assert recorded["provider_effect"] is None
 
 
 def test_a_control_event_is_stored_and_projected_like_any_other(paths, tmp_path):
@@ -1598,3 +1602,135 @@ def test_independent_cli_startup_contenders_and_pause(paths):
         stop(paths)
         for process in processes:
             process.communicate(timeout=15)
+
+
+def test_control_selection_is_recorded_when_response_write_fails(paths, tmp_path, monkeypatch):
+    import io
+    from types import SimpleNamespace
+
+    import agent_watchdog.daemon as daemon_module
+
+    root, project = _same_model_setup(paths, tmp_path)
+    with _policy_server(paths, _tracker()) as channel:
+        discovery = json.loads((paths.data / "policy" / "socket.json").read_text())
+        request = _decision_request(discovery, root)
+
+        class BrokenWriter:
+            def write(self, value):
+                raise BrokenPipeError("adapter disconnected")
+
+        handler = object.__new__(daemon_module._PolicyRequestHandler)
+        server = SimpleNamespace(
+            watchdog_paths=paths,
+            watchdog_token=discovery["token"],
+            watchdog_request_bytes=discovery["max_request_bytes"],
+            watchdog_stats=channel.stats,
+            watchdog_sessions=_tracker(),
+        )
+        handler.connection = SimpleNamespace(settimeout=lambda _: None)
+        handler.rfile = io.BytesIO((json.dumps(request) + "\n").encode())
+        monkeypatch.setattr(handler, "server", server, raising=False)
+        monkeypatch.setattr(handler, "wfile", BrokenWriter(), raising=False)
+        handler.handle()
+        wait_for(lambda: _control_events(paths, project))
+    (control,) = _control_events(paths, project)
+    recorded = control["payload"]["claude"]
+    assert recorded["action"] == "rewrite"
+    assert recorded["selected_at"]
+    assert recorded["response_sent_at"] is None
+    assert recorded["delivered_at"] is None
+    assert recorded["adapter_rendered"] is None
+    assert recorded["provider_effect"] is None
+
+
+def test_spool_preserves_control_render_ack_without_pipeline_telemetry(paths, tmp_path):
+    root = tmp_path / "project"
+    root.mkdir()
+    mutate_registry(paths, lambda registry: registry.add(root))
+    config = load_config(paths.config)
+    config = config.model_copy(update={"pipeline_telemetry": False})
+    project = config.projects[0]
+    record = spool_record(root, hook_event_name="Stop", session_id="s1")
+    record["delivery"] = {
+        "adapter_started_at": "irrelevant",
+        "control": {
+            "response_received": True,
+            "adapter_rendered": True,
+            "requested_action": "block",
+        },
+    }
+    write_spool_record(paths, record)
+    assert _drain_spool(paths, config)
+    (envelope,) = _control_events(paths, project)
+    assert envelope["delivery"] == {"control": record["delivery"]["control"]}
+
+
+def test_unrenderable_requested_delivery_is_a_bounded_gap(paths, tmp_path, monkeypatch):
+    root, project = _same_model_setup(paths, tmp_path)
+    monkeypatch.setattr("agent_watchdog.rules.engine.renderable", lambda *a, **kw: False)
+    first = _decide(paths, _agent_input(root), session=_coordinator())
+    assert first.action == "log"
+    assert first.requested_action == "rewrite"
+    assert first.capability_gap == "unsupported_cell"
+    assert first.project_id == project.id
+    assert _decide(paths, _agent_input(root), session=_coordinator()).action == "allow"
+
+
+def test_disabled_control_does_not_create_a_capability_gap(paths, tmp_path, monkeypatch):
+    root, _ = _same_model_setup(paths, tmp_path)
+    config = load_config(paths.config)
+    save_config(
+        paths.config,
+        config.model_copy(
+            update={"defaults": config.defaults.model_copy(update={"policy_intervene": False})}
+        ),
+    )
+    monkeypatch.setattr("agent_watchdog.rules.engine.renderable", lambda *a, **kw: False)
+    decision = _decide(paths, _agent_input(root), session=_coordinator())
+    assert decision.action == "allow"
+    assert decision.capability_gap is None
+
+
+@pytest.mark.native
+def test_real_adapter_daemon_roundtrip_reports_rendering_without_provider_effect(
+    paths, tmp_path, rust_adapter
+):
+    from agent_watchdog.rules.manage import stats
+
+    root, project = _same_model_setup(paths, tmp_path)
+    config = load_config(paths.config).model_copy(update={"pipeline_telemetry": False})
+    save_config(paths.config, config)
+    with _policy_server(paths, _tracker()):
+        # The test owns the channel; suppress adapter daemon auto-launch.
+        with writer_lock(paths.data / "daemon.lock"):
+            result = subprocess.run(
+                [
+                    str(rust_adapter),
+                    "--python",
+                    sys.executable,
+                    "--config",
+                    str(paths.config),
+                    "--data",
+                    str(paths.data),
+                    "--runtime",
+                    str(paths.runtime),
+                    "hook",
+                    "claude",
+                ],
+                input=json.dumps(_agent_input(root)),
+                capture_output=True,
+                text=True,
+                timeout=5,
+            )
+        assert result.returncode == 0
+        assert json.loads(result.stdout)["hookSpecificOutput"]["updatedInput"]["model"] == "sonnet"
+        wait_for(
+            lambda: any(item.get("kind") == "control" for item in _control_events(paths, project))
+        )
+    assert _drain_spool(paths, config)
+    drain_inbox(paths, project, config)
+    (row,) = stats(paths, config, since=None)
+    assert row["attempted"] == row["response_sent"] == row["adapter_rendered"] == 1
+    assert row["adapter_rendered_unknown"] == 0
+    assert row["provider_effect"] == 0
+    assert row["provider_effect_unknown"] == 1

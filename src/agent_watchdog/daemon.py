@@ -1037,10 +1037,32 @@ def _drain_spool(
                 event_id=event_id,
                 received_at=received_at,
             )
+            # Rendering is control evidence, independent of pipeline timing telemetry.
+            control_delivery = delivery.get("control")
+            if isinstance(control_delivery, dict):
+                received = control_delivery.get("response_received")
+                rendered = control_delivery.get("adapter_rendered")
+                action = control_delivery.get("requested_action")
+                if type(received) is bool and (rendered is None or type(rendered) is bool):
+                    bounded = {"response_received": received, "adapter_rendered": rendered}
+                    if isinstance(action, str) and action in {
+                        "allow",
+                        "deny",
+                        "ask",
+                        "rewrite",
+                        "context",
+                        "block",
+                    }:
+                        bounded["requested_action"] = action
+                    event = event.model_copy(update={"delivery": {"control": bounded}})
             if config.pipeline_telemetry:
                 event = event.model_copy(
                     update={
-                        "delivery": delivery | {"spool_drained_at": datetime.now(UTC).isoformat()}
+                        "delivery": {
+                            key: value for key, value in delivery.items() if key != "control"
+                        }
+                        | event.delivery
+                        | {"spool_drained_at": datetime.now(UTC).isoformat()}
                     }
                 )
             warn_unknown_fields(
@@ -1168,18 +1190,22 @@ def _record_control(
     hook_input: Mapping[str, object],
     event_id: UUID,
     decision: Decision,
+    *,
+    selected_at: str | None = None,
+    response_sent_at: str | None = None,
 ) -> None:
-    """Record one action the channel answered with, as a ``control`` event.
+    """Record a selected action and whether its socket response was sent.
 
     Runs on a handler thread, so it never opens a ``Store`` (the poll thread
     holds the writer lock); ``_admit`` publishes to the project inbox, which
     ``_poll`` drains. The daemon cannot see whether the adapter rendered the
-    answer in time, so "delivered" means "sent", and a failure here is only
-    logged: the decision was already returned.
+    answer in time, so "delivered" means "sent". Recording failures are logged
+    after the response attempt and never change the adapter's decision.
     """
     if decision.action == "allow" or decision.project_id is None:
         return
     session_id = hook_input.get("session_id")
+    sent_at = None if decision.capability_gap else response_sent_at
     control_id = uuid5(
         NAMESPACE_URL, f"watchdog|control|{event_id}|{decision.rule}|{decision.action}"
     )
@@ -1199,12 +1225,15 @@ def _record_control(
                     "rule_version": decision.rule_version,
                     "action": decision.action,
                     "reason": decision.reason,
-                    # The text the model was sent: a reason, or injected context.
+                    # The selected text; send timestamps say whether the response was sent.
                     "text": decision.reason or decision.context,
                     "evidence_ids": [str(event_id)],
-                    "delivered_at": None
-                    if decision.capability_gap
-                    else datetime.now(UTC).isoformat(),
+                    # Historical delivery means socket send, never provider effect.
+                    "delivered_at": sent_at,
+                    "selected_at": selected_at,
+                    "response_sent_at": sent_at,
+                    "adapter_rendered": None,
+                    "provider_effect": None,
                     **(
                         {
                             "capability_gap": decision.capability_gap,
@@ -1330,14 +1359,25 @@ class _PolicyRequestHandler(socketserver.StreamRequestHandler):
                 error_type=error_code(error),
             )
             return
+        selected_at = datetime.now(UTC).isoformat()
+        response_sent_at = None
         try:
             self.wfile.write(json.dumps(_decision_response(decision)).encode())
             # The adapter reads to end-of-stream; signal it now so recording the
             # control event below never adds to its wait.
             self.connection.shutdown(socket.SHUT_WR)
+            response_sent_at = datetime.now(UTC).isoformat()
         except OSError:
-            return
-        _record_control(paths, str(provider), hook_input, event_id, decision)
+            pass  # Selection is still observable when the adapter disconnects.
+        _record_control(
+            paths,
+            str(provider),
+            hook_input,
+            event_id,
+            decision,
+            selected_at=selected_at,
+            response_sent_at=response_sent_at,
+        )
 
 
 class _PolicyServer(socketserver.ThreadingTCPServer):

@@ -477,17 +477,16 @@ def same_model_subagent_spawn(events: Iterable[Envelope]) -> list[dict[str, Any]
 
 
 def control_findings(events: Iterable[Envelope]) -> list[dict[str, Any]]:
-    """One finding per action the decision channel sent (WD-142).
+    """One finding per selected action, with independently observed delivery stages.
 
-    The daemon records every action as a ``control`` event; this projects it into
-    the finding shape so a manual verdict, ``calibrate.py annotate`` and
-    ``rules stats`` handle control findings like any other. Evidence is the control
-    event plus the hook event it answered, so each firing has its own fingerprint
-    and a replay reproduces it. A payload that lacks a rule, version or action is
-    skipped: a finding without them cannot carry a verdict.
+    Evidence remains the control event plus the hook event it answered, preserving
+    each firing's fingerprint and verdict identity. Sending a response is not
+    adapter rendering, and rendering is not provider application.
     """
+    ordered = sorted(events, key=lambda item: (item.received_at, str(item.event_id)))
+    hooks = {str(item.event_id): item for item in ordered if item.source == "hook"}
     findings = []
-    for event in sorted(events, key=lambda item: (item.received_at, str(item.event_id))):
+    for event in ordered:
         if event.kind != "control":
             continue
         recorded = _provider(event)
@@ -506,6 +505,38 @@ def control_findings(events: Iterable[Envelope]) -> list[dict[str, Any]]:
         evidence = sorted(
             {str(event.event_id), *(item for item in answered if isinstance(item, str))}
         )
+        selected_action = recorded.get("requested_action")
+        if not isinstance(selected_action, str) or not selected_action:
+            selected_action = action
+        raw_sent = recorded.get("response_sent_at", recorded.get("delivered_at"))
+        response_sent_at = None
+        if isinstance(raw_sent, str):
+            try:
+                if datetime.fromisoformat(raw_sent).tzinfo is not None:
+                    response_sent_at = raw_sent
+            except ValueError:
+                pass
+        rendered = None
+        for event_id in answered:
+            hook = hooks.get(event_id) if isinstance(event_id, str) else None
+            if hook is None or (hook.provider, hook.session_id) != (
+                event.provider,
+                event.session_id,
+            ):
+                continue
+            ack = hook.delivery.get("control")
+            if (
+                isinstance(ack, Mapping)
+                and ack.get("response_received") is True
+                and ack.get("requested_action") == selected_action
+                and selected_action in {"deny", "ask", "rewrite", "context", "block"}
+                and type(ack.get("adapter_rendered")) is bool
+            ):
+                rendered = ack["adapter_rendered"]
+                break
+        gap = recorded.get("capability_gap")
+        if rendered is False and not gap:
+            gap = "adapter_unrenderable"
         text = recorded.get("text") or recorded.get("reason")
         findings.append(
             {
@@ -515,8 +546,16 @@ def control_findings(events: Iterable[Envelope]) -> list[dict[str, Any]]:
                 "count": 1,
                 "fingerprint": finding_fingerprint(rule, version, evidence),
                 "attribution": "observed",
-                "explanation": text[:1000] if isinstance(text, str) else f"{rule}: {action}",
+                "explanation": text[:1000]
+                if isinstance(text, str)
+                else f"{rule}: {selected_action}",
                 "action": action,
+                "selected_action": selected_action,
+                "selected_at": recorded.get("selected_at"),
+                "response_sent_at": response_sent_at,
+                "adapter_rendered": rendered,
+                "provider_effect": None,
+                "capability_gap": gap,
             }
         )
     return findings
