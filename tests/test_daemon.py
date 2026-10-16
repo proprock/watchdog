@@ -852,6 +852,7 @@ def test_policy_server_answers_over_the_loopback_socket(paths, tmp_path):
             {"provider": "claude", "hook_event_name": "PostToolUse", "tool_name": None},
             {"provider": "claude", "hook_event_name": "PreToolUse", "tool_name": "Agent"},
             {"provider": "claude", "hook_event_name": "PreToolUse", "tool_name": "Bash"},
+            {"provider": "claude", "hook_event_name": "PreToolUse", "tool_name": "PowerShell"},
         ]
         raw = _policy_request(discovery["port"], **_decision_request(discovery, root))
         answer = json.loads(raw)

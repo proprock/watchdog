@@ -76,8 +76,24 @@ def _checked_regex(pattern: str | None) -> str | None:
 
 class Match(StrictModel):
     tool_name: str | None = None
+    tool_names: list[str] | None = None
     input_regex: str | None = None
     error_regex: str | None = None
+
+    @model_validator(mode="after")
+    def valid_tools(self) -> Self:
+        if self.tool_names is not None:
+            if self.tool_name is not None:
+                raise ValueError("Use either tool_name or tool_names")
+            if not self.tool_names or any(not name.strip() for name in self.tool_names):
+                raise ValueError("Name at least one nonempty tool")
+        return self
+
+    def tools(self) -> tuple[str | None, ...]:
+        return tuple(self.tool_names) if self.tool_names is not None else (self.tool_name,)
+
+    def matches_tool(self, tool: object) -> bool:
+        return None in self.tools() or tool in self.tools()
 
     @field_validator("input_regex", "error_regex")
     @classmethod
@@ -191,7 +207,9 @@ class DeclarativeRule(Versioned):
         # audit trail, so a rule may only ask for what some listed provider renders.
         kind = self.action.kind
         if not any(
-            subscription_tools(p, self.event, kind, self.match.tool_name) for p in self.provider
+            subscription_tools(p, self.event, kind, tool)
+            for p in self.provider
+            for tool in self.match.tools()
         ):
             raise ValueError(f"The {kind} action cannot be delivered on {self.event}")
         return self
@@ -327,7 +345,7 @@ def evaluate(rule: DeclarativeRule, ctx: Context, *, now: datetime) -> Decision:
     hook = ctx.hook_input
     if hook.get("hook_event_name") != rule.event or ctx.provider not in rule.provider:
         return ALLOW
-    if rule.match.tool_name is not None and hook.get("tool_name") != rule.match.tool_name:
+    if not rule.match.matches_tool(hook.get("tool_name")):
         return ALLOW
     if rule.action.expires_at is not None and now >= _instant(rule.action.expires_at):
         return ALLOW

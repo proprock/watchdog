@@ -351,3 +351,39 @@ def test_tiers_come_from_the_configuration():
 
     assert decision.updated_input is not None
     assert decision.updated_input["model"] == "small"
+
+
+@pytest.mark.parametrize("tool", ["Bash", "PowerShell", "Edit", None])
+def test_tool_names_matches_only_the_listed_tools(tool):
+    rule = parse_rule(toml(match={"tool_names": ["Bash", "PowerShell"]}))
+    decision = evaluate(rule, context(bash("ls", tool_name=tool)), now=NOW)
+    assert decision.action == ("ask" if tool in {"Bash", "PowerShell"} else "allow")
+
+
+@pytest.mark.parametrize(
+    "match",
+    [
+        {"tool_names": []},
+        {"tool_names": [""]},
+        {"tool_names": ["   "]},
+        {"tool_names": "Bash"},
+        {"tool_name": "Bash", "tool_names": ["PowerShell"]},
+    ],
+)
+def test_invalid_tool_names_are_rejected(match):
+    with pytest.raises(RuleError):
+        parse_rule(toml(match=match))
+
+
+@pytest.mark.parametrize("tools,valid", [(["unknown"], False), (["unknown", "Bash"], True)])
+def test_tool_names_preserve_provider_capability_scoping(tools, valid):
+    body = toml(
+        provider=["codex"],
+        match={"tool_names": tools},
+        action={"kind": "rewrite", "message": "m", "rewrite": {"tool_input.command": "ls"}},
+    )
+    if valid:
+        parse_rule(body)
+    else:
+        with pytest.raises(RuleError):
+            parse_rule(body)

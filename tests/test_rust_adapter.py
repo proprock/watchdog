@@ -1666,12 +1666,20 @@ def test_native_rewrites_a_very_long_prompt_and_records_a_control_event_with_a_r
         wait(lambda: not status(paths)["alive"])
 
 
+@pytest.mark.parametrize(
+    ("tool_name", "destructive", "harmless"),
+    [
+        ("Bash", "git reset --hard HEAD~3", "git status"),
+        ("PowerShell", "git reset --hard HEAD~3", "git status"),
+        ("PowerShell", "Remove-Item -Recurse build", "Get-ChildItem"),
+    ],
+)
 def test_native_asks_before_a_destructive_command_and_lets_others_pass_with_a_real_daemon(
-    rust_adapter, tmp_path
+    rust_adapter, tmp_path, tool_name, destructive, harmless
 ):
     """The shipped `destructive_command` rule, end to end: the real adapter asks the
-    real daemon about a Bash call (subscribed since WD-142) and renders `ask`; an
-    ordinary command is spooled and passes untouched."""
+    real daemon about Bash and PowerShell calls and renders `ask`; an ordinary
+    command is spooled and passes untouched."""
     from agent_watchdog.daemon import status, stop
     from agent_watchdog.registry import Registry
 
@@ -1688,12 +1696,12 @@ def test_native_asks_before_a_destructive_command_and_lets_others_pass_with_a_re
             assert time.monotonic() < deadline, "Daemon did not settle"
             time.sleep(0.05)
 
-    def bash(command):
+    def tool_call(command):
         return {
             "cwd": str(root),
             "session_id": "session-1",
             "hook_event_name": "PreToolUse",
-            "tool_name": "Bash",
+            "tool_name": tool_name,
             "tool_input": {"command": command},
         }
 
@@ -1702,16 +1710,16 @@ def test_native_asks_before_a_destructive_command_and_lets_others_pass_with_a_re
         wait(lambda: status(paths)["state"] == "running")
         wait(lambda: (paths.data / "policy" / "socket.json").is_file())
         subscriptions = json.loads((paths.data / "policy" / "socket.json").read_text())
-        assert {"provider": "claude", "hook_event_name": "PreToolUse", "tool_name": "Bash"} in (
+        assert {"provider": "claude", "hook_event_name": "PreToolUse", "tool_name": tool_name} in (
             subscriptions["subscriptions"]
         )
 
-        asked = invoke(rust_adapter, paths, bash("git reset --hard HEAD~3"), provider="claude")
+        asked = invoke(rust_adapter, paths, tool_call(destructive), provider="claude")
         output = json.loads(asked.stdout)["hookSpecificOutput"]
         assert output["permissionDecision"] == "ask"
         assert "Confirm" in output["permissionDecisionReason"]
 
-        passed = invoke(rust_adapter, paths, bash("git status"), provider="claude")
+        passed = invoke(rust_adapter, paths, tool_call(harmless), provider="claude")
         assert passed.stdout == ""
     finally:
         stop(paths)

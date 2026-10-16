@@ -204,6 +204,13 @@ DESTRUCTIVE = [
     # about a quoted command costs one confirmation.
     'echo "rm -rf build"',
 ]
+POWERSHELL_DESTRUCTIVE = [
+    "Remove-Item -Recurse build",
+    "remove-item -recurse build",
+    "Remove-Item build -Recurse",
+    'Remove-Item "C:\\Users\\me\\.env"',
+    "Remove-Item -LiteralPath 'C:\\Users\\me\\.env'",
+]
 HARMLESS = [
     "git push",
     "git push origin main",
@@ -230,23 +237,40 @@ HARMLESS = [
     "git log --format=%H",
     "uv run pytest -x",
 ]
+POWERSHELL_HARMLESS = [
+    "Remove-Item file.txt",
+    "Remove-Item -Force file.txt",
+    "Remove-Item .env.example",
+    "Remove-Item .env.sample",
+    "Remove-Item .env.template",
+    "Get-ChildItem -Recurse",
+    "Remove-Item file.txt; Get-ChildItem -Recurse",
+]
 
 
-def ask_about(command: str) -> list[Decision]:
-    call = hook("PreToolUse", tool_name="Bash", tool_input={"command": command})
+def ask_about(command: str, tool_name: str = "Bash") -> list[Decision]:
+    call = hook("PreToolUse", tool_name=tool_name, tool_input={"command": command})
     return decisions(call, None)
 
 
-@pytest.mark.parametrize("command", DESTRUCTIVE)
-def test_destructive_commands_ask(command):
-    (answer,) = ask_about(command)
+@pytest.mark.parametrize(
+    ("tool_name", "command"),
+    [(tool_name, command) for tool_name in ("Bash", "PowerShell") for command in DESTRUCTIVE]
+    + [("PowerShell", command) for command in POWERSHELL_DESTRUCTIVE],
+)
+def test_destructive_commands_ask(tool_name, command):
+    (answer,) = ask_about(command, tool_name)
 
     assert (answer.action, answer.rule) == ("ask", "destructive_command")
 
 
-@pytest.mark.parametrize("command", HARMLESS)
-def test_ordinary_commands_pass_untouched(command):
-    assert ask_about(command) == []
+@pytest.mark.parametrize(
+    ("tool_name", "command"),
+    [(tool_name, command) for tool_name in ("Bash", "PowerShell") for command in HARMLESS]
+    + [("PowerShell", command) for command in POWERSHELL_HARMLESS],
+)
+def test_ordinary_commands_pass_untouched(tool_name, command):
+    assert ask_about(command, tool_name) == []
 
 
 def test_other_tools_are_not_matched_by_the_command_rule():

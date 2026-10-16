@@ -154,11 +154,7 @@ def _project_of(config: Config, hook_input: Mapping[str, object]) -> Project | N
 
 
 def _applies(rule: DeclarativeRule, provider: str, event: str, tool: object) -> bool:
-    return (
-        rule.event == event
-        and provider in rule.provider
-        and (rule.match.tool_name is None or rule.match.tool_name == tool)
-    )
+    return rule.event == event and provider in rule.provider and rule.match.matches_tool(tool)
 
 
 def decide(

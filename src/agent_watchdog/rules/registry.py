@@ -210,10 +210,11 @@ class RuleRegistry:
             if rule is None:
                 continue
             for provider in rule.provider:
-                for tool in subscription_tools(
-                    provider, rule.event, rule.action.kind, rule.match.tool_name
-                ):
-                    cells.add((provider, rule.event, tool))
+                for requested_tool in rule.match.tools():
+                    for tool in subscription_tools(
+                        provider, rule.event, rule.action.kind, requested_tool
+                    ):
+                        cells.add((provider, rule.event, tool))
         return [
             {"provider": provider, "hook_event_name": event, "tool_name": tool}
             for provider, event, tool in sorted(

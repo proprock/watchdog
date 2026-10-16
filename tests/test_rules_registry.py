@@ -225,3 +225,21 @@ def test_a_newly_approved_rule_adds_its_subscription(paths):
 
     assert {"provider": "claude", "hook_event_name": "UserPromptSubmit", "tool_name": None} in after
     assert len(after) == len(before) + 1
+
+
+def test_tool_names_create_distinct_subscription_cells(paths):
+    path = write_rule(paths, match={"tool_names": ["Read", "Edit", "Read"]})
+    config = Config(
+        rules=Rules(
+            approved={"my_rule": digest(path)},
+            disabled=[
+                "subagent_same_model",
+                "destructive_command",
+                "repeat_same_input_same_output",
+            ],
+        )
+    )
+    assert RuleRegistry(paths).subscriptions(config) == [
+        {"provider": "claude", "hook_event_name": "PreToolUse", "tool_name": "Edit"},
+        {"provider": "claude", "hook_event_name": "PreToolUse", "tool_name": "Read"},
+    ]

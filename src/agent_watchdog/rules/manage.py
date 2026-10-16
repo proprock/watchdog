@@ -47,6 +47,7 @@ def _describe(entry: RuleEntry) -> dict[str, object]:
         "origin": rule.origin if rule else None,
         "event": rule.event if rule else None,
         "tool_name": rule.match.tool_name if rule else None,
+        "tool_names": rule.match.tool_names if rule else None,
         "action": rule.action.kind if rule else None,
         "description": rule.description if rule else None,
         "error": entry.error,

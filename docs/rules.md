@@ -59,7 +59,8 @@ priority = 100              # user rules run in ascending order, after the built
 default_enabled = true      # built-ins only; false ships the rule off
 
 [match]
-tool_name = "Bash"          # exact; omit to match every tool
+tool_name = "Bash"          # exact; omit both tool selectors to match every tool
+# tool_names = ["Bash", "PowerShell"]  # alternative to tool_name; nonempty list
 input_regex = 'rm\s+-rf'    # on tool_input["command"], else on the input as compact JSON
 error_regex = ""            # on the `error` text of PostToolUseFailure
 
@@ -75,7 +76,8 @@ expires_at = ""             # ISO 8601 with a UTC offset; empty never expires
 ```
 
 Unknown keys, unknown predicates and unknown placeholders are errors at load, never
-ignored.
+ignored. `tool_name` and `tool_names` are mutually exclusive. A list matches any
+listed exact tool name and creates one subscription cell per name.
 
 ### Predicates
 
@@ -140,7 +142,7 @@ has no timeout, so these bounds are the protection.
 | Rule | Event | Action | Notes |
 |---|---|---|---|
 | `subagent_same_model` | `PreToolUse` on `Agent` | `rewrite` | The subagent's model moves one tier down. Reads the coordinator model from session state, so a spawn made by a subagent, whose own state has none, is not evaluated. Evidenced on Claude CLI; not evaluated on Claude desktop |
-| `destructive_command` | `PreToolUse` on `Bash` | `ask` | `rm -r`/`-rf`/`--recursive` (not `git rm`), `git reset --hard`, `git push --force`/`-f`/`--force-with-lease`, `git checkout -- .` (the whole tree, not one path), `git clean -f…`, and `rm`/`del`/`erase` of an `.env` file (not `.env.example`, `.sample`, `.template`). The match is textual, so a quoted `rm -rf` in an `echo` asks too. It watches the `Bash` tool only: the same command run through the `PowerShell` tool that Claude uses on Windows is not asked about (WD-160) |
+| `destructive_command` | `PreToolUse` on `Bash` or `PowerShell` | `ask` | `rm -r`/`-rf`/`--recursive` (not `git rm`), `git reset --hard`, `git push --force`/`-f`/`--force-with-lease`, `git checkout -- .` (the whole tree, not one path), `git clean -f…`, and `rm`/`del`/`erase` of an `.env` file (not `.env.example`, `.sample`, `.template`). `Remove-Item` with `-Recurse`, and `Remove-Item` of an `.env` file are covered too (cmdlet and parameter names are case insensitive). The match is textual, so a quoted `rm -rf` in an `echo` asks too. |
 | `repeat_same_input_same_output` | `PostToolUse` | `context` | Three identical calls in a row; cooldown 600 s, once per turn. The count is of calls the daemon has folded in, so it can trail the call in flight by one |
 | `stop_without_verification` | `Stop` | `block` | **Off by default** (`rules enable stop_without_verification`). Once per turn, and never while `stop_hook_active`. Inert when `capture_content = false`, since a command that was not captured may have been the test run. After a very recent test run the daemon may not have folded it in yet, so the block can be wrong for a moment |
 
