@@ -1,5 +1,72 @@
 # Foundation verification
 
+## WD-172 ingestion throughput (2026-10-16, Windows, Python 3.12.13)
+
+Result: 2,000 synthetic Codex tool events drain **4.74x faster**, from 579.94 s
+(206.92 events/min) to 122.31 s (981.09 events/min). The inbox-to-store stage
+improves **12.35x**. SQLite remains WAL with `synchronous=FULL`.
+
+Both runs use independent copies of one live-store SQLite snapshot: 233,816,064
+bytes and 34,448 existing events; its SHA-256 and raw timings are in
+[wd172-ingestion.json](evidence/wd172-ingestion.json). The live project had an
+empty inbox and no artifact directory, so the backup covers its retained data.
+The synthetic backlog is one growing session; windows interleave up to 100 spool
+admissions and 100 inbox candidates, with default limits and pipeline telemetry
+enabled. Snapshotting and fixture creation are outside the timings, as are poll
+sleeps, transcript enrichment, maintenance, findings refresh, and provider calls.
+This does not reproduce the historical WD-170 traffic mix or its 50-55/min rate.
+
+| Unprofiled 2,000-event run | Per-event baseline | Batches of 25 |
+| --- | ---: | ---: |
+| Spool resolution/build/publication/snapshot, s | 90.89 | 82.70 |
+| Inbox read/admission/insert/state/commit, s | 489.05 | 39.61 |
+| Total, s | 579.94 | 122.31 |
+| Events/min | 206.92 | 981.09 |
+| Inserted / duplicates | 2,000 / 0 | 2,000 / 0 |
+
+Separate **200-event** profiles on copies of the same seed:
+
+| Stage, seconds | Baseline | Batch |
+| --- | ---: | ---: |
+| File-read calls during spool phase, exclusive | 0.696 | 0.647 |
+| Envelope build | 0.035 | 0.035 |
+| Project/checkout resolution | 0.314 | 0.308 |
+| Checkout fingerprint path, including Store open/debounce | 1.774 | 1.716 |
+| Inbox publication | 4.847 | 4.540 |
+| Quota availability scans | 6.253 | 2.031 |
+| SQL INSERT execution | 0.035 | 0.047 |
+| Fact projection, inclusive | 0.033 | 0.040 |
+| Codex session replay, inclusive | 9.173 | 0.401 |
+| COMMIT calls, including SQLite sync | 0.608 | 0.129 |
+| Full profiled spool / inbox phases | 10.510 / 16.489 | 10.116 / 2.721 |
+
+Inclusive stages overlap and must not be summed; file-read calls include ancillary
+reads within each phase. SQLite COMMIT wall time includes its sync work, rather
+than pretending to isolate kernel fsync time. Batched `Store.put` returns before
+the outer commit and deferred state flush, so its raw wrapper time is not the
+whole write cost. The 200-event profile is not extrapolated as the cost of the
+longer 2,000-event session. Repeated session replay and quota scans dominate this
+sample; per-event fsync is not the leading measured cost.
+
+The full-path result is below 5x because the retained spool-to-inbox stage still
+takes 82.70 s, **67.6%** of the final total. Reaching 5x on this baseline would
+require another 6.32 s off the total. Direct-store admission and remaining
+publisher accounting belong to WD-149; this task precedes that rewrite.
+
+An evaluated 200 ms reader deadline reduced the reader to one 25-event chunk
+while spool admission still accepted 100. The inbox grew above 1,300 files and
+spool time rose to 662.36 s; total time regressed to 714.23 s. That default is
+rejected. The daemon retains its 100-candidate reader window; the optional budget
+is tested for resumable progress, with cadence changes deferred to WD-152. The
+final batch was remeasured using the retained seed verified against the same
+SHA-256; the unaffected baseline already ran without the optional deadline.
+
+Reproduction: `uv run python scripts/benchmark_ingestion.py --source-db
+<copied-events.sqlite3> --checkout <checkout> --events 2000 --profile-events 200`.
+Use elevation if the sandbox cannot open a live SQLite/WAL pair. The harness
+backs up the source read-only and modifies only temporary copies. See the
+[implementation and recovery evidence](evidence/wd172.md) for acceptance checks.
+
 ## WD-121 checkout fingerprint (2026-09-30, Windows, Git 2.53.0)
 
 Contract: [storage.md](storage.md#checkout-fingerprint-coverage-wd-121). Real-Git tests in

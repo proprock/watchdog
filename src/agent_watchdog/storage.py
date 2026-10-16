@@ -4,10 +4,12 @@ import hashlib
 import json
 import os
 import sqlite3
+import time
 from collections.abc import Iterator, Mapping
-from contextlib import ExitStack, contextmanager
+from contextlib import ExitStack, contextmanager, nullcontext
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
+from itertools import islice
 from pathlib import Path
 from typing import Self
 from uuid import UUID, uuid4
@@ -158,6 +160,7 @@ class Store:
         # Session states written since this store opened; also the read-through cache.
         self.touched: dict[StateKey, SessionState] = {}
         self._codex_state_deferred = False
+        self._batch_remaining: int | None = None
 
     @property
     def connection(self) -> sqlite3.Connection:
@@ -194,14 +197,41 @@ class Store:
     @contextmanager
     def _transaction(self) -> Iterator[sqlite3.Connection]:
         db = self.connection
-        db.execute("BEGIN IMMEDIATE")
+        nested = db.in_transaction
+        db.execute("SAVEPOINT event_write" if nested else "BEGIN IMMEDIATE")
         try:
             yield db
-            db.execute("COMMIT")
+            db.execute("RELEASE event_write" if nested else "COMMIT")
         except BaseException:
             if db.in_transaction:
-                db.execute("ROLLBACK")
+                if nested:
+                    db.execute("ROLLBACK TO event_write")
+                    db.execute("RELEASE event_write")
+                else:
+                    db.execute("ROLLBACK")
             raise
+
+    @contextmanager
+    def batch(self) -> Iterator[None]:
+        """Commit one bounded reader window, including its state projection.
+
+        The admission lock excludes publishers while conservative per-event
+        reservations account for pages not yet visible in the WAL. Quota pressure
+        aborts this window; the caller can retry with ordinary per-event cleanup.
+        """
+        if self.connection.in_transaction or self._batch_remaining is not None:
+            raise StorageError("A writer batch is already active")
+        touched = self.touched.copy()
+        with resources.admission(self.root):
+            self._batch_remaining = resources.available(self.root, self.limits)
+            try:
+                with self._transaction(), self.defer_codex_state():
+                    yield
+            except BaseException:
+                self.touched = touched
+                raise
+            finally:
+                self._batch_remaining = None
 
     def _initialize(self) -> None:
         db = self.connection
@@ -469,7 +499,7 @@ class Store:
         return {row[0] for row in rows}
 
     def put(self, event: Envelope, *, artifacts: Mapping[str, bytes] | None = None) -> bool:
-        with resources.admission(self.root):
+        with nullcontext() if self._batch_remaining is not None else resources.admission(self.root):
             return self._put(event, artifacts=artifacts)
 
     def _put(self, event: Envelope, *, artifacts: Mapping[str, bytes] | None = None) -> bool:
@@ -503,10 +533,14 @@ class Store:
             return False
         # Budget both database pages and their WAL copies, plus transaction overhead.
         needed = 65536 + 4 * len(document.encode()) + 2 * sum(map(len, artifacts.values()))
-        if resources.available(self.root, self.limits) < needed:
-            self._maintain(datetime.now(UTC), needed)
-        if resources.available(self.root, self.limits) < needed:
-            raise QuotaExceeded("Project quota or disk reserve reached")
+        if self._batch_remaining is not None:
+            if self._batch_remaining < needed:
+                raise QuotaExceeded("Writer batch reservation exhausted")
+        else:
+            if resources.available(self.root, self.limits) < needed:
+                self._maintain(datetime.now(UTC), needed)
+            if resources.available(self.root, self.limits) < needed:
+                raise QuotaExceeded("Project quota or disk reserve reached")
         applied: SessionState | None = None
         with self._transaction() as db:
             directory = self.root / "artifacts"
@@ -545,6 +579,8 @@ class Store:
             self._register_transcript_source(db, event)
         if applied is not None:
             self.touched[applied.provider, applied.session_id, applied.agent_id] = applied
+        if self._batch_remaining is not None:
+            self._batch_remaining -= needed
         return True
 
     @contextmanager
@@ -562,7 +598,11 @@ class Store:
         except BaseException:
             raise
         else:
-            with resources.admission(self.root):
+            with (
+                nullcontext()
+                if self._batch_remaining is not None
+                else resources.admission(self.root)
+            ):
                 self._flush_codex_state()
         finally:
             self._codex_state_deferred = False
@@ -1401,40 +1441,27 @@ class Inbox:
         path.unlink()
         result.quarantined += 1
 
-    def drain(
-        self, store: Store, *, limit: int = 100, pipeline_telemetry: bool = False
-    ) -> DrainResult:
-        if limit <= 0 or self.root != store.root or store.connection.in_transaction:
-            raise StorageError("Invalid batch size, root mismatch, or active writer transaction")
-        result = DrainResult()
-        for index, path in enumerate(self.directory.glob("*.json")):
-            if index >= limit:
-                break
-            if path.is_symlink():
-                path.unlink()
-                result.discarded += 1
-                continue
-            if not path.is_file():
-                continue
-            try:
-                with path.open("rb") as stream:
-                    data = stream.read(self.payload_bytes + 1)
-                if len(data) > self.payload_bytes:
-                    raise RejectedEvent("Envelope exceeds inbox payload limit")
-                event = persisted_envelope(data)
-                if pipeline_telemetry and event.delivery:
-                    observed_at = datetime.now(UTC).isoformat()
-                    event = event.model_copy(
-                        update={
-                            "delivery": event.delivery
-                            | {
-                                "inbox_drained_at": observed_at,
-                                "sqlite_write_started_at": observed_at,
-                            }
-                        }
-                    )
-                inserted = store.put(event)
-            except (ValidationError, RejectedEvent):
+    def _commit_batch(
+        self, store: Store, pending: list[tuple[Path, Envelope]], result: DrainResult
+    ) -> None:
+        outcomes: list[bool | None] = []
+        try:
+            with store.batch() if len(pending) > 1 else nullcontext():
+                for _, event in pending:
+                    try:
+                        outcomes.append(store.put(event))
+                    except RejectedEvent:
+                        outcomes.append(None)
+        except QuotaExceeded:
+            if len(pending) == 1:
+                raise
+            # Cleanup/reclamation must run outside the batch transaction. Retry
+            # each record under ordinary admission; never acknowledge a rollback.
+            for item in pending:
+                self._commit_batch(store, [item], result)
+            return
+        for (path, _), inserted in zip(pending, outcomes, strict=True):
+            if inserted is None:
                 with resources.admission(self.root):
                     self._quarantine(path, result)
                 resources.count_loss(self.root, "invalid")
@@ -1443,6 +1470,65 @@ class Inbox:
                 result.inserted += 1
             else:
                 result.duplicates += 1
-            # If this acknowledgement fails, replay sees the same committed event UUID.
+            # All receipts and projections committed before the first unlink.
             path.unlink()
+
+    def drain(
+        self,
+        store: Store,
+        *,
+        limit: int = 100,
+        pipeline_telemetry: bool = False,
+        batch_size: int = 25,
+        time_budget: float | None = None,
+    ) -> DrainResult:
+        """Drain resumable chunks; the deadline is checked between commits.
+
+        At least one bounded chunk runs per call, even with a slow disk or state
+        replay. Committed files disappear so later candidates advance next tick.
+        """
+        if (
+            min(limit, batch_size) <= 0
+            or (time_budget is not None and time_budget <= 0)
+            or self.root != store.root
+            or store.connection.in_transaction
+        ):
+            raise StorageError("Invalid batch bounds, root mismatch, or active writer transaction")
+        result = DrainResult()
+        deadline = time.monotonic() + time_budget if time_budget is not None else None
+        candidates = iter(islice(self.directory.glob("*.json"), limit))
+        while chunk := list(islice(candidates, batch_size)):
+            pending: list[tuple[Path, Envelope]] = []
+            for path in chunk:
+                if path.is_symlink():
+                    path.unlink()
+                    result.discarded += 1
+                    continue
+                if not path.is_file():
+                    continue
+                try:
+                    with path.open("rb") as stream:
+                        data = stream.read(self.payload_bytes + 1)
+                    if len(data) > self.payload_bytes:
+                        raise RejectedEvent("Envelope exceeds inbox payload limit")
+                    event = persisted_envelope(data)
+                    if pipeline_telemetry and event.delivery:
+                        observed_at = datetime.now(UTC).isoformat()
+                        event = event.model_copy(
+                            update={
+                                "delivery": event.delivery
+                                | {
+                                    "inbox_drained_at": observed_at,
+                                    "sqlite_write_started_at": observed_at,
+                                }
+                            }
+                        )
+                    pending.append((path, event))
+                except (ValidationError, RejectedEvent):
+                    with resources.admission(self.root):
+                        self._quarantine(path, result)
+                    resources.count_loss(self.root, "invalid")
+            self._commit_batch(store, pending, result)
+            if deadline is not None and time.monotonic() >= deadline:
+                break
         return result

@@ -94,6 +94,35 @@ budgets database/WAL growth and transaction overhead. Database, WAL, SHM,
 artifacts, quarantine, diagnostics, lock files, and auxiliary files consume space.
 Shared content-addressed artifacts count once. Pins do not waive the quota.
 
+### Bounded inbox transactions (WD-172)
+
+The daemon drains at most 100 inbox candidates per poll, in transactions of at
+most 25 records. Finished chunks are acknowledged before considering the next
+chunk. An optional `time_budget` checks elapsed time between chunks; one chunk
+always runs, so a slow commit or session replay cannot prevent progress. The
+daemon retains its existing 100-candidate window without this optional deadline:
+prematurely stopping the reader while admitting 100 new spool records grows the
+inbox and increases publisher quota-scan cost. WD-152 owns cadence changes. This
+budget is cooperative, not a deadline that interrupts a SQLite commit.
+
+A chunk holds `admission.lock`, measures available space once, and subtracts the
+existing conservative database/WAL reservation for every inserted event. A quota
+shortfall rolls back the chunk and retries its records individually, allowing the
+ordinary quota-admission cleanup to run outside a transaction. Periodic retention
+and its scheduling remain separate work in WD-149/WD-152.
+
+Events, receipts, fact rows, and final session-state projections commit together
+with `synchronous=FULL`. Each affected Codex identity is replayed once per chunk.
+Files are unlinked only after commit; an interruption before commit keeps all
+inputs, and an interruption before unlink replays committed UUIDs as duplicates.
+Rollback restores the writer's state cache as well as its database rows.
+
+This precedes WD-149: native spool records still pass through the durable inbox.
+It requires no schema migration and changes neither receipt identity nor the
+dirty-state recovery contract. WD-157 content migration and WD-162 analysis
+recomputation must preserve those commit/acknowledgement boundaries and must not
+mark unfinished derived work as current.
+
 ## Redaction and content
 
 The local per-project store is not a sharing surface. It keeps the raw provider
