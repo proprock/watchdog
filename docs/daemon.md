@@ -123,11 +123,51 @@ Without overrides, locations come from platformdirs. No login service is install
   a stale entry); this only avoids redundant work, it never changes when a
   real edit is picked up.
 
-Status is `paused`, `running`, `unavailable`, or `degraded`. A held lock with a
-missing/invalid heartbeat, a heartbeat older than ten seconds, or project/config
-errors is degraded. Pause takes precedence; `alive` separately indicates whether
-shutdown is still pending. PID and heartbeat never establish ownership by
-themselves. There is no automatic force-kill of an unresponsive process.
+Status is `paused`, `running`, `unavailable`, or `degraded`. `alive` reports OS lock
+ownership, independently of health; PID and heartbeat never establish ownership.
+Pause takes precedence. A recent startup failure can therefore be `degraded` with
+`alive: false`, including between crash-loop launches. There is no automatic
+force-kill of an unresponsive process.
+
+The JSON `reasons` list explains degradation (WD-173):
+
+| Reason | Evidence |
+| --- | --- |
+| `heartbeat_missing` | A held daemon lock without a published heartbeat. |
+| `heartbeat_invalid` | An unreadable status file or an invalid, nonfinite, or future heartbeat. |
+| `heartbeat_stale` | A held lock with a heartbeat at least ten seconds old. |
+| `startup_failed` | The lock is released after a start that never published its first heartbeat, within the last 60 seconds. |
+| `startup_crash_loop` | At least three starts without a first heartbeat within 60 seconds. |
+| `backlog_stalled` | A nonempty queue has not shrunk or made drain progress across at least two samples spanning 60 seconds. |
+| `storage_lag` | Spool work has waited at least 60 seconds and the newest spool file is at least 60 seconds newer than the newest stored event, or no event has been stored. |
+| `project_or_configuration_error` | The heartbeat reports project or configuration errors; `errors` and `transcript_failures` retain the details. |
+| `startup_evidence_unavailable` | Durable startup evidence cannot be read or validated. |
+| `storage_unavailable` | A store cannot be read within the query budget, or more than 32 projects prevent a complete storage comparison. |
+| `queue_or_configuration_unavailable` | Queue/configuration inspection failed, or persisted backlog evidence is invalid. |
+
+`health.startup` includes the count, 60-second window and last start time.
+`data/daemon-health.json` keeps at most 32 pending starts, independently of the
+runtime status file and diagnostic logging level. Only the daemon owner writes it;
+the first successfully published heartbeat clears pending starts. Evidence writes
+are best effort and never prevent collection. Status inspection does not launch a
+daemon or write health evidence. After the startup window expires, a dead daemon
+without other degradation evidence returns `unavailable`.
+
+The poll loop samples spool and the first 32 project inboxes at most once every ten
+seconds. `backlog` retains each nonempty queue's file count, first observation
+without progress and sample count; `health.stalled_queues` names affected queues.
+A smaller queue or a successful drain resets its timer independently of traffic
+in other queues. Empty queues never count as stalled. A single status call can
+use this existing poll history without waiting or requiring previous status calls.
+
+`health.storage` compares the newest stored `received_at` across the first 32
+projects with spool file modification times, explicitly labeled
+`spool_timestamp_source: filesystem_mtime`; these are filesystem observations, not
+parsed provider timestamps. New traffic after an idle period gets a 60-second
+grace period. SQLite reads use read-only connections, a 100 ms lock timeout and a
+100 ms scan budget per project. An unreadable or incomplete comparison is
+`unavailable`, never an empty store or confirmed lag. An idle daemon with empty
+queues and a current heartbeat stays `running` regardless of its last event's age.
 
 The core disconnects standard streams and uses a detached Windows process or a
 new POSIX session. Its working directory is the data directory, so it does not

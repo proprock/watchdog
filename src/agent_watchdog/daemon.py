@@ -1,6 +1,7 @@
 """One local polling process; durable desired state and no PID-based signals."""
 
 import json
+import math
 import os
 import secrets
 import socket
@@ -11,14 +12,14 @@ import sys
 import threading
 import time
 from collections.abc import Callable, Iterator, Mapping
-from contextlib import ExitStack, contextmanager
+from contextlib import ExitStack, closing, contextmanager
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from uuid import NAMESPACE_URL, UUID, uuid4, uuid5
 
 from pydantic import ValidationError
 
-from agent_watchdog import resources
+from agent_watchdog import daemon_lifecycle, resources
 from agent_watchdog._proc import hidden_creationflags
 from agent_watchdog.config import Config, ConfigError, Limits, UserPaths, load_config, save_config
 from agent_watchdog.diagnostics import Level, emit, error_code
@@ -41,6 +42,7 @@ from agent_watchdog.storage import (
 SPOOL_BYTES = 64 * 1024**2
 SPOOL_FILES = 4096
 CONTROL_REQUEST_BYTES = 8192
+HEALTH_WINDOW_SECONDS = 60
 # WD-141: a session's findings are recomputed at most this often, and a tick spends
 # at most this long on it (the remaining sessions wait for the next tick).
 FINDINGS_INTERVAL_SECONDS = 60.0
@@ -308,16 +310,34 @@ def _warnings(report: Mapping[str, object]) -> list[str]:
 def status(paths: UserPaths) -> dict:
     control = desired(paths)
     running = alive(paths)
+    now = time.time()
+    reasons: list[str] = []
     try:
         report = (read_json(paths.runtime / "status.json") or {}) if running else {}
-        healthy = 0 <= time.time() - float(report.get("heartbeat", 0)) < 10
+        if running:
+            if "heartbeat" not in report:
+                reasons.append("heartbeat_missing")
+            else:
+                stamp = float(report["heartbeat"])
+                if not math.isfinite(stamp) or stamp > now:
+                    reasons.append("heartbeat_invalid")
+                elif now - stamp >= 10:
+                    reasons.append("heartbeat_stale")
     except (ValueError, OSError, TypeError):
-        report, healthy = {}, False
-    state = "unavailable"
-    if running:
-        state = "running" if healthy and not report.get("errors") else "degraded"
-    if control.get("paused", False):
-        state = "paused"
+        report = {}
+        reasons.append("heartbeat_invalid")
+    if report.get("errors"):
+        reasons.append("project_or_configuration_error")
+    startup = daemon_lifecycle.startup_evidence(paths.data, now=now)
+    if startup.get("unavailable"):
+        reasons.append("startup_evidence_unavailable")
+    starts = startup.get("starts_without_heartbeat", 0)
+    starts = starts if isinstance(starts, int) else 0
+    if starts and not running:
+        reasons.append("startup_failed")
+    if starts >= 3:
+        reasons.append("startup_crash_loop")
+    health: dict[str, object] = {"startup": startup}
     queues: dict[str, object] = {}
     try:
         loss_report = {"adapter": resources.losses(paths.data)}
@@ -325,15 +345,31 @@ def status(paths: UserPaths) -> dict:
         for project in config.projects[:32]:
             loss_report[str(project.id)] = resources.losses(paths.project_data(project.id))
         queues = _queue_status(paths, config)
+        stalled = _stalled_queues(queues, report.get("backlog", {}), now=now)
+        health["stalled_queues"] = stalled
+        if stalled:
+            reasons.append("backlog_stalled")
+        storage, lagging = _storage_health(paths, config, queues, now=now)
+        health["storage"] = storage
+        if storage["unavailable"]:
+            reasons.append("storage_unavailable")
+        if lagging:
+            reasons.append("storage_lag")
     except (OSError, ValueError):
         loss_report = {"unavailable": True}
         queues = {"unavailable": True}
-        if running and state != "paused":
-            state = "degraded"
+        reasons.append("queue_or_configuration_unavailable")
+    state = "running" if running else "unavailable"
+    if reasons and (running or starts or "storage_lag" in reasons):
+        state = "degraded"
+    if control.get("paused", False):
+        state = "paused"
     return report | {
         "state": state,
         "alive": running,
         "warnings": _warnings(report) if running else [],
+        "reasons": reasons,
+        "health": health,
         "request_id": control.get("request_id"),
         "losses": loss_report,
         "queues": queues,
@@ -348,13 +384,109 @@ def _queue_snapshot(
         for path in directory.glob("*.json")
         if path.is_file() and (skip is None or path.name != skip)
     ]
-    used = sum(path.stat().st_size for path in entries)
+    stats = []
+    for path in entries:
+        try:
+            stats.append(path.stat())
+        except FileNotFoundError:
+            # A concurrent drain can remove a delivery during an on-demand snapshot.
+            continue
     return {
-        "files": len(entries),
-        "bytes": used,
+        "files": len(stats),
+        "bytes": sum(item.st_size for item in stats),
+        "oldest_record_at": min((item.st_mtime for item in stats), default=None),
+        "newest_record_at": max((item.st_mtime for item in stats), default=None),
         "file_limit": file_limit,
         "byte_limit": byte_limit,
     }
+
+
+def _queue_counts(queues: dict) -> dict[str, int]:
+    return {"spool": queues["spool"]["files"]} | {
+        key: value["files"] for key, value in queues["projects"].items()
+    }
+
+
+class _BacklogTracker:
+    """Track each queue independently so traffic elsewhere cannot hide a stall."""
+
+    def __init__(self) -> None:
+        self.pending: dict[str, dict] = {}
+
+    def observe(self, queues: dict, progressed: set[str], *, now: float) -> dict:
+        pending = {}
+        for key, count in _queue_counts(queues).items():
+            if not count:
+                continue
+            previous = self.pending.get(key)
+            if previous and key not in progressed and count >= previous["files"]:
+                pending[key] = {**previous, "files": count, "polls": previous["polls"] + 1}
+            else:
+                pending[key] = {"files": count, "since": now, "polls": 1}
+        self.pending = pending
+        return pending
+
+
+def _stalled_queues(queues: dict, backlog: dict, *, now: float) -> list[str]:
+    if not isinstance(backlog, dict) or any(
+        not isinstance(item, dict)
+        or type(item.get("files")) is not int
+        or type(item.get("polls")) is not int
+        or type(item.get("since")) not in (float, int)
+        or not math.isfinite(item["since"])
+        for item in backlog.values()
+    ):
+        raise ValueError("Invalid backlog evidence")
+    counts = _queue_counts(queues)
+    return [
+        key
+        for key, item in backlog.items()
+        if counts.get(key, 0) >= item["files"] > 0
+        and item["polls"] >= 2
+        and now - item["since"] >= HEALTH_WINDOW_SECONDS
+    ]
+
+
+def _storage_health(
+    paths: UserPaths, config: Config, queues: dict, *, now: float
+) -> tuple[dict[str, object], bool]:
+    newest = None
+    unavailable = len(config.projects) > 32
+    for project in config.projects[:32]:
+        database = paths.project_data(project.id) / "events.sqlite3"
+        if not database.exists():
+            continue
+        try:
+            with closing(
+                sqlite3.connect(database.as_uri() + "?mode=ro", uri=True, timeout=0.1)
+            ) as db:
+                # Bound a MAX scan even on a large store lacking a timestamp index.
+                deadline = time.monotonic() + 0.1
+                db.set_progress_handler(lambda end=deadline: int(time.monotonic() > end), 1000)
+                row = db.execute("SELECT MAX(received_at) FROM events").fetchone()[0]
+                if row:
+                    stamp = datetime.fromisoformat(row).timestamp()
+                    newest = max(newest, stamp) if newest is not None else stamp
+        except (OSError, sqlite3.Error, ValueError):
+            unavailable = True
+    spool = queues["spool"]
+    latest = spool["newest_record_at"]
+    oldest = spool["oldest_record_at"]
+    lag = max(0, latest - newest) if latest is not None and newest is not None else None
+    evidence = {
+        "newest_stored_at": newest,
+        "newest_spool_at": latest,
+        "spool_timestamp_source": "filesystem_mtime",
+        "lag_seconds": lag,
+        "unavailable": unavailable,
+    }
+    lagging = (
+        not unavailable
+        and oldest is not None
+        and now - oldest >= HEALTH_WINDOW_SECONDS
+        and (newest is None or (lag is not None and lag >= HEALTH_WINDOW_SECONDS))
+    )
+    return evidence, lagging
 
 
 def _queue_status(paths: UserPaths, config: Config) -> dict[str, object]:
@@ -1419,6 +1551,7 @@ def run(paths: UserPaths) -> int:
     try:
         with ExitStack() as owner:
             owner.enter_context(writer_lock(paths.data / "daemon.lock"))
+            daemon_lifecycle.record_start(paths.data, now=time.time())
             sessions = _SessionTracker()
             channel = owner.enter_context(_policy_server(paths, sessions))
             _log(paths, None, "INFO", event="lifecycle", decision="started")
@@ -1530,6 +1663,11 @@ def _poll(
     logged_inert_enrichment: set[str] = set()
     logged_unknown_checkouts: set[tuple[UUID, str]] = set()
     spool_mtime: float | None = None
+    backlog = _BacklogTracker()
+    progressed: set[str] = set()
+    pending: dict = {}
+    backlog_sample_at = 0.0
+    first_heartbeat = True
     while True:
         config: Config | None = None
         control = desired(paths)
@@ -1571,6 +1709,7 @@ def _poll(
                 paths, config, logged_unknown_checkouts=logged_unknown_checkouts, channel=channel
             ):
                 activity = True
+                progressed.add("spool")
             if _drain_controls(paths, config):
                 activity = True
             for project in config.projects:
@@ -1587,6 +1726,13 @@ def _poll(
                         result = Inbox(root, limits=limits).drain(
                             store, pipeline_telemetry=config.pipeline_telemetry
                         )
+                        if (
+                            result.inserted
+                            + result.duplicates
+                            + result.quarantined
+                            + result.discarded
+                        ):
+                            progressed.add(str(project.id))
                         try:
                             from agent_watchdog.transcripts import enrich, failure_code
 
@@ -1676,6 +1822,17 @@ def _poll(
                 error_type=error_code(error),
                 detail=str(error),
             )
+        if time.monotonic() >= backlog_sample_at:
+            try:
+                pending = (
+                    backlog.observe(_queue_status(paths, config), progressed, now=time.time())
+                    if config is not None
+                    else {}
+                )
+            except OSError:
+                pending = {}
+            progressed.clear()
+            backlog_sample_at = time.monotonic() + 10
         atomic_write(
             paths.runtime / "status.json",
             json.dumps(
@@ -1688,9 +1845,13 @@ def _poll(
                     "errors": errors,
                     "transcript_failures": transcript_failures,
                     "decision_channel": channel.stats.snapshot(),
+                    "backlog": pending,
                 }
             ).encode(),
         )
+        if first_heartbeat:
+            daemon_lifecycle.record_ready(paths.data)
+            first_heartbeat = False
         delay = 0.25 if activity else min(2, delay * 2)
         _log(
             paths,
