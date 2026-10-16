@@ -1,6 +1,7 @@
 """Offline contracts for the read-only cross-project `overview` command (WD-016)."""
 
 import json
+import sqlite3
 import sys
 from datetime import UTC, datetime, timedelta
 from hashlib import sha256
@@ -11,7 +12,7 @@ from test_insights import _finish
 from test_pricing import TARIFFS
 from test_storage_v6 import BASE, build_v5
 
-from agent_watchdog import _proc, inspection
+from agent_watchdog import _proc, analysis, inspection
 from agent_watchdog.cli import main
 from agent_watchdog.config import Config, Project, UserPaths, save_config
 from agent_watchdog.events import Envelope
@@ -163,6 +164,60 @@ def test_overview_findings_equal_the_sum_of_the_per_session_reports(tmp_path, mo
     assert "repeated_tool_outcome" in by_rule["claude"], findings
     assert "repeated_tool_outcome" in by_rule["codex"], findings
     assert "diff_oscillation" in by_rule["codex"], findings
+
+
+def test_v8_findings_wait_for_versioned_refresh_without_read_only_migration(
+    tmp_path, monkeypatch, capsys
+):
+    paths, projects = register(tmp_path, "legacy")
+    project = projects["legacy"]
+    root = paths.project_data(project.id)
+    with Store(root, project.id) as store:
+        for at in range(3):
+            store.put(_finish(project.id, at=at))
+        refresh_all(store)
+    with sqlite3.connect(root / "events.sqlite3") as db:
+        db.execute("ALTER TABLE session_analysis DROP COLUMN rule_version")
+        db.execute("PRAGMA user_version=8")
+    _, result = overview(monkeypatch, capsys, tmp_path)
+    findings = rows(result)["legacy"]["findings"]
+    assert findings["pending_sessions"] == 1
+    assert findings["as_of"] is None
+    assert findings["by_provider"]["claude"]["by_rule"] == {}
+    with sqlite3.connect(root / "events.sqlite3") as db:
+        assert db.execute("PRAGMA user_version").fetchone()[0] == 8
+
+
+def test_rule_release_hides_stale_findings_until_daemon_refresh(tmp_path, monkeypatch, capsys):
+    paths, projects = register(tmp_path, "versioned")
+    project = projects["versioned"]
+    with Store(paths.project_data(project.id), project.id) as store:
+        for event in _noisy_events(project, uuid4()):
+            store.put(event)
+        refresh_all(store)
+
+    monkeypatch.setattr(analysis, "RULE_VERSION", "wd-010.test-release")
+    _, result = overview(monkeypatch, capsys, tmp_path)
+    findings = rows(result)["versioned"]["findings"]
+    assert findings["pending_sessions"] == 2
+    assert findings["as_of"] is None
+    assert all(not item["by_rule"] for item in findings["by_provider"].values())
+
+    with Store(paths.project_data(project.id), project.id) as store:
+        # One session can be current while the other still waits for its tick.
+        store.refresh_session_findings("claude", "claude-s")
+    _, result = overview(monkeypatch, capsys, tmp_path)
+    findings = rows(result)["versioned"]["findings"]
+    assert findings["pending_sessions"] == 1
+    assert findings["by_provider"]["claude"]["by_rule"]
+    assert findings["by_provider"]["codex"]["by_rule"] == {}
+
+    with Store(paths.project_data(project.id), project.id) as store:
+        refresh_all(store)
+    _, result = overview(monkeypatch, capsys, tmp_path)
+    findings = rows(result)["versioned"]["findings"]
+    assert findings["pending_sessions"] == 0
+    assert findings["by_provider"] == _expected_from_session_reports(paths, project)
 
 
 def test_sessions_the_daemon_has_not_refreshed_are_pending_not_zero(tmp_path, monkeypatch, capsys):

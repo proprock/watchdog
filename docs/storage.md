@@ -184,7 +184,8 @@ adds provider-scoped session outcome/type labels; schema v6 adds the
 described below; schema v7 adds the
 [manual annotation fields](#schema-v7-manual-annotations) used by calibration; schema v8
 adds the [incremental session state and materialized findings](#schema-v8-session-state-and-materialized-findings)
-the daemon keeps. Diff text is never stored. The core runs the bounded Git read
+the daemon keeps; schema v9 adds [versioned recomputation](#schema-v9-versioned-recomputation-wd-162).
+Diff text is never stored. The core runs the bounded Git read
 after spool admission; hook paths do not invoke Git or snapshot a worktree.
 Reader sources expire after 30 days without a hook observation; no vendor file is
 deleted or modified. New databases enable incremental vacuum before creating
@@ -416,6 +417,39 @@ took 15 s in total for four stores holding 45 thousand events ([evidence](eviden
 Each session is analyzed alone, so a repeat that spans sessions is no longer merged
 into one finding, and one `diff_oscillation` that several sessions of a checkout share
 counts once in `overview` (same fingerprint).
+
+## Schema v9: versioned recomputation (WD-162)
+
+`session_analysis` adds nullable `rule_version`, stamped from the report that
+produced its findings, including reports with no findings. A session is pending
+when its event watermark is behind, its analysis row is absent, or its version
+differs from `analysis.RULE_VERSION`. Releases changing analysis behavior must
+bump `RULE_VERSION`. Settled sessions then enter the existing daemon queue without
+needing another event. Replacement of findings, gaps, watermark and version is
+atomic; a failed refresh leaves the session pending and is retried by the existing
+interval/budget scheduler. Retention and quota admission still apply.
+
+The v8 upgrade adds the column without assigning a version to old rows: their
+version is unknown and they need recomputation. It does not run unbounded analysis
+during this migration. A v7 or earlier upgrade already analyzes sessions using the
+installed rules and stamps those results. `overview` remains read-only and omits
+findings, gaps and timestamps from obsolete or unknown analysis versions while
+reporting those sessions in `pending_sessions`. A v8 store read before migration
+therefore reports all sessions pending. After the queue drains, its per-provider
+counts equal the merged per-session `report` results (with shared diff findings
+deduplicated as above).
+
+`state_projection_versions` records a reducer version for each provider. Bump
+`state.VERSION` whenever reducer behavior, stored signatures or their shared
+outcome semantics change; this rebuilds both providers. The Codex marker also
+includes `CODEX_STATE_PROJECTION_VERSION` for Codex-only execution changes. On
+writer open, a missing or changed marker refolds that provider's sessions from
+events ordered by `received_at, rowid`, before the daemon restores state. Rebuilt
+states, the new markers and invalidation of the affected analysis rows commit in
+one transaction after a free-space check (one eighth of database size, minimum
+64 KiB). Failure rolls them back and reopening retries; unchanged markers skip
+replay. This startup state rebuild is separate from the budgeted findings queue.
+Authoritative events, receipts, manual labels and version-scoped verdicts survive.
 
 ## Checkout fingerprint coverage (WD-121)
 

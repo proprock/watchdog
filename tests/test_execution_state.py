@@ -205,7 +205,7 @@ def test_reopening_rebuilds_only_stale_codex_execution_state_once(tmp_path):
             ).fetchone()
             == claude_before
         )
-        assert reopened.connection.execute("PRAGMA user_version").fetchone()[0] == 8
+        assert reopened.connection.execute("PRAGMA user_version").fetchone()[0] == 9
         stamp = reopened.connection.execute(
             "SELECT updated_at FROM session_state WHERE provider='codex'"
         ).fetchone()[0]

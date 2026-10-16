@@ -16,19 +16,19 @@ from uuid import UUID, uuid4
 
 from pydantic import ValidationError
 
-from agent_watchdog import facts, resources
+from agent_watchdog import analysis, facts, resources, state
 from agent_watchdog.config import Limits
 from agent_watchdog.events import Envelope
 from agent_watchdog.files import atomic_write as atomic_write
 from agent_watchdog.state import SessionState, StateKey, fold, initial, key_of
 from agent_watchdog.state import apply as apply_state
 
-# Sessions whose events outran their materialized findings (schema v8, WD-141).
+# Sessions whose events or analysis version outran their materialized findings.
 PENDING_SESSIONS = (
     "SELECT e.provider, e.session_id FROM events e WHERE e.session_id IS NOT NULL "
     "GROUP BY e.provider, e.session_id "
     "HAVING MAX(e.rowid) > COALESCE((SELECT a.last_event_rowid FROM session_analysis a "
-    "WHERE a.provider = e.provider AND a.session_id = e.session_id), 0)"
+    "WHERE a.provider = e.provider AND a.session_id = e.session_id AND a.rule_version = ?), 0)"
 )
 # Tables keyed by (provider, session_id) that follow the session's events.
 SESSION_TABLES = ("session_state", "session_findings", "session_analysis")
@@ -236,7 +236,7 @@ class Store:
     def _initialize(self) -> None:
         db = self.connection
         version = db.execute("PRAGMA user_version").fetchone()[0]
-        if version not in (0, 1, 2, 3, 4, 5, 6, 7, 8):
+        if version not in (0, 1, 2, 3, 4, 5, 6, 7, 8, 9):
             raise StorageError("Unsupported database schema; database left unchanged")
         if version == 0:
             tables = db.execute("SELECT name FROM sqlite_master WHERE name NOT LIKE 'sqlite_%'")
@@ -412,7 +412,13 @@ class Store:
             with self._transaction():
                 self._migrate_v8()
                 db.execute("PRAGMA user_version=8")
-        self._refresh_codex_state_projection()
+        if version < 9:
+            with self._transaction():
+                columns = {row[1] for row in db.execute("PRAGMA table_info(session_analysis)")}
+                if "rule_version" not in columns:
+                    db.execute("ALTER TABLE session_analysis ADD COLUMN rule_version TEXT")
+                db.execute("PRAGMA user_version=9")
+        self._refresh_state_projection(invalidate_findings=version >= 8)
         # Existing v1 stores need a one-time rebuild to support physical reclamation.
         if db.execute("PRAGMA auto_vacuum").fetchone()[0] != 2:
             size = (self.root / "events.sqlite3").stat().st_size
@@ -421,13 +427,8 @@ class Store:
             db.execute("PRAGMA auto_vacuum=INCREMENTAL")
             db.execute("VACUUM")
 
-    def _refresh_codex_state_projection(self) -> None:
-        """Invalidate only the execution-state cache affected by WD-164.
-
-        Broader rule and analysis cache versioning belongs to WD-162. This marker
-        repairs v8 Codex states without changing authoritative events or replaying
-        unrelated providers every time a store opens.
-        """
+    def _refresh_state_projection(self, *, invalidate_findings: bool) -> None:
+        """Refold changed reducers atomically before restoring the daemon's state."""
         with self._transaction() as db:
             db.execute(
                 "CREATE TABLE IF NOT EXISTS state_projection_versions ("
@@ -438,31 +439,41 @@ class Store:
                 "session_id TEXT NOT NULL, agent_id TEXT NOT NULL, "
                 "PRIMARY KEY(session_id, agent_id))"
             )
-            row = db.execute(
-                "SELECT version FROM state_projection_versions WHERE provider='codex'"
-            ).fetchone()
-            if row == (CODEX_STATE_PROJECTION_VERSION,):
-                return
-            db.execute("DELETE FROM session_state WHERE provider='codex'")
-            sessions = db.execute(
-                "SELECT DISTINCT session_id FROM events "
-                "WHERE provider='codex' AND session_id IS NOT NULL"
-            ).fetchall()
-            for (session_id,) in sessions:
-                documents = (
-                    json.loads(row[0])
-                    for row in db.execute(
-                        "SELECT envelope FROM events WHERE provider='codex' AND session_id=? "
-                        "ORDER BY received_at, rowid",
-                        (session_id,),
+            for provider in ("codex", "claude"):
+                version = state.VERSION
+                if provider == "codex":
+                    version += "|" + CODEX_STATE_PROJECTION_VERSION
+                row = db.execute(
+                    "SELECT version FROM state_projection_versions WHERE provider=?", (provider,)
+                ).fetchone()
+                if row == (version,):
+                    continue
+                size = (self.root / "events.sqlite3").stat().st_size
+                if resources.available(self.root, self.limits) < max(65536, size // 8):
+                    raise QuotaExceeded("Insufficient space for the state projection refresh")
+                db.execute("DELETE FROM session_state WHERE provider=?", (provider,))
+                sessions = db.execute(
+                    "SELECT DISTINCT session_id FROM events "
+                    "WHERE provider=? AND session_id IS NOT NULL",
+                    (provider,),
+                ).fetchall()
+                for (session_id,) in sessions:
+                    documents = (
+                        json.loads(row[0])
+                        for row in db.execute(
+                            "SELECT envelope FROM events WHERE provider=? AND session_id=? "
+                            "ORDER BY received_at, rowid",
+                            (provider, session_id),
+                        )
                     )
+                    for rebuilt in fold(documents).values():
+                        self._write_state(db, rebuilt)
+                if invalidate_findings:
+                    db.execute("DELETE FROM session_analysis WHERE provider=?", (provider,))
+                db.execute(
+                    "INSERT OR REPLACE INTO state_projection_versions VALUES (?, ?)",
+                    (provider, version),
                 )
-                for state in fold(documents).values():
-                    self._write_state(db, state)
-            db.execute(
-                "INSERT OR REPLACE INTO state_projection_versions VALUES ('codex', ?)",
-                (CODEX_STATE_PROJECTION_VERSION,),
-            )
 
     @staticmethod
     def _fingerprint(document: str, references: Mapping[str, str]) -> str:
@@ -688,8 +699,11 @@ class Store:
         return {(item.provider, item.session_id, item.agent_id): item for item in states}
 
     def pending_sessions(self) -> list[tuple[str, str]]:
-        """Sessions with events newer than their materialized findings."""
-        return [(row[0], row[1]) for row in self.connection.execute(PENDING_SESSIONS)]
+        """Sessions with newer events or an obsolete analysis version."""
+        return [
+            (row[0], row[1])
+            for row in self.connection.execute(PENDING_SESSIONS, (analysis.RULE_VERSION,))
+        ]
 
     def refresh_session_findings(
         self,
@@ -746,8 +760,17 @@ class Store:
         report, last_rowid = computed
         stamp = now.isoformat()
         db.execute(
-            "INSERT INTO session_analysis VALUES (?, ?, ?, ?, ?)",
-            (provider, session_id, stamp, last_rowid, json.dumps(report["gaps"])),
+            "INSERT INTO session_analysis "
+            "(provider, session_id, computed_at, last_event_rowid, gaps_json, rule_version) "
+            "VALUES (?, ?, ?, ?, ?, ?)",
+            (
+                provider,
+                session_id,
+                stamp,
+                last_rowid,
+                json.dumps(report["gaps"]),
+                report["rule_version"],
+            ),
         )
         db.executemany(
             "INSERT OR REPLACE INTO session_findings VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
@@ -787,7 +810,7 @@ class Store:
         db.execute(
             "CREATE TABLE IF NOT EXISTS session_analysis ("
             "provider TEXT NOT NULL, session_id TEXT NOT NULL, computed_at TEXT NOT NULL, "
-            "last_event_rowid INTEGER NOT NULL, gaps_json TEXT NOT NULL, "
+            "last_event_rowid INTEGER NOT NULL, gaps_json TEXT NOT NULL, rule_version TEXT, "
             "PRIMARY KEY(provider, session_id))"
         )
         for table in SESSION_TABLES:
@@ -795,8 +818,8 @@ class Store:
         envelopes = (
             json.loads(row[0]) for row in db.execute("SELECT envelope FROM events ORDER BY rowid")
         )
-        for state in fold(envelopes).values():
-            self._write_state(db, state)
+        for rebuilt in fold(envelopes).values():
+            self._write_state(db, rebuilt)
         now = datetime.now(UTC)
         snapshot_cache: dict[frozenset[str], list[dict]] = {}
         for provider, session_id in db.execute(

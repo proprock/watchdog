@@ -53,7 +53,7 @@ def root(tmp_path):
 
 def test_a_new_store_is_schema_v8_with_the_session_tables(root):
     with Store(root, PROJECT) as store:
-        assert store.connection.execute("PRAGMA user_version").fetchone()[0] == 8
+        assert store.connection.execute("PRAGMA user_version").fetchone()[0] == 9
         tables = {row[0] for row in store.connection.execute("SELECT name FROM sqlite_master")}
         assert {"session_state", "session_findings", "session_analysis"} <= tables
 
@@ -127,7 +127,7 @@ def test_a_v7_database_upgrades_and_replays_state_and_findings(root):
         raw.execute("PRAGMA user_version=7")
 
     with Store(root, PROJECT) as upgraded:
-        assert upgraded.connection.execute("PRAGMA user_version").fetchone()[0] == 8
+        assert upgraded.connection.execute("PRAGMA user_version").fetchone()[0] == 9
         assert upgraded.session_states() == expected_state
         replayed = [row[:-1] for row in _rows(upgraded, "session_findings")]
         assert replayed == [row[:-1] for row in expected_findings]

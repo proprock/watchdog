@@ -274,7 +274,7 @@ def database(paths: UserPaths, project: Project) -> Iterator[sqlite3.Connection]
     with closing(sqlite3.connect(path.as_uri() + "?mode=ro", uri=True, timeout=0.1)) as db:
         db.execute("PRAGMA query_only=ON")
         db.execute("BEGIN")
-        if db.execute("PRAGMA user_version").fetchone()[0] not in (1, 2, 3, 4, 5, 6, 7, 8):
+        if db.execute("PRAGMA user_version").fetchone()[0] not in (1, 2, 3, 4, 5, 6, 7, 8, 9):
             raise StorageError("Unsupported database schema")
         if db.execute("SELECT project_id FROM metadata").fetchall() != [(str(project.id),)]:
             raise StorageError("Database belongs to a different project")
@@ -904,22 +904,40 @@ def _findings_section(paths: UserPaths, project: Project, schema: int) -> dict[s
     each session's ``computed_at``.  Cross-session repeats are not merged, and one
     diff oscillation shared by several sessions of a checkout counts once.
     """
-    from agent_watchdog.analysis import analyze
+    from agent_watchdog.analysis import RULE_VERSION, analyze
 
     if schema < 8:
         return {"state": "unsupported", "reason": "schema_predates_v8"}
     by_rule: dict[str, dict[str, int]] = {"codex": {}, "claude": {}}
     gaps: dict[str, set[str]] = {"codex": set(), "claude": set()}
     with database(paths, project) as db:
-        for provider, rule, count in db.execute(
-            "SELECT provider, rule, COUNT(DISTINCT fingerprint) FROM session_findings "
-            "GROUP BY provider, rule ORDER BY provider, rule"
-        ):
+        if schema < 9:
+            pending = db.execute(
+                "SELECT COUNT(*) FROM (SELECT provider, session_id FROM events "
+                "WHERE session_id IS NOT NULL GROUP BY provider, session_id)"
+            ).fetchone()[0]
+            analyzed = []
+            as_of = None
+            findings = []
+        else:
+            findings = db.execute(
+                "SELECT f.provider, f.rule, COUNT(DISTINCT f.fingerprint) FROM session_findings f "
+                "JOIN session_analysis a USING (provider, session_id) WHERE a.rule_version=? "
+                "GROUP BY f.provider, f.rule ORDER BY f.provider, f.rule",
+                (RULE_VERSION,),
+            ).fetchall()
+            analyzed = db.execute(
+                "SELECT provider, gaps_json FROM session_analysis WHERE rule_version=?",
+                (RULE_VERSION,),
+            ).fetchall()
+            as_of = db.execute(
+                "SELECT MAX(computed_at) FROM session_analysis WHERE rule_version=?",
+                (RULE_VERSION,),
+            ).fetchone()[0]
+            pending = len(db.execute(PENDING_SESSIONS, (RULE_VERSION,)).fetchall())
+        for provider, rule, count in findings:
             if provider in by_rule:
                 by_rule[provider][rule] = count
-        analyzed = db.execute("SELECT provider, gaps_json FROM session_analysis").fetchall()
-        as_of = db.execute("SELECT MAX(computed_at) FROM session_analysis").fetchone()[0]
-        pending = len(db.execute(PENDING_SESSIONS).fetchall())
     for provider, document in analyzed:
         if provider in gaps:
             gaps[provider].update(json.loads(document))

@@ -17,6 +17,8 @@ from agent_watchdog.events import Envelope
 from agent_watchdog.execution import normalize_events
 from agent_watchdog.facts import observed_model, turn_of
 
+# Bump when reducer semantics or the stored signatures/outcomes change.
+VERSION = "wd-162.v1"
 SIGNATURE_LIMIT = 16
 # Claude runs shell commands through `Bash`, and on Windows through `PowerShell` too;
 # both carry a `command`.
