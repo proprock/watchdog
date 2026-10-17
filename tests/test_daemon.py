@@ -31,9 +31,9 @@ from agent_watchdog.daemon import (
     _policy_server,
     _record_enrichment_failures,
     _SessionTracker,
-    enqueue,
     launch,
     mutate_registry,
+    publish,
     start,
     status,
     stop,
@@ -44,13 +44,14 @@ from agent_watchdog.registry import Registry, RegistryError
 from agent_watchdog.resources import losses
 from agent_watchdog.rules.engine import decide
 from agent_watchdog.state import SessionState, Signature
-from agent_watchdog.storage import Inbox, StorageError, Store, WriterBusy, writer_lock
+from agent_watchdog.storage import StorageError, Store, WriterBusy, writer_lock
 from agent_watchdog.transcripts import FAILURE_CODES
 
 
 def spool_record(cwd, **input_fields):
     return {
-        "schema_version": 1,
+        "schema_version": 2,
+        "record_type": "hook",
         "event_id": str(uuid4()),
         "received_at": datetime.now(UTC).isoformat(),
         "provider": "codex",
@@ -65,11 +66,9 @@ def write_spool_record(paths, record):
     (directory / f"{uuid4().hex}.json").write_text(json.dumps(record), encoding="utf-8")
 
 
-def drain_inbox(paths, project, config):
-    root = paths.project_data(project.id)
-    limits = project.overrides.apply(config.defaults)
-    with Store(root, project.id, limits=limits) as store:
-        return Inbox(root, limits=limits).drain(store)
+def stored_events(paths, project):
+    with Store(paths.project_data(project.id), project.id) as store:
+        return store.events()
 
 
 def test_spool_record_is_resolved_built_and_admitted(paths, tmp_path):
@@ -85,19 +84,15 @@ def test_spool_record_is_resolved_built_and_admitted(paths, tmp_path):
         prompt="explain code; password=private-value",
     )
     write_spool_record(paths, record)
-    inbox = paths.project_data(project.id) / "inbox"
-
     assert _drain_spool(paths, config) is True
     assert not list((paths.data / "spool").glob("*.json"))
-    incoming = list(inbox.glob("*.json"))
-    assert len(incoming) == 1
-    envelope = Envelope.model_validate_json(incoming[0].read_bytes())
+    (envelope,) = stored_events(paths, project)
     assert str(envelope.event_id) == record["event_id"]
     assert envelope.kind == "turn.start" and envelope.session_id == "s1"
     resolved = Registry(config).resolve(root)
     assert resolved is not None and envelope.checkout_id == resolved.checkout_id
-    assert b"private-value" in incoming[0].read_bytes()
     assert "explain code" in envelope.model_dump_json()
+    assert not (paths.project_data(project.id) / "inbox").exists()
 
 
 def test_spool_drain_preserves_enabled_delivery_trace_and_disabled_omits_it(paths, tmp_path):
@@ -115,29 +110,26 @@ def test_spool_drain_preserves_enabled_delivery_trace_and_disabled_omits_it(path
     write_spool_record(paths, record)
 
     assert _drain_spool(paths, config)
-    incoming = next((paths.project_data(project.id) / "inbox").glob("*.json"))
-    traced = Envelope.model_validate_json(incoming.read_bytes())
+    (traced,) = stored_events(paths, project)
     assert set(traced.delivery) == {
         "adapter_started_at",
         "spool_enqueued_at",
         "spool_occupancy",
         "spool_drained_at",
-        "inbox_enqueued_at",
-        "inbox_occupancy",
+        "sqlite_write_started_at",
     }
-    with Store(paths.project_data(project.id), project.id) as store:
-        assert (
-            Inbox(paths.project_data(project.id)).drain(store, pipeline_telemetry=True).inserted
-            == 1
-        )
-        stored = store.events()[0]
-    assert {"inbox_drained_at", "sqlite_write_started_at"} <= set(stored.delivery)
+    assert not list(paths.data.glob("projects/*/inbox"))
 
     disabled = config.model_copy(update={"pipeline_telemetry": False})
-    write_spool_record(paths, record | {"event_id": str(uuid4())})
+    disabled_record = record | {"event_id": str(uuid4())}
+    write_spool_record(paths, disabled_record)
     assert _drain_spool(paths, disabled)
-    incoming = next((paths.project_data(project.id) / "inbox").glob("*.json"))
-    assert Envelope.model_validate_json(incoming.read_bytes()).delivery == {}
+    untraced = next(
+        event
+        for event in stored_events(paths, project)
+        if event.event_id == UUID(disabled_record["event_id"])
+    )
+    assert untraced.delivery == {}
 
 
 def test_spool_drain_records_a_debounced_content_free_diff_fingerprint(
@@ -256,7 +248,7 @@ def test_spool_unregistered_cwd_is_discarded_without_loss(paths, tmp_path):
 
     assert _drain_spool(paths, config) is True
     assert not list((paths.data / "spool").glob("*.json"))
-    assert not list(paths.data.glob("projects/*/inbox/*.json"))
+    assert not list(paths.data.glob("projects/*/inbox"))
     assert losses(paths.data)["invalid"] == 0
     body = (paths.data / "watchdog.log").read_text(encoding="ascii")
     assert "component=daemon event=spool decision=unregistered" in body
@@ -288,7 +280,7 @@ def test_spool_record_whose_cwd_is_gone_is_discarded_and_the_drain_continues(pat
     assert _drain_spool(paths, config) is True
 
     assert not list((paths.data / "spool").glob("*.json"))
-    assert len(list((paths.project_data(project.id) / "inbox").glob("*.json"))) == 1
+    assert [event.kind for event in stored_events(paths, project)] == ["turn.start"]
     body = (paths.data / "watchdog.log").read_text(encoding="ascii")
     assert "component=daemon event=spool decision=discarded reason=unresolvable_cwd" in body
     assert str(gone) not in body
@@ -322,12 +314,12 @@ def test_spool_record_with_a_transient_resolution_failure_is_kept_for_a_retry(
     assert _drain_spool(paths, config, logged_unknown_checkouts=logged) is False
 
     assert [item.name for item in (paths.data / "spool").glob("*.json")] == ["0-slow.json"]
-    assert len(list((paths.project_data(project.id) / "inbox").glob("*.json"))) == 1
+    assert [event.kind for event in stored_events(paths, project)] == ["turn.start"]
     body = (paths.data / "watchdog.log").read_text(encoding="ascii")
     assert body.count("event=spool decision=deferred reason=unresolvable_cwd") == 1
 
 
-def test_invalid_spool_log_uses_a_fixed_reason_without_record_content(paths):
+def test_invalid_spool_quarantine_does_not_store_record_content(paths):
     config = Config(defaults=Limits(log_level="DEBUG"))
     secret = "prompt=private-value"
     paths.data.joinpath("spool").mkdir(parents=True)
@@ -335,35 +327,33 @@ def test_invalid_spool_log_uses_a_fixed_reason_without_record_content(paths):
 
     assert _drain_spool(paths, config) is True
 
-    body = (paths.data / "watchdog.log").read_text(encoding="ascii")
-    assert "component=daemon event=spool decision=discarded reason=invalid" in body
-    assert secret not in body
+    quarantine = list((paths.data / "quarantine").glob("*.bad"))
+    assert len(quarantine) == 1
+    assert secret.encode() not in quarantine[0].read_bytes()
 
 
-def test_invalid_spool_log_names_the_error_category(paths):
+def test_invalid_spool_quarantine_uses_bounded_diagnostics(paths):
     config = Config(defaults=Limits(log_level="DEBUG"))
     paths.data.joinpath("spool").mkdir(parents=True)
     (paths.data / "spool" / "broken.json").write_text("not json", encoding="utf-8")
 
     assert _drain_spool(paths, config) is True
 
-    body = (paths.data / "watchdog.log").read_text(encoding="ascii")
-    assert (
-        "component=daemon event=spool decision=discarded reason=invalid error_type=jsondecodeerror"
-        in body
-    )
+    (quarantine,) = (paths.data / "quarantine").glob("*.bad")
+    diagnostic = json.loads(quarantine.read_text(encoding="utf-8"))
+    assert diagnostic == {"reason": "rejected", "bytes": len(b"not json")}
 
 
-def test_log_detail_opt_in_adds_the_error_string_to_spool_failures(paths):
+def test_spool_quarantine_never_exposes_parse_detail_when_logging_detail_is_enabled(paths):
     config = Config(defaults=Limits(log_level="DEBUG", log_detail=True))
     paths.data.joinpath("spool").mkdir(parents=True)
     (paths.data / "spool" / "broken.json").write_text("not json", encoding="utf-8")
 
     assert _drain_spool(paths, config) is True
 
-    body = (paths.data / "watchdog.log").read_text(encoding="ascii")
-    assert "reason=invalid error_type=jsondecodeerror" in body
-    assert ' detail="' in body and "Expecting value" in body
+    (quarantine,) = (paths.data / "quarantine").glob("*.bad")
+    diagnostic = json.loads(quarantine.read_text(encoding="utf-8"))
+    assert "Expecting value" not in json.dumps(diagnostic)
 
 
 def test_oversized_spool_record_is_discarded_with_a_size_reason(paths, tmp_path):
@@ -395,7 +385,7 @@ def test_spool_trusted_git_project_is_auto_added_and_admitted(paths, tmp_path):
     assert len(persisted.projects) == 1
     project = persisted.projects[0]
     assert project.root == repository.resolve()
-    assert len(list((paths.project_data(project.id) / "inbox").glob("*.json"))) == 1
+    assert [event.kind for event in stored_events(paths, project)] == ["turn.end"]
 
 
 def test_spool_drain_enforces_the_project_payload_limit(paths, tmp_path):
@@ -411,7 +401,8 @@ def test_spool_drain_enforces_the_project_payload_limit(paths, tmp_path):
     )
 
     assert _drain_spool(paths, config) is True
-    assert not list((paths.project_data(project.id) / "inbox").glob("*.json"))
+    assert stored_events(paths, project) == []
+    assert not paths.project_data(project.id).joinpath("inbox").exists()
     assert losses(paths.project_data(project.id))["payload"] == 1
 
 
@@ -427,8 +418,8 @@ def test_spool_redrain_is_idempotent(paths, tmp_path):
     # A second identical record (a replayed spool file) must not duplicate the event.
     write_spool_record(paths, record)
     assert _drain_spool(paths, config) is True
-    result = drain_inbox(paths, project, config)
-    assert result.inserted == 1 and result.duplicates == 1
+    result = stored_events(paths, project)
+    assert len(result) == 1 and result[0].event_id == UUID(record["event_id"])
     with Store(paths.project_data(project.id), project.id) as store:
         assert [str(item.event_id) for item in store.events()] == [record["event_id"]]
 
@@ -756,8 +747,8 @@ def _decision_request(discovery, root, event_id=None, **fields):
 
 
 def _control_events(paths, project):
-    inbox = paths.project_data(project.id) / "inbox"
-    return [json.loads(path.read_text(encoding="utf-8")) for path in inbox.glob("*.json")]
+    _drain_spool(paths, load_config(paths.config))
+    return [event.model_dump(mode="json") for event in stored_events(paths, project)]
 
 
 def _claude_spool_record(cwd, event, *, tool=None, received_at=None):
@@ -1027,7 +1018,6 @@ def test_a_control_event_is_stored_and_projected_like_any_other(paths, tmp_path)
         _policy_request(discovery["port"], **_decision_request(discovery, root))
         wait_for(lambda: _control_events(paths, project))
     with Store(paths.project_data(project.id), project.id) as store:
-        Inbox(paths.project_data(project.id)).drain(store)
         row = store.connection.execute(
             "SELECT kind, source, provider, session_id FROM event_facts WHERE kind='control'"
         ).fetchone()
@@ -1049,9 +1039,9 @@ def test_policy_server_still_answers_when_recording_the_control_event_fails(
     import agent_watchdog.daemon as daemon_module
 
     def refuse(*_args, **_kwargs):
-        raise StorageError("inbox full")
+        raise StorageError("spool full")
 
-    monkeypatch.setattr(daemon_module, "_admit", refuse)
+    monkeypatch.setattr(daemon_module, "publish", refuse)
     root, project = _same_model_setup(paths, tmp_path)
     with _policy_server(paths, _tracker()):
         discovery = json.loads((paths.data / "policy" / "socket.json").read_text())
@@ -1191,7 +1181,7 @@ def test_concurrent_start_pause_and_explicit_resume(paths):
     wait_for(lambda: not status(paths)["alive"])
     assert status(paths)["state"] == "paused"
     assert not start(paths, explicit=False)
-    assert not enqueue(
+    assert not publish(
         paths, Envelope(project_id=uuid4(), provider="codex", kind="unknown", source="hook")
     )
     start(paths)
@@ -1218,10 +1208,15 @@ def test_daemon_drains_only_registered_events(paths, tmp_path):
     mutate_registry(paths, lambda registry: registry.add(root))
     project = load_config(paths.config).projects[0]
     event = Envelope(project_id=project.id, provider="codex", kind="unknown", source="hook")
-    assert not enqueue(paths, event.model_copy(update={"project_id": uuid4()}))
-    assert enqueue(paths, event)
-    inbox = paths.project_data(project.id) / "inbox"
-    wait_for(lambda: not list(inbox.glob("*.json")))
+    assert not publish(paths, event.model_copy(update={"project_id": uuid4()}))
+    assert publish(paths, event)
+    wait_for(
+        lambda: (
+            not [
+                path for path in (paths.data / "spool").glob("*.json") if path.name != "limits.json"
+            ]
+        )
+    )
     stop(paths)
     wait_for(lambda: not status(paths)["alive"])
     with Store(paths.project_data(project.id), project.id) as store:
@@ -1356,6 +1351,19 @@ def source_devices(paths, project_id) -> list[bool]:
     return [device is not None for (device,) in rows]
 
 
+def source_errors(paths, project_id) -> list[str | None]:
+    """Read persisted transcript errors without contending with the daemon writer."""
+    database = paths.project_data(project_id) / "events.sqlite3"
+    if not database.exists():
+        return []
+    with closing(sqlite3.connect(f"{database.as_uri()}?mode=ro", uri=True)) as connection:
+        try:
+            rows = connection.execute("SELECT last_error FROM transcript_sources").fetchall()
+        except sqlite3.OperationalError:
+            return []
+    return [error for (error,) in rows]
+
+
 def remove(path: Path) -> bool:
     """Delete a file the daemon may be reading; Windows refuses while it is open."""
     try:
@@ -1456,10 +1464,7 @@ def test_stale_transcript_failure_does_not_degrade_daemon(paths, tmp_path):
 
     start(paths)
     wait_for(lambda: status(paths)["state"] == "running")
-
-    with Store(paths.project_data(project.id), project.id) as store:
-        sources = store.transcript_sources()
-    assert sources[0]["last_error"] == "transcript_path_not_regular"
+    wait_for(lambda: source_errors(paths, project.id) == ["transcript_path_not_regular"])
     assert status(paths)["transcript_failures"] == {}
 
 
@@ -1536,16 +1541,15 @@ def test_status_reports_current_queue_occupancy(paths, tmp_path):
     mutate_registry(paths, lambda registry: registry.add(root))
     config = load_config(paths.config)
     project = config.projects[0]
-    Inbox(paths.project_data(project.id)).publish(
+    from agent_watchdog.spool import Spool
+
+    Spool(paths.data).publish(
         Envelope(project_id=project.id, provider="codex", kind="unknown", source="hook")
     )
 
     queues = status(paths)["queues"]
-    assert queues["spool"]["files"] == 0
-    inbox = queues["projects"][str(project.id)]
-    assert inbox["files"] == 1 and inbox["bytes"] > 0
-    assert inbox["byte_limit"] == config.defaults.inbox_bytes
-    assert inbox["file_limit"] is None
+    assert queues["spool"]["files"] == 1
+    assert queues["spool"]["bytes"] > 0
 
 
 def test_hook_start_contention_is_bounded(paths):
@@ -1728,8 +1732,7 @@ def test_real_adapter_daemon_roundtrip_reports_rendering_without_provider_effect
         wait_for(
             lambda: any(item.get("kind") == "control" for item in _control_events(paths, project))
         )
-    assert _drain_spool(paths, config)
-    drain_inbox(paths, project, config)
+    assert any(item.get("kind") == "control" for item in _control_events(paths, project))
     (row,) = stats(paths, config, since=None)
     assert row["attempted"] == row["response_sent"] == row["adapter_rendered"] == 1
     assert row["adapter_rendered_unknown"] == 0

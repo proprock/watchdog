@@ -68,16 +68,12 @@ _DELIVERY_TIMESTAMPS = (
     "adapter_started_at",
     "spool_enqueued_at",
     "spool_drained_at",
-    "inbox_enqueued_at",
-    "inbox_drained_at",
     "sqlite_write_started_at",
 )
 _PIPELINE_STAGES = {
     "adapter_to_spool": ("adapter_started_at", "spool_enqueued_at"),
     "spool_queue": ("spool_enqueued_at", "spool_drained_at"),
-    "spool_to_inbox": ("spool_drained_at", "inbox_enqueued_at"),
-    "inbox_queue": ("inbox_enqueued_at", "inbox_drained_at"),
-    "inbox_to_sqlite": ("inbox_drained_at", "sqlite_write_started_at"),
+    "spool_to_sqlite": ("spool_drained_at", "sqlite_write_started_at"),
     "end_to_end": ("adapter_started_at", "sqlite_write_started_at"),
 }
 _PYTEST_FAILURE = re.compile(r"^FAILED\s+([^\s]+)", re.MULTILINE)
@@ -157,7 +153,7 @@ def analyze_telemetry(events: Iterable[Envelope]) -> dict[str, Any]:
     stage_counts = {
         name: Counter({"missing": 0, "invalid": 0, "out_of_order": 0}) for name in _PIPELINE_STAGES
     }
-    occupancy_values = {name: {"files": [], "bytes": []} for name in ("spool", "inbox")}
+    occupancy_values = {"spool": {"files": [], "bytes": []}}
     occupancy_counts = {name: Counter({"missing": 0, "invalid": 0}) for name in occupancy_values}
     events_with_delivery = 0
     complete_traces = 0

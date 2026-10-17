@@ -43,8 +43,11 @@ is added automatically. Non-Git directories and all paths outside it remain
 unregistered. Numeric limits must be positive integers except `content_days` and
 `metrics_days`, which may be zero to disable time-based expiry. The
 `transcript_failure_minutes` health window is always positive,
-and `payload_bytes <= inbox_bytes <= project_bytes`; numeric strings and booleans
+and `payload_bytes <= project_bytes`; numeric strings and booleans
 are rejected. TOML serialization omits optional values rather than inventing nulls.
+The removed `inbox_bytes` setting is accepted in older defaults or overrides but
+ignored with a warning; it is not an active quota. The shared event spool has its
+own daemon-wide byte and file limits.
 `capture_content` and the daemon-wide `pipeline_telemetry` are strict booleans,
 defaulting to true. Pipeline telemetry is deliberately not a project override:
 the native adapter must decide before resolving a project. When disabled it omits
@@ -113,9 +116,17 @@ support claim. Unknown envelope schema versions are rejected and quarantined by
 WD-004 ingestion. Availability uses `observed`, `inferred`, `unknown`, or
 `unavailable`, never an invented zero; `input.<field>` identifies observed or
 omitted provider input. Envelope model serialization alone does not redact content.
-The WD-107 adapter, Inbox.publish, and Store.put persistence boundaries apply
+The native adapter, shared spool publisher, and Store persistence boundaries apply
 size limits; pre-WD-115 they also apply the credential filter, which WD-115 moves
 to the export boundary.
+
+Event delivery uses an outer spool schema version 2, separate from the envelope
+schema above. `record_type: "hook"` carries raw native input and resolution
+metadata; `record_type: "envelope"` carries an already constructed envelope.
+Both commit directly through the daemon's Store and are acknowledged only after
+commit. No runtime event Inbox or legacy schema 1 spool reader remains; pending
+legacy data requires an external one-shot migration preserving event UUIDs,
+timestamps, provider metadata, and receipt identity.
 
 Implementation references: [Pydantic strict validation](https://docs.pydantic.dev/latest/concepts/strict_mode/),
 [platformdirs paths](https://platformdirs.readthedocs.io/en/latest/api.html), and

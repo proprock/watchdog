@@ -2,6 +2,7 @@
 
 import json
 import tomllib
+import warnings
 from collections.abc import Iterable
 from dataclasses import dataclass
 from pathlib import Path
@@ -34,7 +35,6 @@ class Limits(StrictModel):
     metrics_days: NonNegative = 180
     transcript_failure_minutes: Positive = 15
     project_bytes: Positive = 2 * 1024**3
-    inbox_bytes: Positive = 64 * 1024**2
     payload_bytes: Positive = 1024**2
     log_files: Positive = 5
     log_bytes: Positive = 10 * 1024**2
@@ -50,10 +50,22 @@ class Limits(StrictModel):
     # which sends nothing, still works) for every project or just one.
     insights_llm_enabled: bool = True
 
+    @model_validator(mode="before")
+    @classmethod
+    def remove_inbox_limit(cls, value: object) -> object:
+        if isinstance(value, dict) and "inbox_bytes" in value:
+            warnings.warn(
+                "inbox_bytes is deprecated and ignored; all events use spool",
+                UserWarning,
+                stacklevel=2,
+            )
+            return {key: item for key, item in value.items() if key != "inbox_bytes"}
+        return value
+
     @model_validator(mode="after")
     def ordered_quotas(self) -> Self:
-        if not self.payload_bytes <= self.inbox_bytes <= self.project_bytes:
-            raise ValueError("Require payload_bytes <= inbox_bytes <= project_bytes")
+        if self.payload_bytes > self.project_bytes:
+            raise ValueError("Require payload_bytes <= project_bytes")
         return self
 
 
@@ -64,10 +76,21 @@ class Overrides(StrictModel):
     metrics_days: NonNegative | None = None
     transcript_failure_minutes: Positive | None = None
     project_bytes: Positive | None = None
-    inbox_bytes: Positive | None = None
     payload_bytes: Positive | None = None
     policy_intervene: bool | None = None
     insights_llm_enabled: bool | None = None
+
+    @model_validator(mode="before")
+    @classmethod
+    def remove_inbox_limit(cls, value: object) -> object:
+        if isinstance(value, dict) and "inbox_bytes" in value:
+            warnings.warn(
+                "inbox_bytes is deprecated and ignored; all events use spool",
+                UserWarning,
+                stacklevel=2,
+            )
+            return {key: item for key, item in value.items() if key != "inbox_bytes"}
+        return value
 
     def apply(self, defaults: Limits) -> Limits:
         return Limits.model_validate(defaults.model_dump() | self.model_dump(exclude_none=True))

@@ -17,7 +17,7 @@ from typing import Any
 from agent_watchdog.analysis import captured_content
 from agent_watchdog.events import Envelope
 from agent_watchdog.execution import normalize_events
-from agent_watchdog.storage import persisted_envelope
+from agent_watchdog.insights.window import normalized_events, persisted, projection
 
 Key = tuple[str, str | None, str | None]
 # A request whose context is below this share of the previous one was reset:
@@ -96,14 +96,18 @@ def requests(
         if value is not None:
             where += f" AND {clause}"
             params.append(value)
-    cursor = db.execute(
-        "SELECT event_id, provider, session_id, agent_id, native_event_id, "
-        "COALESCE(occurred_at_us, received_at_us) AS at_us, model, input_tokens, "
-        "cached_input_tokens, cache_write_input_tokens, output_tokens "
-        f"FROM event_facts WHERE {where} ORDER BY at_us, event_id",
-        params,
-    )
-    names = [column[0] for column in cursor.description]
+
+    def load_rows():
+        cursor = db.execute(
+            "SELECT event_id, provider, session_id, agent_id, native_event_id, "
+            "COALESCE(occurred_at_us, received_at_us) AS at_us, model, input_tokens, "
+            "cached_input_tokens, cache_write_input_tokens, output_tokens "
+            f"FROM event_facts WHERE {where} ORDER BY at_us, event_id",
+            params,
+        )
+        return [column[0] for column in cursor.description], cursor.fetchall()
+
+    names, rows = projection(db, ("usage", provider, session_id, us(since), us(until)), load_rows)
     series: dict[Key, list[Request]] = {}
     seen: set[tuple] = set()
     counts = {
@@ -113,7 +117,7 @@ def requests(
         "synthetic_rows": 0,
         "spike_rows_excluded": 0,
     }
-    for values in cursor.fetchall():
+    for values in rows:
         row = dict(zip(names, values, strict=True))
         counts["usage_rows"] += 1
         key: Key = (row["provider"], row["session_id"], row["agent_id"])
@@ -212,14 +216,19 @@ def events(
         where = f"kind IN ({', '.join('?' for _ in loaded_kinds)})"
         params = list(loaded_kinds)
     if provider is not None:
-        where += " AND json_extract(envelope, '$.provider') = ?"
+        where += " AND provider = ?"
         params.append(provider)
     if session_id is not None:
         where += " AND session_id = ?"
         params.append(session_id)
-    rows = db.execute(f"SELECT envelope FROM events WHERE {where} ORDER BY received_at", params)
+    normalized = normalized_events(db, provider, session_id)
+    if normalized is None:
+        rows = db.execute(f"SELECT envelope FROM events WHERE {where} ORDER BY received_at", params)
+        source = normalize_events(persisted(document) for (document,) in rows)
+    else:
+        source = normalized
     result = []
-    for event in normalize_events(persisted_envelope(document) for (document,) in rows):
+    for event in source:
         if kinds is not None and event.kind not in kinds:
             continue
         if since is not None and event.received_at < since:

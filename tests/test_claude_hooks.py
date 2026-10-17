@@ -39,7 +39,7 @@ def make(tmp_path, monkeypatch):
         )
         events: list = []
         monkeypatch.setattr(
-            "agent_watchdog.hooks.daemon.enqueue", lambda paths, event: events.append(event)
+            "agent_watchdog.hooks.daemon.publish", lambda paths, event: events.append(event)
         )
         return paths, events
 
@@ -136,7 +136,7 @@ def test_claude_hook_emits_no_stdout(make, monkeypatch, capsys, tmp_path, scenar
         def boom(*args, **kwargs):
             raise RuntimeError("simulated storage failure")
 
-        monkeypatch.setattr("agent_watchdog.hooks.daemon.enqueue", boom)
+        monkeypatch.setattr("agent_watchdog.hooks.daemon.publish", boom)
     monkeypatch.setattr(
         sys, "argv", ["agent-watchdog", "--home", str(paths.config.parent), "hook", "claude"]
     )
@@ -263,7 +263,7 @@ def test_claude_and_codex_envelopes_stay_distinct_in_the_store(make, monkeypatch
     data = tmp_path / "data" / "projects" / str(project_id)
     with Store(data, project_id) as store:
         monkeypatch.setattr(
-            "agent_watchdog.hooks.daemon.enqueue", lambda paths, event: store.put(event)
+            "agent_watchdog.hooks.daemon.publish", lambda paths, event: store.put(event)
         )
         for provider in ("codex", "claude"):
             run(paths, {"cwd": str(paths.config.parent), "hook_event_name": "Stop"}, provider)

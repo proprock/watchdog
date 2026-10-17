@@ -9,7 +9,7 @@ import pytest
 from agent_watchdog import daemon
 from agent_watchdog.config import UserPaths, load_config
 from agent_watchdog.events import Envelope
-from agent_watchdog.storage import Inbox, Store, writer_lock
+from agent_watchdog.storage import Store, writer_lock
 
 
 @pytest.fixture
@@ -73,17 +73,15 @@ def test_idle_daemon_with_empty_queues_stays_running(paths, monkeypatch):
 
 def test_backlog_needs_multiple_polls_and_clears_on_progress():
     tracker = daemon._BacklogTracker()
-    queues = {"spool": {"files": 3}, "projects": {"project": {"files": 2}}}
+    queues = {"spool": {"files": 3}}
     first = tracker.observe(queues, set(), now=100)
     assert first["spool"]["polls"] == 1
     later = tracker.observe(queues, set(), now=161)
     assert later["spool"]["since"] == 100
-    assert later["project"]["polls"] == 2
     moved = tracker.observe(queues, {"spool"}, now=162)
     assert moved["spool"]["since"] == 162
-    assert moved["project"]["since"] == 100
-    queues["projects"]["project"]["files"] = 1
-    assert tracker.observe(queues, set(), now=163)["project"]["since"] == 163
+    queues["spool"]["files"] = 1
+    assert tracker.observe(queues, set(), now=163)["spool"]["since"] == 163
     queues["spool"]["files"] = 0
     assert "spool" not in tracker.observe(queues, set(), now=164)
 
@@ -150,20 +148,19 @@ def test_an_unreadable_store_is_unknown_and_not_created(paths, tmp_path):
     assert not database.exists()
 
 
-def test_project_backlog_does_not_get_hidden_by_spool_progress(paths, tmp_path, monkeypatch):
+def test_spool_backlog_stall_is_reported(paths, tmp_path, monkeypatch):
     monkeypatch.setattr(daemon.time, "time", lambda: 200)
     root = tmp_path / "project"
     root.mkdir()
     daemon.mutate_registry(paths, lambda registry: registry.add(root))
-    project = load_config(paths.config).projects[0]
-    Inbox(paths.project_data(project.id)).publish(
-        Envelope(project_id=project.id, provider="codex", kind="unknown", source="hook")
-    )
-    heartbeat(paths, 200, backlog={str(project.id): {"files": 1, "since": 100, "polls": 2}})
+    spool = paths.data / "spool"
+    spool.mkdir()
+    (spool / "record.json").write_text("{}")
+    heartbeat(paths, 200, backlog={"spool": {"files": 1, "since": 100, "polls": 2}})
     with writer_lock(paths.data / "daemon.lock"):
         report = daemon.status(paths)
     assert "backlog_stalled" in report["reasons"]
-    assert report["health"]["stalled_queues"] == [str(project.id)]
+    assert report["health"]["stalled_queues"] == ["spool"]
 
 
 def test_poll_publishes_stall_evidence_without_repeated_status_calls(paths, monkeypatch):

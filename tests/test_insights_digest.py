@@ -1,6 +1,8 @@
 """Offline contracts for `insights digest`, the cross-mode synthesis (WD-134)."""
 
 import json
+from collections import Counter
+from contextlib import contextmanager
 from datetime import timedelta
 from typing import Any
 
@@ -11,7 +13,7 @@ from test_insights_session import _cli
 from test_insights_sessions import _calm, _stuck
 from test_storage_v6 import BASE
 
-from agent_watchdog import insights
+from agent_watchdog import insights, storage
 from agent_watchdog.insights import bundle, contract, digest, llm, render
 from agent_watchdog.insights.bundle import Draft
 from agent_watchdog.storage import StorageError
@@ -94,6 +96,55 @@ def test_every_mode_is_built_for_one_window(tmp_path, monkeypatch):
     assert len({kwargs["until"] for kwargs in seen.values()}) == 1
     assert all(kwargs["until"] is not None for kwargs in seen.values())
     assert all(kwargs["provider"] == "claude" for kwargs in seen.values())
+
+
+def test_digest_uses_one_snapshot_and_parses_each_loaded_envelope_once(tmp_path, monkeypatch):
+    paths, project = store(tmp_path, _events())
+    original_database = digest.window.inspection.database
+    opened = 0
+    parsed = Counter()
+    normalized = 0
+    event_queries = 0
+    usage_queries = 0
+
+    @contextmanager
+    def counted_database(*args, **kwargs):
+        nonlocal opened, event_queries, usage_queries
+        opened += 1
+        with original_database(*args, **kwargs) as db:
+
+            def count_query(statement):
+                nonlocal event_queries, usage_queries
+                if "FROM events WHERE" in statement:
+                    event_queries += 1
+                if "FROM event_facts WHERE" in statement:
+                    usage_queries += 1
+
+            db.set_trace_callback(count_query)
+            yield db
+
+    original_persisted = storage.persisted_envelope
+
+    def counted_parse(document):
+        parsed[document] += 1
+        return original_persisted(document)
+
+    original_normalize = digest.window.normalize_events
+
+    def counted_normalize(events):
+        nonlocal normalized
+        normalized += 1
+        return original_normalize(events)
+
+    monkeypatch.setattr(digest.window.inspection, "database", counted_database)
+    monkeypatch.setattr("agent_watchdog.storage.persisted_envelope", counted_parse)
+    monkeypatch.setattr(digest.window, "normalize_events", counted_normalize)
+    digest.build(paths, project, **NONE)
+
+    assert opened == 1
+    assert parsed and max(parsed.values()) == 1
+    assert normalized == event_queries == 1
+    assert usage_queries == 1
 
 
 def test_each_mode_stays_within_its_share_of_the_budget():

@@ -27,13 +27,16 @@ def delivery(start, seconds, occupancy, *, legacy=False):
         "adapter_started_at": start.isoformat(),
         "spool_enqueued_at": (start + timedelta(seconds=seconds)).isoformat(),
         "spool_drained_at": (start + timedelta(seconds=seconds + 1)).isoformat(),
-        "inbox_enqueued_at": (start + timedelta(seconds=seconds + 2)).isoformat(),
-        "inbox_drained_at": (start + timedelta(seconds=seconds + 3)).isoformat(),
         "sqlite_write_started_at": (start + timedelta(seconds=seconds + 4)).isoformat(),
     }
-    suffix = "queue" if legacy else "occupancy"
-    result[f"spool_{suffix}"] = {"files": occupancy, "bytes": occupancy * 10}
-    result[f"inbox_{suffix}"] = {"files": occupancy + 1, "bytes": occupancy * 20}
+    result["spool_occupancy"] = {"files": occupancy, "bytes": occupancy * 10}
+    if legacy:
+        # Existing databases and exported reports may still contain the old pipeline fields.
+        result.pop("spool_drained_at")
+        result.pop("sqlite_write_started_at")
+        result["inbox_enqueued_at"] = (start + timedelta(seconds=seconds + 2)).isoformat()
+        result["inbox_drained_at"] = (start + timedelta(seconds=seconds + 3)).isoformat()
+        result["inbox_occupancy"] = {"files": occupancy + 1, "bytes": occupancy * 20}
     return result
 
 
@@ -79,7 +82,7 @@ def test_telemetry_uses_nearest_rank_and_counts_bad_pipeline_observations(tmp_pa
 
     assert result["trace_coverage"]["events"] == 6
     assert result["trace_coverage"]["events_with_delivery"] == 6
-    assert result["trace_coverage"]["complete_traces"] == 5
+    assert result["trace_coverage"]["complete_traces"] == 4
     assert result["trace_coverage"]["timestamp_fields"]["adapter_started_at"] == {
         "observed": 5,
         "missing": 0,
@@ -94,7 +97,7 @@ def test_telemetry_uses_nearest_rank_and_counts_bad_pipeline_observations(tmp_pa
         100.0,
     )
     assert result["stage_durations_seconds"]["spool_queue"]["out_of_order_count"] == 1
-    assert result["stage_durations_seconds"]["inbox_queue"]["missing_count"] == 1
+    assert result["stage_durations_seconds"]["spool_to_sqlite"]["missing_count"] == 2
     assert result["occupancy"]["spool"]["observed_count"] == 5
     assert result["occupancy"]["spool"]["invalid_count"] == 1
     assert result["occupancy"]["spool"]["files"] == {

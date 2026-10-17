@@ -6,7 +6,7 @@ import uuid
 from datetime import UTC, datetime, timedelta
 
 import pytest
-from test_daemon import _decision_request, _policy_request, enqueue, start, status, stop, wait_for
+from test_daemon import _decision_request, _policy_request, publish, start, status, stop, wait_for
 
 from agent_watchdog import daemon
 from agent_watchdog.config import UserPaths, load_config
@@ -257,7 +257,7 @@ def test_a_running_daemon_materializes_findings_and_survives_a_restart(paths, tm
     start(paths)
     for number in range(3):
         event = _finish("s1", number).model_copy(update={"project_id": project.id})
-        assert enqueue(paths, event)
+        assert publish(paths, event)
 
     wait_for(lambda: read("SELECT rule FROM session_findings"))
     assert {row[0] for row in read("SELECT rule FROM session_findings")} >= {"identical_error"}
@@ -268,5 +268,5 @@ def test_a_running_daemon_materializes_findings_and_survives_a_restart(paths, tm
     start(paths)
     wait_for(lambda: status(paths)["state"] == "running")
     event = _finish("s1", 9).model_copy(update={"project_id": project.id})
-    assert enqueue(paths, event)
+    assert publish(paths, event)
     wait_for(lambda: calls() == [4])

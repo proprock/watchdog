@@ -10,7 +10,7 @@ from agent_watchdog import inspection, privacy
 from agent_watchdog.analysis import normalize_error_text
 from agent_watchdog.config import Project, UserPaths
 from agent_watchdog.events import Envelope
-from agent_watchdog.insights import timeline
+from agent_watchdog.insights import timeline, window
 from agent_watchdog.insights.bundle import Draft, excerpt
 from agent_watchdog.insights.contract import OutputModel, RuleCandidate, ScopeFields
 from agent_watchdog.insights.scope import share
@@ -115,7 +115,7 @@ def read(
     since: datetime | None,
     until: datetime | None,
 ) -> Raw:
-    return inspection.tool_finishes(
+    return window.tool_finishes(
         paths, project, provider=provider, session_id=session_id, since=since, until=until
     )
 

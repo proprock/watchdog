@@ -282,8 +282,11 @@ def test_daemon_reads_profile_only_from_request_and_records_gap(installation):
         discovery = json.loads((paths.data / "policy" / "socket.json").read_text())
         assert request(discovery, payload, None)["action"] == "allow"
         assert request(discovery, payload, OLD)["action"] == "deny"
-    inbox = paths.project_data(load_config(paths.config).projects[0].id) / "inbox"
-    records = [json.loads(p.read_text())["payload"]["codex"] for p in inbox.glob("*.json")]
+    records = [
+        json.loads(p.read_text())["envelope"]["payload"]["codex"]
+        for p in (paths.data / "spool").glob("*.json")
+        if p.name != "limits.json"
+    ]
     assert any(
         r.get("capability_gap") == "unsupported_codex_cell"
         and r["action"] == "log"

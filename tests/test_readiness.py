@@ -12,7 +12,7 @@ from agent_watchdog import daemon, readiness
 from agent_watchdog.config import Config, Project, UserPaths, load_config, save_config
 from agent_watchdog.daemon import _drain_spool, set_desired
 from agent_watchdog.hook_install import change
-from agent_watchdog.storage import Inbox, Store, writer_lock
+from agent_watchdog.storage import Store, writer_lock
 
 RUNNING = {"state": "running", "alive": True, "queues": {}, "losses": {}}
 
@@ -71,15 +71,10 @@ def purge_directly(paths, project):
 
 
 def drain_everything(paths):
-    """Run the daemon's spool drain plus the inbox commit once, as `_poll` would."""
+    """Run the daemon's spool-to-SQLite drain once, as `_poll` would."""
 
     def settle():
         _drain_spool(paths, load_config(paths.config))
-        for project in load_config(paths.config).projects:
-            root = paths.project_data(project.id)
-            if (root / "inbox").is_dir():
-                with Store(root, project.id) as store:
-                    Inbox(root).drain(store)
 
     return settle
 

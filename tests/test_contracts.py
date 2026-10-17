@@ -127,8 +127,11 @@ def test_project_overrides_round_trip_and_do_not_change_other_projects(tmp_path)
     assert first.overrides.apply(restored.defaults).content_days == 7
     assert second.overrides.apply(restored.defaults).content_days == 30
     assert second.overrides.apply(restored.defaults).metrics_days == 90
-    with pytest.raises(ValidationError):
-        Config(projects=(Project(id=uuid4(), root=tmp_path, overrides=Overrides(inbox_bytes=1)),))
+    legacy = tmp_path / "legacy-inbox.toml"
+    legacy.write_text("[defaults]\ninbox_bytes = 123\n")
+    with pytest.warns(UserWarning, match="inbox_bytes is deprecated and ignored"):
+        restored = load_config(legacy)
+    assert not hasattr(restored.defaults, "inbox_bytes")
 
 
 def test_the_removed_per_rule_switch_is_rejected_as_an_unknown_key(tmp_path):

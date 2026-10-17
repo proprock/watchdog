@@ -3,13 +3,14 @@ import json
 from uuid import uuid4
 
 import pytest
+from helpers.spool import PreparedQueue as Spool
 
 from agent_watchdog.config import Config, Limits, Project, UserPaths, save_config
 from agent_watchdog.events import Envelope
 from agent_watchdog.hooks import observe
 from agent_watchdog.inspection import export_sessions
 from agent_watchdog.privacy import text
-from agent_watchdog.storage import Inbox, Store
+from agent_watchdog.storage import Store
 
 
 @pytest.mark.parametrize(
@@ -41,13 +42,15 @@ def test_raw_events_remain_local_and_exports_are_redacted(tmp_path):
         payload={"codex": {"content": {"prompt": secret, "password": "private-value"}}},
     )
     root = paths.project_data(project.id)
-    path = Inbox(root).publish(event)
+    path = Spool(root).publish(event)
     assert secret.encode() in path.read_bytes()
     assert b"private-value" in path.read_bytes()
     with Store(root, event.project_id) as store:
-        store.put(event, artifacts={"stdout": f"Authorization: Bearer {secret}".encode()})
-        assert secret.encode() in store.read_artifact(event.event_id, "stdout")
-        assert secret in store.events()[0].model_dump_json()
+        assert Spool(root).drain(store).inserted == 1
+        artifact_event = event.model_copy(update={"event_id": uuid4()})
+        store.put(artifact_event, artifacts={"stdout": f"Authorization: Bearer {secret}".encode()})
+        assert secret.encode() in store.read_artifact(artifact_event.event_id, "stdout")
+        assert any(secret in saved.model_dump_json() for saved in store.events())
 
     output = tmp_path / "export"
     export_sessions(
@@ -62,11 +65,11 @@ def test_raw_events_remain_local_and_exports_are_redacted(tmp_path):
 
 
 def test_malformed_input_never_enters_quarantine_as_raw_text(tmp_path):
-    inbox = Inbox(tmp_path)
-    inbox.directory.mkdir()
-    (inbox.directory / "bad.json").write_bytes(b"password=private-value invalid JSON")
+    spool = Spool(tmp_path)
+    spool.directory.mkdir()
+    (spool.directory / "bad.json").write_bytes(b"password=private-value invalid JSON")
     with Store(tmp_path, uuid4()) as store:
-        assert inbox.drain(store).quarantined == 1
+        assert spool.drain(store).quarantined == 1
     assert b"private-value" not in next((tmp_path / "quarantine").glob("*.bad")).read_bytes()
 
 
@@ -75,7 +78,7 @@ def test_content_capture_defaults_on_and_can_be_disabled(tmp_path, monkeypatch):
     project = Project(id=uuid4(), root=tmp_path)
     events = []
     monkeypatch.setattr(
-        "agent_watchdog.hooks.daemon.enqueue", lambda paths, event: events.append(event)
+        "agent_watchdog.hooks.daemon.publish", lambda paths, event: events.append(event)
     )
     raw = json.dumps(
         {
@@ -98,7 +101,7 @@ def test_hook_log_records_only_safe_decision_metadata(tmp_path, monkeypatch):
     project = Project(id=uuid4(), root=tmp_path)
     emitted = []
     monkeypatch.setattr(
-        "agent_watchdog.hooks.daemon.enqueue", lambda paths, event: emitted.append(event) or True
+        "agent_watchdog.hooks.daemon.publish", lambda paths, event: emitted.append(event) or True
     )
     secret = "sk-proj-" + "a" * 40
     session_id = "provider-session-secret"

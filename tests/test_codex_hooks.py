@@ -21,7 +21,7 @@ def setup(tmp_path, monkeypatch):
     save_config(paths.config, Config(defaults=Limits(capture_content=False), projects=(project,)))
     events = []
     monkeypatch.setattr(
-        "agent_watchdog.hooks.daemon.enqueue", lambda paths, event: events.append(event)
+        "agent_watchdog.hooks.daemon.publish", lambda paths, event: events.append(event)
     )
     return paths, events
 
@@ -144,7 +144,7 @@ def test_cli_fails_open_with_exact_noop(setup, monkeypatch, capsys, error):
     def fail(*args, **kwargs):
         raise error
 
-    monkeypatch.setattr("agent_watchdog.hooks.daemon.enqueue", fail)
+    monkeypatch.setattr("agent_watchdog.hooks.daemon.publish", fail)
     monkeypatch.setattr(
         sys, "argv", ["agent-watchdog", "--home", str(paths.config.parent), "hook", "codex"]
     )
@@ -155,7 +155,7 @@ def test_cli_fails_open_with_exact_noop(setup, monkeypatch, capsys, error):
     assert output.out == "{}\n" and output.err == ""
 
 
-def test_pause_does_not_read_or_enqueue(setup):
+def test_pause_does_not_read_or_publish(setup):
     from agent_watchdog.daemon import stop
 
     paths, events = setup

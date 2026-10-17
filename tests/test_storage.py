@@ -8,9 +8,10 @@ from pathlib import Path
 from uuid import uuid4
 
 import pytest
+from helpers.spool import PreparedQueue as Spool
 
 from agent_watchdog.events import Envelope
-from agent_watchdog.storage import Inbox, StorageError, Store, WriterBusy, canonical, writer_lock
+from agent_watchdog.storage import StorageError, Store, WriterBusy, canonical, writer_lock
 
 
 @pytest.mark.skipif(os.name != "nt", reason="Windows byte-range lock initialization")
@@ -41,11 +42,14 @@ def event():
 
 
 def test_publish_replay_and_reopen(tmp_path, event):
-    inbox = Inbox(tmp_path)
+    inbox = Spool(tmp_path)
     first = inbox.publish(event)
     second = inbox.publish(event)
     assert first != second
-    assert Envelope.model_validate_json(first.read_bytes()) == event
+    assert (
+        Envelope.model_validate_json(json.dumps(json.loads(first.read_bytes())["envelope"]))
+        == event
+    )
     with Store(tmp_path, event.project_id) as store:
         result = inbox.drain(store)
         assert (result.inserted, result.duplicates) == (1, 1)
@@ -62,7 +66,7 @@ def test_empty_delivery_keeps_legacy_canonical_document(event):
 
 
 def test_partial_publish_is_not_visible_and_replace_failure_cleans_up(tmp_path, event, monkeypatch):
-    inbox = Inbox(tmp_path)
+    inbox = Spool(tmp_path)
     inbox.directory.mkdir(parents=True)
     partial = inbox.directory / "interrupted.tmp"
     partial.write_text("partial")
@@ -81,7 +85,7 @@ def test_partial_publish_is_not_visible_and_replace_failure_cleans_up(tmp_path, 
 
 @pytest.mark.parametrize("bad", [b"broken JSON", b"[]", b'{"schema_version":2}'])
 def test_bad_record_does_not_block_valid_event(tmp_path, event, bad):
-    inbox = Inbox(tmp_path)
+    inbox = Spool(tmp_path)
     good = inbox.publish(event)
     (inbox.directory / "0-bad.json").write_bytes(bad)
     with Store(tmp_path, event.project_id) as store:
@@ -93,7 +97,7 @@ def test_bad_record_does_not_block_valid_event(tmp_path, event, bad):
 
 
 def test_quarantine_is_bounded_and_oversized_input_is_not_retained(tmp_path, event):
-    inbox = Inbox(tmp_path, quarantine_files=2, quarantine_bytes=20)
+    inbox = Spool(tmp_path, quarantine_files=2, quarantine_bytes=20)
     inbox.publish(event)
     for index in range(5):
         (inbox.directory / f"bad-{index}.json").write_bytes(b"invalid")
@@ -109,12 +113,12 @@ def test_quarantine_is_bounded_and_oversized_input_is_not_retained(tmp_path, eve
 
 def test_oversized_publish_is_rejected_before_writing(tmp_path, event):
     with pytest.raises(StorageError):
-        Inbox(tmp_path, payload_bytes=10).publish(event)
-    assert not (tmp_path / "inbox").exists()
+        Spool(tmp_path, payload_bytes=10).publish(event)
+    assert not (tmp_path / "spool").exists()
 
 
 def test_project_mismatch_and_conflicting_uuid_are_quarantined(tmp_path, event):
-    inbox = Inbox(tmp_path)
+    inbox = Spool(tmp_path)
     inbox.publish(event)
     with Store(tmp_path, event.project_id) as store:
         inbox.drain(store)
@@ -127,7 +131,7 @@ def test_project_mismatch_and_conflicting_uuid_are_quarantined(tmp_path, event):
 
 
 def test_failed_transaction_keeps_input_for_replay(tmp_path, event):
-    inbox = Inbox(tmp_path)
+    inbox = Spool(tmp_path)
     incoming = inbox.publish(event)
     with Store(tmp_path, event.project_id) as store:
         store.connection.execute(
@@ -144,7 +148,7 @@ def test_failed_transaction_keeps_input_for_replay(tmp_path, event):
 
 @pytest.mark.parametrize("phase,expected_before", [("before", 0), ("after", 1)])
 def test_process_crash_replays_without_duplicates(tmp_path, event, phase, expected_before):
-    incoming = Inbox(tmp_path).publish(event)
+    incoming = Spool(tmp_path).publish(event)
     script = Path(__file__).parent / "storage_crash_probe.py"
     result = subprocess.run(
         [sys.executable, str(script), str(tmp_path), str(event.project_id), phase],
@@ -156,7 +160,7 @@ def test_process_crash_replays_without_duplicates(tmp_path, event, phase, expect
     assert incoming.exists()
     with Store(tmp_path, event.project_id) as store:
         assert len(store.events()) == expected_before
-        recovered = Inbox(tmp_path).drain(store)
+        recovered = Spool(tmp_path).drain(store)
         assert (recovered.inserted, recovered.duplicates) == (1 - expected_before, expected_before)
         assert store.events() == [event]
     assert not incoming.exists()
@@ -230,7 +234,7 @@ def test_artifact_write_failure_does_not_commit_event(tmp_path, event, monkeypat
 
 
 def test_symlink_input_is_removed_without_reading_target(tmp_path, event):
-    inbox = Inbox(tmp_path / "project")
+    inbox = Spool(tmp_path / "project")
     inbox.publish(event)
     outside = tmp_path / "outside.json"
     outside.write_text(json.dumps({"private": "data"}))
@@ -248,7 +252,7 @@ def test_symlink_input_is_removed_without_reading_target(tmp_path, event):
 
 
 def test_drain_requires_an_open_writer_even_for_invalid_input(tmp_path, event):
-    inbox = Inbox(tmp_path)
+    inbox = Spool(tmp_path)
     incoming = inbox.publish(event)
     incoming.write_bytes(b"invalid")
     with pytest.raises(StorageError):
@@ -364,10 +368,10 @@ def test_transcript_source_accepts_unsigned_windows_stat_values(tmp_path, event)
 
 @pytest.mark.parametrize("missing", ["event_id", "received_at", "schema_version"])
 def test_persisted_envelope_cannot_generate_new_identity_on_replay(tmp_path, event, missing):
-    inbox = Inbox(tmp_path)
+    inbox = Spool(tmp_path)
     path = inbox.publish(event)
     raw = json.loads(path.read_bytes())
-    del raw[missing]
+    del raw["envelope"][missing]
     path.write_text(json.dumps(raw))
     with Store(tmp_path, event.project_id) as store:
         assert inbox.drain(store).quarantined == 1

@@ -35,58 +35,8 @@ _FIELD_NAMES = {
     "provider",
     "field",
 }
-_COMPONENTS = {"daemon", "hook", "cli"}
-_EVENTS = {
-    "checkout",
-    "command",
-    "configuration",
-    "control",
-    "enqueue",
-    "enrichment",
-    "lifecycle",
-    "observe",
-    "poll",
-    "project",
-    "registry",
-    "spool",
-}
-_DECISIONS = {
-    "acknowledged",
-    "active",
-    "admitted",
-    "already_running",
-    "auto_registered",
-    "deferred",
-    "degraded",
-    "disabled",
-    "discarded",
-    "failed",
-    "idle",
-    "inert",
-    "interrupted",
-    "invalid",
-    "paused",
-    "received",
-    "rejected",
-    "reloaded",
-    "retry",
-    "started",
-    "stopped",
-    "unavailable",
-    "unregistered",
-}
-_REASONS = {
-    "invalid",
-    "linked",
-    "oversized",
-    "quota",
-    "unknown_field",
-    "unresolvable_cwd",
-    "usage_seen_unstored",
-    "writer_busy",
-}
-_PROVIDERS = {"codex", "claude"}
 _FIELD = re.compile(r"[A-Za-z][A-Za-z0-9_.-]{0,63}")
+_CODE = re.compile(r"[A-Za-z][A-Za-z0-9_]{0,63}")
 # An error category is a short, content-free code: either an exception class name
 # or an internal failure Literal. Its shape is bounded here, like ``field``; the
 # value never carries exception text, paths, or payload data.
@@ -185,18 +135,14 @@ def emit(
 def _valid(fields: dict[str, str | int]) -> bool:
     if set(fields) - _FIELD_NAMES:
         return False
-    if fields["component"] not in _COMPONENTS or fields["event"] not in _EVENTS:
-        return False
-    if "decision" in fields and fields["decision"] not in _DECISIONS:
-        return False
-    if "reason" in fields and fields["reason"] not in _REASONS:
-        return False
+    for name in ("component", "event", "decision", "reason", "provider"):
+        value = fields.get(name)
+        if name in fields and (not isinstance(value, str) or _CODE.fullmatch(value) is None):
+            return False
     if "error_type" in fields and (
         not isinstance(fields["error_type"], str)
         or _ERROR_TYPE.fullmatch(fields["error_type"]) is None
     ):
-        return False
-    if "provider" in fields and fields["provider"] not in _PROVIDERS:
         return False
     if "field" in fields and (
         not isinstance(fields["field"], str) or _FIELD.fullmatch(fields["field"]) is None

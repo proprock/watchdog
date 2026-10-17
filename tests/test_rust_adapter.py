@@ -28,7 +28,7 @@ from agent_watchdog.daemon import (
     write_spool_limits,
 )
 from agent_watchdog.events import Envelope
-from agent_watchdog.storage import Inbox, Store, writer_lock
+from agent_watchdog.storage import Store, writer_lock
 
 
 @pytest.fixture
@@ -88,8 +88,12 @@ def drain_spool(paths):
     _drain_spool(paths, config)
 
 
-def inbox_files(paths, project):
-    return list((paths.project_data(project.id) / "inbox").glob("*.json"))
+def persisted_events(paths, project):
+    root = paths.project_data(project.id)
+    if not (root / "events.sqlite3").exists():
+        return []
+    with Store(root, project.id) as store:
+        return store.events(limit=1000)
 
 
 def test_native_spools_then_daemon_resolves_and_admits(rust_adapter, native_setup):
@@ -105,25 +109,25 @@ def test_native_spools_then_daemon_resolves_and_admits(rust_adapter, native_setu
         },
     )
     assert result.returncode == 0 and result.stdout == "{}\n" and not result.stderr
-    # The adapter only spools; nothing reaches the project inbox until the daemon drains.
+    # The adapter only spools; nothing reaches the project database until the daemon drains.
     spooled = spool_files(paths)
     assert len(spooled) == 1
     record = json.loads(spooled[0].read_bytes())
+    assert record["schema_version"] == 2 and record["record_type"] == "hook"
     assert record["cwd"] == str(project.root) and record["provider"] == "codex"
     assert b"private-value" in spooled[0].read_bytes()
-    assert not inbox_files(paths, project)
+    assert not persisted_events(paths, project)
 
     drain_spool(paths)
     assert not spool_files(paths)
-    incoming = inbox_files(paths, project)
-    assert len(incoming) == 1 and b"private-value" in incoming[0].read_bytes()
-    envelope = Envelope.model_validate_json(incoming[0].read_bytes())
+    incoming = persisted_events(paths, project)
+    assert len(incoming) == 1 and "private-value" in incoming[0].model_dump_json()
+    envelope = incoming[0]
     assert str(envelope.event_id) == record["event_id"]
     assert envelope.session_id == "native" and envelope.kind == "turn.start"
     assert "explain code" in envelope.model_dump_json()
     root = paths.project_data(project.id)
     with Store(root, project.id) as store:
-        assert Inbox(root).drain(store).inserted == 1
         assert store.events() == [envelope]
 
 
@@ -202,15 +206,15 @@ def test_native_pause_and_config_opt_out(rust_adapter, native_setup):
     }
     assert invoke(rust_adapter, paths, payload).returncode == 0
     drain_spool(paths)
-    incoming = inbox_files(paths, project)
-    assert len(incoming) == 1 and b"omit this" not in incoming[0].read_bytes()
+    incoming = persisted_events(paths, project)
+    assert len(incoming) == 1 and "omit this" not in incoming[0].model_dump_json()
 
     set_desired(paths, paused=True)
     assert invoke(rust_adapter, paths, payload).stdout == "{}\n"
     # A paused adapter does not even spool.
     assert not spool_files(paths)
     drain_spool(paths)
-    assert len(inbox_files(paths, project)) == 1
+    assert len(persisted_events(paths, project)) == 1
 
 
 def test_native_drain_respects_the_python_control_lock(rust_adapter, native_setup):
@@ -223,10 +227,10 @@ def test_native_drain_respects_the_python_control_lock(rust_adapter, native_setu
     with writer_lock(paths.data / "control.lock"):
         drain_spool(paths)
     # The drain could not admit while the control lock was held; the record survives.
-    assert not inbox_files(paths, project)
+    assert not persisted_events(paths, project)
     assert len(spool_files(paths)) == 1
     drain_spool(paths)
-    assert len(inbox_files(paths, project)) == 1 and not spool_files(paths)
+    assert len(persisted_events(paths, project)) == 1 and not spool_files(paths)
 
 
 def test_native_expanded_unicode_payload_is_rejected_at_drain(rust_adapter, native_setup):
@@ -244,7 +248,7 @@ def test_native_expanded_unicode_payload_is_rejected_at_drain(rust_adapter, nati
     assert invoke(rust_adapter, paths, payload).stdout == "{}\n"
     assert len(spool_files(paths)) == 1
     drain_spool(paths)
-    assert not inbox_files(paths, project)
+    assert not persisted_events(paths, project)
     assert losses(paths.project_data(project.id))["payload"] == 1
 
 
@@ -271,7 +275,7 @@ def test_native_matches_python_event_contract(rust_adapter, native_setup, monkey
     paths, project = native_setup
     captured = []
     monkeypatch.setattr(
-        "agent_watchdog.hooks.daemon.enqueue", lambda paths, event: captured.append(event)
+        "agent_watchdog.hooks.daemon.publish", lambda paths, event: captured.append(event)
     )
     payload = {
         "cwd": str(project.root),
@@ -294,8 +298,8 @@ def test_native_matches_python_event_contract(rust_adapter, native_setup, monkey
     observe(paths, io.BytesIO(json.dumps(payload).encode()))
     assert invoke(rust_adapter, paths, payload).stdout == "{}\n"
     drain_spool(paths)
-    incoming = inbox_files(paths, project)[0]
-    actual = Envelope.model_validate_json(incoming.read_bytes())
+    incoming = persisted_events(paths, project)[0]
+    actual = incoming
     exclude = {"received_at", "event_id", "delivery"}
     assert actual.model_dump(exclude=exclude) == captured[0].model_dump(exclude=exclude)
     provider_payload = actual.payload["codex"]
@@ -318,25 +322,25 @@ def test_native_drain_respects_project_locks(rust_adapter, native_setup, lock_na
     with writer_lock(root / lock_name):
         drain_spool(paths)
     if lock_name == "admission.lock":
-        # Admission cannot proceed; the busy loss is recorded and the record kept.
-        assert not inbox_files(paths, project)
+        # Retained work retries after contention; no event has been lost.
+        assert not persisted_events(paths, project)
         assert len(spool_files(paths)) == 1
-        assert losses(root)["busy"] == 1
+        assert losses(root)["busy"] == 0
     else:
         # The losses lock does not gate admission.
-        assert len(inbox_files(paths, project)) == 1
+        assert len(persisted_events(paths, project)) == 1
         assert losses(root)["busy"] == 0
     drain_spool(paths)
-    assert len(inbox_files(paths, project)) == 1 and not spool_files(paths)
+    assert len(persisted_events(paths, project)) == 1 and not spool_files(paths)
 
 
-def test_native_concurrent_spool_then_quota_enforced_at_drain(rust_adapter, native_setup):
+def test_native_concurrent_spool_commits_without_a_second_inbox_quota(rust_adapter, native_setup):
     from concurrent.futures import ThreadPoolExecutor
 
-    from agent_watchdog.resources import losses, usage
+    from agent_watchdog.resources import losses
 
     paths, project = native_setup
-    limits = Limits(payload_bytes=2048, inbox_bytes=4096)
+    limits = Limits(payload_bytes=2048)
     save_config(paths.config, Config(defaults=limits, projects=(project,)))
     with ThreadPoolExecutor(max_workers=4) as pool:
         results = list(
@@ -351,13 +355,30 @@ def test_native_concurrent_spool_then_quota_enforced_at_drain(rust_adapter, nati
 
     drain_spool(paths)
     root = paths.project_data(project.id)
-    incoming = inbox_files(paths, project)
-    assert 0 < len(incoming) < 8
-    assert usage(root / "inbox") <= limits.inbox_bytes
-    assert len(incoming) + losses(root)["quota"] == 8
-    assert len({Envelope.model_validate_json(p.read_bytes()).event_id for p in incoming}) == len(
-        incoming
+    incoming = persisted_events(paths, project)
+    assert len(incoming) == 8 and losses(root)["quota"] == 0
+    assert len({event.event_id for event in incoming}) == 8
+    assert not (root / "inbox").exists()
+
+
+def test_native_concurrent_shared_spool_admission_enforces_one_quota(rust_adapter, native_setup):
+    from concurrent.futures import ThreadPoolExecutor
+
+    from agent_watchdog.resources import losses
+
+    paths, project = native_setup
+    spool = paths.data / "spool"
+    spool.mkdir()
+    (spool / "limits.json").write_text(
+        json.dumps({"schema_version": 1, "spool_files": 2}), encoding="utf-8"
     )
+    with ThreadPoolExecutor(max_workers=4) as pool:
+        results = list(
+            pool.map(lambda _: invoke(rust_adapter, paths, {"cwd": str(project.root)}), range(8))
+        )
+    assert all(result.returncode == 0 and result.stdout == "{}\n" for result in results)
+    assert len(spool_files(paths)) == 2
+    assert losses(paths.data)["quota"] == 6
 
 
 def test_native_unregistered_and_invalid_config_fail_open(rust_adapter, native_setup, tmp_path):
@@ -366,7 +387,7 @@ def test_native_unregistered_and_invalid_config_fail_open(rust_adapter, native_s
     foreign.mkdir()
     assert invoke(rust_adapter, paths, {"cwd": str(foreign)}).stdout == "{}\n"
     drain_spool(paths)
-    assert not inbox_files(paths, project)
+    assert not persisted_events(paths, project)
     assert not spool_files(paths)  # unregistered cwd is discarded at drain
 
     paths.config.write_text("schema_version = 999\n", encoding="utf-8")
@@ -393,7 +414,7 @@ def test_native_spool_auto_adds_a_trusted_git_project(rust_adapter, native_setup
     assert len(config.projects) == 1
     project = config.projects[0]
     assert project.root == repository.resolve()
-    assert len(inbox_files(paths, project)) == 1
+    assert len(persisted_events(paths, project)) == 1
 
 
 def test_copied_native_binary_starts_python_core_and_preserves_worktrees(rust_adapter, tmp_path):
@@ -448,7 +469,7 @@ def test_copied_native_binary_starts_python_core_and_preserves_worktrees(rust_ad
             )
         wait(lambda: status(paths)["state"] == "running")
         wait(lambda: not spool_files(paths))
-        wait(lambda: not list(paths.project_data(project.id).glob("inbox/*.json")))
+        wait(lambda: len(persisted_events(paths, project)) == 2)
     finally:
         stop(paths)
         wait(lambda: not status(paths)["alive"])
@@ -487,7 +508,7 @@ def test_native_matches_python_claude_contract(rust_adapter, native_setup, monke
     paths, project = native_setup
     captured = []
     monkeypatch.setattr(
-        "agent_watchdog.hooks.daemon.enqueue", lambda paths, event: captured.append(event)
+        "agent_watchdog.hooks.daemon.publish", lambda paths, event: captured.append(event)
     )
     payload = {
         "cwd": str(project.root),
@@ -504,8 +525,8 @@ def test_native_matches_python_claude_contract(rust_adapter, native_setup, monke
     observe(paths, io.BytesIO(json.dumps(payload).encode()), "claude")
     assert invoke(rust_adapter, paths, payload, provider="claude").stdout == ""
     drain_spool(paths)
-    incoming = inbox_files(paths, project)[0]
-    actual = Envelope.model_validate_json(incoming.read_bytes())
+    incoming = persisted_events(paths, project)[0]
+    actual = incoming
     exclude = {"received_at", "event_id", "delivery"}
     assert actual.model_dump(exclude=exclude) == captured[0].model_dump(exclude=exclude)
     assert actual.provider == "claude" and "claude" in actual.payload
@@ -584,17 +605,17 @@ def test_native_spooled_cwd_resolves_like_the_registry(rust_adapter, native_git_
     result must match the Python registry that test_checkout_resolution.py pins to
     `git rev-parse`."""
     paths, project, registry, root, worktree = native_git_setup
-    inbox = paths.project_data(project.id) / "inbox"
     seen = {}
     for cwd in (root, root / "sub", worktree, worktree / "nested"):
-        for leftover in inbox.glob("*.json"):
-            leftover.unlink()
+        before = {event.event_id for event in persisted_events(paths, project)}
         result = invoke(rust_adapter, paths, {"cwd": str(cwd), "hook_event_name": "Stop"})
         assert result.stdout == "{}\n"
         drain_spool(paths)
-        incoming = list(inbox.glob("*.json"))
+        incoming = [
+            event for event in persisted_events(paths, project) if event.event_id not in before
+        ]
         assert len(incoming) == 1
-        envelope = Envelope.model_validate_json(incoming[0].read_bytes())
+        envelope = incoming[0]
         expected = registry.resolve(cwd)
         assert expected is not None
         assert envelope.project_id == project.id
@@ -636,7 +657,7 @@ def test_native_claude_shares_pause_and_payload_limit_paths(rust_adapter, native
     assert invoke(rust_adapter, paths, stop_payload, provider="claude").stdout == ""
     assert not spool_files(paths)
     drain_spool(paths)
-    assert not inbox_files(paths, project)
+    assert not persisted_events(paths, project)
 
 
 AGENT_SUBSCRIPTION = {"provider": "claude", "hook_event_name": "PreToolUse", "tool_name": "Agent"}
@@ -758,6 +779,114 @@ def agent_pretooluse(project, *, model):
         "tool_name": "Agent",
         "tool_input": {"subagent_type": "general-purpose", "prompt": "p", "model": model},
     }
+
+
+def _http_test_server(discovery, peer):
+    from agent_watchdog.benchmark_http import benchmark_http_server
+
+    def answer(payload, send):
+        peer.requests.append(json.loads(payload))
+        if peer._hang:
+            peer._closed.wait()
+            return
+        send(peer._reply)
+
+    return benchmark_http_server(discovery, json.loads(discovery.read_bytes()), answer)
+
+
+@pytest.mark.parametrize("fault", ["none", "malformed", "timeout", "unavailable"])
+def test_benchmark_http_reuses_policy_protocol_and_fails_open(
+    rust_adapter, native_setup, monkeypatch, fault
+):
+    paths, project = native_setup
+    server = _FakePolicyServer(paths, discovery={"timeout_ms": 80}).respond("deny", reason="no")
+    if fault == "malformed":
+        server.respond_malformed()
+    elif fault == "timeout":
+        server.hang()
+    discovery = paths.data / "policy" / "socket.json"
+    payload = agent_pretooluse(project, model="opus")
+    monkeypatch.setenv("WATCHDOG_BENCHMARK_HTTP", "1")
+    try:
+        with _http_test_server(discovery, server) as http:
+            if fault == "unavailable":
+                http.shutdown()
+                http.server_close()
+            result = invoke(rust_adapter, paths, payload, provider="claude")
+        assert result.returncode == 0 and not result.stderr
+        if fault == "none":
+            assert json.loads(result.stdout)["hookSpecificOutput"]["permissionDecision"] == "deny"
+            assert server.requests[0]["input"] == payload
+            assert server.connections == 0
+        else:
+            assert result.stdout == ""
+        record = json.loads(spool_files(paths)[0].read_bytes())
+        assert record["record_type"] == "hook" and record["schema_version"] == 2
+        delivery = record["delivery"]
+        assert delivery["control"]["response_received"] is (fault == "none")
+        # Exclude executable launch scheduling; the adapter's own clock brackets
+        # the bounded decision request and publication work.
+        started = datetime.fromisoformat(delivery["adapter_started_at"])
+        enqueued = datetime.fromisoformat(delivery["spool_enqueued_at"])
+        assert (enqueued - started).total_seconds() < 1
+        if server.requests:
+            assert server.requests[0]["event_id"] == record["event_id"]
+    finally:
+        server.close()
+    assert not discovery.with_name("benchmark-http.json").exists()
+
+
+def test_benchmark_http_keeps_current_policy_authentication(
+    rust_adapter, native_setup, monkeypatch
+):
+    paths, project = native_setup
+    monkeypatch.setenv("WATCHDOG_BENCHMARK_HTTP", "1")
+    with _policy_server(paths, _SessionTracker()):
+        discovery = paths.data / "policy" / "socket.json"
+        scratch = discovery.with_name("benchmark-http.json")
+        document = json.loads(scratch.read_bytes())
+        document["token"] = "different"
+        scratch.write_text(json.dumps(document), encoding="utf-8")
+        payload = hook_input(project, "PreToolUse", tool_name="Bash", tool_input={"command": "ls"})
+        result = invoke(rust_adapter, paths, payload, provider="claude")
+    assert result.returncode == 0 and result.stdout == ""
+    record = json.loads(spool_files(paths)[0].read_bytes())
+    assert record["delivery"]["control"]["response_received"] is False
+
+
+def test_benchmark_http_is_disabled_by_default(rust_adapter, native_setup, monkeypatch):
+    paths, project = native_setup
+    server = _FakePolicyServer(paths).respond("allow")
+    monkeypatch.delenv("WATCHDOG_BENCHMARK_HTTP", raising=False)
+    try:
+        with _http_test_server(paths.data / "policy" / "socket.json", server) as bridge:
+            bridge.shutdown()
+            result = invoke(
+                rust_adapter, paths, agent_pretooluse(project, model="opus"), provider="claude"
+            )
+        assert result.returncode == 0 and result.stdout == ""
+        assert len(server.requests) == 1
+    finally:
+        server.close()
+    with _policy_server(paths, _SessionTracker()):
+        assert (paths.data / "policy" / "socket.json").exists()
+        assert not (paths.data / "policy" / "benchmark-http.json").exists()
+
+
+def test_benchmark_http_missing_scratch_discovery_fails_open(
+    rust_adapter, native_setup, monkeypatch
+):
+    paths, project = native_setup
+    server = _FakePolicyServer(paths).respond("deny")
+    monkeypatch.setenv("WATCHDOG_BENCHMARK_HTTP", "1")
+    try:
+        result = invoke(
+            rust_adapter, paths, agent_pretooluse(project, model="opus"), provider="claude"
+        )
+        assert result.stdout == "" and server.connected() == 0
+        assert len(spool_files(paths)) == 1
+    finally:
+        server.close()
 
 
 def test_native_denies_a_same_model_subagent_spawn(rust_adapter, native_setup):
@@ -1333,8 +1462,9 @@ def test_native_codex_stop_guard_does_not_query_daemon_while_continuing(rust_ada
         ),
     ],
 )
+@pytest.mark.parametrize("http_bridge", [False, True])
 def test_native_codex_profile_round_trips_through_approved_daemon_rule(
-    rust_adapter, native_setup, profile, event, tool, action, expected
+    rust_adapter, native_setup, profile, event, tool, action, expected, http_bridge, monkeypatch
 ):
     import tomli_w
 
@@ -1369,6 +1499,9 @@ def test_native_codex_profile_round_trips_through_approved_daemon_rule(
     # The adapter's flag is authoritative; this untrusted payload field must not win.
     payload["codex_control_profile"] = "spoofed-by-payload"
 
+    monkeypatch.delenv("WATCHDOG_BENCHMARK_HTTP", raising=False)
+    if http_bridge:
+        monkeypatch.setenv("WATCHDOG_BENCHMARK_HTTP", "1")
     with _policy_server(paths, _SessionTracker()):
         result = invoke(
             rust_adapter,

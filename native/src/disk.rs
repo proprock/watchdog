@@ -47,7 +47,7 @@ pub fn linked(path: &Path) -> bool {
     }
 }
 
-/// Count and total the size of `*.json` records directly under `dir` (flat, no
+/// Count and total `*.json` records and pending `*.tmp` files under `dir` (flat, no
 /// recursion — the spool has no subdirectories, and the daemon drains it fast).
 /// A missing directory is `(0, 0)`. `limits.json` is the daemon's own snapshot,
 /// not a record, so it is not counted.
@@ -62,8 +62,10 @@ pub fn spool_footprint(dir: &Path) -> Result<(u64, u64)> {
     for entry in entries {
         let entry = entry?;
         let path = entry.path();
-        if path.extension().and_then(|value| value.to_str()) != Some("json")
-            || path.file_name().and_then(|value| value.to_str()) == Some("limits.json")
+        if !matches!(
+            path.extension().and_then(|value| value.to_str()),
+            Some("json" | "tmp")
+        ) || path.file_name().and_then(|value| value.to_str()) == Some("limits.json")
         {
             continue;
         }
@@ -207,8 +209,20 @@ mod tests {
         fs::write(dir.0.join("a.json"), b"12345").unwrap();
         fs::write(dir.0.join("b.json"), b"123").unwrap();
         fs::write(dir.0.join("limits.json"), b"ignored").unwrap();
-        fs::write(dir.0.join("c.tmp"), b"ignored").unwrap();
+        fs::write(dir.0.join("c.log"), b"ignored").unwrap();
         assert_eq!(spool_footprint(&dir.0).unwrap(), (2, 8));
+    }
+
+    #[test]
+    fn spool_footprint_counts_abandoned_and_empty_temporary_files() {
+        let dir = Scratch::new();
+        let abandoned = dir.0.join("record.json.crashed.tmp");
+        fs::write(&abandoned, b"pending").unwrap();
+        fs::write(dir.0.join("empty.tmp"), b"").unwrap();
+        fs::create_dir(dir.0.join("directory.tmp")).unwrap();
+        assert_eq!(spool_footprint(&dir.0).unwrap(), (2, 7));
+        fs::remove_file(abandoned).unwrap();
+        assert_eq!(spool_footprint(&dir.0).unwrap(), (1, 0));
     }
 
     #[test]

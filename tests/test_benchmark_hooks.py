@@ -92,6 +92,18 @@ def test_benchmark_cli_accepts_claude_provider_and_bash_shell(benchmark, monkeyp
     assert set(benchmark.SHELLS) == {"direct", "bash", "cmd.exe", "powershell.exe", "pwsh.exe"}
 
 
+@pytest.mark.parametrize("extra", [[], ["--adapter-executable", "adapter.exe"]])
+def test_http_benchmark_requires_native_adapter_and_subscribed_event(
+    benchmark, monkeypatch, capsys, extra
+):
+    monkeypatch.setattr(
+        benchmark.sys, "argv", ["benchmark_hooks.py", "--output", "x", "--benchmark-http", *extra]
+    )
+    with pytest.raises(SystemExit):
+        benchmark.main()
+    assert "requires --adapter-executable and a subscribed tool event" in capsys.readouterr().err
+
+
 def test_warm_up_runs_sequential_then_four_way_calls(benchmark):
     import threading
     import time

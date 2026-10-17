@@ -1,0 +1,49 @@
+{
+  "source_hash_verified": true,
+  "native_hash_verified": true,
+  "hook_files_predate_rollout_manifest": true,
+  "migration_verified": {
+    "expected_receipts": 0,
+    "found_receipts": 0,
+    "missing_receipts": 0,
+    "legacy": 0
+  },
+  "readiness": {
+    "spool": "ready",
+    "admission": "ready",
+    "probe": "synthetic-local",
+    "cleanup": "purged"
+  },
+  "postdeploy": {
+    "state": "running",
+    "alive": true,
+    "reasons": [],
+    "queues": {
+      "spool": {
+        "files": 0,
+        "bytes": 0,
+        "oldest_record_at": null,
+        "newest_record_at": null,
+        "file_limit": 4096,
+        "byte_limit": 67108864
+      }
+    },
+    "projects_with_store": 5,
+    "session_state_rows": 700,
+    "dirty_codex_identities": 0,
+    "benchmark_http_enabled": false,
+    "sequential_control": {
+      "requests": 20,
+      "errors": 0,
+      "p50_ms": 1.8162999913329259,
+      "p95_ms": 16.159755008993677
+    },
+    "four_client_control": {
+      "requests": 20,
+      "errors": 0,
+      "p50_ms": 6.174450012622401,
+      "p95_ms": 22.885310016863514
+    }
+  },
+  "reporting_correction": "Read nested readiness stages after successful installation and probe; installation was not repeated."
+}

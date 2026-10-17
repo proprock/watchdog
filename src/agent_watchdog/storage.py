@@ -1,20 +1,18 @@
-"""Local inbox and one SQLite writer per project. No daemon or hook installation."""
+"""One SQLite writer per project. No daemon or hook installation."""
 
 import hashlib
 import json
 import os
+import shutil
 import sqlite3
 import time
 from collections.abc import Iterator, Mapping
 from contextlib import ExitStack, contextmanager, nullcontext
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
-from itertools import islice
 from pathlib import Path
 from typing import Self
 from uuid import UUID, uuid4
-
-from pydantic import ValidationError
 
 from agent_watchdog import analysis, facts, resources, state
 from agent_watchdog.config import Limits
@@ -59,6 +57,68 @@ class RejectedEvent(StorageError):
 
 class QuotaExceeded(StorageError):
     """No room for another write; retained input may be retried after cleanup."""
+
+
+class MaintenancePending(StorageError):
+    """Cleanup yielded at its deadline; retry input without recording quota loss."""
+
+
+@dataclass
+class MaintenanceResult:
+    pending: bool
+    exhausted: bool = False
+    space_available: bool = False
+
+
+@dataclass
+class MaintenanceBudget:
+    """One tick's maintenance allowance shared across project writers."""
+
+    remaining: float = 0.2
+
+
+@dataclass
+class MaintenanceState:
+    """Ephemeral progress carried by the daemon between project Store opens."""
+
+    phase: str = "start"
+    now: datetime | None = None
+    cursor: int = 0
+    cursor_time: int = SQLITE_INTEGER_MIN
+    ceiling: int = 0
+    directory: int = 0
+    files: Iterator[Path] | None = None
+    usage: int = 0
+    prune_table: int = 0
+    after_reclaim: str = "space"
+    after_account: str = "pressure_content"
+    session: str | None = None
+    session_selected: bool = False
+    oldest: int | None = None
+
+
+MAINTENANCE_CHUNK = 32
+MAINTENANCE_CONTENT_BYTES = 1024**2
+_UNPINNED = "(events.session_id IS NULL OR events.session_id NOT IN (SELECT session_id FROM pins))"
+_HAS_CONTENT = (
+    "NOT (json_extract(envelope, '$.availability.content') IS 'unavailable' "
+    "AND json_extract(envelope, '$.payload') = '{}')"
+)
+
+
+def _maintenance_files(directory: Path, *, recursive: bool = False) -> Iterator[Path]:
+    """Keep a scandir cursor instead of materializing a large directory listing."""
+    if directory.is_symlink() or directory.is_junction():
+        raise StorageError("Linked data directory")
+    if not directory.exists():
+        return
+    with os.scandir(directory) as entries:
+        for entry in entries:
+            path = Path(entry.path)
+            if recursive and entry.is_dir(follow_symlinks=False) and not path.is_junction():
+                yield from _maintenance_files(path, recursive=True)
+            else:
+                yield path
 
 
 def sqlite_integer(value: int) -> int:
@@ -148,6 +208,7 @@ class Store:
         *,
         artifact_bytes: int = 8 * 1024**2,
         limits: Limits | None = None,
+        maintenance_state: MaintenanceState | None = None,
     ):
         if artifact_bytes <= 0:
             raise StorageError("Artifact limit must be positive")
@@ -161,6 +222,9 @@ class Store:
         self.touched: dict[StateKey, SessionState] = {}
         self._codex_state_deferred = False
         self._batch_remaining: int | None = None
+        self.maintenance_state = maintenance_state or MaintenanceState()
+        self.maintenance_deadline: float | None = None
+        self.maintenance_budget: MaintenanceBudget | None = None
 
     @property
     def connection(self) -> sqlite3.Connection:
@@ -426,6 +490,11 @@ class Store:
                 raise QuotaExceeded("Insufficient migration space")
             db.execute("PRAGMA auto_vacuum=INCREMENTAL")
             db.execute("VACUUM")
+        db.execute(
+            "CREATE INDEX IF NOT EXISTS event_facts_retention "
+            "ON event_facts(received_at_us,event_id)"
+        )
+        db.execute("CREATE INDEX IF NOT EXISTS artifacts_digest ON artifacts(digest)")
 
     def _refresh_state_projection(self, *, invalidate_findings: bool) -> None:
         """Refold changed reducers atomically before restoring the daemon's state."""
@@ -478,7 +547,7 @@ class Store:
     @staticmethod
     def _fingerprint(document: str, references: Mapping[str, str]) -> str:
         # Delivery telemetry is intentionally mutable: a replay can reach the
-        # inbox/SQLite stages at a different instant without changing the
+        # spool/SQLite stages at a different instant without changing the
         # semantic observation identified by event_id.
         fingerprint_document = json.loads(document)
         if isinstance(fingerprint_document, dict):
@@ -548,9 +617,14 @@ class Store:
             if self._batch_remaining < needed:
                 raise QuotaExceeded("Writer batch reservation exhausted")
         else:
+            maintenance = None
             if resources.available(self.root, self.limits) < needed:
-                self._maintain(datetime.now(UTC), needed)
+                maintenance = self._maintain(datetime.now(UTC), needed)
+                if maintenance.pending and not maintenance.space_available:
+                    raise MaintenancePending("Project cleanup deadline reached")
             if resources.available(self.root, self.limits) < needed:
+                if maintenance is not None and not maintenance.exhausted:
+                    raise MaintenancePending("Project storage changed during cleanup")
                 raise QuotaExceeded("Project quota or disk reserve reached")
         applied: SessionState | None = None
         with self._transaction() as db:
@@ -1235,9 +1309,15 @@ class Store:
         self._reclaim()
         return len(event_ids)
 
-    def maintain(self, *, now: datetime | None = None) -> None:
+    def maintain(
+        self,
+        *,
+        now: datetime | None = None,
+        deadline: float | None = None,
+        needed: int = 65536,
+    ) -> MaintenanceResult:
         with resources.admission(self.root):
-            self._maintain(now or datetime.now(UTC), 65536)
+            return self._maintain(now or datetime.now(UTC), needed, deadline=deadline)
 
     def _strip_content(self, event_id: str, document: str) -> None:
         event = persisted_envelope(document)
@@ -1274,84 +1354,321 @@ class Store:
         }
 
     def _reclaim(self) -> None:
-        db = self.connection
-        referenced = {row[0] for row in db.execute("SELECT DISTINCT digest FROM artifacts")}
-        directory = self.root / "artifacts"
-        if directory.is_symlink() or directory.is_junction():
-            raise StorageError("Linked artifact directory")
-        for path in directory.glob("*.bin"):
-            if (
-                len(path.stem) == 64
-                and all(c in "0123456789abcdef" for c in path.stem)
-                and path.stem not in referenced
-            ):
-                path.unlink()
-        # Consume all rows: SQLite may yield one row per freed page.
-        db.execute("PRAGMA incremental_vacuum").fetchall()
-        db.execute("PRAGMA wal_checkpoint(TRUNCATE)").fetchall()
+        """Finish explicit purge reclamation using the same bounded primitives."""
+        progress = MaintenanceState(phase="artifacts", now=datetime.now(UTC))
+        previous = self.maintenance_state
+        self.maintenance_state = progress
+        try:
+            while progress.phase != "space":
+                result = self._maintenance_step(progress.now or datetime.now(UTC), 0)
+                if result is not None and result.pending:
+                    break
+        finally:
+            self.maintenance_state = previous
 
-    def _maintain(self, now: datetime, needed: int) -> None:
+    def _maintain(
+        self, now: datetime, needed: int, *, deadline: float | None = None
+    ) -> MaintenanceResult:
+        started = time.monotonic()
+        budget = self.maintenance_budget
+        deadlines = [value for value in (deadline, self.maintenance_deadline) if value is not None]
+        if budget is not None:
+            deadlines.append(started + max(0.0, budget.remaining))
+        try:
+            return self._run_maintenance(
+                now, needed, deadline=min(deadlines) if deadlines else None
+            )
+        finally:
+            if budget is not None:
+                budget.remaining = max(0.0, budget.remaining - (time.monotonic() - started))
+
+    def _run_maintenance(
+        self, now: datetime, needed: int, *, deadline: float | None
+    ) -> MaintenanceResult:
         db = self.connection
-        cutoff_content = (
-            now - timedelta(days=self.limits.content_days) if self.limits.content_days else None
-        )
-        cutoff_metrics = (
-            now - timedelta(days=self.limits.metrics_days) if self.limits.metrics_days else None
-        )
-        eligible = (
-            "SELECT event_id, envelope FROM events WHERE session_id IS NULL OR "
-            "session_id NOT IN (SELECT session_id FROM pins) ORDER BY received_at"
-        )
-        with self._transaction():
-            for event_id, document in db.execute(eligible).fetchall():
-                event = persisted_envelope(document)
-                if cutoff_metrics is not None and event.received_at < cutoff_metrics:
-                    self._delete(event_id)
-                elif cutoff_content is not None and event.received_at < cutoff_content:
-                    self._strip_content(event_id, document)
-            self._prune_session_rows()
-            if cutoff_content is not None:
-                db.execute(
-                    "DELETE FROM transcript_sources WHERE last_seen < ?",
-                    (cutoff_content.isoformat(),),
-                )
-        # Admission lock excludes active publishers; age also protects recent crash recovery.
-        for directory in (
-            self.root,
-            self.root / "inbox",
-            self.root / "artifacts",
-            self.root / "quarantine",
-        ):
-            if directory.is_symlink() or directory.is_junction():
-                raise StorageError("Linked data directory")
-            for path in directory.glob("*.tmp"):
-                if path.stat().st_mtime < now.timestamp() - 3600:
-                    path.unlink()
-        self._reclaim()
-        if resources.available(self.root, self.limits) >= needed:
-            return
-        # Quota pressure: remove oldest unpinned content before whole sessions.
-        for event_id, document in db.execute(eligible).fetchall():
-            with self._transaction():
-                self._strip_content(event_id, document)
-            self._reclaim()
-            if resources.available(self.root, self.limits) >= needed:
-                return
-        sessions = db.execute(
-            "SELECT session_id, MIN(received_at) FROM events WHERE session_id IS NULL OR "
-            "session_id NOT IN (SELECT session_id FROM pins) "
-            "GROUP BY session_id ORDER BY MIN(received_at)"
+        if deadline is not None and time.monotonic() >= deadline:
+            return MaintenanceResult(pending=True)
+        if deadline is not None:
+            # Finish an admitted small mutation atomically, even if parsing consumes
+            # the final milliseconds. Interrupting its COMMIT would parse it twice.
+            db.set_progress_handler(
+                lambda: int(not db.in_transaction and time.monotonic() >= deadline), 1000
+            )
+        try:
+            while deadline is None or time.monotonic() < deadline:
+                result = self._maintenance_step(now, needed)
+                if result is not None:
+                    return result
+        except sqlite3.OperationalError as error:
+            if deadline is None or "interrupt" not in str(error).lower():
+                raise
+        finally:
+            db.set_progress_handler(None, 0)
+        return MaintenanceResult(pending=True)
+
+    def _maintenance_window(self) -> int | None:
+        progress = self.maintenance_state
+        rows = self.connection.execute(
+            "SELECT rowid FROM events WHERE rowid>? AND rowid<=? ORDER BY rowid LIMIT ?",
+            (progress.cursor, progress.ceiling, MAINTENANCE_CHUNK),
         ).fetchall()
-        for session_id, _ in sessions:
+        return rows[-1][0] if rows else None
+
+    def _maintenance_step(self, now: datetime, needed: int) -> MaintenanceResult | None:
+        """Run one finite SQL, file, or vacuum unit; callers check time between units."""
+        progress, db = self.maintenance_state, self.connection
+        phase = progress.phase
+        if phase == "start":
+            progress.now = now
+            progress.ceiling = db.execute("SELECT COALESCE(MAX(rowid), 0) FROM events").fetchone()[
+                0
+            ]
+            progress.phase = "metrics"
+            return None
+        now = progress.now or now
+        if phase in {"metrics", "content"}:
+            return self._maintenance_retention(now)
+        if phase == "pressure_content":
+            return self._maintenance_pressure_content()
+        if phase == "session_select":
+            end = self._maintenance_window()
+            if end is None:
+                progress.cursor = 0
+                if progress.session_selected:
+                    progress.phase = "session_delete"
+                else:
+                    # Publishers and pin changes can add candidates between slices.
+                    remaining = db.execute(
+                        f"SELECT 1 FROM events WHERE {_UNPINNED} LIMIT 1"
+                    ).fetchone()
+                    progress.__dict__.update(MaintenanceState().__dict__)
+                    if remaining:
+                        return None
+                    return MaintenanceResult(pending=False, exhausted=True)
+                return None
+            where = f"events.rowid>? AND events.rowid<=? AND {_UNPINNED}"
+            row = db.execute(
+                f"SELECT events.session_id, f.received_at_us FROM events "
+                f"JOIN event_facts f ON f.event_id=events.event_id WHERE {where} "
+                "ORDER BY f.received_at_us,events.rowid LIMIT 1",
+                (progress.cursor, end),
+            ).fetchone()
+            if row and (progress.oldest is None or row[1] < progress.oldest):
+                progress.session, progress.oldest = row
+                progress.session_selected = True
+            progress.cursor = end
+            return None
+        if phase == "session_delete":
+            rows = db.execute(
+                f"SELECT event_id FROM events WHERE session_id IS ? AND {_UNPINNED} LIMIT ?",
+                (progress.session, MAINTENANCE_CHUNK),
+            ).fetchall()
+            if rows:
+                with self._transaction():
+                    for (event_id,) in rows:
+                        self._delete(event_id)
+            else:
+                progress.session = progress.oldest = None
+                progress.session_selected = False
+                progress.phase = "prune_pressure"
+            return None
+        if phase in {"prune", "prune_pressure"}:
+            tables = (*SESSION_TABLES, "codex_state_dirty")
+            if progress.prune_table == len(tables):
+                progress.prune_table = 0
+                progress.phase = "transcripts" if phase == "prune" else "artifacts"
+                progress.after_account = (
+                    "pressure_content" if phase == "prune" else "session_select"
+                )
+                return None
+            table = tables[progress.prune_table]
+            provider = "'codex'" if table == "codex_state_dirty" else f"{table}.provider"
             with self._transaction():
-                for (event_id,) in db.execute(
-                    "SELECT event_id FROM events WHERE session_id IS ?", (session_id,)
-                ).fetchall():
-                    self._delete(event_id)
-                self._prune_session_rows()
-            self._reclaim()
-            if resources.available(self.root, self.limits) >= needed:
-                return
+                cursor = db.execute(
+                    f"DELETE FROM {table} WHERE rowid IN (SELECT rowid FROM {table} "
+                    f"WHERE NOT EXISTS (SELECT 1 FROM events e WHERE "
+                    f"e.session_id={table}.session_id AND e.provider={provider}) LIMIT ?)"
+                    + (
+                        " RETURNING provider, session_id, agent_id"
+                        if table == "session_state"
+                        else ""
+                    ),
+                    (MAINTENANCE_CHUNK,),
+                )
+                if table == "session_state":
+                    rows = cursor.fetchall()
+                    removed = len(rows)
+                else:
+                    rows, removed = [], cursor.rowcount
+            for key in rows:
+                self.touched.pop(tuple(key), None)
+            if removed < MAINTENANCE_CHUNK:
+                progress.prune_table += 1
+            return None
+        if phase == "transcripts":
+            removed = 0
+            if self.limits.content_days:
+                with self._transaction():
+                    removed = db.execute(
+                        "DELETE FROM transcript_sources WHERE rowid IN (SELECT rowid FROM "
+                        "transcript_sources WHERE last_seen<? LIMIT ?)",
+                        (
+                            (now - timedelta(days=self.limits.content_days)).isoformat(),
+                            MAINTENANCE_CHUNK,
+                        ),
+                    ).rowcount
+            if removed < MAINTENANCE_CHUNK:
+                progress.phase = "temporary"
+            return None
+        if phase in {"temporary", "artifacts", "account"}:
+            directories = (
+                (self.root, self.root / "artifacts", self.root / "quarantine")
+                if phase == "temporary"
+                else (self.root if phase == "account" else self.root / "artifacts",)
+            )
+            if progress.directory >= len(directories):
+                progress.directory, progress.files = 0, None
+                if phase == "temporary":
+                    progress.phase = "artifacts"
+                elif phase == "artifacts":
+                    progress.phase = "vacuum"
+                else:
+                    available = (
+                        min(
+                            self.limits.project_bytes - progress.usage,
+                            shutil.disk_usage(self.root).free,
+                        )
+                        - self.limits.reserve_bytes
+                    )
+                    progress.usage = 0
+                    if available >= needed:
+                        progress.__dict__.update(MaintenanceState().__dict__)
+                        return MaintenanceResult(pending=False, space_available=True)
+                    progress.phase = progress.after_account
+                return None
+            if progress.files is None:
+                progress.files = _maintenance_files(
+                    directories[progress.directory], recursive=phase == "account"
+                )
+            path = next(progress.files, None)
+            if path is None:
+                progress.files = None
+                progress.directory += 1
+                return None
+            try:
+                if phase == "account":
+                    if not path.is_symlink() and path.is_file():
+                        progress.usage += path.stat().st_size
+                elif phase == "temporary":
+                    if path.suffix == ".tmp" and path.stat().st_mtime < now.timestamp() - 3600:
+                        path.unlink()
+                elif (
+                    path.suffix == ".bin"
+                    and len(path.stem) == 64
+                    and all(char in "0123456789abcdef" for char in path.stem)
+                    and not db.execute(
+                        "SELECT 1 FROM artifacts WHERE digest=? LIMIT 1", (path.stem,)
+                    ).fetchone()
+                ):
+                    path.unlink()
+            except FileNotFoundError:
+                pass
+            return None
+        if phase == "vacuum":
+            if db.execute("PRAGMA freelist_count").fetchone()[0]:
+                db.execute(f"PRAGMA incremental_vacuum({MAINTENANCE_CHUNK})").fetchall()
+            else:
+                progress.phase = "checkpoint"
+            return None
+        if phase == "checkpoint":
+            # Never wait for a reader while holding the daemon's maintenance budget.
+            db.execute("PRAGMA busy_timeout=0")
+            try:
+                busy, _, _ = db.execute("PRAGMA wal_checkpoint(TRUNCATE)").fetchone()
+            finally:
+                db.execute("PRAGMA busy_timeout=50")
+            if busy:
+                return MaintenanceResult(pending=True)
+            progress.phase = progress.after_reclaim
+            return None
+        if phase == "space":
+            progress.phase = "account"
+            return None
+        raise StorageError(f"Unknown maintenance phase: {phase}")
+
+    def _maintenance_retention(self, now: datetime) -> None:
+        progress, db = self.maintenance_state, self.connection
+        metrics = progress.phase == "metrics"
+        days = self.limits.metrics_days if metrics else self.limits.content_days
+        rows = []
+        if days:
+            where = (
+                f"events.rowid<=? AND (f.received_at_us,events.rowid)>(?,?) "
+                f"AND {_UNPINNED} AND f.received_at_us<?"
+            )
+            parameters: list = [
+                progress.ceiling,
+                progress.cursor_time,
+                progress.cursor,
+                facts.epoch_us((now - timedelta(days=days)).isoformat()),
+            ]
+            if not metrics:
+                where += f" AND {_HAS_CONTENT}"
+                if self.limits.metrics_days:
+                    where += " AND f.received_at_us>=?"
+                    parameters.append(
+                        facts.epoch_us((now - timedelta(days=self.limits.metrics_days)).isoformat())
+                    )
+            parameters.append(MAINTENANCE_CHUNK)
+            columns = "events.rowid, f.received_at_us, events.event_id"
+            if not metrics:
+                columns += ", events.envelope"
+            rows = db.execute(
+                f"SELECT {columns} FROM events JOIN event_facts f "
+                f"ON f.event_id=events.event_id WHERE {where} "
+                "ORDER BY f.received_at_us,events.rowid LIMIT ?",
+                parameters,
+            ).fetchall()
+            if not metrics:
+                bounded, size = [], 0
+                for row in rows:
+                    document_bytes = len(row[3].encode())
+                    if bounded and size + document_bytes > MAINTENANCE_CONTENT_BYTES:
+                        break
+                    bounded.append(row)
+                    size += document_bytes
+                rows = bounded
+        if not rows:
+            progress.cursor, progress.cursor_time = 0, SQLITE_INTEGER_MIN
+            progress.phase = "content" if metrics else "prune"
+            return
+        with self._transaction():
+            for row in rows:
+                if metrics:
+                    self._delete(row[2])
+                else:
+                    self._strip_content(row[2], row[3])
+        progress.cursor, progress.cursor_time = rows[-1][:2]
+
+    def _maintenance_pressure_content(self) -> None:
+        progress, db = self.maintenance_state, self.connection
+        rows = db.execute(
+            f"SELECT events.rowid, f.received_at_us, events.event_id, events.envelope "
+            f"FROM events JOIN event_facts f ON f.event_id=events.event_id "
+            f"WHERE (f.received_at_us,events.rowid)>(?,?) AND events.rowid<=? "
+            f"AND {_UNPINNED} AND {_HAS_CONTENT} "
+            "ORDER BY f.received_at_us,events.rowid LIMIT 1",
+            (progress.cursor_time, progress.cursor, progress.ceiling),
+        ).fetchone()
+        if not rows:
+            progress.cursor, progress.cursor_time = 0, SQLITE_INTEGER_MIN
+            progress.phase = "session_select"
+            return
+        with self._transaction():
+            self._strip_content(rows[2], rows[3])
+        progress.cursor, progress.cursor_time = rows[:2]
+        progress.phase = "artifacts"
+        progress.after_account = "pressure_content"
 
     def events(self, *, limit: int = 100, offset: int = 0) -> list[Envelope]:
         if not 1 <= limit <= 1000 or offset < 0:
@@ -1386,172 +1703,3 @@ class DrainResult:
     duplicates: int = 0
     quarantined: int = 0
     discarded: int = 0
-
-
-class Inbox:
-    def __init__(
-        self,
-        root: Path,
-        *,
-        payload_bytes: int = 1024**2,
-        quarantine_files: int = 128,
-        quarantine_bytes: int = 8 * 1024**2,
-        limits: Limits | None = None,
-    ):
-        if min(payload_bytes, quarantine_files, quarantine_bytes) <= 0:
-            raise StorageError("Inbox limits must be positive")
-        self.root = root.resolve()
-        self.directory = self.root / "inbox"
-        self.limits = limits or Limits(payload_bytes=payload_bytes)
-        self.payload_bytes = self.limits.payload_bytes
-        self.quarantine_files = quarantine_files
-        self.quarantine_bytes = quarantine_bytes
-
-    def publish(self, event: Envelope) -> Path:
-        content = canonical(event).encode("utf-8")
-        if len(content) > self.payload_bytes:
-            resources.count_loss(self.root, "payload")
-            raise StorageError("Envelope exceeds inbox payload limit")
-        try:
-            with resources.admission(self.root):
-                if self.directory.is_symlink() or self.directory.is_junction():
-                    raise StorageError("Linked inbox directory")
-                if (
-                    resources.usage(self.directory) + len(content) > self.limits.inbox_bytes
-                    or resources.available(self.root, self.limits) < len(content) + 4096
-                ):
-                    raise QuotaExceeded("Inbox quota or project reserve reached")
-                path = self.directory / f"{uuid4().hex}.json"
-                atomic_write(path, content)
-                return path
-        except QuotaExceeded:
-            resources.count_loss(self.root, "quota")
-            raise
-        except WriterBusy:
-            resources.count_loss(self.root, "busy")
-            raise
-        except OSError:
-            resources.count_loss(self.root, "io")
-            raise
-
-    def _quarantine(self, path: Path, result: DrainResult) -> None:
-        directory = self.root / "quarantine"
-        if directory.is_symlink() or directory.is_junction():
-            raise StorageError("Linked quarantine directory")
-        directory.mkdir(parents=True, exist_ok=True)
-        source_size = path.stat().st_size
-        diagnostic = json.dumps({"reason": "rejected", "bytes": source_size}).encode()
-        size = len(diagnostic)
-        if size > self.quarantine_bytes:
-            path.unlink()
-            result.discarded += 1
-            return
-        entries = sorted(directory.glob("*.bad"), key=lambda entry: entry.stat().st_mtime_ns)
-        total = sum(entry.stat().st_size for entry in entries)
-        while entries and (
-            len(entries) >= self.quarantine_files or total + size > self.quarantine_bytes
-        ):
-            oldest = entries.pop(0)
-            total -= oldest.stat().st_size
-            oldest.unlink()
-            result.discarded += 1
-        # Malformed data cannot be redacted reliably. Retain only its byte count.
-        if len(diagnostic) > self.quarantine_bytes:
-            path.unlink()
-            result.discarded += 1
-            return
-        atomic_write(directory / f"{uuid4().hex}.bad", diagnostic)
-        path.unlink()
-        result.quarantined += 1
-
-    def _commit_batch(
-        self, store: Store, pending: list[tuple[Path, Envelope]], result: DrainResult
-    ) -> None:
-        outcomes: list[bool | None] = []
-        try:
-            with store.batch() if len(pending) > 1 else nullcontext():
-                for _, event in pending:
-                    try:
-                        outcomes.append(store.put(event))
-                    except RejectedEvent:
-                        outcomes.append(None)
-        except QuotaExceeded:
-            if len(pending) == 1:
-                raise
-            # Cleanup/reclamation must run outside the batch transaction. Retry
-            # each record under ordinary admission; never acknowledge a rollback.
-            for item in pending:
-                self._commit_batch(store, [item], result)
-            return
-        for (path, _), inserted in zip(pending, outcomes, strict=True):
-            if inserted is None:
-                with resources.admission(self.root):
-                    self._quarantine(path, result)
-                resources.count_loss(self.root, "invalid")
-                continue
-            if inserted:
-                result.inserted += 1
-            else:
-                result.duplicates += 1
-            # All receipts and projections committed before the first unlink.
-            path.unlink()
-
-    def drain(
-        self,
-        store: Store,
-        *,
-        limit: int = 100,
-        pipeline_telemetry: bool = False,
-        batch_size: int = 25,
-        time_budget: float | None = None,
-    ) -> DrainResult:
-        """Drain resumable chunks; the deadline is checked between commits.
-
-        At least one bounded chunk runs per call, even with a slow disk or state
-        replay. Committed files disappear so later candidates advance next tick.
-        """
-        if (
-            min(limit, batch_size) <= 0
-            or (time_budget is not None and time_budget <= 0)
-            or self.root != store.root
-            or store.connection.in_transaction
-        ):
-            raise StorageError("Invalid batch bounds, root mismatch, or active writer transaction")
-        result = DrainResult()
-        deadline = time.monotonic() + time_budget if time_budget is not None else None
-        candidates = iter(islice(self.directory.glob("*.json"), limit))
-        while chunk := list(islice(candidates, batch_size)):
-            pending: list[tuple[Path, Envelope]] = []
-            for path in chunk:
-                if path.is_symlink():
-                    path.unlink()
-                    result.discarded += 1
-                    continue
-                if not path.is_file():
-                    continue
-                try:
-                    with path.open("rb") as stream:
-                        data = stream.read(self.payload_bytes + 1)
-                    if len(data) > self.payload_bytes:
-                        raise RejectedEvent("Envelope exceeds inbox payload limit")
-                    event = persisted_envelope(data)
-                    if pipeline_telemetry and event.delivery:
-                        observed_at = datetime.now(UTC).isoformat()
-                        event = event.model_copy(
-                            update={
-                                "delivery": event.delivery
-                                | {
-                                    "inbox_drained_at": observed_at,
-                                    "sqlite_write_started_at": observed_at,
-                                }
-                            }
-                        )
-                    pending.append((path, event))
-                except (ValidationError, RejectedEvent):
-                    with resources.admission(self.root):
-                        self._quarantine(path, result)
-                    resources.count_loss(self.root, "invalid")
-            self._commit_batch(store, pending, result)
-            if deadline is not None and time.monotonic() >= deadline:
-                break
-        return result

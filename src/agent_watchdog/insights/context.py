@@ -5,10 +5,9 @@ from datetime import datetime
 from statistics import median
 from typing import Any, Literal
 
-from agent_watchdog import inspection
 from agent_watchdog.config import Project, UserPaths
 from agent_watchdog.events import Envelope
-from agent_watchdog.insights import budget, timeline
+from agent_watchdog.insights import budget, timeline, window
 from agent_watchdog.insights.bundle import Draft, excerpt
 from agent_watchdog.insights.contract import OutputModel, RuleCandidate
 
@@ -141,14 +140,14 @@ def build(
     until: datetime | None,
 ) -> Draft:
     options = {"provider": provider, "session_id": session_id, "since": since, "until": until}
-    with inspection.database(paths, project) as db:
+    with window.database(paths, project) as db:
         series, counts = timeline.requests(db, **options)
         lifecycle = timeline.events(
             db,
             ("session.start", "turn.start", "compaction.start", "compaction.end"),
             **options,
         )
-    _types, finishes = inspection.tool_finishes(paths, project, **options)
+    _types, finishes = window.tool_finishes(paths, project, **options)
     steps, _unattributed = timeline.steps(series, finishes)
 
     by_session: dict[tuple[str, str | None], list[Envelope]] = defaultdict(list)

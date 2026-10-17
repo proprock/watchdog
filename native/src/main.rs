@@ -145,6 +145,7 @@ struct Subscription {
 /// query is attempted and every hook proceeds exactly as an unsubscribed one.
 struct PolicySocket {
     port: u16,
+    benchmark_http: bool,
     token: String,
     timeout: Duration,
     max_request_bytes: u64,
@@ -173,8 +174,14 @@ fn banner() -> String {
 
 impl PolicySocket {
     fn read(data: &Path) -> Option<Self> {
+        let benchmark_http = std::env::var("WATCHDOG_BENCHMARK_HTTP").as_deref() == Ok("1");
+        let discovery = if benchmark_http {
+            "benchmark-http.json"
+        } else {
+            "socket.json"
+        };
         let mut bytes = Vec::new();
-        File::open(data.join("policy").join("socket.json"))
+        File::open(data.join("policy").join(discovery))
             .ok()?
             .take(DISCOVERY_BYTES + 1)
             .read_to_end(&mut bytes)
@@ -186,7 +193,12 @@ impl PolicySocket {
         if value["schema_version"].as_u64() != Some(DECISION_SCHEMA) {
             return None;
         }
-        let port = u16::try_from(value["port"].as_u64()?).ok()?;
+        let port_key = if benchmark_http {
+            "benchmark_http_port"
+        } else {
+            "port"
+        };
+        let port = u16::try_from(value[port_key].as_u64()?).ok()?;
         let token = value["token"].as_str()?;
         if token.is_empty() || token.len() > 128 {
             return None;
@@ -209,6 +221,7 @@ impl PolicySocket {
         }
         Some(PolicySocket {
             port,
+            benchmark_http,
             token: token.to_owned(),
             timeout: Duration::from_millis(timeout_ms),
             max_request_bytes,
@@ -270,6 +283,14 @@ fn ask_decision(
     // Armed while the connection is still open: macOS rejects setsockopt (EINVAL)
     // once both directions are closed, i.e. after our shutdown and the daemon's FIN.
     stream.set_read_timeout(Some(remaining()?)).ok()?;
+    if socket.benchmark_http {
+        let header = format!(
+            "POST /decision HTTP/1.1\r\nHost: 127.0.0.1\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+            payload.len()
+        );
+        stream.write_all(header.as_bytes()).ok()?;
+        stream.set_write_timeout(Some(remaining()?)).ok()?;
+    }
     stream.write_all(&payload).ok()?;
     // A peer that already answered and closed can make this fail (ENOTCONN on
     // macOS); the read below still returns what it sent, or fails and fails open.
@@ -285,11 +306,36 @@ fn ask_decision(
             0 => break,
             read => response.extend_from_slice(&chunk[..read]),
         }
-        if response.len() as u64 > socket.max_request_bytes {
+        let header_allowance = if socket.benchmark_http { 8192 } else { 0 };
+        if response.len() as u64 > socket.max_request_bytes.saturating_add(header_allowance) {
             return None;
         }
     }
-    let value: Value = serde_json::from_slice(&response).ok()?;
+    let response = if socket.benchmark_http {
+        let boundary = response.windows(4).position(|w| w == b"\r\n\r\n")?;
+        if boundary > 8192 {
+            return None;
+        }
+        let headers = std::str::from_utf8(&response[..boundary]).ok()?;
+        let mut lines = headers.split("\r\n");
+        if !matches!(lines.next(), Some("HTTP/1.0 200 OK" | "HTTP/1.1 200 OK")) {
+            return None;
+        }
+        let length = lines.find_map(|line| {
+            let (name, value) = line.split_once(':')?;
+            name.eq_ignore_ascii_case("content-length")
+                .then(|| value.trim().parse::<usize>().ok())
+                .flatten()
+        })?;
+        let body = &response[boundary + 4..];
+        if body.len() != length || body.len() as u64 > socket.max_request_bytes {
+            return None;
+        }
+        body
+    } else {
+        &response
+    };
+    let value: Value = serde_json::from_slice(response).ok()?;
     if value["schema_version"].as_u64() != Some(DECISION_SCHEMA) {
         return None;
     }
@@ -494,7 +540,7 @@ fn ensure_daemon(paths: &Paths) -> Result<()> {
     Ok(())
 }
 
-/// The whole hook: redact known secret forms and durably spool the complete
+/// The whole hook: durably spool the complete
 /// provider input. `cwd` remains a transport field because the daemon needs it
 /// verbatim to resolve the checkout; all semantic projection happens at drain.
 ///
@@ -579,7 +625,8 @@ fn observe(
         .ok_or("invalid input")?
         .remove("cwd");
     let mut record = json!({
-        "schema_version": 1,
+        "schema_version": 2,
+        "record_type": "hook",
         "event_id": event_id,
         "received_at": utc_now(),
         "provider": provider,
@@ -591,6 +638,11 @@ fn observe(
     if disk::linked(&spool) {
         return Err("linked spool directory".into());
     }
+    std::fs::create_dir_all(&paths.data)?;
+    let admission = disk::lock(
+        &paths.data.join("admission.lock"),
+        Duration::from_millis(100),
+    )?;
     let (files, used) = disk::spool_footprint(&spool)?;
     let mut delivery = json!({});
     let delivery_object = delivery.as_object_mut().ok_or("invalid delivery")?;
@@ -622,6 +674,7 @@ fn observe(
         disk::loss(&paths.data, IO);
         return Ok(stdout);
     }
+    drop(admission);
     ensure_daemon(paths)?;
     Ok(stdout)
 }
@@ -820,6 +873,7 @@ mod tests {
         });
         let socket = PolicySocket {
             port,
+            benchmark_http: false,
             token: "t".to_owned(),
             timeout: Duration::from_secs(5),
             max_request_bytes: 65536,

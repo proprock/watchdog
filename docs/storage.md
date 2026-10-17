@@ -1,22 +1,19 @@
 # Project storage and resource policy
 
-WD-004 provides the inbox and SQLite writer; WD-007 adds retention, redaction,
+WD-004 provides the SQLite writer; WD-149 unifies event delivery in one durable
+spool. WD-007 adds retention, export redaction,
 cooperative quotas, pins, and persistent loss diagnostics. No new dependency or
-service is required. Data lives in the registered project's UUID directory,
-outside its source checkout. Vendor transcripts are never cleanup targets; the
+service is required. Stored project data lives in its UUID directory, outside
+the source checkout; pending deliveries share `<data>/spool`. Vendor transcripts
+are never cleanup targets; the
 Codex reader opens only exact paths recorded from hooks.
 
 ```python
-from agent_watchdog.storage import Inbox, Store
+from agent_watchdog.daemon import publish
 
-# root = user_paths().project_data(event.project_id)
-# limits = project.overrides.apply(config.defaults)
-inbox = Inbox(root, limits=limits)
-inbox.publish(event)
-with Store(root, event.project_id, limits=limits) as store:
-    result = inbox.drain(store)
-    store.pin(event.session_id)  # Requires an already observed, nonempty session.
-    store.maintain()
+# Publish a prepared envelope through the same durable queue as native hooks.
+# The daemon resolves admission and owns the per-project Store.
+queued = publish(paths, event)
 ```
 
 ## Defaults and admission
@@ -28,8 +25,7 @@ with Store(root, event.project_id, limits=limits) as store:
 | `metrics_days` | 180 | Expire events and replay fingerprints; `0` disables time expiry (quota still applies) |
 | `transcript_failure_minutes` | 15 | Keep a project degraded after a recent transcript-reader failure; historical gaps remain diagnostic |
 | `project_bytes` | 2 GiB | Account for regular files under the project data directory |
-| `inbox_bytes` | 64 MiB | Bound pending deliveries and inbox temporary files |
-| `payload_bytes` | 1 MiB | Bound raw hook input and serialized envelopes |
+| `payload_bytes` | 1 MiB | Bound raw hook input and the resolved project's canonical envelope |
 | `reserve_bytes` | 1 MiB | Withhold room for cleanup and diagnostics |
 | `log_files`, `log_bytes`, `log_level` | 5, 10 MiB, `INFO` | Global daemon diagnostic log retention and threshold |
 | `log_detail` | `false` | Append a de-identified, truncated `detail="..."` error string to the diagnostic log |
@@ -40,10 +36,20 @@ each. This margin is not a preallocated reservation against other applications.
 Filesystem allocation overhead and unrelated writers are outside this cooperative
 quota. Impractically small budgets refuse initialization or new events.
 
+`payload_bytes` must not exceed `project_bytes`. Older `inbox_bytes` entries in
+defaults or project overrides are accepted but ignored with a warning. They do
+not configure the unified spool, whose daemon-wide limits are 64 MiB and 4096
+files. The native adapter and Python publishers share `<data>/admission.lock`
+while measuring occupancy and atomically publishing a record. The lock wait is
+bounded at 100 ms; temporary queue files count toward capacity.
+Maintenance removes abandoned Watchdog-owned queue temporary files after one
+hour under the same shared maintenance budget. Recent temporary files remain
+counted and untouched.
+
 `pipeline_telemetry` is a daemon-wide configuration switch, outside `[defaults]`.
 It defaults to true and records bounded delivery timestamps and queue-occupancy
 samples in new envelopes. Set it to false to remove this optional hot-path work;
-the spool, inbox, SQLite writer, loss counters, and their quota checks are
+the spool, SQLite writer, loss counters, and their quota checks are
 unchanged. It cannot be a per-project override because the native adapter has not
 resolved the project when it accepts a hook.
 
@@ -88,28 +94,30 @@ failure; it is debounced per project and holds the project degraded until a
 later pass accepts a usage observation, so a silent enrichment drop is never
 mistaken for an idle poll.
 
-Publishers and storage writes/maintenance share `admission.lock`, with a 100 ms
-acquisition timeout. Pending temporary files count; SQLite admission additionally
+Storage writes and maintenance share each project's `admission.lock`, with a
+100 ms acquisition timeout. This is distinct from the data-directory lock used
+by queue publishers. SQLite admission additionally
 budgets database/WAL growth and transaction overhead. Database, WAL, SHM,
 artifacts, quarantine, diagnostics, lock files, and auxiliary files consume space.
 Shared content-addressed artifacts count once. Pins do not waive the quota.
 
-### Bounded inbox transactions (WD-172)
+### Bounded spool transactions (WD-149, WD-172)
 
-The daemon drains at most 100 inbox candidates per poll, in transactions of at
-most 25 records. Finished chunks are acknowledged before considering the next
-chunk. An optional `time_budget` checks elapsed time between chunks; one chunk
-always runs, so a slow commit or session replay cannot prevent progress. The
-daemon retains its existing 100-candidate window without this optional deadline:
-prematurely stopping the reader while admitting 100 new spool records grows the
-inbox and increases publisher quota-scan cost. WD-152 owns cadence changes. This
-budget is cooperative, not a deadline that interrupts a SQLite commit.
+The daemon reads a bounded window from the shared spool and commits directly to
+SQLite, reusing one Store per project for that poll tick. It groups deliveries
+by project into bounded transactions; the default batch size is 100, selected
+by the [WD-149 measurement](evidence/wd149.md). Finished chunks are acknowledged before the
+next chunk. There is no per-project event Inbox or second durable handoff.
 
 A chunk holds `admission.lock`, measures available space once, and subtracts the
 existing conservative database/WAL reservation for every inserted event. A quota
 shortfall rolls back the chunk and retries its records individually, allowing the
-ordinary quota-admission cleanup to run outside a transaction. Periodic retention
-and its scheduling remain separate work in WD-149/WD-152.
+ordinary quota-admission cleanup to run outside a transaction. Cleanup uses one
+shared 200 ms allowance across all project writers in a tick. Round-robin
+scheduling and resumable phase/cursor state carry progress across Store opens;
+the budget is cooperative and does not interrupt an active SQLite commit. When
+maintenance or reclaimable capacity is temporarily pending, the input remains
+queued for a later tick and does not count as a lost event.
 
 Events, receipts, fact rows, and final session-state projections commit together
 with `synchronous=FULL`. Each affected Codex identity is replayed once per chunk.
@@ -117,9 +125,8 @@ Files are unlinked only after commit; an interruption before commit keeps all
 inputs, and an interruption before unlink replays committed UUIDs as duplicates.
 Rollback restores the writer's state cache as well as its database rows.
 
-This precedes WD-149: native spool records still pass through the durable inbox.
-It requires no schema migration and changes neither receipt identity nor the
-dirty-state recovery contract. WD-157 content migration and WD-162 analysis
+The queue format does not change receipt identity or the dirty-state recovery
+contract. WD-157 content migration and WD-162 analysis
 recomputation must preserve those commit/acknowledgement boundaries and must not
 mark unfinished derived work as current.
 
@@ -139,14 +146,14 @@ registered projects; set `capture_content = false` globally or per project to
 omit text. Codex `transcript_path` is retained as operational reader metadata
 even when text capture is disabled, but enrichment stores only validated numeric
 usage records and never transcript text or raw lines. Other top-level provider
-fields are retained as redacted metadata even when their schema is not yet known;
+fields are retained as raw metadata even when their schema is not yet known;
 this makes future model, reasoning, context, token, timing, retry, permission,
 error, and lifecycle telemetry recoverable without inventing a value. New field
 names are recorded in `unknown_fields` and a bounded diagnostic WARNING; nested
 tool input/output keys are not treated as provider-schema changes.
-`Inbox.publish` and `Store.put` also sanitize inputs before writing temporary or
-persistent files. Artifact names cannot collide after redaction. Only UTF-8 text
-artifacts are supported, capped at 8 MiB per call before and after redaction.
+The shared spool and Store preserve raw input subject to capture and size limits;
+they do not apply the export credential filter. Only UTF-8 text artifacts are
+supported, capped at 8 MiB per call.
 
 The deterministic filter removes credential-valued dictionary fields, common
 OpenAI/GitHub/AWS access-key forms, Bearer/Basic credentials, password/token/API-key
@@ -159,20 +166,34 @@ Rejected malformed/oversized envelopes, unsupported schemas, missing replay IDs,
 wrong projects, and conflicting UUIDs never enter quarantine as raw text. A `.bad`
 record contains only a generic reason and byte count. Quarantine is bounded by
 128 files and 8 MiB; oldest diagnostics are evicted first. Input symlinks are
-unlinked without reading their targets. Linked inbox/artifact/quarantine
+unlinked without reading their targets. Linked spool/artifact/quarantine
 directories are refused.
 
 ## Delivery, migration, and recovery
 
-Publishing validates the envelope, fsyncs a sibling `.tmp`, and renames it to a
-unique delivery `.json`. The event UUID stays unchanged. `drain` processes at most
-100 files by default, in filesystem order, with an open Store for the same root.
-Persisted envelopes must explicitly contain schema version, event UUID, and
-received time. SQLite commits events and artifact references together before
-acknowledging inbox files. I/O/SQLite failures leave input retryable, including a
-commit/ack crash. A fingerprint of the original sanitized event and artifact
-references preserves deduplication after content expiry. Changed content under
-the same UUID is rejected. Fingerprints expire with the event metrics.
+All event producers fsync a sibling `.tmp` and atomically rename it to a unique
+delivery `.json` in `<data>/spool`. Queue schema 2 distinguishes raw provider
+records (`record_type: "hook"`, with `provider`, `cwd`, `input`, `event_id`, and
+`received_at`) from prepared envelopes (`record_type: "envelope"`, with the
+complete `envelope`). Optional delivery telemetry travels with the record.
+Native hooks use the raw form; developer hooks and daemon-generated control
+events use the prepared form. The daemon resolves raw records, validates each
+canonical envelope against that project's payload limit, and commits directly
+through its Store. An event's UUID and received time stay unchanged.
+
+SQLite commits events, receipts, facts, session state, and artifact references
+before acknowledging spool files. I/O/SQLite failures leave inputs retryable,
+including a commit/ack crash. A fingerprint of the original canonical event and
+artifact references preserves deduplication after content expiry. Changed
+content under the same UUID is rejected. Fingerprints expire with the event
+metrics. Malformed records and unsupported schemas enter bounded quarantine.
+
+There is no runtime legacy Inbox reader and no schema 1 spool reader. Existing
+pending legacy files require an external, one-shot migration before the upgraded
+daemon starts. That migration must preserve event UUIDs, received timestamps,
+provider metadata, and receipt identity; ordinary replay remains idempotent.
+The command request files and desired-state file are lifecycle/mutation controls,
+not additional event queues, and remain in use.
 
 `writer.lock` gives one Store ownership per project. SQLite uses WAL, synchronous
 FULL, foreign keys, and secure deletion of freed cells. Schema v2 adds session pins
@@ -296,8 +317,9 @@ differ.
 
 ## Retention and pins
 
-The daemon maintains each project on first access and at most once per minute
-thereafter; storage admission also requests cleanup under quota pressure.
+The daemon starts periodic maintenance on first access and at most once per
+minute thereafter; unfinished phases resume on later ticks under the shared
+budget. Storage admission also requests cleanup under quota pressure.
 Retention is a disk-budget control over the user's own local data, not a privacy
 control. Retention uses received time. By default unpinned provider payload and
 artifact references expire after 30 days and events after 180 days;
@@ -340,7 +362,7 @@ Corrupt counters are reported unavailable instead of reset. Status returns at
 most 32 project counter groups; direct `resources.losses(root)` reads any project.
 
 Project write failures or exhausted capacity produce degraded daemon status. A
-full inbox still triggers a missing daemon's restart so cleanup can resume. Hooks
+full spool still triggers a missing daemon's restart so cleanup can resume. Hooks
 keep returning the no-op response. Historical loss counts alone do not keep a
 recovered daemon degraded.
 

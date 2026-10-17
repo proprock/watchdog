@@ -587,7 +587,7 @@ def test_v6_delete_removes_the_matching_fact_row(tmp_path, project):
         assert store.connection.execute("SELECT COUNT(*) FROM events").fetchone()[0] == 0
 
 
-def test_v6_migration_creates_the_five_analysis_indexes(tmp_path, project):
+def test_v6_migration_creates_analysis_and_retention_indexes(tmp_path, project):
     build_v5(tmp_path, project, [])
     with Store(tmp_path, project) as store:
         indexes = {
@@ -603,6 +603,7 @@ def test_v6_migration_creates_the_five_analysis_indexes(tmp_path, project):
         "event_facts_usage_dim",
         "event_facts_tool_pair",
         "event_facts_tool_cost",
+        "event_facts_retention",
     }
     # Query-plan regression that these indexes are actually chosen lives in
     # tests/test_facts_query.py (WD-112).

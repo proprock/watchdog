@@ -6,10 +6,9 @@ from collections.abc import Sequence
 from datetime import datetime
 from typing import Any, Literal
 
-from agent_watchdog import inspection
 from agent_watchdog.config import Project, UserPaths
 from agent_watchdog.events import Envelope
-from agent_watchdog.insights import timeline
+from agent_watchdog.insights import timeline, window
 from agent_watchdog.insights.bundle import Draft, excerpt
 from agent_watchdog.insights.contract import OutputModel, RuleCandidate, ScopeFields
 from agent_watchdog.insights.scope import share
@@ -189,7 +188,7 @@ def read(
     since: datetime | None,
     until: datetime | None,
 ) -> Raw:
-    _types, finishes = inspection.tool_finishes(
+    _types, finishes = window.tool_finishes(
         paths, project, provider=provider, session_id=session_id, since=since, until=until
     )
     return finishes

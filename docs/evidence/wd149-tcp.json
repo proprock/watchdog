@@ -1,0 +1,56 @@
+{
+  "schema_version": 1,
+  "python": "3.12.13",
+  "os": "Windows-11-10.0.22621-SP0",
+  "scope": "synthetic hook process wall time including selected launch, runtime and Git; daemon already running",
+  "process_timeout_seconds": 15,
+  "adapter": "rust",
+  "transport": "current",
+  "provider": "claude",
+  "event": "PreToolUse",
+  "launch": "direct",
+  "first_ms": 61.512599990237504,
+  "warmup_calls": 8,
+  "host_cpu_percent": 19.23076923076923,
+  "sequential": {
+    "samples": 20,
+    "p50_ms": 41.48449999047443,
+    "p95_ms": 48.354400001699105,
+    "max_ms": 68.4729999920819
+  },
+  "concurrent_four": {
+    "samples": 20,
+    "p50_ms": 84.98039998812601,
+    "p95_ms": 102.50369997811504,
+    "max_ms": 112.39799999748357
+  },
+  "idle": {
+    "seconds": 1.5160000000032596,
+    "cpu_seconds": 0.0,
+    "working_set_bytes": 37253120
+  },
+  "events": 49,
+  "sessions": 2,
+  "checkouts": 2,
+  "restart_preserved": true,
+  "delivery_complete": true,
+  "errors": 0,
+  "decision_requests": 49,
+  "losses": {
+    "adapter": {
+      "quota": 0,
+      "payload": 0,
+      "invalid": 0,
+      "io": 0,
+      "busy": 0
+    },
+    "85909d8e-fd38-4b01-b55d-942dbec90038": {
+      "quota": 0,
+      "payload": 0,
+      "invalid": 0,
+      "io": 0,
+      "busy": 0
+    }
+  },
+  "native_provider_validation": false
+}

@@ -8,7 +8,7 @@ auto_add_projects = false
 pipeline_telemetry = true
 
 [defaults]
-# Capture selected prompt, tool, and assistant text after redaction. Set false to
+# Capture selected raw prompt, tool, and assistant text. Set false to
 # retain metadata only.
 capture_content = true
 # Keep this many bytes available for cleanup and diagnostic work per project.
@@ -25,8 +25,6 @@ metrics_days = 180
 transcript_failure_minutes = 15
 # Maximum total size of regular files stored for one project (2 GiB).
 project_bytes = 2147483648
-# Maximum size of pending inbox data and temporary inbox files (64 MiB).
-inbox_bytes = 67108864
 # Maximum size of one incoming event payload (1 MiB).
 payload_bytes = 1048576
 # Keep this many daemon diagnostic files, including the active watchdog.log.
@@ -51,7 +49,9 @@ policy_intervene = true
 insights_llm_enabled = true
 
 # The quota relationship must remain:
-# payload_bytes <= inbox_bytes <= project_bytes
+# payload_bytes <= project_bytes
+# Old inbox_bytes entries are accepted but ignored, with a warning. Pending events
+# share one daemon-wide spool capped at 64 MiB and 4096 files.
 
 # Optional default location of the list-price tariff file for `agent-watchdog
 # usage` (see pricing.example.toml). Absolute path only; --tariffs overrides it.

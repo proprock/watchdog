@@ -9,7 +9,7 @@ usage reconciliation, and guidance/control delivery are deferred to WD-022b.
 The provider is a required positional: `agent-watchdog hook codex|claude` and
 `agent-watchdog hooks install|uninstall codex|claude`. The two providers share
 the envelope schema, the daemon API, locks, loss counters, redaction, and the
-durable JSON inbox; only the native-event map, the target file, and the no-op
+durable schema 2 JSON spool; only the native-event map, the target file, and the no-op
 output differ.
 
 ## Register and install
@@ -77,7 +77,8 @@ identity or signing policy yet, so a checksum is not a signature.
 
 `agent-watchdog hook codex|claude` (singular, no `--adapter-*` options) reads
 one event from stdin directly through the Python core — `hooks.py::observe` —
-bypassing the spool entirely. It is a developer/test utility only, never what
+resolving the checkout and publishing a prepared envelope to the shared spool.
+It is a developer/test utility only, never what
 `hooks install` produces: production installation always requires a native
 adapter, so an installed hook always invokes the separate `agent-watchdog-hook`
 binary, never this Python entry point. See `## Adapter behavior` below for what
@@ -85,8 +86,9 @@ that binary actually does; do not confuse the two by name alone.
 
 The native adapter shares the existing loss counters and atomic-write / lock
 primitives, and durably spools each event as JSON under `<data>/spool/`. The
-daemon resolves, builds, and admits those records into the durable JSON inbox it
-already owns, alongside SQLite ownership, retention, analysis, and CLI duties.
+daemon resolves and builds those records, then commits directly to its per-project
+SQLite Store alongside retention, analysis, and CLI duties. There is no second
+event Inbox or intermediate durable envelope write.
 Rust contract tests run through pytest after the release binary has been built.
 
 Without `--apply`, commands return the proposed configuration and perform no
@@ -157,14 +159,17 @@ not a transactional configuration manager.
 Since WD-027/107 the native adapter (the separate `agent-watchdog-hook` binary
 that `hooks install` always wires up — not the Python CLI's `hook` subcommand
 described above) is spool-and-forget. Invoked with `<codex|claude>` as its own
-positional, it reads JSON stdin, removes known credential forms recursively from
-the complete provider input, and durably writes that input plus raw `cwd`, an
+positional, it reads JSON stdin and durably writes the complete raw provider
+input plus raw `cwd`, an
 adapter-stamped `event_id`, and `received_at` under `<data>/spool/`. `cwd` is kept
 only for checkout resolution. The adapter does not maintain a semantic provider
-field allowlist or normalize provider telemetry.
+field allowlist or normalize provider telemetry. Records carry `schema_version: 2`
+and `record_type: "hook"`; prepared developer/control records use
+`record_type: "envelope"`. Schema 1 spool files have no runtime compatibility
+reader; upgrading pending legacy data requires an external one-shot migration.
 
-Checkout resolution, envelope construction, per-project payload/inbox/project
-quota, unknown-field warnings, and inbox admission all run in the daemon's spool
+Checkout resolution, envelope construction, per-project payload/project quota,
+unknown-field warnings, and SQLite admission all run in the daemon's spool
 drain, once per poll. A newly seen top-level field is retained in provider metadata
 and emits one bounded WARNING containing the provider and safe field name, never
 its value.
@@ -186,7 +191,10 @@ The adapter reads only `<data>/spool/limits.json`, which the daemon publishes:
 the largest registered payload limit and the spool cap. When it is absent the
 adapter uses built-in defaults (1 MiB payload, 64 MiB / 4096-file spool). Raw
 stdin is capped at that payload limit; over it increments the `payload` counter.
-A full spool increments `quota`. `event_id` / `received_at` are stamped at
+A full spool increments `quota`. Native and Python publishers share
+`<data>/admission.lock` for queue occupancy and atomic publication, with a
+100 ms lock wait. Prepared envelopes also pass the resolved project's canonical
+payload-size check at drain. `event_id` / `received_at` are stamped at
 arrival and trusted by the daemon, so a replayed spool record yields the same
 event and the project store deduplicates it. Native handlers are synchronous
 with a two-second timeout; the launch-cost measurements are not a p95 whole-hook

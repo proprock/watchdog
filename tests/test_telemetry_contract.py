@@ -8,7 +8,7 @@ from agent_watchdog.daemon import _drain_spool
 from agent_watchdog.events import Envelope
 from agent_watchdog.hooks import observe
 from agent_watchdog.inspection import export_sessions, report
-from agent_watchdog.storage import Inbox, Store
+from agent_watchdog.storage import Store
 
 
 def configured(tmp_path, *, capture_content=True):
@@ -23,7 +23,7 @@ def test_python_adapter_retains_raw_unknown_telemetry_and_warns(tmp_path, monkey
     paths, project, _ = configured(tmp_path)
     captured = []
     monkeypatch.setattr(
-        "agent_watchdog.hooks.daemon.enqueue", lambda _, event: captured.append(event) or True
+        "agent_watchdog.hooks.daemon.publish", lambda _, event: captured.append(event) or True
     )
     secret = "private-value"
     observe(
@@ -67,7 +67,7 @@ def test_current_harness_fields_are_inventoried_not_warned(tmp_path, monkeypatch
     paths, project, _ = configured(tmp_path)
     captured = []
     monkeypatch.setattr(
-        "agent_watchdog.hooks.daemon.enqueue", lambda _, event: captured.append(event) or True
+        "agent_watchdog.hooks.daemon.publish", lambda _, event: captured.append(event) or True
     )
     observe(
         paths,
@@ -109,7 +109,7 @@ def test_unknown_metadata_survives_capture_content_opt_out(tmp_path, monkeypatch
     paths, _, _ = configured(tmp_path, capture_content=False)
     captured = []
     monkeypatch.setattr(
-        "agent_watchdog.hooks.daemon.enqueue", lambda _, event: captured.append(event) or True
+        "agent_watchdog.hooks.daemon.publish", lambda _, event: captured.append(event) or True
     )
     observe(
         paths,
@@ -134,7 +134,8 @@ def test_unknown_metadata_survives_capture_content_opt_out(tmp_path, monkeypatch
 def test_daemon_spool_retains_telemetry_reports_coverage_and_exports(tmp_path):
     paths, project, config = configured(tmp_path)
     record = {
-        "schema_version": 1,
+        "schema_version": 2,
+        "record_type": "hook",
         "event_id": str(uuid4()),
         "received_at": datetime.now(UTC).isoformat(),
         "provider": "codex",
@@ -152,9 +153,8 @@ def test_daemon_spool_retains_telemetry_reports_coverage_and_exports(tmp_path):
     (spool / "record.json").write_text(json.dumps(record), encoding="utf-8")
 
     assert _drain_spool(paths, config)
-    inbox = Inbox(paths.project_data(project.id))
     with Store(paths.project_data(project.id), project.id) as store:
-        assert inbox.drain(store).inserted == 1
+        assert len(store.events()) == 1
         stored = store.events()[0]
     provider_payload = stored.payload["codex"]
     assert isinstance(provider_payload, dict)

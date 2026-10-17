@@ -12,7 +12,7 @@ import sys
 import threading
 import time
 from collections.abc import Callable, Iterator, Mapping
-from contextlib import ExitStack, closing, contextmanager
+from contextlib import ExitStack, closing, contextmanager, nullcontext
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from uuid import NAMESPACE_URL, UUID, uuid4, uuid5
@@ -27,20 +27,22 @@ from agent_watchdog.events import Envelope
 from agent_watchdog.registry import Registry, RegistryError, Resolution
 from agent_watchdog.rules.api import Decision
 from agent_watchdog.rules.engine import decide, subscriptions
+from agent_watchdog.spool import SPOOL_BYTES, SPOOL_FILES, Spool
 from agent_watchdog.state import SessionState, StateKey
 from agent_watchdog.storage import (
-    Inbox,
+    DrainResult,
+    MaintenanceBudget,
+    MaintenanceState,
     QuotaExceeded,
     RejectedEvent,
     StorageError,
     Store,
     WriterBusy,
     atomic_write,
+    canonical,
     writer_lock,
 )
 
-SPOOL_BYTES = 64 * 1024**2
-SPOOL_FILES = 4096
 CONTROL_REQUEST_BYTES = 8192
 HEALTH_WINDOW_SECONDS = 60
 # WD-141: a session's findings are recomputed at most this often, and a tick spends
@@ -131,6 +133,8 @@ def _capture_diff_snapshot(
     paths: UserPaths,
     config: Config,
     logged_unknown: set[tuple[UUID, str]],
+    *,
+    store: Store | None = None,
 ) -> None:
     """Run the bounded Git read in the core, never synchronously in a hook.
 
@@ -144,7 +148,11 @@ def _capture_diff_snapshot(
 
     now = datetime.now(UTC)
     try:
-        with Store(paths.project_data(project_id), project_id) as store:
+        with (
+            nullcontext(store)
+            if store is not None
+            else Store(paths.project_data(project_id), project_id) as store
+        ):
             if not store.diff_due(checkout_id, now=now):
                 return
             fingerprint = git_diff_fingerprint(checkout)
@@ -402,9 +410,7 @@ def _queue_snapshot(
 
 
 def _queue_counts(queues: dict) -> dict[str, int]:
-    return {"spool": queues["spool"]["files"]} | {
-        key: value["files"] for key, value in queues["projects"].items()
-    }
+    return {"spool": queues["spool"]["files"]}
 
 
 class _BacklogTracker:
@@ -490,14 +496,6 @@ def _storage_health(
 
 
 def _queue_status(paths: UserPaths, config: Config) -> dict[str, object]:
-    projects: dict[str, object] = {}
-    for project in config.projects[:32]:
-        limits = project.overrides.apply(config.defaults)
-        projects[str(project.id)] = _queue_snapshot(
-            paths.project_data(project.id) / "inbox",
-            byte_limit=limits.inbox_bytes,
-            file_limit=None,
-        )
     return {
         "spool": _queue_snapshot(
             paths.data / "spool",
@@ -505,7 +503,6 @@ def _queue_status(paths: UserPaths, config: Config) -> dict[str, object]:
             file_limit=SPOOL_FILES,
             skip="limits.json",
         ),
-        "projects": projects,
     }
 
 
@@ -526,7 +523,7 @@ def set_desired(paths: UserPaths, *, paused: bool) -> str:
 
 
 def spool_payload_bytes(config: Config) -> int:
-    """Largest per-project inbox payload limit; the adapter caps stdin at this."""
+    """Largest per-project payload limit; the adapter caps stdin at this."""
     return max(
         (project.overrides.apply(config.defaults).payload_bytes for project in config.projects),
         default=config.defaults.payload_bytes,
@@ -622,68 +619,39 @@ def resolve_or_auto_register(
         return registry.config, resolution
 
 
-def enqueue(paths: UserPaths, event: Envelope) -> bool:
-    """Adapter entry point; pause and allowlist admission share the control lock."""
+def publish(
+    paths: UserPaths, event: Envelope, *, config: Config | None = None, launch_daemon: bool = True
+) -> bool:
+    """Publish every Python-produced event to the same durable native spool."""
+
     with control_lock(paths, timeout=0.1):
         if desired(paths).get("paused", False):
-            _log(paths, None, "DEBUG", event="enqueue", decision="paused")
             return False
-        config = load_config(paths.config)
+        config = config or _config_cache.load(paths.config)
         project = next((item for item in config.projects if item.id == event.project_id), None)
         if project is None:
-            _log(
-                paths,
-                config,
-                "DEBUG",
-                event="enqueue",
-                decision="unregistered",
-                event_id=event.event_id,
-            )
             return False
         limits = project.overrides.apply(config.defaults)
         try:
-            if config.pipeline_telemetry:
-                observed_at = datetime.now(UTC).isoformat()
-                event = event.model_copy(
-                    update={
-                        "delivery": event.delivery
-                        | {
-                            "inbox_enqueued_at": observed_at,
-                            "inbox_occupancy": _queue_snapshot(
-                                paths.project_data(project.id) / "inbox",
-                                byte_limit=limits.inbox_bytes,
-                                file_limit=None,
-                            ),
-                        }
-                    }
-                )
-            Inbox(paths.project_data(project.id), limits=limits).publish(event)
-        except QuotaExceeded:
+            Spool(
+                paths.data, limits=limits, byte_limit=SPOOL_BYTES, file_limit=SPOOL_FILES
+            ).publish(event, telemetry=config.pipeline_telemetry)
+        except (QuotaExceeded, RejectedEvent, WriterBusy, OSError) as error:
             _log(
                 paths,
                 config,
                 "WARNING",
                 event="enqueue",
                 decision="rejected",
-                reason="quota",
+                reason="quota" if isinstance(error, QuotaExceeded) else "invalid",
+                error_type=error_code(error),
                 project_id=project.id,
                 event_id=event.event_id,
             )
-            if not alive(paths):
-                launch(paths)
             raise
-        if not alive(paths):
-            launch(paths)
-        _log(
-            paths,
-            config,
-            "DEBUG",
-            event="enqueue",
-            decision="admitted",
-            project_id=project.id,
-            event_id=event.event_id,
-        )
-        return True
+    if launch_daemon and not alive(paths):
+        launch(paths)
+    return True
 
 
 def request_control(paths: UserPaths, request: dict, *, timeout: float = 10) -> dict:
@@ -867,35 +835,6 @@ def _verdict_fields(request: Mapping[str, object]) -> tuple[str, str, str, str, 
     return str(rule), str(rule_version), str(fingerprint), str(verdict), note
 
 
-def _admit(paths: UserPaths, event: Envelope, config: Config) -> bool:
-    """Publish one envelope under the control lock. The caller is the running
-    daemon, so unlike `enqueue` this never self-launches. Raises on quota/busy."""
-    with control_lock(paths, timeout=0.1):
-        if desired(paths).get("paused", False):
-            return False
-        project = next((item for item in config.projects if item.id == event.project_id), None)
-        if project is None:
-            return False
-        limits = project.overrides.apply(config.defaults)
-        if config.pipeline_telemetry:
-            observed_at = datetime.now(UTC).isoformat()
-            event = event.model_copy(
-                update={
-                    "delivery": event.delivery
-                    | {
-                        "inbox_enqueued_at": observed_at,
-                        "inbox_occupancy": _queue_snapshot(
-                            paths.project_data(project.id) / "inbox",
-                            byte_limit=limits.inbox_bytes,
-                            file_limit=None,
-                        ),
-                    }
-                }
-            )
-        Inbox(paths.project_data(project.id), limits=limits).publish(event)
-        return True
-
-
 def _discard(path: Path) -> None:
     try:
         path.unlink()
@@ -908,44 +847,195 @@ def _drain_spool(
     config: Config,
     *,
     limit: int = 100,
+    batch_size: int = 100,
     logged_unknown_checkouts: set[tuple[UUID, str]] | None = None,
     channel: "_Channel | None" = None,
+    sessions: "_SessionTracker | None" = None,
+    stores: dict[UUID, Store] | None = None,
+    owner: ExitStack | None = None,
+    maintenance_deadline: float | None = None,
+    maintenance_states: dict[UUID, MaintenanceState] | None = None,
+    maintenance_budget: MaintenanceBudget | None = None,
+    stats: DrainResult | None = None,
+    spool: Spool | None = None,
 ) -> bool:
-    """Resolve, build, and admit native adapter spool records.
-
-    The adapter writes raw unresolved records; checkout resolution,
-    envelope construction, and per-project quota all happen here. Returns whether
-    any record was processed. ``logged_unknown_checkouts`` carries the
-    once-per-episode fingerprint log state across calls.
-    """
+    """Resolve one queue window and commit bounded batches before acknowledging files."""
     from agent_watchdog.hooks import EVENTS, build_envelope, warn_unknown_fields
+    from agent_watchdog.storage import MaintenancePending, persisted_envelope
 
-    if logged_unknown_checkouts is None:
-        logged_unknown_checkouts = set()
-
-    spool = paths.data / "spool"
-    if not spool.is_dir():
-        return False
-    payload_bytes = spool_payload_bytes(config)
+    if min(limit, batch_size) <= 0:
+        raise StorageError("Invalid spool batch bounds")
+    if owner is None:
+        with ExitStack() as scope:
+            return _drain_spool(
+                paths,
+                config,
+                limit=limit,
+                batch_size=batch_size,
+                logged_unknown_checkouts=logged_unknown_checkouts,
+                channel=channel,
+                sessions=sessions,
+                stores={},
+                owner=scope,
+                maintenance_deadline=maintenance_deadline,
+                maintenance_states=maintenance_states,
+                maintenance_budget=maintenance_budget,
+                stats=stats,
+                spool=spool,
+            )
+    assert stores is not None
+    logged_unknown_checkouts = (
+        logged_unknown_checkouts if logged_unknown_checkouts is not None else set()
+    )
+    queue = spool or Spool(paths.data)
+    queue.payload_bytes = spool_payload_bytes(config)
+    result = stats if stats is not None else DrainResult()
     registry = Registry(config)
+    resolved_checkouts: dict[str, Resolution] = {}
+    pending: dict[UUID, list] = {}
+    captured_checkouts: set[UUID] = set()
     activity = False
-    processed = 0
-    for path in sorted(spool.glob("*.json")):
-        if path.name == "limits.json":
-            continue
-        if processed >= limit:
-            break
-        processed += 1
+
+    def invalid_record(error: Exception) -> None:
+        _log(
+            paths,
+            config,
+            "WARNING",
+            event="spool",
+            decision="retry" if isinstance(error, OSError) else "discarded",
+            reason="invalid",
+            error_type=error_code(error),
+            detail=str(error),
+        )
+
+    for path, record in queue.records(result, limit=limit, on_error=invalid_record):
         try:
-            if path.is_symlink():
-                _log(paths, config, "WARNING", event="spool", decision="discarded", reason="linked")
-                _discard(path)
-                activity = True
-                continue
-            with path.open("rb") as stream:
-                data = stream.read(payload_bytes + 1)
-            if len(data) > payload_bytes:
-                resources.count_loss(paths.data, "invalid")
+            payload = None
+            resolution = None
+            if record["record_type"] == "envelope":
+                event = persisted_envelope(json.dumps(record["envelope"]))
+                project = next(
+                    (item for item in config.projects if item.id == event.project_id), None
+                )
+                if project is None:
+                    _discard(path)
+                    activity = True
+                    continue
+                limits = project.overrides.apply(config.defaults)
+            else:
+                provider, payload, cwd = record["provider"], record["input"], record["cwd"]
+                if provider not in EVENTS or not isinstance(payload, dict):
+                    raise RejectedEvent("Invalid provider input")
+                if not isinstance(cwd, str) or not Path(cwd).is_absolute():
+                    raise RejectedEvent("Invalid spool cwd")
+                event_id = UUID(str(record["event_id"]))
+                received_at = datetime.fromisoformat(record["received_at"])
+                if received_at.tzinfo is None:
+                    raise RejectedEvent("Spool timestamp must have a timezone")
+                try:
+                    resolution = resolved_checkouts.get(cwd)
+                    if resolution is None:
+                        resolution = registry.resolve(Path(cwd), timeout=0.25)
+                    if resolution is None and config.auto_add_projects:
+                        config, resolution = resolve_or_auto_register(
+                            paths, Path(cwd), timeout=0.25
+                        )
+                        registry = Registry(config)
+                        resolved_checkouts.clear()
+                    if resolution is not None:
+                        resolved_checkouts[cwd] = resolution
+                except RegistryError as error:
+                    if not Path(cwd).exists():
+                        _log(
+                            paths,
+                            config,
+                            "WARNING",
+                            event="spool",
+                            decision="discarded",
+                            reason="unresolvable_cwd",
+                            error_type=error_code(error),
+                        )
+                        _discard(path)
+                        activity = True
+                    elif (event_id, "unresolvable_cwd") not in logged_unknown_checkouts:
+                        logged_unknown_checkouts.add((event_id, "unresolvable_cwd"))
+                        _log(
+                            paths,
+                            config,
+                            "WARNING",
+                            event="spool",
+                            decision="deferred",
+                            reason="unresolvable_cwd",
+                            error_type=error_code(error),
+                        )
+                    continue
+                if resolution is None:
+                    _log(
+                        paths,
+                        config,
+                        "DEBUG",
+                        event="spool",
+                        decision="unregistered",
+                        event_id=event_id,
+                    )
+                    _discard(path)
+                    activity = True
+                    continue
+                project = next(item for item in config.projects if item.id == resolution.project_id)
+                limits = project.overrides.apply(config.defaults)
+                event = build_envelope(
+                    payload,
+                    resolution,
+                    limits,
+                    provider,
+                    event_id=event_id,
+                    received_at=received_at,
+                )
+                warn_unknown_fields(
+                    paths,
+                    config.defaults,
+                    payload,
+                    provider,
+                    component="daemon",
+                    event="spool",
+                    project_id=project.id,
+                    event_id=event_id,
+                )
+
+            delivery = record.get("delivery", {})
+            if not isinstance(delivery, dict):
+                raise RejectedEvent("Invalid spool delivery telemetry")
+            control = delivery.get("control")
+            control_fields = {}
+            if isinstance(control, dict):
+                received, rendered = (
+                    control.get("response_received"),
+                    control.get("adapter_rendered"),
+                )
+                if type(received) is bool and (rendered is None or type(rendered) is bool):
+                    bounded = {"response_received": received, "adapter_rendered": rendered}
+                    action = control.get("requested_action")
+                    if action in {"allow", "deny", "ask", "rewrite", "context", "block"}:
+                        bounded["requested_action"] = action
+                    control_fields["control"] = bounded
+            if config.pipeline_telemetry:
+                observed_at = datetime.now(UTC).isoformat()
+                trace = {key: value for key, value in delivery.items() if key != "control"}
+                trace |= {"spool_drained_at": observed_at, "sqlite_write_started_at": observed_at}
+            else:
+                trace = {}
+            event = event.model_copy(update={"delivery": event.delivery | trace | control_fields})
+            if not limits.capture_content and event.source == "hook":
+                namespace = event.payload.get(event.provider)
+                if isinstance(namespace, dict):
+                    event = event.model_copy(
+                        update={
+                            "payload": {event.provider: namespace | {"content": "omitted"}},
+                            "availability": event.availability | {"content": "unavailable"},
+                        }
+                    )
+            if len(canonical(event).encode()) > limits.payload_bytes:
+                resources.count_loss(paths.project_data(project.id), "payload")
                 _log(
                     paths,
                     config,
@@ -953,27 +1043,14 @@ def _drain_spool(
                     event="spool",
                     decision="discarded",
                     reason="oversized",
+                    project_id=project.id,
+                    event_id=event.event_id,
                 )
                 _discard(path)
                 activity = True
                 continue
-            record = json.loads(data)
-            if not isinstance(record, dict) or record.get("schema_version") != 1:
-                raise ValueError("Invalid spool record")
-            provider = record["provider"]
-            payload = record["input"]
-            cwd = record["cwd"]
-            if provider not in EVENTS or not isinstance(payload, dict):
-                raise ValueError("Invalid spool record")
-            if not isinstance(cwd, str) or not Path(cwd).is_absolute():
-                raise ValueError("Invalid spool cwd")
-            event_id = UUID(str(record["event_id"]))
-            received_at = datetime.fromisoformat(record["received_at"])
-            delivery = record.get("delivery", {})
-            if not isinstance(delivery, dict):
-                raise ValueError("Invalid spool delivery telemetry")
-        except (OSError, ValueError, KeyError, TypeError) as error:
-            resources.count_loss(paths.data, "invalid")
+            pending.setdefault(project.id, []).append((path, event, payload, resolution))
+        except (ValidationError, RejectedEvent, ValueError, KeyError, TypeError) as error:
             _log(
                 paths,
                 config,
@@ -984,112 +1061,90 @@ def _drain_spool(
                 error_type=error_code(error),
                 detail=str(error),
             )
-            _discard(path)
+            queue.quarantine(path, result)
             activity = True
-            continue
-        try:
-            resolution = registry.resolve(Path(cwd), timeout=0.25)
-            if resolution is None and config.auto_add_projects:
-                config, resolution = resolve_or_auto_register(paths, Path(cwd), timeout=0.25)
-                registry = Registry(config)
-        except RegistryError as error:
-            # A resolution failure must never stop the daemon: one record from a deleted
-            # directory would otherwise kill it on every start and stall all records behind it.
-            if not Path(cwd).exists():
-                _log(
-                    paths,
-                    config,
-                    "WARNING",
-                    event="spool",
-                    decision="discarded",
-                    reason="unresolvable_cwd",
-                    error_type=error_code(error),
-                )
-                _discard(path)
-                activity = True
-            elif (event_id, "unresolvable_cwd") not in logged_unknown_checkouts:
-                # The directory exists, so the failure may be transient (a Git timeout):
-                # keep the record and retry on the next pass, logging it once.
-                logged_unknown_checkouts.add((event_id, "unresolvable_cwd"))
-                _log(
-                    paths,
-                    config,
-                    "WARNING",
-                    event="spool",
-                    decision="deferred",
-                    reason="unresolvable_cwd",
-                    error_type=error_code(error),
-                )
-            continue
-        if resolution is None:
-            _log(paths, config, "DEBUG", event="spool", decision="unregistered", event_id=event_id)
-            _discard(path)
-            activity = True
-            continue
-        project = next(item for item in config.projects if item.id == resolution.project_id)
+
+    for project_id, items in pending.items():
+        project = next(item for item in config.projects if item.id == project_id)
         limits = project.overrides.apply(config.defaults)
         try:
-            event = build_envelope(
-                payload,
-                resolution,
-                limits,
-                provider,
-                event_id=event_id,
-                received_at=received_at,
-            )
-            # Rendering is control evidence, independent of pipeline timing telemetry.
-            control_delivery = delivery.get("control")
-            if isinstance(control_delivery, dict):
-                received = control_delivery.get("response_received")
-                rendered = control_delivery.get("adapter_rendered")
-                action = control_delivery.get("requested_action")
-                if type(received) is bool and (rendered is None or type(rendered) is bool):
-                    bounded = {"response_received": received, "adapter_rendered": rendered}
-                    if isinstance(action, str) and action in {
-                        "allow",
-                        "deny",
-                        "ask",
-                        "rewrite",
-                        "context",
-                        "block",
-                    }:
-                        bounded["requested_action"] = action
-                    event = event.model_copy(update={"delivery": {"control": bounded}})
-            if config.pipeline_telemetry:
-                event = event.model_copy(
-                    update={
-                        "delivery": {
-                            key: value for key, value in delivery.items() if key != "control"
-                        }
-                        | event.delivery
-                        | {"spool_drained_at": datetime.now(UTC).isoformat()}
-                    }
+            store = stores.get(project_id)
+            if store is None:
+                store = owner.enter_context(
+                    Store(paths.project_data(project_id), project_id, limits=limits)
                 )
-            warn_unknown_fields(
-                paths,
-                config.defaults,
-                payload,
-                provider,
-                component="daemon",
-                event="spool",
-                project_id=project.id,
-                event_id=event_id,
-            )
-            admitted = _admit(paths, event, config)
-        except QuotaExceeded:
+                stores[project_id] = store
+                if maintenance_states is not None and project_id in maintenance_states:
+                    store.maintenance_state = maintenance_states[project_id]
+            store.maintenance_deadline = maintenance_deadline
+            store.maintenance_budget = maintenance_budget
+            if maintenance_states is not None:
+                maintenance_states[project_id] = store.maintenance_state
+            for start in range(0, len(items), batch_size):
+                chunk = items[start : start + batch_size]
+                lookup = {
+                    id(event): (payload, resolution) for _, event, payload, resolution in items
+                }
+
+                def absorb(_store=store, _project_id=project_id) -> None:
+                    if sessions is not None:
+                        sessions.absorb(str(_project_id), _store.touched)
+
+                def committed(
+                    event: Envelope,
+                    _lookup=lookup,
+                    _project_id=project_id,
+                    _store=store,
+                    _captured=captured_checkouts,
+                ) -> None:
+                    payload, resolution = _lookup[id(event)]
+                    if payload is not None and channel is not None:
+                        channel.observe(event.provider, payload, event.received_at)
+                    if (
+                        resolution is not None
+                        and event.checkout_id is not None
+                        and event.checkout_id not in _captured
+                    ):
+                        _captured.add(event.checkout_id)
+                        _capture_diff_snapshot(
+                            event.checkout_id,
+                            resolution.root,
+                            _project_id,
+                            paths,
+                            config,
+                            logged_unknown_checkouts,
+                            store=_store,
+                        )
+                    _log(
+                        paths,
+                        config,
+                        "DEBUG",
+                        event="spool",
+                        decision="admitted",
+                        project_id=_project_id,
+                        event_id=event.event_id,
+                    )
+
+                with control_lock(paths, timeout=0.1):
+                    if desired(paths).get("paused", False):
+                        return activity
+                queue.commit(
+                    store,
+                    [(path, event) for path, event, _, _ in chunk],
+                    result,
+                    on_commit=committed,
+                    after_commit=absorb,
+                )
+        except MaintenancePending:
             _log(
                 paths,
                 config,
-                "WARNING",
+                "DEBUG",
                 event="spool",
-                decision="discarded",
-                reason="quota",
-                project_id=project.id,
-                event_id=event_id,
+                decision="deferred",
+                reason="maintenance",
+                project_id=project_id,
             )
-            _discard(path)  # Inbox.publish already counted the project loss.
-            activity = True
-            continue
         except WriterBusy:
             _log(
                 paths,
@@ -1098,70 +1153,59 @@ def _drain_spool(
                 event="spool",
                 decision="retry",
                 reason="writer_busy",
-                project_id=project.id,
-                event_id=event_id,
+                project_id=project_id,
             )
-            continue  # Transient; retry on the next poll.
-        except (
-            ValidationError,
-            RejectedEvent,
-            StorageError,
-            ValueError,
-            KeyError,
-            TypeError,
-        ) as error:
-            resources.count_loss(paths.data, "invalid")
+        except QuotaExceeded:
+            if store is None:
+                for path, _, _, _ in items:
+                    resources.count_loss(paths.project_data(project_id), "quota")
+                    _discard(path)
+                activity = True
+                continue
+            # A later input may be an already committed replay and need no space.
+            # Revisit remaining records separately rather than dropping a whole window.
+            for path, remaining_event, _, _ in items:
+                if not path.exists():
+                    continue
+                try:
+                    queue.commit(
+                        store,
+                        [(path, remaining_event)],
+                        result,
+                        on_commit=committed,
+                        after_commit=absorb,
+                    )
+                except MaintenancePending:
+                    break
+                except QuotaExceeded:
+                    resources.count_loss(paths.project_data(project_id), "quota")
+                    _discard(path)
+                    activity = True
+                except (OSError, StorageError, sqlite3.Error):
+                    break
             _log(
                 paths,
                 config,
                 "WARNING",
                 event="spool",
                 decision="discarded",
-                reason="invalid",
+                reason="quota",
+                project_id=project_id,
+            )
+        except (OSError, StorageError, sqlite3.Error) as error:
+            _log(
+                paths,
+                config,
+                "WARNING",
+                event="spool",
+                decision="retry",
                 error_type=error_code(error),
                 detail=str(error),
-                project_id=project.id,
-                event_id=event_id,
+                project_id=project_id,
             )
-            _discard(path)
-            activity = True
-            continue
-        if not admitted and desired(paths).get("paused", False):
-            _log(
-                paths,
-                config,
-                "DEBUG",
-                event="spool",
-                decision="paused",
-                project_id=project.id,
-                event_id=event_id,
-            )
-            continue  # Keep the record for the next unpaused poll.
-        if admitted:
-            if channel is not None:
-                channel.observe(str(provider), payload, received_at)
-            _capture_diff_snapshot(
-                event.checkout_id,
-                resolution.root,
-                project.id,
-                paths,
-                config,
-                logged_unknown_checkouts,
-            )
-            _log(
-                paths,
-                config,
-                "DEBUG",
-                event="spool",
-                decision="admitted",
-                project_id=project.id,
-                event_id=event_id,
-            )
-        # Admitted, or the project was unregistered mid-drain: either way, drop it.
-        # A failed unlink replays the same event_id, which Store.put deduplicates.
-        _discard(path)
-        activity = True
-    return activity
+    return activity or bool(
+        result.inserted + result.duplicates + result.quarantined + result.discarded
+    )
 
 
 _POLICY_SCHEMA_VERSION = 2
@@ -1197,8 +1241,8 @@ def _record_control(
     """Record a selected action and whether its socket response was sent.
 
     Runs on a handler thread, so it never opens a ``Store`` (the poll thread
-    holds the writer lock); ``_admit`` publishes to the project inbox, which
-    ``_poll`` drains. The daemon cannot see whether the adapter rendered the
+    holds the writer lock); publication uses the same spool as provider hooks.
+    The daemon cannot see whether the adapter rendered the
     answer in time, so "delivered" means "sent". Recording failures are logged
     after the response attempt and never change the adapter's decision.
     """
@@ -1250,7 +1294,7 @@ def _record_control(
                 }
             },
         )
-        _admit(paths, envelope, config)
+        publish(paths, envelope, config=config, launch_daemon=False)
     except (ConfigError, ValidationError, StorageError, OSError) as error:
         _log(
             paths,
@@ -1289,22 +1333,26 @@ class _PolicyRequestHandler(socketserver.StreamRequestHandler):
 
     server: "_PolicyServer"
 
-    def _session(self, provider: str, hook_input: Mapping[str, object]) -> SessionState | None:
+    @staticmethod
+    def _session(
+        server: "_PolicyServer", provider: str, hook_input: Mapping[str, object]
+    ) -> SessionState | None:
         """The daemon's in-memory state of the calling agent; None until it is observed."""
         session_id, agent_id = hook_input.get("session_id"), hook_input.get("agent_id")
-        if self.server.watchdog_sessions is None or not isinstance(session_id, str):
+        if server.watchdog_sessions is None or not isinstance(session_id, str):
             return None
-        return self.server.watchdog_sessions.session(
+        return server.watchdog_sessions.session(
             provider, session_id, agent_id if isinstance(agent_id, str) else ""
         )
 
-    def _rule_failed(self, name: str, error: Exception) -> None:
+    @staticmethod
+    def _rule_failed(server: "_PolicyServer", name: str, error: Exception) -> None:
         """Log a rule's failure once per daemon lifetime; the other rules still answer."""
-        if name in self.server.watchdog_failed_rules:
+        if name in server.watchdog_failed_rules:
             return
-        self.server.watchdog_failed_rules.add(name)
+        server.watchdog_failed_rules.add(name)
         _log(
-            self.server.watchdog_paths,
+            server.watchdog_paths,
             None,
             "WARNING",
             event="control",
@@ -1319,13 +1367,24 @@ class _PolicyRequestHandler(socketserver.StreamRequestHandler):
             line = self.rfile.readline(self.server.watchdog_request_bytes)
         except OSError:
             return
+        self.answer(self.server, line, self._send_response)
+
+    def _send_response(self, payload: bytes) -> None:
+        self.wfile.write(payload)
+        # Recording the control event must never add to the adapter's wait.
+        self.connection.shutdown(socket.SHUT_WR)
+
+    @staticmethod
+    def answer(
+        server: "_PolicyServer", line: bytes, send_response: Callable[[bytes], None]
+    ) -> None:
         try:
             request = json.loads(line)
         except (UnicodeDecodeError, json.JSONDecodeError):
             return
         if not isinstance(request, dict) or request.get("schema_version") != _POLICY_SCHEMA_VERSION:
             return
-        if not secrets.compare_digest(str(request.get("token", "")), self.server.watchdog_token):
+        if not secrets.compare_digest(str(request.get("token", "")), server.watchdog_token):
             return
         provider, hook_input = request.get("provider"), request.get("input")
         if provider not in {"claude", "codex"} or not isinstance(hook_input, dict):
@@ -1334,8 +1393,8 @@ class _PolicyRequestHandler(socketserver.StreamRequestHandler):
             event_id = UUID(str(request.get("event_id")))
         except ValueError:
             return
-        self.server.watchdog_stats.request()
-        paths = self.server.watchdog_paths
+        server.watchdog_stats.request()
+        paths = server.watchdog_paths
         try:
             config = _config_cache.load(paths.config)
             decision = decide(
@@ -1343,8 +1402,10 @@ class _PolicyRequestHandler(socketserver.StreamRequestHandler):
                 config,
                 str(provider),
                 hook_input,
-                session=self._session(str(provider), hook_input),
-                on_error=self._rule_failed,
+                session=_PolicyRequestHandler._session(server, str(provider), hook_input),
+                on_error=lambda name, error: _PolicyRequestHandler._rule_failed(
+                    server, name, error
+                ),
                 codex_control_profile=request.get("codex_control_profile"),
             )
         except ConfigError:
@@ -1362,10 +1423,7 @@ class _PolicyRequestHandler(socketserver.StreamRequestHandler):
         selected_at = datetime.now(UTC).isoformat()
         response_sent_at = None
         try:
-            self.wfile.write(json.dumps(_decision_response(decision)).encode())
-            # The adapter reads to end-of-stream; signal it now so recording the
-            # control event below never adds to its wait.
-            self.connection.shutdown(socket.SHUT_WR)
+            send_response(json.dumps(_decision_response(decision)).encode())
             response_sent_at = datetime.now(UTC).isoformat()
         except OSError:
             pass  # Selection is still observable when the adapter disconnects.
@@ -1575,7 +1633,28 @@ def _policy_server(
         yield _Channel(paths)
         return
     try:
-        yield _Channel(paths, document, stats)
+        with ExitStack() as benchmark:
+            if os.environ.get("WATCHDOG_BENCHMARK_HTTP") == "1":
+                from agent_watchdog.benchmark_http import benchmark_http_server
+
+                try:
+                    benchmark.enter_context(
+                        benchmark_http_server(
+                            socket_path,
+                            document,
+                            lambda line, send: _PolicyRequestHandler.answer(server, line, send),
+                        )
+                    )
+                except OSError as error:
+                    _log(
+                        paths,
+                        None,
+                        "WARNING",
+                        event="lifecycle",
+                        decision="degraded",
+                        error_type=error_code(error),
+                    )
+            yield _Channel(paths, document, stats)
     finally:
         try:
             socket_path.unlink(missing_ok=True)
@@ -1699,6 +1778,10 @@ def _poll(
     instance_id = str(uuid4())
     delay = 0.25
     maintenance: dict[str, float] = {}
+    maintenance_states: dict[UUID, MaintenanceState] = {}
+    maintenance_cursor = 0
+    spool_maintenance_at = 0.0
+    spool_queue = Spool(paths.data)
     logged_enrichment_failures: set[tuple[str, str]] = set()
     logged_inert_enrichment: set[str] = set()
     logged_unknown_checkouts: set[tuple[UUID, str]] = set()
@@ -1722,6 +1805,9 @@ def _poll(
         errors = []
         transcript_failures: dict[str, list[str]] = {}
         activity = False
+        tick_owner = ExitStack()
+        stores: dict[UUID, Store] = {}
+        maintenance_budget = MaintenanceBudget(remaining=0.2)
         try:
             config = _config_cache.load(paths.config)
             try:
@@ -1745,34 +1831,38 @@ def _poll(
                     )
                     pass
             channel.sync(config)
-            if _drain_spool(
-                paths, config, logged_unknown_checkouts=logged_unknown_checkouts, channel=channel
-            ):
-                activity = True
-                progressed.add("spool")
             if _drain_controls(paths, config):
                 activity = True
-            for project in config.projects:
+            projects = [*config.projects, None]
+            offset = maintenance_cursor % len(projects)
+            projects = projects[offset:] + projects[:offset]
+            maintenance_cursor = (offset + 1) % len(projects)
+            for project in projects:
+                if project is None:
+                    if time.monotonic() >= spool_maintenance_at:
+                        unfinished = spool_queue.maintain(maintenance_budget)
+                        spool_maintenance_at = 0 if unfinished else time.monotonic() + 60
+                    continue
                 try:
                     root = paths.project_data(project.id)
                     limits = project.overrides.apply(config.defaults)
-                    with Store(root, project.id, limits=limits) as store:
+                    store = stores.get(project.id)
+                    if store is None:
+                        store = tick_owner.enter_context(Store(root, project.id, limits=limits))
+                        stores[project.id] = store
+                        if project.id in maintenance_states:
+                            store.maintenance_state = maintenance_states[project.id]
+                    store.maintenance_budget = maintenance_budget
+                    maintenance_states[project.id] = store.maintenance_state
+                    with nullcontext(store):
                         maintained = time.monotonic() >= maintenance.get(str(project.id), 0)
                         if maintained:
-                            store.maintain()
-                            maintenance[str(project.id)] = time.monotonic() + 60
+                            maintained_result = store.maintain()
+                            maintenance[str(project.id)] = (
+                                0 if maintained_result.pending else time.monotonic() + 60
+                            )
                         if maintained or not sessions.knows(str(project.id)):
                             sessions.load(str(project.id), store)
-                        result = Inbox(root, limits=limits).drain(
-                            store, pipeline_telemetry=config.pipeline_telemetry
-                        )
-                        if (
-                            result.inserted
-                            + result.duplicates
-                            + result.quarantined
-                            + result.discarded
-                        ):
-                            progressed.add(str(project.id))
                         try:
                             from agent_watchdog.transcripts import enrich, failure_code
 
@@ -1835,9 +1925,6 @@ def _poll(
                         )
                         if resources.available(root, limits) < 65536 and len(errors) < 32:
                             errors.append(str(project.id))
-                    activity |= bool(
-                        result.inserted + result.duplicates + result.quarantined + result.discarded
-                    )
                 except (OSError, StorageError, sqlite3.Error) as error:
                     if len(errors) < 32:
                         errors.append(str(project.id))
@@ -1851,6 +1938,20 @@ def _poll(
                         detail=str(error),
                         project_id=project.id,
                     )
+            if _drain_spool(
+                paths,
+                config,
+                logged_unknown_checkouts=logged_unknown_checkouts,
+                channel=channel,
+                sessions=sessions,
+                stores=stores,
+                owner=tick_owner,
+                maintenance_states=maintenance_states,
+                maintenance_budget=maintenance_budget,
+                spool=spool_queue,
+            ):
+                activity = True
+                progressed.add("spool")
         except ConfigError as error:
             errors.append("configuration")
             _log(
@@ -1862,6 +1963,19 @@ def _poll(
                 error_type=error_code(error),
                 detail=str(error),
             )
+        except (OSError, StorageError, sqlite3.Error) as error:
+            errors.append("pipeline")
+            _log(
+                paths,
+                config,
+                "WARNING",
+                event="poll",
+                decision="degraded",
+                error_type=error_code(error),
+                detail=str(error),
+            )
+        finally:
+            tick_owner.close()
         if time.monotonic() >= backlog_sample_at:
             try:
                 pending = (

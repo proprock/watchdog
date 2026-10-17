@@ -14,6 +14,7 @@ A local external observer, and through approved [rules](docs/rules.md) a control
 - Content is retained for 30 days and metrics/labels for 180 days by default. Retention is a disk-budget control, not a privacy control: set the day counts to 0 to keep data until the project quota needs space. Pinned sessions are not deleted automatically but count toward quotas.
 - Registered projects capture prompt/tool/assistant text by default; the local store keeps the raw provider input. Set `capture_content = false` globally or in project overrides to collect metadata only. The credential filter is a bounded pattern matcher applied to exports, not a guarantee that arbitrary secrets are detected; WD-115 moves it off the ingest path.
 - Hooks remain the observation path. WD-015 found no documented way for Codex App Server to take ownership of arbitrary running CLI or desktop sessions, so no App Server adapter was added.
+- All event producers use one durable schema 2 spool before the daemon commits to each project's SQLite Store. Native hooks publish raw inputs; developer hooks and daemon control events publish prepared envelopes. Queue files are acknowledged only after commit, preserving replay identity through a crash. See [storage and recovery](docs/storage.md#delivery-migration-and-recovery).
 
 ## Development
 

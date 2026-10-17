@@ -7,10 +7,9 @@ from pathlib import PurePath
 from statistics import median
 from typing import Any, Literal
 
-from agent_watchdog import inspection
 from agent_watchdog.config import Project, UserPaths
 from agent_watchdog.events import Envelope
-from agent_watchdog.insights import timeline
+from agent_watchdog.insights import timeline, window
 from agent_watchdog.insights.bundle import Draft, excerpt
 from agent_watchdog.insights.contract import OutputModel, RuleCandidate
 
@@ -159,9 +158,9 @@ def build(
     until: datetime | None,
 ) -> Draft:
     options = {"provider": provider, "session_id": session_id, "since": since, "until": until}
-    with inspection.database(paths, project) as db:
+    with window.database(paths, project) as db:
         series, counts = timeline.requests(db, **options)
-    _types, finishes = inspection.tool_finishes(paths, project, **options)
+    _types, finishes = window.tool_finishes(paths, project, **options)
     steps, unattributed = timeline.steps(series, finishes)
 
     attributed: dict[str, tuple[int, int]] = {}

@@ -548,7 +548,7 @@ def run_case(args, case):
         record["stages"]["persistence"] = {
             "accepted": readback.get("spooled", 0),
             "losses": [],
-            "evidence": "Native spool ingested via daemon _drain_spool and Store Inbox.drain",
+            "evidence": "Native spool ingested directly via daemon _drain_spool and Store",
         }
         delivery.update(
             expected=1,
@@ -571,7 +571,7 @@ def run_case(args, case):
             "spooled_patch_events": readback.get("spooled_patch_events", 0),
             "stored_control_events": readback.get("stored_controls", 0),
             "persisted_controls": persisted,
-            "ingestion": "in-process daemon _drain_spool and Store Inbox.drain",
+            "ingestion": "in-process daemon _drain_spool directly to Store",
         }
         if not (
             record["capabilities"][case.name]["observed_effect"] == "supported"

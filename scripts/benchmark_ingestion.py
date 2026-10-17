@@ -1,4 +1,4 @@
-"""Opt-in synthetic spool-to-SQLite benchmark; no provider or network calls."""
+"""Opt-in spool-to-SQLite benchmark with isolated loopback control requests; no providers."""
 
 from __future__ import annotations
 
@@ -7,11 +7,13 @@ import cProfile
 import json
 import platform
 import pstats
+import socket
 import sqlite3
 import tempfile
+import threading
 import time
-from collections.abc import Callable
-from contextlib import ExitStack, closing
+from collections.abc import Callable, Iterator
+from contextlib import ExitStack, closing, contextmanager
 from datetime import UTC, datetime
 from functools import wraps
 from pathlib import Path
@@ -20,9 +22,9 @@ from uuid import UUID, uuid4
 
 from agent_watchdog import resources
 from agent_watchdog.config import Config, Project, UserPaths, save_config
-from agent_watchdog.daemon import _drain_spool
+from agent_watchdog.daemon import _drain_spool, _policy_server
 from agent_watchdog.registry import Registry, discover
-from agent_watchdog.storage import Inbox, Store
+from agent_watchdog.storage import DrainResult, Store
 
 
 def _project_id(source_db: Path) -> UUID:
@@ -43,7 +45,8 @@ def _backup(source: Path, destination: Path) -> None:
 def _record(checkout: Path, index: int) -> dict:
     now = datetime.now(UTC).isoformat()
     return {
-        "schema_version": 1,
+        "schema_version": 2,
+        "record_type": "hook",
         "event_id": str(uuid4()),
         "received_at": now,
         "provider": "codex",
@@ -59,7 +62,9 @@ def _record(checkout: Path, index: int) -> dict:
     }
 
 
-def _timed[**P, R](target: Callable[P, R], label: str, costs: dict[str, float]) -> Callable[P, R]:
+def _timed[**P, R](
+    target: Callable[P, R], label: str, costs: dict[str, float], counts: dict[str, int]
+) -> Callable[P, R]:
     @wraps(target)
     def invoke(*args: P.args, **kwargs: P.kwargs) -> R:
         started = time.perf_counter()
@@ -67,8 +72,104 @@ def _timed[**P, R](target: Callable[P, R], label: str, costs: dict[str, float]) 
             return target(*args, **kwargs)
         finally:
             costs[label] = costs.get(label, 0.0) + time.perf_counter() - started
+            counts[label] = counts.get(label, 0) + 1
 
     return invoke
+
+
+def _control_request(discovery: dict, checkout: Path) -> None:
+    request = {
+        "schema_version": 2,
+        "token": discovery["token"],
+        "provider": "claude",
+        "event_id": str(uuid4()),
+        "input": {
+            "cwd": str(checkout),
+            "session_id": "benchmark-control",
+            "hook_event_name": "PreToolUse",
+            "tool_name": "Bash",
+            "tool_input": {"command": "printf benchmark-control"},
+        },
+    }
+    deadline = time.monotonic() + 0.3
+    with socket.create_connection(("127.0.0.1", discovery["port"]), timeout=0.3) as connection:
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            raise TimeoutError("Control request exceeded its budget")
+        connection.settimeout(remaining)
+        connection.sendall((json.dumps(request) + "\n").encode())
+        connection.shutdown(socket.SHUT_WR)
+        chunks = bytearray()
+        while len(chunks) < 65536:
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                raise TimeoutError("Control request exceeded its budget")
+            connection.settimeout(remaining)
+            chunk = connection.recv(4096)
+            if not chunk:
+                break
+            chunks.extend(chunk)
+    response = json.loads(chunks)
+    if response.get("schema_version") != 2 or response.get("action") != "allow":
+        raise ValueError("Unexpected benchmark control decision")
+
+
+def _percentile(samples: list[float], fraction: float) -> float | None:
+    if not samples:
+        return None
+    ordered = sorted(samples)
+    index = (len(ordered) - 1) * fraction
+    low = int(index)
+    high = min(low + 1, len(ordered) - 1)
+    return ordered[low] + (ordered[high] - ordered[low]) * (index - low)
+
+
+@contextmanager
+def _control_probe(paths: UserPaths, checkout: Path, *, enabled: bool) -> Iterator[dict | None]:
+    if not enabled:
+        yield None
+        return
+    samples: list[float] = []
+    errors: dict[str, int] = {}
+    lock = threading.Lock()
+    report = {"clients": 4, "rate_per_client_hz": 5, "budget_ms": 300}
+    stop = threading.Event()
+    ready = threading.Barrier(5)
+    with _policy_server(paths):
+        discovery = json.loads((paths.data / "policy" / "socket.json").read_bytes())
+
+        def client() -> None:
+            ready.wait()
+            while not stop.is_set():
+                started = time.perf_counter()
+                try:
+                    _control_request(discovery, checkout)
+                except (OSError, ValueError, KeyError) as error:
+                    name = type(error).__name__
+                    with lock:
+                        errors[name] = errors.get(name, 0) + 1
+                else:
+                    with lock:
+                        samples.append((time.perf_counter() - started) * 1000)
+                stop.wait(max(0.0, 0.2 - (time.perf_counter() - started)))
+
+        threads = [threading.Thread(target=client, daemon=True) for _ in range(4)]
+        for thread in threads:
+            thread.start()
+        ready.wait()
+        try:
+            yield report
+        finally:
+            stop.set()
+            for thread in threads:
+                thread.join(timeout=0.5)
+    report.update(
+        samples=len(samples),
+        p50_ms=_percentile(samples, 0.5),
+        p95_ms=_percentile(samples, 0.95),
+        errors=sum(errors.values()),
+        error_counts=errors,
+    )
 
 
 def _profile_stages(profiles: list[tuple[str, cProfile.Profile]]) -> dict[str, float | None]:
@@ -104,6 +205,8 @@ def _run_copy(
     batch_size: int,
     *,
     profile_stages: bool,
+    records: list[dict] | None = None,
+    measure_control: bool = False,
 ) -> dict:
     project_id = _project_id(source_db)
     data = parent / "state"
@@ -120,120 +223,98 @@ def _run_copy(
     _backup(source_db, root / "events.sqlite3")
     spool = data / "spool"
     spool.mkdir(parents=True)
-    for index in range(events):
-        (spool / f"{index:08d}.json").write_text(
-            json.dumps(_record(project_root, index)), encoding="utf-8"
-        )
-    inbox = Inbox(root)
+    records = (
+        records
+        if records is not None
+        else [_record(project_root, index) for index in range(events)]
+    )
+    for index, record in enumerate(records[:events]):
+        (spool / f"{index:08d}.json").write_text(json.dumps(record), encoding="utf-8")
     costs: dict[str, float] = {}
+    counts: dict[str, int] = {}
     commit_calls: list[float] = []
     insert_calls: list[float] = []
-    profiles: list[tuple[str, cProfile.Profile]] = []
-    patches = ExitStack()
-    if profile_stages:
-        registry_resolve = Registry.resolve
-        publish = Inbox.publish
-        store_put = Store.put
-        import agent_watchdog.daemon as daemon
-        import agent_watchdog.hooks as hooks
-
-        capture_fn = daemon._capture_diff_snapshot
-        build_envelope = hooks.build_envelope
-        patches.enter_context(
-            patch.object(
-                Registry, "resolve", _timed(registry_resolve, "registry_resolution", costs)
-            )
-        )
-        patches.enter_context(
-            patch.object(Inbox, "publish", _timed(publish, "inbox_publication", costs))
-        )
-        patches.enter_context(patch.object(Store, "put", _timed(store_put, "store_put", costs)))
-        patches.enter_context(
-            patch.object(
-                daemon,
-                "_capture_diff_snapshot",
-                _timed(capture_fn, "checkout_fingerprint", costs),
-            )
-        )
-        patches.enter_context(
-            patch.object(hooks, "build_envelope", _timed(build_envelope, "envelope_build", costs))
-        )
-        original_connect = sqlite3.connect
-
-        class ProfiledConnection(sqlite3.Connection):
-            def execute(self, sql, parameters=(), /):
-                started_at = time.perf_counter()
-                try:
-                    return super().execute(sql, parameters)
-                finally:
-                    elapsed = time.perf_counter() - started_at
-                    statement = sql.strip().upper()
-                    if statement == "COMMIT":
-                        commit_calls.append(elapsed)
-                    elif statement.startswith("INSERT"):
-                        insert_calls.append(elapsed)
-
-        def profiled_connect(*args, **kwargs):
-            kwargs["factory"] = ProfiledConnection
-            return original_connect(*args, **kwargs)
-
-        patches.enter_context(patch.object(sqlite3, "connect", profiled_connect))
-        patches.enter_context(
-            patch.object(
-                resources,
-                "available",
-                _timed(resources.available, "quota_availability_scan", costs),
-            )
-        )
-    try:
-        spool_profile = cProfile.Profile() if profile_stages else None
-        inbox_profile = cProfile.Profile() if profile_stages else None
-        spool_seconds = inbox_seconds = 0.0
-        inserted = duplicates = 0
-        # Match the daemon's per-project reader windows. Staging the entire
-        # backlog first artificially inflates every publisher's quota scan.
-        while inserted + duplicates < events:
-            if spool_profile is not None:
-                spool_profile.enable()
-            started = time.perf_counter()
-            activity = _drain_spool(paths, config, limit=100)
-            spool_seconds += time.perf_counter() - started
-            if spool_profile is not None:
-                spool_profile.disable()
-            if inbox_profile is not None:
-                inbox_profile.enable()
-            started = time.perf_counter()
-            with Store(root, project_id) as store:
-                drained = inbox.drain(store, batch_size=batch_size)
-            inbox_seconds += time.perf_counter() - started
-            if inbox_profile is not None:
-                inbox_profile.disable()
-            inserted += drained.inserted
-            duplicates += drained.duplicates
-            if not activity and drained.inserted + drained.duplicates == 0:
-                raise RuntimeError("Ingestion stalled before every synthetic event was stored")
-        if spool_profile is not None and inbox_profile is not None:
-            profiles.extend((("spool_phase", spool_profile), ("inbox_phase", inbox_profile)))
-    finally:
+    profile = cProfile.Profile() if profile_stages else None
+    stats = DrainResult()
+    with ExitStack() as scope:
         if profile_stages:
-            patches.close()
-    if profile_stages:
-        stage_profile = _profile_stages(profiles)
+            import agent_watchdog.daemon as daemon
+            import agent_watchdog.hooks as hooks
+
+            targets = (
+                (Registry, "resolve", "registry_resolution"),
+                (Store, "put", "store_put"),
+                (Store, "__enter__", "store_open"),
+                (daemon, "_capture_diff_snapshot", "checkout_fingerprint"),
+                (hooks, "build_envelope", "envelope_build"),
+                (resources, "available", "quota_availability_scan"),
+            )
+            for owner, attribute, label in targets:
+                scope.enter_context(
+                    patch.object(
+                        owner, attribute, _timed(getattr(owner, attribute), label, costs, counts)
+                    )
+                )
+            original_connect = sqlite3.connect
+
+            class ProfiledConnection(sqlite3.Connection):
+                def execute(self, sql, parameters=(), /):
+                    started_at = time.perf_counter()
+                    try:
+                        return super().execute(sql, parameters)
+                    finally:
+                        elapsed = time.perf_counter() - started_at
+                        statement = sql.strip().upper()
+                        if statement == "COMMIT":
+                            commit_calls.append(elapsed)
+                        elif statement.startswith("INSERT"):
+                            insert_calls.append(elapsed)
+
+            def profiled_connect(*args, **kwargs):
+                kwargs["factory"] = ProfiledConnection
+                return original_connect(*args, **kwargs)
+
+            scope.enter_context(patch.object(sqlite3, "connect", profiled_connect))
+        control = scope.enter_context(_control_probe(paths, project_root, enabled=measure_control))
+        if profile is not None:
+            profile.enable()
+        started = time.perf_counter()
+        try:
+            while stats.inserted + stats.duplicates < events:
+                before = stats.inserted + stats.duplicates
+                activity = _drain_spool(
+                    paths, config, limit=100, batch_size=batch_size, stats=stats
+                )
+                if stats.quarantined or stats.discarded:
+                    raise RuntimeError("Synthetic records were rejected during ingestion")
+                if not activity or stats.inserted + stats.duplicates == before:
+                    raise RuntimeError("Ingestion stalled before every synthetic event was stored")
+        finally:
+            seconds = time.perf_counter() - started
+            if profile is not None:
+                profile.disable()
+    if profile is not None:
+        stage_profile = _profile_stages([("direct_drain", profile)])
         stage_profile.update(costs)
         stage_profile["sqlite_commit_including_sync"] = sum(commit_calls)
         stage_profile["sqlite_insert_execution"] = sum(insert_calls)
+        counts["sqlite_commit"] = len(commit_calls)
+        counts["sqlite_insert"] = len(insert_calls)
     else:
         stage_profile = None
     return {
         "batch_size": batch_size,
         "events_requested": events,
-        "events_inserted": inserted,
-        "duplicates": duplicates,
-        "spool_seconds": spool_seconds,
-        "inbox_drain_seconds": inbox_seconds,
-        "total_seconds": spool_seconds + inbox_seconds,
-        "events_per_minute": events / (spool_seconds + inbox_seconds) * 60,
+        "events_inserted": stats.inserted,
+        "duplicates": stats.duplicates,
+        "quarantined": stats.quarantined,
+        "discarded": stats.discarded,
+        "spool_seconds": seconds,
+        "total_seconds": seconds,
+        "events_per_minute": events / seconds * 60,
         "stage_profile_seconds": stage_profile,
+        "stage_counts": counts if profile_stages else None,
+        "control_latency": control,
     }
 
 
@@ -243,6 +324,8 @@ def run_benchmark(
     work_dir: Path,
     events: int,
     profile_events: int | None = None,
+    *,
+    measure_control: bool = True,
 ) -> dict:
     if events <= 0:
         raise ValueError("Event count must be positive")
@@ -262,9 +345,12 @@ def run_benchmark(
         with closing(sqlite3.connect(f"file:{seed.as_posix()}?mode=ro", uri=True)) as db:
             seed_event_count = db.execute("SELECT COUNT(*) FROM events").fetchone()[0]
         results = []
-        for label, batch_size in (("baseline", 1), ("batch", 25)):
+        records = [_record(checkout, index) for index in range(events)]
+        for batch_size in (1, 25, 50, 100):
             runs = {}
-            with tempfile.TemporaryDirectory(prefix=f"{label}-", dir=work_dir) as temporary:
+            with tempfile.TemporaryDirectory(
+                prefix=f"batch-{batch_size}-", dir=work_dir
+            ) as temporary:
                 runs["throughput"] = _run_copy(
                     seed,
                     checkout,
@@ -272,6 +358,8 @@ def run_benchmark(
                     events,
                     batch_size,
                     profile_stages=False,
+                    records=records,
+                    measure_control=measure_control,
                 )
                 runs["stage_profile"] = _run_copy(
                     seed,
@@ -280,6 +368,7 @@ def run_benchmark(
                     profile_events,
                     batch_size,
                     profile_stages=True,
+                    records=records,
                 )
             if runs["throughput"]["events_inserted"] != events:
                 raise RuntimeError("Synthetic throughput run did not insert every event")
@@ -293,14 +382,16 @@ def run_benchmark(
                     "events_inserted": events,
                     "events_profiled": profile_events,
                     "duplicates": throughput["duplicates"],
+                    "quarantined": throughput["quarantined"],
+                    "discarded": throughput["discarded"],
                     "spool_seconds": throughput["spool_seconds"],
-                    "inbox_seconds": throughput["inbox_drain_seconds"],
                     "total_seconds": throughput["total_seconds"],
                     "events_per_minute": throughput["events_per_minute"],
                     "profile_spool_seconds": runs["stage_profile"]["spool_seconds"],
-                    "profile_inbox_seconds": runs["stage_profile"]["inbox_drain_seconds"],
                     "profile_total_seconds": runs["stage_profile"]["total_seconds"],
                     "stage_profile": runs["stage_profile"]["stage_profile_seconds"],
+                    "stage_counts": runs["stage_profile"]["stage_counts"],
+                    "control_latency": throughput["control_latency"],
                 }
             )
     return {
@@ -316,7 +407,8 @@ def run_benchmark(
         "profiling_note": (
             "Throughput is unprofiled. Stage timing uses separate identical copies; "
             "COMMIT timings include SQLite sync work. File read calls are measured per phase, "
-            "including ancillary reads in that phase."
+            "including ancillary reads in that phase. Control latency uses four bounded-rate "
+            "authenticated loopback clients during unprofiled ingestion only."
         ),
         "results": results,
     }
@@ -341,6 +433,11 @@ def main() -> None:
     parser.add_argument("--work-dir", type=Path, default=Path("tests/local/wd172"))
     parser.add_argument("--events", type=int, default=2000)
     parser.add_argument(
+        "--no-control-latency",
+        action="store_true",
+        help="Disable concurrent loopback decision requests",
+    )
+    parser.add_argument(
         "--profile-events",
         type=int,
         help="Instrument this many records per batch size (default: min(--events, 200))",
@@ -353,6 +450,7 @@ def main() -> None:
             args.work_dir,
             args.events,
             args.profile_events,
+            measure_control=not args.no_control_latency,
         )
     except (OSError, ValueError, sqlite3.Error, RuntimeError):
         parser.error("Benchmark failed; source paths and data are withheld from output")

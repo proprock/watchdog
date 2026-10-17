@@ -1,4 +1,4 @@
-"""Durable, bounded inbox batches (WD-172)."""
+"""Durable, bounded spool batches (WD-172)."""
 
 import sqlite3
 import subprocess
@@ -8,15 +8,16 @@ from pathlib import Path
 from uuid import uuid4
 
 import pytest
+from helpers.spool import PreparedQueue as Spool
 from test_execution_state import KEY, PROJECT, edit, event, replay, terminal
 
 from agent_watchdog.events import Envelope
-from agent_watchdog.storage import Inbox, QuotaExceeded, Store
+from agent_watchdog.storage import MaintenanceResult, QuotaExceeded, Store
 
 
 def publish(root, count):
     project = uuid4()
-    inbox = Inbox(root)
+    inbox = Spool(root)
     events = [
         Envelope(
             provider="codex",
@@ -121,7 +122,7 @@ def test_real_quota_failure_never_acknowledges_uncommitted_input(tmp_path, monke
     project, inbox, _ = publish(tmp_path, 3)
     with Store(tmp_path, project) as store:
         monkeypatch.setattr("agent_watchdog.storage.resources.available", lambda *args: 0)
-        monkeypatch.setattr(store, "_maintain", lambda *args: None)
+        monkeypatch.setattr(store, "_maintain", lambda *args: MaintenanceResult(False, True, False))
         with pytest.raises(QuotaExceeded):
             inbox.drain(store)
         assert store.events() == []
@@ -137,14 +138,14 @@ def test_batch_projection_matches_causal_replay_and_reopen(tmp_path):
         event(4, kind="turn.start", turn="next"),
         edit(5, turn="next"),
     ]
-    inbox = Inbox(tmp_path)
+    inbox = Spool(tmp_path)
     for item in events:
         inbox.publish(item)
     # A replay and a UUID conflict in the same transaction must not affect state.
     inbox.publish(events[0])
     inbox.publish(events[0].model_copy(update={"kind": "interrupt"}))
     with Store(tmp_path, PROJECT) as store:
-        # Inbox filenames are random: establish the authoritative receipt before
+        # Spool filenames are random: establish the authoritative receipt before
         # testing replays and conflicts, rather than assuming directory order.
         store.put(events[0])
         result = inbox.drain(store)

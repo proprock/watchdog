@@ -1,0 +1,52 @@
+{
+  "previous_confirmation": {
+    "batch_size": 100,
+    "events_requested": 2000,
+    "events_inserted": 2000,
+    "duplicates": 0,
+    "quarantined": 0,
+    "discarded": 0,
+    "spool_seconds": 27.386291600007098,
+    "total_seconds": 27.386291600007098,
+    "events_per_minute": 4381.754264238131,
+    "stage_profile_seconds": null,
+    "stage_counts": null,
+    "control_latency": {
+      "clients": 4,
+      "rate_per_client_hz": 5,
+      "budget_ms": 300,
+      "samples": 536,
+      "p50_ms": 3.2430500141344965,
+      "p95_ms": 126.77967499621445,
+      "errors": 0,
+      "error_counts": {}
+    }
+  },
+  "default_batch": 100,
+  "seed_sha256": "34bace00ab9dce749e8a90f878e3553001e72d2251f263eaa92b7188e6c66d35",
+  "run": {
+    "batch_size": 100,
+    "events_requested": 2000,
+    "events_inserted": 2000,
+    "duplicates": 0,
+    "quarantined": 0,
+    "discarded": 0,
+    "spool_seconds": 28.79007110002567,
+    "total_seconds": 28.79007110002567,
+    "events_per_minute": 4168.103634863653,
+    "stage_profile_seconds": null,
+    "stage_counts": null,
+    "control_latency": {
+      "clients": 4,
+      "rate_per_client_hz": 5,
+      "budget_ms": 300,
+      "samples": 550,
+      "p50_ms": 4.273899990948848,
+      "p95_ms": 163.47206500067816,
+      "errors": 2,
+      "error_counts": {
+        "TimeoutError": 2
+      }
+    }
+  }
+}

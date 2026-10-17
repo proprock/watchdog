@@ -1,4 +1,4 @@
-"""Crash only this test-owned process at a real SQLite/inbox boundary."""
+"""Crash only this test-owned process at a real SQLite/spool boundary."""
 
 import os
 import sqlite3
@@ -7,7 +7,9 @@ from pathlib import Path
 from unittest.mock import patch
 from uuid import UUID
 
-from agent_watchdog.storage import Inbox, Store
+from helpers.spool import PreparedQueue as Spool
+
+from agent_watchdog.storage import Store
 
 
 def main() -> None:
@@ -35,12 +37,12 @@ def main() -> None:
             original = Path.unlink
 
             def crash_at_ack(self: Path, missing_ok: bool = False) -> None:
-                if self.parent.name == "inbox" and self.suffix == ".json":
+                if self.parent.name == "spool" and self.suffix == ".json":
                     os._exit(91)
                 original(self, missing_ok=missing_ok)
 
             Path.unlink = crash_at_ack
-        Inbox(Path(root)).drain(store)
+        Spool(Path(root)).drain(store)
     raise RuntimeError("Expected crash boundary was not reached")
 
 

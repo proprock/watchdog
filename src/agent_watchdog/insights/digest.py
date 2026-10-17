@@ -11,6 +11,7 @@ from agent_watchdog.insights import (
     permissions,
     subagents,
     tokens,
+    window,
     workflow,
 )
 from agent_watchdog.insights.bundle import Draft
@@ -98,7 +99,6 @@ def build(
     until: datetime | None,
 ) -> Draft:
     """Run each mode's own builder; facts and coverage are keyed by mode, items are tagged."""
-    # Every builder reads its own snapshot, so a shared upper bound keeps them on one window.
     options = {
         "provider": provider,
         "session_id": session_id,
@@ -108,11 +108,12 @@ def build(
     facts: dict[str, Any] = {}
     coverage: dict[str, Any] = {}
     items: list[dict[str, Any]] = []
-    for name, module in MODULES.items():
-        draft = module.build(paths, project, **options)
-        facts[name] = draft.facts
-        coverage[name] = draft.coverage
-        items += [{"mode": name} | item for item in draft.items]
+    with window.database(paths, project):
+        for name, module in MODULES.items():
+            draft = module.build(paths, project, **options)
+            facts[name] = draft.facts
+            coverage[name] = draft.coverage
+            items += [{"mode": name} | item for item in draft.items]
     return Draft(facts=facts, coverage=coverage, items=items)
 
 
@@ -147,8 +148,8 @@ def fit(draft: Draft, *, mode: str, window: dict[str, Any], max_tokens: int) -> 
             "modes": coverage,
             "truncated": {"items": dropped, "bytes": dropped_bytes},
             "notes": [
-                "Each mode was built from its own read-only snapshot up to one shared upper "
-                "bound, then fitted into its fixed share of the budget; a mode's unused share "
+                "All modes were built from one read-only snapshot, then fitted into their "
+                "fixed shares of the budget; a mode's unused share "
                 "is not given to another.",
                 "A mode without items observed nothing to report; unknown is not zero.",
             ],

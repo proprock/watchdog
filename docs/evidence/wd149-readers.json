@@ -1,0 +1,60 @@
+{
+  "method": "Provider-free digest on independent copies of the ingestion seed, fixed 2026-10-11..18 UTC window. Digest wall time unprofiled; parse/open/normalization counts from a separate cProfile pass. Retention fixture is synthetic; its elapsed times are profiled and cleanup excludes fixture creation.",
+  "baseline": {
+    "digest": {
+      "seconds": 32.40648949999013,
+      "database_opens": 10,
+      "envelope_parses": 168538,
+      "normalizations": 9,
+      "items": 250,
+      "result_sha256_excluding_notes": "e3a5b7a0aca335a8bc62ba587ff0a09c5661f0f19a3e7f93999b83f85a85312a"
+    },
+    "maintenance": {
+      "fixture_events": 12000,
+      "expired_metrics": 1000,
+      "expired_content": 1000,
+      "recent": 10000,
+      "retained": 11000,
+      "envelope_parses": 13000,
+      "profiled_total_seconds": 0.673590200021863,
+      "slices": 1,
+      "max_slice_seconds": 0.673590200021863,
+      "commits": 1
+    }
+  },
+  "current": {
+    "digest": {
+      "seconds": 5.794180299999425,
+      "database_opens": 1,
+      "envelope_parses": 36968,
+      "normalizations": 1,
+      "items": 250,
+      "result_sha256_excluding_notes": "e3a5b7a0aca335a8bc62ba587ff0a09c5661f0f19a3e7f93999b83f85a85312a"
+    },
+    "maintenance": {
+      "fixture_events": 12000,
+      "expired_metrics": 1000,
+      "expired_content": 1000,
+      "recent": 10000,
+      "retained": 11000,
+      "envelope_parses": 1000,
+      "profiled_total_seconds": 0.5503318999544717,
+      "slices": 3,
+      "max_slice_seconds": 0.1989655999932438,
+      "commits": 69
+    }
+  },
+  "initial_current_maintenance": {
+    "fixture_events": 12000,
+    "expired_metrics": 1000,
+    "expired_content": 1000,
+    "recent": 10000,
+    "retained": 11000,
+    "envelope_parses": 1000,
+    "profiled_total_seconds": 1.408253399975365,
+    "slices": 7,
+    "max_slice_seconds": 0.20351009999285452,
+    "commits": 1037
+  },
+  "digest_equal_excluding_notes": true
+}

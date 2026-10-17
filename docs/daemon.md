@@ -14,13 +14,13 @@ agent-watchdog daemon run
 
 `start` clears persistent pause and starts a detached process when necessary.
 `stop` and its synonym `pause` persist pause and wait for cooperative shutdown.
-Already admitted batches can finish; pending inbox files survive for a later start.
+Already admitted batches can finish; pending spool files survive for a later start.
 `run` runs in the foreground and respects pause; Ctrl+C exits without setting pause.
 A crash does not pause collection. `start` and `stop` wait up to ten seconds for
 the requested state after acquiring the control lock, returning a nonzero exit
 code on timeout. They never signal a PID. `status` returns a JSON snapshot without
-starting the core. It also returns an on-demand spool and per-project inbox
-file/byte occupancy snapshot with their limits; this does not add polling work.
+starting the core. It also returns an on-demand shared-spool file/byte occupancy
+snapshot with its limits; this does not add polling work.
 Competing commands use the latest committed desired state.
 
 Use `--home <directory>` before `daemon` to isolate configuration, data, and runtime
@@ -40,10 +40,12 @@ Without overrides, locations come from platformdirs. No login service is install
   changes, and event admission. Ordinary callers wait at most five seconds for
   this lock; adapter entry points wait at most 100 ms. This is a lock-wait bound,
   not a measured whole-hook latency guarantee.
-- `data/control.json` is a versioned, atomically replaced single-slot control inbox:
+- `data/control.json` is a versioned, atomically replaced single-slot desired-state file:
   a request ID and desired pause state. It is durable across runtime-directory
   cleanup. A later command supersedes the previous request; no unbounded request
   or acknowledgment history is retained.
+  This desired-state file and the bounded command request files are controls,
+  not event Inboxes; WD-149 leaves their request/acknowledgment mechanism intact.
 - `runtime/status.json` contains an instance UUID, diagnostic PID, heartbeat,
   acknowledged request ID, and up to 32 project error IDs. Start acknowledgment is
   published by the core; stop completion is the persistent pause plus released
@@ -106,7 +108,8 @@ Without overrides, locations come from platformdirs. No login service is install
   deadline expired first, the event still exists although the model never saw
   the action. If the adapter's spool write then fails (quota or I/O), the
   `evidence_ids` entry points at a hook event that was never stored. The event
-  is published to the project inbox from the handler thread (never through a
+  is published as a prepared envelope to the shared schema 2 spool from the
+  handler thread (never through a
   `Store`, which the poll thread owns) and recording failures are only logged;
   the answer has already been sent. Like `observation.gap`, a `control` event
   is an ordinary stored event: it counts in per-session and per-project event
@@ -153,8 +156,8 @@ are best effort and never prevent collection. Status inspection does not launch 
 daemon or write health evidence. After the startup window expires, a dead daemon
 without other degradation evidence returns `unavailable`.
 
-The poll loop samples spool and the first 32 project inboxes at most once every ten
-seconds. `backlog` retains each nonempty queue's file count, first observation
+The poll loop samples the shared spool at most once every ten seconds.
+`backlog` retains its nonempty queue's file count, first observation
 without progress and sample count; `health.stalled_queues` names affected queues.
 A smaller queue or a successful drain resets its timer independently of traffic
 in other queues. Empty queues never count as stalled. A single status call can
@@ -171,9 +174,16 @@ queues and a current heartbeat stays `running` regardless of its last event's ag
 
 The core disconnects standard streams and uses a detached Windows process or a
 new POSIX session. Its working directory is the data directory, so it does not
-keep the launching checkout or temporary working directory open. It polls in
-batches of at most 100 deliveries per registered project, starting at 250 ms and
-backing off to two seconds when idle. Project writers close between batches.
+keep the launching checkout or temporary working directory open. It polls a
+bounded window of schema 2 spool records, starting at 250 ms and backing off to
+two seconds when idle. Raw hooks are resolved and prepared envelopes validated,
+then committed directly through one Store per project per tick. Writers are
+reused across that tick's bounded batches; the default batch size of 100 was
+selected by the [WD-149 measurement](evidence/wd149.md). Queue files are removed only after commit.
+One cooperative 200 ms maintenance allowance is shared across project writers;
+round-robin scheduling and phase/cursor state preserve progress across Store
+opens. Pending maintenance or temporary quota pressure defers queued work without
+counting a loss. WAL and synchronous FULL durability remain unchanged.
 One unavailable project is reported and retried without blocking other projects.
 Configuration is reread each iteration. Status snapshots replace one file instead
 of producing an unbounded process log. Large project counts and idle overhead
@@ -212,14 +222,30 @@ bounded, credential-redacted local-detail policy as other caught exceptions.
 lock, applies the callback, and atomically saves it. The callback must not acquire
 that lock again. Existing low-level `save_config` remains a caller-coordinated API.
 
-`enqueue(paths, envelope)` checks pause and the registered project ID under the
+`publish(paths, envelope)` checks pause and the registered project ID under the
 same lock, publishes the event with the configured payload cap, and ensures a
 daemon launch without waiting for readiness. It returns false for paused or
 unregistered input. `start(paths, explicit=False)` ensures crash recovery without
 clearing pause. Errors propagate to the fail-open hook adapter; these are
-internal library entry points, not a provider hook protocol. They do not redact
-content yet. Low-level `Inbox.publish` deliberately bypasses admission controls
-and is reserved for storage tests and controlled replay.
+internal library entry points, not a provider hook protocol. Prepared envelopes
+join native raw-hook records in the same schema 2 spool; there is no runtime
+Inbox API or legacy queue reader. Both paths use the ordinary daemon-start and
+readiness mechanism. Ingest preserves raw content subject to capture and limits.
+
+## Synthetic HTTP transport experiment
+
+The `--benchmark-http` flag on `scripts/benchmark_hooks.py` opts into a direct
+loopback HTTP experiment in scratch state. It requires a native
+`--adapter-executable` and a subscribed synthetic `--event` such as `PreToolUse`.
+The script passes `WATCHDOG_BENCHMARK_HTTP=1` only to its child
+daemon and hooks. The daemon publishes `policy/benchmark-http.json` for that
+lifetime and removes it on exit. HTTP and the installed TCP path invoke the
+same request authentication, schema checks, evaluator, session tracker, response
+rendering, and control recording; HTTP adds no forwarding socket. Native hooks
+retain their request deadline, fail-open behavior, and unconditional spooling.
+The installer and user configuration expose no HTTP transport setting. Benchmark
+outputs describe synthetic process latency, decision requests, errors, and
+delivery completeness; they are not live-provider acceptance evidence.
 
 ## Windows lifecycle evidence
 

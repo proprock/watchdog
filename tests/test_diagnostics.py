@@ -90,6 +90,26 @@ def test_acknowledged_and_unavailable_decisions_reach_the_log(tmp_path):
     assert "event=enrichment decision=unavailable error_type=transcript_sources_unavailable" in body
 
 
+def test_new_internal_identifiers_are_accepted_but_unsafe_identifiers_are_dropped(tmp_path):
+    limits = Limits(log_level="DEBUG")
+    emit(
+        tmp_path,
+        limits,
+        "INFO",
+        component="scheduler_v2",
+        event="snapshot_refresh",
+        decision="queued_again",
+        reason="index_stale",
+        provider="future_agent",
+    )
+    emit(tmp_path, limits, "INFO", component="daemon", event="bad event")
+
+    body = (tmp_path / "watchdog.log").read_text()
+    assert "component=scheduler_v2 event=snapshot_refresh decision=queued_again" in body
+    assert "reason=index_stale provider=future_agent" in body
+    assert "bad event" not in body
+
+
 def test_error_type_accepts_internal_codes_but_rejects_free_text(tmp_path):
     limits = Limits(log_level="DEBUG")
     emit(

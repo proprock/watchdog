@@ -1,5 +1,18 @@
 # Foundation verification
 
+## WD-149 unified event queue (2026-10-17, Windows, Python 3.12.13)
+
+Native, dev, and control observations now share schema 2 spool publication and
+one direct Store drain; the runtime Inbox mechanism is removed. The selected
+batch is 100. A final independent 2,000-event drain took 28.79 s versus 127.44 s
+at the baseline (4.43x); concurrent control p95 was 163.47 ms, with two fail-open
+timeouts among 552 requests. Provider-free digest construction improved from
+32.41 s to 5.79 s with equivalent results. Maintenance parses 1,000 cutoff
+content records instead of 13,000 envelopes and shares one cooperative 200 ms
+allowance across projects. HTTP remains benchmark-only and showed no warm
+latency improvement. Methods, variability, correctness checks, and the external
+live migration are recorded in [WD-149 evidence](evidence/wd149.md).
+
 ## WD-172 ingestion throughput (2026-10-16, Windows, Python 3.12.13)
 
 Result: 2,000 synthetic Codex tool events drain **4.74x faster**, from 579.94 s

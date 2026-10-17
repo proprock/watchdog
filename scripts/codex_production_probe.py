@@ -16,7 +16,7 @@ import tomli_w
 from agent_watchdog.config import Rules, UserPaths, load_config, save_config
 from agent_watchdog.daemon import _drain_spool, mutate_registry
 from agent_watchdog.events import Envelope
-from agent_watchdog.storage import Inbox, Store
+from agent_watchdog.storage import Store
 
 PROFILE = "windows-cli-exec-0.162.0-alpha.17.2"
 PROVIDER_VERSION = "0.162.0-alpha.17.2"
@@ -186,7 +186,6 @@ def readback(paths: UserPaths) -> dict[str, int]:
     project = config.projects[0]
     project_data = paths.project_data(project.id)
     with Store(project_data, project.id) as store:
-        Inbox(project_data).drain(store)
         events = store.events(limit=1000)
     controls = [event for event in events if event.kind == "control" and event.provider == "codex"]
     return {

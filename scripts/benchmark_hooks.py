@@ -173,6 +173,11 @@ def main() -> None:
     )
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--adapter-executable", type=Path)
+    parser.add_argument(
+        "--benchmark-http",
+        action="store_true",
+        help="Opt-in direct native HTTP experiment in scratch state only",
+    )
     parser.add_argument("--provider", choices=("codex", "claude"), default="codex")
     parser.add_argument(
         "--shell",
@@ -185,6 +190,8 @@ def main() -> None:
         parser.error("Require at least 20 samples and 1..60 idle seconds")
     if args.warmup < 0 or args.cpu_seconds <= 0:
         parser.error("Require a non-negative warmup and a positive CPU window")
+    if args.benchmark_http and (not args.adapter_executable or args.event == "Stop"):
+        parser.error("--benchmark-http requires --adapter-executable and a subscribed tool event")
     if args.shell in ("powershell.exe", "pwsh.exe") and os.name != "nt":
         parser.error("PowerShell launch measurements require Windows")
     with tempfile.TemporaryDirectory(prefix="wd008 benchmark ") as directory:
@@ -234,8 +241,12 @@ def main() -> None:
         hook_command = hook_invocation(args.shell, arguments)
         expected_stdout = "" if args.provider == "claude" else "{}"
         project = json.loads(run(command + ["project", "add", str(root)]).stdout)
+        hook_env = dict(os.environ)
+        hook_env.pop("WATCHDOG_BENCHMARK_HTTP", None)
+        if args.benchmark_http:
+            hook_env["WATCHDOG_BENCHMARK_HTTP"] = "1"
         try:
-            run(command + ["daemon", "start"])
+            run(command + ["daemon", "start"], env=hook_env)
             wait_for_daemon(command)
 
             def hook(index: int) -> float:
@@ -246,7 +257,7 @@ def main() -> None:
                     index,
                 )
                 start = time.perf_counter()
-                result = run(hook_command, input=json.dumps(payload))
+                result = run(hook_command, input=json.dumps(payload), env=hook_env)
                 elapsed = (time.perf_counter() - start) * 1000
                 assert result.stdout.strip() == expected_stdout
                 return elapsed
@@ -287,6 +298,12 @@ def main() -> None:
                 checkouts.update(event["checkout_id"] for event in details["events"])
             assert len(sessions["sessions"]) == 2 and len(checkouts) == 2
             state = wait_for_daemon(command)
+            decision_requests = state.get("decision_channel", {}).get("requests", 0)
+            channel_errors = (
+                max(0, expected - decision_requests)
+                if args.adapter_executable and args.event != "Stop"
+                else 0
+            )
             before = process_metrics(state["pid"])
             start = time.monotonic()
             time.sleep(args.idle_seconds)
@@ -299,7 +316,7 @@ def main() -> None:
                     working_set_bytes=after["WorkingSet64"],
                 )
             run(command + ["daemon", "stop"])
-            run(command + ["daemon", "start"])
+            run(command + ["daemon", "start"], env=hook_env)
             wait_for_daemon(command)
             reopened = json.loads(
                 run(command + ["sessions", "list", "--project", project["project"]]).stdout
@@ -325,6 +342,7 @@ def main() -> None:
                 ),
                 "process_timeout_seconds": 15,
                 "adapter": "rust" if args.adapter_executable else "python",
+                "transport": "benchmark_http" if args.benchmark_http else "current",
                 "provider": args.provider,
                 "event": args.event,
                 "launch": args.shell,
@@ -338,6 +356,9 @@ def main() -> None:
                 "sessions": 2,
                 "checkouts": len(checkouts),
                 "restart_preserved": True,
+                "delivery_complete": True,
+                "errors": channel_errors,
+                "decision_requests": decision_requests,
                 "losses": state["losses"],
                 "native_provider_validation": False,
             }

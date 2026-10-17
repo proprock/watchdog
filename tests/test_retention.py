@@ -7,7 +7,8 @@ import pytest
 from agent_watchdog import resources
 from agent_watchdog.config import Limits
 from agent_watchdog.events import Envelope
-from agent_watchdog.storage import Inbox, StorageError, Store
+from agent_watchdog.spool import Spool
+from agent_watchdog.storage import StorageError, Store
 
 
 def event(project, days=0, session="session"):
@@ -71,7 +72,6 @@ def test_zero_retention_days_leave_quota_eviction_and_pins_unchanged(tmp_path):
         metrics_days=0,
         project_bytes=100_000,
         reserve_bytes=10_000,
-        inbox_bytes=10_000,
         payload_bytes=6000,
     )
     with Store(tmp_path, project, limits=limits) as store:
@@ -81,9 +81,9 @@ def test_zero_retention_days_leave_quota_eviction_and_pins_unchanged(tmp_path):
         assert store.read_artifact(pinned.event_id, "stdout") == b"x" * 4096
 
 
-def test_concurrent_publish_obeys_inbox_quota(tmp_path):
-    limits = Limits(payload_bytes=6000, inbox_bytes=12000)
-    inbox = Inbox(tmp_path, limits=limits)
+def test_concurrent_publish_obeys_spool_quota(tmp_path):
+    limits = Limits(payload_bytes=6000)
+    inbox = Spool(tmp_path, limits=limits, byte_limit=12000)
     item = event(uuid4())
 
     def publish(_):
@@ -96,7 +96,7 @@ def test_concurrent_publish_obeys_inbox_quota(tmp_path):
     with ThreadPoolExecutor(max_workers=8) as pool:
         results = list(pool.map(publish, range(24)))
     assert 0 < sum(results) < 24
-    assert sum(p.stat().st_size for p in inbox.directory.iterdir()) <= limits.inbox_bytes
+    assert sum(p.stat().st_size for p in inbox.directory.iterdir()) <= 12000
 
 
 def test_cleanup_reclaims_database_and_only_owned_files(tmp_path):
@@ -123,9 +123,7 @@ def test_pinned_saturation_refuses_new_data(tmp_path):
         item = event(project)
         store.put(item)
         store.pin("session")
-    limits = Limits(
-        project_bytes=100_000, reserve_bytes=10_000, inbox_bytes=10_000, payload_bytes=6000
-    )
+    limits = Limits(project_bytes=100_000, reserve_bytes=10_000, payload_bytes=6000)
     with Store(tmp_path, project, limits=limits) as store:
         with pytest.raises(StorageError):
             store.put(event(project))
@@ -138,16 +136,16 @@ def test_disk_full_keeps_queue_empty_and_loss_survives_reopen(tmp_path, monkeypa
     def full(*args):
         raise OSError(28, "Simulated disk full")
 
-    monkeypatch.setattr("agent_watchdog.storage.atomic_write", full)
+    monkeypatch.setattr("agent_watchdog.spool.atomic_write", full)
     with pytest.raises(OSError):
-        Inbox(tmp_path).publish(event(uuid4()))
-    assert not list((tmp_path / "inbox").glob("*.json"))
+        Spool(tmp_path).publish(event(uuid4()))
+    assert not list((tmp_path / "spool").glob("*.json"))
     assert resources.losses(tmp_path)["io"] == 1
 
 
 def test_concurrent_publish_counts_successfully_recorded_losses(tmp_path, monkeypatch):
-    limits = Limits(payload_bytes=6000, inbox_bytes=6000)
-    inbox = Inbox(tmp_path, limits=limits)
+    limits = Limits(payload_bytes=6000)
+    inbox = Spool(tmp_path, limits=limits, file_limit=1)
     inbox.publish(event(uuid4()))
     outcomes = []
     original = resources.count_loss
@@ -246,9 +244,7 @@ def test_v1_upgrade_preserves_replay_and_enables_reclamation(tmp_path):
 
 def test_quota_accounts_for_wal_and_auxiliary_files(tmp_path):
     project = uuid4()
-    limits = Limits(
-        project_bytes=700_000, reserve_bytes=100_000, inbox_bytes=100_000, payload_bytes=10_000
-    )
+    limits = Limits(project_bytes=700_000, reserve_bytes=100_000, payload_bytes=10_000)
     with Store(tmp_path, project, limits=limits) as store:
         store.put(event(project))
         store.pin("session")

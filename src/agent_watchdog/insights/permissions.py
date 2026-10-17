@@ -9,7 +9,7 @@ from typing import Any, Literal
 from agent_watchdog import inspection
 from agent_watchdog.config import Project, UserPaths
 from agent_watchdog.events import Envelope
-from agent_watchdog.insights import timeline
+from agent_watchdog.insights import timeline, window
 from agent_watchdog.insights.bundle import Draft, excerpt
 from agent_watchdog.insights.contract import OutputModel, RuleCandidate, ScopeFields
 from agent_watchdog.insights.scope import share
@@ -117,9 +117,9 @@ def read(
     until: datetime | None,
 ) -> Raw:
     options = {"provider": provider, "session_id": session_id, "since": since, "until": until}
-    with inspection.database(paths, project) as db:
+    with window.database(paths, project) as db:
         events = timeline.events(db, ("tool.start", "waiting"), **options)
-    _types, finishes = inspection.tool_finishes(paths, project, **options)
+    _types, finishes = window.tool_finishes(paths, project, **options)
     return events, finishes
 
 

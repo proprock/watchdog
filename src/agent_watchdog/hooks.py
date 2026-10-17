@@ -243,7 +243,7 @@ def build_envelope(
 
 
 def observe(paths: UserPaths, stream: BinaryIO, provider: str = "codex") -> None:
-    """Resolve and enqueue one event directly in the hook process.
+    """Resolve and spool one event directly in the developer hook process.
 
     Developer/test utility only (WD-110): `hooks install` always requires a
     native adapter and never wires this up as the production hook command.
@@ -362,7 +362,7 @@ def observe(paths: UserPaths, stream: BinaryIO, provider: str = "codex") -> None
         )
         # Admission records project-level rejection counts itself.
         try:
-            admitted = daemon.enqueue(paths, event)
+            admitted = daemon.publish(paths, event)
             emit(
                 paths.data,
                 config.defaults,
