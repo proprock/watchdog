@@ -163,6 +163,11 @@ def main() -> int:
             )
     rule_stats = rule_actions.add_parser("stats", help="Firings, verdicts and precision per rule")
     rule_stats.add_argument("--since", type=_since, help="ISO-8601 timestamp with a UTC offset")
+    rule_test = rule_actions.add_parser(
+        "test", help="Replay an approved rule without live delivery"
+    )
+    rule_test.add_argument("name")
+    rule_test.add_argument("--session", required=True, help="Recorded provider session ID")
     commands.add_parser("doctor", help="Inspect configuration, storage, and daemon health")
     readiness = commands.add_parser(
         "readiness", help="Check per stage whether provider events reach the project store"
@@ -410,6 +415,10 @@ def main() -> int:
                 result = _approve_rule(paths, args.name, args.yes)
             elif args.action == "stats":
                 result = {"rules": manage.stats(paths, config, since=args.since)}
+            elif args.action == "test":
+                from agent_watchdog.rules.replay import replay
+
+                result = replay(paths, config, args.name, args.session)
             else:
                 result = getattr(manage, args.action)(paths, args.name)
             print(json.dumps(result))

@@ -18,6 +18,7 @@ from agent_watchdog.config import Config, Project, UserPaths
 from agent_watchdog.registry import Registry
 from agent_watchdog.rules.api import ALLOW, CODEX_CELLS, Context, Decision, renderable
 from agent_watchdog.rules.declarative import DeclarativeRule, evaluate
+from agent_watchdog.rules.python import PythonHost, PythonRule
 from agent_watchdog.rules.registry import RuleRegistry
 from agent_watchdog.state import SessionState
 
@@ -94,6 +95,7 @@ class Engine:
     throttle: _Throttle
     gaps: dict[tuple[str, str, str, str, str], float] = field(default_factory=dict)
     gap_lock: threading.Lock = field(default_factory=threading.Lock)
+    python: PythonHost = field(default_factory=PythonHost)
 
     def record_gap(
         self, rule: DeclarativeRule, profile: object, project: Project, provider: str
@@ -137,7 +139,13 @@ def subscriptions(paths: UserPaths, config: Config) -> list[dict[str, str | None
     """
     if not config.defaults.policy_intervene:
         return []
-    return engine_for(paths).registry.subscriptions(config)
+    engine = engine_for(paths)
+    excluded = frozenset(
+        entry.name
+        for entry in engine.registry.active(config)
+        if engine.python.status(entry.name) == "disabled"
+    )
+    return engine.registry.subscriptions(config, excluded=excluded)
 
 
 def _project_of(config: Config, hook_input: Mapping[str, object]) -> Project | None:
@@ -180,6 +188,8 @@ def decide(
     event = hook_input.get("hook_event_name")
     if not isinstance(event, str):
         return ALLOW
+    if not config.defaults.policy_intervene:
+        return ALLOW
     if (
         event in {"Stop", "SubagentStop"}
         and "stop_hook_active" in hook_input
@@ -196,8 +206,27 @@ def decide(
         rule = entry.rule
         if rule is None or not _applies(rule, provider, event, hook_input.get("tool_name")):
             continue
+        if rule.action.expires_at is not None and now >= datetime.fromisoformat(
+            rule.action.expires_at
+        ):
+            continue
         try:
-            decision = evaluate(rule, context, now=now)
+            if isinstance(rule, PythonRule):
+                # Python initialization itself can have effects: resolve the kill
+                # switch before any approved code is imported or evaluated.
+                if not looked_up:
+                    project, looked_up = _project_of(config, hook_input), True
+                if project is None or not project.overrides.apply(config.defaults).policy_intervene:
+                    return ALLOW
+                decision = engine.python.evaluate(
+                    rule,
+                    entry.snapshot or b"",
+                    config.rules.approved.get(rule.name),
+                    context,
+                    on_error=on_error,
+                )
+            else:
+                decision = evaluate(rule, context, now=now)
         except Exception as error:  # noqa: BLE001 - one broken rule must not silence the others
             if on_error is not None:
                 on_error(rule.name, error)

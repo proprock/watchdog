@@ -6,8 +6,7 @@ provider ([hooks.md](hooks.md#adapter-behavior)). WD-142 added **declarative
 rules**: TOML data with a closed set of predicates and actions. They never execute
 code. Approved declarative rules may target confirmed Codex CLI cells when the
 native installation has an exact `--codex-control-profile` gate; Codex desktop is
-not enabled. Python rules are planned separately (WD-143); this document will
-grow with them.
+not enabled. WD-143 also supports approved Python rules and offline session replay.
 
 Every action a rule causes is recorded as a `control` event and shows up as a
 finding with `rule`, `rule_version`, `action`, `evidence_ids`, `delivered_at` and
@@ -26,21 +25,22 @@ itself.
 | `approved` | A built-in, or a user rule whose current SHA-256 equals the digest in `[rules] approved` | yes |
 | `proposed` | A user rule nobody approved | no |
 | `stale` | A user rule approved earlier whose file has changed since | no |
-| `disabled` | Named in `[rules] disabled`, or a built-in that ships off and is not in `[rules] enabled` | no |
+| `disabled` | Named in `[rules] disabled`, or an opt-in built-in/Python rule not in `[rules] enabled` | no |
 | `invalid` | Does not parse, fails validation, is misnamed, or shadows a built-in | no |
 
 `agent-watchdog rules approve NAME` validates the rule, prints the exact bytes and
 their SHA-256, asks for `yes` (or takes `--yes`), and records the digest of the
 bytes it showed. If the file changed between showing and recording it refuses, and
 an invalid rule is never approved. Approval is the user's decision: a rule
-cannot do more than the closed action set below, but a wrong rule can still block
-a stop or ask about harmless commands. `reject` revokes the approval and keeps the
+returns decisions from the closed action set below, but a wrong rule can still block
+a stop or ask about harmless commands. Approving Python additionally trusts code
+with the daemon's process privileges. `reject` revokes approval and keeps the
 rule off; `enable` never approves.
 
 Built-ins ship with the package and are trusted as the code is. A user rule file
-must be named `<name>.toml` with the same `name` inside, and may not reuse a
+must be named `<name>.toml` or `<name>.py` with the same `name` inside, and may not reuse a
 built-in's name. The rules directory is `<config-dir>/rules/` (next to
-`config.toml`); only `*.toml` files directly in it are read, at most 128, each at
+`config.toml`); only `*.toml` and `*.py` files directly in it are read, at most 128, each at
 most 64 KiB. The daemon notices a new, edited or approved rule at its next poll
 tick and republishes its subscriptions; no restart is needed.
 
@@ -167,7 +167,76 @@ agent-watchdog rules reject NAME
 agent-watchdog rules disable NAME
 agent-watchdog rules enable NAME
 agent-watchdog rules stats [--since ISO8601]
+agent-watchdog rules test NAME --session SESSION_ID
 ```
+
+## Python rules and replay (WD-143)
+
+Place `<name>.py` directly in the same rules directory. A name cannot appear in
+both formats. Discovery compiles syntax and reads a single literal `RULE`
+dictionary using AST inspection; it never imports the file. Metadata uses the
+TOML schema above with `timeout_ms` (default 100, range 1–60000). Tool selectors,
+priority, cooldown, per-turn caps and expiry apply; Python conditions belong in
+`evaluate`, so metadata state predicates and regex conditions are rejected.
+
+```python
+from agent_watchdog.rules.api import Context, Decision
+
+RULE = {
+    "name": "check_command",
+    "version": "1",
+    "origin": "user",
+    "provider": ["claude"],
+    "event": "PreToolUse",
+    "match": {"tool_name": "Bash"},
+    "action": {"kind": "deny", "message": "Watchdog: review this command."},
+    "timeout_ms": 100,
+}
+
+
+def evaluate(ctx: Context) -> Decision:
+    command = ctx.hook_input.get("tool_input", {}).get("command", "")
+    if command == "example-dangerous-command":
+        return Decision(action="deny")
+    return Decision()
+```
+
+The `Rule` protocol specifies `evaluate(ctx) -> Decision`; `Event` is a mapping
+of hook fields. Python receives a read-only `Context`, including recursively
+frozen event and configuration collections and the immutable observed session
+state. `Decision()` means allow. Other decisions must use the declared action;
+the host supplies the rule name/version and validates the result. Existing
+provider/profile gates, kill switches and action recording still apply.
+
+Review and approve with `rules approve NAME`, replay with
+`rules test NAME --session SESSION_ID`, then activate separately with
+`rules enable NAME`. Approval and replay alone leave a Python rule inactive.
+Replay requires the approved byte hash even for a disabled rule; changing any
+byte requires approval again. Execution compiles the verified byte snapshot and
+never reopens the pathname for code. Python contents are rehashed even if size
+and modification time were preserved.
+
+Initialization and evaluation run in one supervised worker under one
+`timeout_ms` waiting budget. Each evaluation initializes a fresh module. At most
+four worker threads run per daemon configuration, with one in-flight evaluation
+per rule and no pending queue. Busy or exhausted capacity returns allow.
+Exceptions and invalid results return allow, mark the rule degraded and attempt
+a diagnostic; a later successful evaluation clears degradation. The first
+timeout attempts a diagnostic, discards every late result, and disables that
+rule until daemon restart, including after code changes. A timed-out thread
+keeps its slot until it actually exits; changing the file or enabling the rule
+cannot clear that state. Diagnostics use the daemon's existing rule-error log.
+Runtime health belongs to the daemon host; `rules list` reports file/configuration
+status. Replay reports hypothetical evaluations and does not simulate cooldowns,
+per-turn caps, daemon kill/capability gates or delivery. It never activates a rule
+or writes findings to the recorded session.
+
+Approval is the user's responsibility. Rules are trusted code with the daemon's
+process privileges, not a sandbox. Read-only inputs prevent accidental mutation
+through the API; they do not isolate process state, network access or locks.
+Timeouts bound supervisor waiting while it remains responsive and do not stop
+threads. Diagnose the hang, correct the code, approve changed bytes and restart
+the daemon. See the [execution decision](architecture.md#wd-143-python-rule-execution-decision-2026-10-18).
 
 `list` shows every rule with its status and how often it fired; `stats` adds, per
 rule, the firings by action, the verdicts recorded for them and the precision
@@ -247,8 +316,14 @@ action, retain null delivery, and fail open. Offline checks in
 
 ## Not implemented here
 
-Python rules and replay (`rules test`, WD-143), model-written rule candidates
-(`rules propose`, WD-144), and promotion between actions (WD-147). Codex CLI
+Model-written rule candidates (`rules propose`, WD-144) and promotion between
+actions (WD-147). Python execution and replay are implemented by WD-143. Codex CLI
 rendering is verified offline for the explicit profiles, with one production
 live deny case recorded in [WD-151 evidence](evidence/wd151.md). Codex desktop
 remains gated by WD-153.
+
+The accepted [WD-143 execution design](architecture.md#wd-143-python-rule-execution-decision-2026-10-18)
+uses cooperative worker threads with bounded concurrency, rule disablement after
+a timeout, and daemon restart for recovery from a hung thread. It provides no
+forced thread termination or sandbox. Implementation evidence is recorded in
+[WD-143](evidence/wd143.md).

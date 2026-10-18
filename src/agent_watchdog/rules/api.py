@@ -3,8 +3,11 @@
 import sys
 from collections.abc import Mapping
 from dataclasses import dataclass
-from typing import Literal
+from types import MappingProxyType
+from typing import Any, Literal, Protocol
 from uuid import UUID
+
+from pydantic import BaseModel
 
 from agent_watchdog.config import Config, UserPaths
 from agent_watchdog.state import SessionState
@@ -13,6 +16,22 @@ from agent_watchdog.state import SessionState
 Action = Literal["allow", "log", "deny", "ask", "rewrite", "context", "block"]
 
 ACTIONS: frozenset[str] = frozenset({"allow", "log", "deny", "ask", "rewrite", "context", "block"})
+
+# Event values are recursively frozen before being handed to Python rules.
+Event = Mapping[str, object]
+
+
+def _readonly(value: Any) -> Any:
+    if isinstance(value, Mapping):
+        return MappingProxyType({key: _readonly(item) for key, item in value.items()})
+    if isinstance(value, (list, tuple)):
+        return tuple(_readonly(item) for item in value)
+    if isinstance(value, BaseModel):
+        return value.model_copy(
+            update={name: _readonly(getattr(value, name)) for name in type(value).model_fields}
+        )
+    return value
+
 
 # Keep the capability contracts in step with `render` in native/src/main.rs.
 # These are provider-probe cells, not production-adapter live acceptance.
@@ -87,8 +106,18 @@ class Context:
     paths: UserPaths
     config: Config
     provider: str
-    hook_input: Mapping[str, object]
+    hook_input: Event
     session: SessionState | None = None
+
+    def readonly(self) -> "Context":
+        """Detach mutable collections and expose a recursively read-only snapshot."""
+        return Context(
+            self.paths,
+            _readonly(self.config),
+            self.provider,
+            _readonly(self.hook_input),
+            self.session,
+        )
 
 
 @dataclass(frozen=True, slots=True)
@@ -108,6 +137,12 @@ class Decision:
 
 
 ALLOW = Decision()
+
+
+class Rule(Protocol):
+    """The sole Python execution interface; modules implement this function."""
+
+    def evaluate(self, ctx: Context) -> Decision: ...
 
 
 def renderable(

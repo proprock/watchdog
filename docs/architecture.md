@@ -184,4 +184,35 @@ This design originally required one narrow exception to an observation-only hook
 
 ## Rules and decision channel
 
-The daemon decides which control action a hook returns. WD-140 built the channel (the amendment in "M4 LLM/control design" above) and WD-142 added the first rule layer: declarative TOML rules, four built-ins, hash approval and the `rules` CLI, described in [rules.md](rules.md). Planned in [TODO.md](../TODO.md) under M-Control: Python rules approved by SHA-256 with a timeout (WD-143), and model-synthesized rule candidates that become executable only after `rules approve` (WD-144). The single extension point is a daemon rule with the fixed contract `evaluate(ctx) -> Decision`; there are no other plugins or dynamic loading. Every action is a recorded finding with `action`, `rule`, `evidence_ids`, `delivered_at`, and the text sent to the model, and the control invariant in TENETS.md governs all of it.
+The daemon decides which control action a hook returns. WD-140 built the channel (the amendment in "M4 LLM/control design" above) and WD-142 added the first rule layer: declarative TOML rules, four built-ins, hash approval and the `rules` CLI, described in [rules.md](rules.md). WD-143 adds approved-byte Python execution, cooperative timeouts and offline replay ([evidence](evidence/wd143.md)). Model-synthesized rule candidates remain planned in [TODO.md](../TODO.md) under WD-144; they become executable only after `rules approve`. The single extension point is a daemon rule with the fixed contract `evaluate(ctx) -> Decision`; there are no other plugins or dynamic loading. Every action is a recorded finding with `action`, `rule`, `evidence_ids`, `delivered_at`, and the text sent to the model, and the control invariant in TENETS.md governs all of it.
+
+### WD-143 Python rule execution decision (2026-10-18)
+
+**Implemented 2026-10-18; accepted by the user.** Python rules use supervised
+cooperative worker threads under a trusted, debugged and tested code operating
+model. This supersedes WD-143's former promise that arbitrary hanging rules cannot
+affect the daemon or exceed a forced execution deadline. The user accepts diagnosis,
+code correction and daemon restart as recovery from a hung rule. Startup
+measurements and the discussion are in the [review record](evidence/wd143-review.md).
+
+- Hash approval binds execution to the exact approved byte snapshot, including
+  module initialization; execution never reopens the pathname to obtain code.
+- `timeout_ms` bounds supervisor waiting for initialization and evaluation while
+  the supervisor remains responsive. It does not terminate the worker thread.
+  On timeout, attempt a diagnostic, ignore late results, return no control action,
+  and disable the rule until daemon restart. Exceptions fail open and mark the
+  rule degraded.
+- Worker concurrency is finite, with at most one in-flight evaluation per rule.
+  A timed-out worker that still runs occupies its slot; do not replace it with
+  another thread or queue unbounded work. Unavailable capacity fails open.
+- A rule update does not remove a hung thread or clear its disabled-until-restart
+  state. Recovery requires daemon restart; changed bytes still need fresh approval.
+- Threads share process memory and locks. Approval is not a sandbox, arbitrary
+  rule code is not isolated from daemon failure, and forced thread termination
+  is not part of the contract. Existing hook-channel failures remain fail-open.
+
+The original design review changed only the specification. WD-143 now implements
+this contract with approval, separate Python enablement and offline replay; see
+the [implementation evidence](evidence/wd143.md). TENETS.md is unchanged, and no
+rule approval or live model call is implied. WD-144's proposed-rule lifecycle
+remains separately specified.

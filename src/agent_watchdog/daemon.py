@@ -27,6 +27,7 @@ from agent_watchdog.events import Envelope
 from agent_watchdog.registry import Registry, RegistryError, Resolution
 from agent_watchdog.rules.api import Decision
 from agent_watchdog.rules.engine import decide, subscriptions
+from agent_watchdog.rules.python import PythonRuleTimeout
 from agent_watchdog.spool import SPOOL_BYTES, SPOOL_FILES, Spool
 from agent_watchdog.state import SessionState, StateKey
 from agent_watchdog.storage import (
@@ -1347,10 +1348,11 @@ class _PolicyRequestHandler(socketserver.StreamRequestHandler):
 
     @staticmethod
     def _rule_failed(server: "_PolicyServer", name: str, error: Exception) -> None:
-        """Log a rule's failure once per daemon lifetime; the other rules still answer."""
-        if name in server.watchdog_failed_rules:
+        """Log errors and the first disabling timeout independently, once per lifetime."""
+        key = f"{name}:timeout" if isinstance(error, PythonRuleTimeout) else name
+        if key in server.watchdog_failed_rules:
             return
-        server.watchdog_failed_rules.add(name)
+        server.watchdog_failed_rules.add(key)
         _log(
             server.watchdog_paths,
             None,

@@ -16,6 +16,7 @@ from agent_watchdog.analysis import control_findings
 from agent_watchdog.config import Config, Rules, UserPaths
 from agent_watchdog.events import Envelope
 from agent_watchdog.registry import Registry
+from agent_watchdog.rules.python import PythonRule
 from agent_watchdog.rules.registry import RuleEntry, RuleRegistry
 from agent_watchdog.storage import StorageError
 
@@ -51,6 +52,7 @@ def _describe(entry: RuleEntry) -> dict[str, object]:
         "action": rule.action.kind if rule else None,
         "description": rule.description if rule else None,
         "error": entry.error,
+        "format": "python" if isinstance(rule, PythonRule) else "toml",
     }
 
 
@@ -131,7 +133,7 @@ def enable(paths: UserPaths, name: str) -> dict[str, object]:
     def update(config: Config) -> Rules:
         entry = find(paths, config, name)
         disabled = [item for item in config.rules.disabled if item != name]
-        opt_in = (
+        opt_in = isinstance(entry.rule, PythonRule) or (
             entry.source == "builtin" and entry.rule is not None and not entry.rule.default_enabled
         )
         enabled = (

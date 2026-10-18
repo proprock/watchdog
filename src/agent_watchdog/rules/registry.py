@@ -18,6 +18,7 @@ from typing import Literal
 from agent_watchdog.config import Config, Rules, UserPaths
 from agent_watchdog.rules.api import subscription_tools
 from agent_watchdog.rules.declarative import DeclarativeRule, RuleError, parse_rule
+from agent_watchdog.rules.python import PythonRule, parse_python
 
 Status = Literal["approved", "proposed", "stale", "disabled", "invalid"]
 Source = Literal["builtin", "user"]
@@ -38,6 +39,7 @@ class RuleEntry:
     text: str | None = None
     error: str | None = None
     path: Path | None = None
+    snapshot: bytes | None = None
 
     @property
     def active(self) -> bool:
@@ -55,13 +57,14 @@ class _Loaded:
     text: str | None
     error: str | None
     path: Path | None
+    snapshot: bytes | None = None
 
 
 def _parse(data: bytes, name: str, source: Source, path: Path | None) -> _Loaded:
     digest = hashlib.sha256(data).hexdigest()
     try:
         text = data.decode("utf-8")
-        rule = parse_rule(text)
+        rule = parse_python(data) if path is not None and path.suffix == ".py" else parse_rule(text)
     except UnicodeDecodeError:
         return _Loaded(name, source, None, digest, None, "The rule file is not valid UTF-8", path)
     except RuleError as error:
@@ -69,7 +72,9 @@ def _parse(data: bytes, name: str, source: Source, path: Path | None) -> _Loaded
     if rule.name != name:
         message = f"The rule name {rule.name} does not match its file name {name}"
         return _Loaded(name, source, None, digest, text, message, path)
-    return _Loaded(name, source, rule, digest, text, None, path)
+    return _Loaded(
+        name, source, rule, digest, text, None, path, data if isinstance(rule, PythonRule) else None
+    )
 
 
 @cache
@@ -86,20 +91,35 @@ def _builtins() -> tuple[_Loaded, ...]:
 BUILTIN_NAMES: tuple[str, ...] = tuple(item.name for item in _builtins())
 
 
-def _scan(folder: Path) -> tuple[tuple[tuple[str, int, int], ...], tuple[Path, ...]]:
-    """The ``*.toml`` files directly in ``folder`` with a change signature; none if absent."""
+def _scan(folder: Path) -> tuple[tuple[tuple[str, int, int, str], ...], tuple[Path, ...]]:
+    """Discover bounded rule files; Python signatures include the current byte hash."""
     try:
         with os.scandir(folder) as listing:
             files = sorted(
-                (item for item in listing if item.name.endswith(".toml") and item.is_file()),
+                (
+                    item
+                    for item in listing
+                    if item.name.endswith((".toml", ".py")) and item.is_file()
+                ),
                 key=lambda item: item.name,
             )[:MAX_RULE_FILES]
             signature = tuple(
-                (item.name, (info := item.stat()).st_mtime_ns, info.st_size) for item in files
+                (
+                    item.name,
+                    (info := item.stat()).st_mtime_ns,
+                    info.st_size,
+                    _python_signature(Path(item.path)) if item.name.endswith(".py") else "",
+                )
+                for item in files
             )
             return signature, tuple(Path(item.path) for item in files)
     except OSError:
         return (), ()
+
+
+def _python_signature(path: Path) -> str:
+    with path.open("rb") as stream:
+        return hashlib.sha256(stream.read(MAX_RULE_BYTES + 1)).hexdigest()
 
 
 def _load_user(paths: tuple[Path, ...]) -> tuple[_Loaded, ...]:
@@ -112,7 +132,10 @@ def _load_user(paths: tuple[Path, ...]) -> tuple[_Loaded, ...]:
                     _Loaded(name, "user", None, None, None, "The rule file is too large", path)
                 )
                 continue
-            data = path.read_bytes()
+            with path.open("rb") as stream:
+                data = stream.read(MAX_RULE_BYTES + 1)
+            if len(data) > MAX_RULE_BYTES:
+                raise OSError("Rule grew beyond the byte limit")
         except OSError:
             loaded.append(
                 _Loaded(name, "user", None, None, None, "The rule file is unreadable", path)
@@ -130,7 +153,21 @@ def _load_user(paths: tuple[Path, ...]) -> tuple[_Loaded, ...]:
                 path,
             )
         loaded.append(item)
-    return tuple(loaded)
+    names = [item.name for item in loaded]
+    return tuple(
+        _Loaded(
+            item.name,
+            "user",
+            None,
+            item.digest,
+            item.text,
+            "Duplicate rule name across file formats",
+            item.path,
+        )
+        if names.count(item.name) > 1
+        else item
+        for item in loaded
+    )
 
 
 def _status(item: _Loaded, rules: Rules) -> Status:
@@ -145,7 +182,11 @@ def _status(item: _Loaded, rules: Rules) -> Status:
     approved = rules.approved.get(item.name)
     if approved is None:
         return "proposed"
-    return "approved" if approved == item.digest else "stale"
+    if approved != item.digest:
+        return "stale"
+    if isinstance(item.rule, PythonRule) and item.name not in rules.enabled:
+        return "disabled"
+    return "approved"
 
 
 class RuleRegistry:
@@ -159,7 +200,7 @@ class RuleRegistry:
     def __init__(self, paths: UserPaths) -> None:
         self._folder = paths.config.parent / "rules"
         self._lock = threading.Lock()
-        self._signature: tuple[tuple[str, int, int], ...] | None = None
+        self._signature: tuple[tuple[str, int, int, str], ...] | None = None
         self._loaded: tuple[_Loaded, ...] = ()
         self._rules: Rules | None = None
         self._entries: tuple[RuleEntry, ...] = ()
@@ -182,6 +223,7 @@ class RuleRegistry:
                         item.text,
                         item.error,
                         item.path,
+                        item.snapshot,
                     )
                     for item in self._loaded
                 )
@@ -202,10 +244,14 @@ class RuleRegistry:
             )
         )
 
-    def subscriptions(self, config: Config) -> list[dict[str, str | None]]:
+    def subscriptions(
+        self, config: Config, *, excluded: frozenset[str] = frozenset()
+    ) -> list[dict[str, str | None]]:
         """The hook events the adapter should ask the daemon about, one entry per cell."""
         cells: set[tuple[str, str, str | None]] = set()
         for entry in self.active(config):
+            if entry.name in excluded:
+                continue
             rule = entry.rule
             if rule is None:
                 continue
