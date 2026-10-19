@@ -1,6 +1,6 @@
 # Integration sources and verification
 
-Documentation reviewed on 2026-09-05. Locally detected versions: Codex CLI 0.153.4 and Claude Code 2.1.259. Windows live probes exercised both CLIs, the Codex desktop task API, and Claude desktop Code; see [the per-event compatibility report](provider-compatibility.md) and [sanitized evidence](evidence/wd002-windows.json). Coverage differs by surface and event. Desktop harness versions may differ from CLI versions.
+Documentation reviewed on 2026-09-05. Historical locally detected versions: Codex CLI 0.153.4 and Claude Code 2.1.259; these remain the basis of the WD-002 observation evidence ([sanitized evidence](evidence/wd002-windows.json)). Later control and attribution evidence names its own exact versions (for example Codex CLI 0.160.0 and 0.162.0-alpha.17.2 for [WD-163](evidence/wd163.md) and [WD-151](evidence/wd151.md), Claude Code 2.1.292 for [WD-139](evidence/wd139-claude-hook-control.json)); use the [per-event compatibility report](provider-compatibility.md), not this sentence, for what is currently supported. Coverage differs by surface and event. Desktop harness versions may differ from CLI versions.
 
 | Source | Basis for the project |
 |---|---|
@@ -13,7 +13,7 @@ The user-supplied `uber-efficient-software-factory-codex-claude-research.md` is 
 
 ## Support matrix
 
-Delivery scope: M1-M4 cover Codex CLI and local desktop coding only. Claude observation (adapter + installer) is implemented in WD-022a and its live gate is met (see [verification](verification.md#wd-022a-claude-observation-gate-met)). Claude enrichment, lifecycle beyond observation, and guidance/control are WD-022b, after WD-014. Ordinary chats are outside product scope.
+Delivery scope: Codex CLI and ChatGPT desktop local coding, and Claude Code CLI and desktop Code, share one core. Observation is implemented for all four surfaces (Codex: WD-006/WD-009; Claude: WD-022a/WD-022b, live gate met, see [verification](verification.md#wd-022a-claude-observation-gate-met)). Control is separate and per cell: only the cells in the [control capability table](provider-compatibility.md#control-capability-wd-022b-intervene) with live evidence are rendered. Codex CLI control is limited to the exact Windows profiles of [WD-151](evidence/wd151.md); Codex desktop control is unprobed (WD-153). Analysis calls are separate from the observed provider: Claude is the default backend and the Codex backend is unavailable ([WD-166a](evidence/wd166a.md)). Ordinary chats are outside product scope.
 
 | Surface | Target | Current verification |
 |---|---|---|

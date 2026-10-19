@@ -2,7 +2,7 @@
 
 Agreed on 2026-09-05. A plan for small projects on top of stock harnesses. Each milestone delivers an independently useful result; later milestones are not enabled automatically. Open tasks: [TODO.md](TODO.md). Completed work: [DONE.md](DONE.md). Contracts: [architecture](docs/architecture.md).
 
-Execution order: observation and analysis (M1-M2, done for Codex and Claude Code) -> M-Anthropic / WD-022a+b (done) -> App Server / WD-015 (complete: no generic attach contract) -> M-Control / WD-139 to WD-153 (current; Claude Code first) with M3 guidance and M4 judge delivered through it -> final cross-platform validation / M5. Claude Code is the primary control surface; Codex follows with the capabilities its probes confirm (WD-151). Ordinary chats are outside product scope.
+Execution order: observation and analysis (M1-M2, done for Codex and Claude Code) -> M-Anthropic / WD-022a+b (done) -> App Server / WD-015 (complete: no generic attach contract) -> M-Control / WD-139 to WD-168 (current) with M3 guidance and M4 judge delivered through it -> final cross-platform validation / M5. Control is gated per provider, surface, exact version, event, tool and action by live evidence. Claude Code was probed first and has the broader set; Codex CLI has the exact WD-151 profiles, delivered 2026-10-15; Codex desktop stays observation-only until WD-153. Open order and dependencies are in [TODO.md](TODO.md). Ordinary chats are outside product scope.
 
 ## M0 - Foundation and verifiable design
 
@@ -48,7 +48,7 @@ WD-101 closes practical offline test boundaries identified by the audit, and WD-
 
 ## M3 - Limited opt-in guidance
 
-**Outcome:** add advisory feedback and, by the same ladder, stronger actions at a hook boundary with a confirmed capability (Claude Code first), only after collecting the M2 baseline.
+**Outcome:** add advisory feedback and, by the same ladder, stronger actions at a hook boundary with a confirmed provider/surface/version capability, only after collecting the M2 baseline. The ladder below is historical design; the 2026-10-18 amendment and the accepted decisions in `docs/architecture.md` are current.
 
 - Separate delivery policy: evidence, capability, expiry, cooldown, and at most one nudge per blocker until new evidence appears. Observe remains the default mode.
 - Select rules using labeled traces. Release gate by action, with counts, uncertainty, and a review of false signals: `log` needs no gate; `context` needs at least 60% precision over 10 reviewed cases; `ask` 80% over 20; `deny` or `block` 90% over 30. Deterministic rules need no gate for `log` and `context`, and reach `ask` or `deny` after 10 observations without a false positive. A small sample does not justify a hard gate.
@@ -79,7 +79,7 @@ the [current decision](docs/architecture.md#wd-147-calibration-and-promotion-rev
 - Escalation ladder: advisory -> replan request -> read-only second opinion -> question for the user. Do not apply every step to every signal.
 - Distinguish model-mediated questions from actual pause/resume. Never automatically grant approvals. Actions are limited by the current adapter's capabilities.
 
-**Acceptance:** budget exhaustion, timeout, or model failure does not break the harness; no recursive analysis; measure false escalation and rescue rates alongside task outcomes. Approve exact policy defaults using M2/M3 results before implementing M4.
+**Acceptance:** budget exhaustion, timeout, or model failure does not break the harness; no recursive analysis; measure false escalation and rescue rates alongside task outcomes. The former requirement to approve defaults from M2/M3 results is superseded by the 2026-10-18 review below.
 
 **2026-10-18 review:** the [WD-145 decision](docs/architecture.md#wd-145-semantic-judge-review-2026-10-18)
 approves the diagnostic trigger policy and configurable starting defaults.
@@ -93,7 +93,7 @@ remain open, and promotion follows the separate accepted WD-147 decision above.
 
 ## M-Anthropic - Independent Claude coding support
 
-**Schedule:** split into **WD-022a** (Claude observation — **complete 2026-09-06**, see [DONE.md](DONE.md); did not block M1-M4) and **WD-022b** (enrichment, lifecycle beyond observation, guidance/control; after M4 / WD-014, before App Server / WD-015).
+**Schedule:** split into **WD-022a** (Claude observation — **complete 2026-09-06**, see [DONE.md](DONE.md); did not block M1-M4) and **WD-022b** (enrichment, lifecycle beyond observation, guidance/control; scheduled after M4 / WD-014 and before App Server / WD-015, and since completed).
 
 **Outcome:** Claude Code CLI and local desktop Code use the established core, storage, reports, and applicable intervention policies. Ordinary chats and Cowork remain excluded.
 
@@ -110,12 +110,13 @@ remain open, and promotion follows the separate accepted WD-147 decision above.
 
 ## M-Control - Real-time control through hooks and daemon rules
 
-**Outcome:** the daemon decides, through a fixed decision channel, which control action a hook returns, on Claude Code first and on Codex only where a live probe confirmed the capability. Open tasks and order are in [TODO.md](TODO.md); the design is in [architecture](docs/architecture.md).
+**Outcome:** the daemon decides, through a fixed decision channel, which control action a hook returns, only where a live probe confirmed the provider, surface, exact version, event, tool and action. Open tasks and order are in [TODO.md](TODO.md); the design is in [architecture](docs/architecture.md).
 
 1. **WD-139 and WD-140 (complete 2026-10-07).** Live-probe the control capabilities of both providers' hooks, and replace the single-rule policy socket with a generic decision channel (an action vocabulary, per-provider rendering of only confirmed cells, fail-open).
 2. **WD-141 (complete 2026-10-07) and WD-142 (complete 2026-10-08), WD-143 (complete 2026-10-18), then WD-144.** Incremental session state in the daemon, and declarative and built-in rules with a `rules` CLI ([rules](docs/rules.md)), are done; Python rules approved by content hash with cooperative supervision and replay are implemented ([WD-143 evidence](docs/evidence/wd143.md)); model-synthesized rule candidates remain.
-3. **WD-145 to WD-147.** The automatic semantic judge with a budget and kill switch, corrected statistical heuristics, and the calibration workflow that promotes a rule up the precision ladder of M3.
-4. **WD-148 to WD-151.** Revised project rules and documents, a simpler and faster pipeline, a faster test suite and CI, and Codex control parity.
+3. **WD-145 to WD-147.** The automatic semantic judge with a budget and kill switch (WD-145, planned), corrected statistical heuristics (WD-146, implemented and measured; v2 precision awaits user verdicts, so the ticket stays open), and the calibration workflow that promotes a rule up the precision ladder (WD-147, planned). Specification reviews for WD-144, WD-145 and WD-147 are accepted (2026-10-18); implementation, dependencies and acceptance remain open. Codex analysis for them waits on WD-166.
+4. **WD-148 to WD-151.** Revised project rules and documents, a simpler and faster pipeline, a faster test suite and CI (complete), and Codex control parity: the CLI profiles are delivered with one production-adapter live case ([WD-151 evidence](docs/evidence/wd151.md)); WD-151 stays open for desktop, gated by WD-153.
+5. **WD-163 to WD-168.** Codex coverage and state correctness: corrected CLI control probes (WD-163), execution lifecycle (WD-164), model/effort/subagent attribution (WD-165) and delivery-stage observability (WD-168) are complete. The Codex analysis backend (WD-166) is blocked: [WD-166a](docs/evidence/wd166a.md) found no viable isolation mechanism, so WD-166b/WD-166c wait. Provider-specific Codex calibration is WD-167.
 
 **Acceptance:** every action is fail-open, recorded with evidence, and switchable off globally and per project; a Python rule runs only at an approved hash; the daemon never exceeds its model-call budget; nothing is rendered for a provider without live evidence.
 

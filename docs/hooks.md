@@ -1,10 +1,13 @@
 # Observation hooks
 
 WD-006 supports the native hook adapter for Codex CLI and local desktop coding
-sessions. WD-022a adds Claude Code CLI and desktop Code as a second provider,
-observation only. The adapter never changes harness behavior and never invokes a
-model. Ordinary chats and Cowork are out of scope. Claude transcript enrichment,
-usage reconciliation, and guidance/control delivery are deferred to WD-022b.
+sessions. WD-022a adds Claude Code CLI and desktop Code as a second provider;
+WD-022b added Claude transcript enrichment and usage reconciliation. By default the
+adapter observes only: it never invokes a model and changes harness behavior only
+when the daemon's decision channel returns an action for an approved rule on a
+live-confirmed cell (see "Adapter behavior" below and the
+[compatibility matrix](provider-compatibility.md)). Ordinary chats and Cowork are
+out of scope.
 
 The provider is a required positional: `agent-watchdog hook codex|claude` and
 `agent-watchdog hooks install|uninstall codex|claude`. The two providers share
