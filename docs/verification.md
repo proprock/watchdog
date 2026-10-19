@@ -359,6 +359,13 @@ launches a provider.
 
 Interactive permission allow/deny and Interrupt delivery passed; MCP fixture deny/rewrite passed, including a code-mode rewrite. Manual compaction delivered callbacks but rejected the context envelopes; ask's TUI rejected the response, while its machine record remains inconclusive. Generic local-tool and policy-blocked headless/code-mode cells remain gated. Hosted tools were not exercised. These probes change no production adapter renderability; WD-151 retains its surface/version gates. Local verification: full pytest 1,261 passed/1 skipped (85.03 s), focused probe tests 101 passed, Ruff, type check and package build passed. This is not a CI result.
 
+### WD-156 adapter-rendered Claude probes
+
+2026-10-20, Claude Code CLI 2.1.292 and Claude desktop 2.1.299, Haiku, `agent-watchdog-hook 0.1.5`. Unlike the WD-139 probe, these runs put the production native adapter, a real daemon and one approved rule per cell between Claude and the prompt; [the record](evidence/wd156.md) lists the four supported cells (`PreToolUse` deny, `Agent` model rewrite, `PostToolUse` context, `Stop` block) and the limits.
+
+- **CLI.** From a standalone console: `uv run python scripts/live_probe.py adapter-control --all | Out-File -Encoding utf8 records.json` (`--case NAME` for one; `--adapter PATH` overrides the built adapter; `--budget` caps USD per case). One scratch instance and daemon per case.
+- **Desktop.** `desktop-prepare --adapter` creates the folder, a scratch instance and a detached daemon and prints one `WD156[<case>] ...` prompt per cell; open the folder, select Haiku and paste each prompt into a new chat. `desktop-collect --dir DIR --clean` judges the cells, stops the daemon and removes the folder. The Agent rewrite is judged from the subagent transcripts' models.
+
 ### WD-139 Claude Code hook-control live probe
 
 2026-10-06, Windows AMD64, Claude Code 2.1.292, `--model haiku`. `scripts/live_probe.py claude-control --all` ran 16 cases, then a second run added 4 (`pre-tool-ask`, `subagent-start-context`, `subagent-stop-block`, `session-end-observe`), one capability per `claude -p` call, each in its own scratch Git repository outside every registered project. Isolation: `--setting-sources ""` plus a per-case `--settings` file holding only that case's hooks (`--safe-mode` and `--bare` disable hooks, so they cannot be used); the installed Watchdog hooks never fired. Read-back comes from `--output-format stream-json`, so no transcript was persisted. The first auth attempt failed (`loggedIn: false`) and the run was repeated after login; one earlier `pre-tool-deny` smoke run gave the same result and is not a separate record.

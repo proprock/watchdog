@@ -1,0 +1,649 @@
+[
+  {
+    "capabilities": {
+      "adapter-deny": {
+        "callbacks": {
+          "PostToolUse": {
+            "input_fields": [],
+            "observed": 0,
+            "tool_names": []
+          },
+          "PreToolUse": {
+            "input_fields": [
+              "cwd",
+              "effort",
+              "hook_event_name",
+              "permission_mode",
+              "prompt_id",
+              "scratchpad_dir",
+              "session_id",
+              "tool_input",
+              "tool_name",
+              "tool_use_id",
+              "transcript_path"
+            ],
+            "observed": 1,
+            "tool_names": [
+              "Bash"
+            ]
+          }
+        },
+        "models": [
+          "claude-haiku-5-5"
+        ],
+        "response_shape": "hookSpecificOutput.permissionDecision=deny",
+        "state": "supported"
+      }
+    },
+    "classification": "live_provider",
+    "cleanup": {
+      "complete": true,
+      "remaining_state": null,
+      "resources": [
+        {
+          "action": "removed",
+          "alias": "temporary-claude-settings",
+          "detail": "Project-local .claude/settings.local.json in the scratch folder.",
+          "evidence": "Scratch directory check",
+          "failure_attribution": "not_applicable",
+          "kind": "hook_installation",
+          "state": "confirmed"
+        },
+        {
+          "action": "removed",
+          "alias": "scratch-repository",
+          "detail": null,
+          "evidence": "Scratch directory check",
+          "failure_attribution": "not_applicable",
+          "kind": "temporary_state",
+          "state": "confirmed"
+        },
+        {
+          "action": "removed",
+          "alias": "claude-project-state",
+          "detail": "Claude's per-directory state for the scratch repository.",
+          "evidence": "Directory check",
+          "failure_attribution": "not_applicable",
+          "kind": "temporary_state",
+          "state": "confirmed"
+        }
+      ]
+    },
+    "finished_at": "2026-10-19T22:58:43.620138Z",
+    "format_version": "watchdog.probe-result.v1",
+    "provenance": {
+      "adapter": {
+        "invocation": "provider hook via a recording wrapper around the native adapter",
+        "name": "agent-watchdog-hook",
+        "version": "agent-watchdog-hook 0.1.5 (providers: codex, claude; decision schema 2)"
+      },
+      "harness": {
+        "name": "claude-desktop",
+        "version": null
+      },
+      "os": {
+        "architecture": "AMD64",
+        "name": "Windows",
+        "version": null
+      },
+      "provider": {
+        "name": "claude",
+        "surface": "desktop",
+        "version": "2.1.299"
+      },
+      "source": {
+        "kind": "manual-observation",
+        "sanitized_reference": "wd156-adapter-deny"
+      }
+    },
+    "record_id": "wd156-claude-desktop-adapter-deny-2026-10-19-attempt-1",
+    "result": {
+      "limitations": [
+        "One Windows desktop session, the model the user selected, one scripted prompt."
+      ],
+      "state": "passed"
+    },
+    "scope": {
+      "expected_callback_kinds": [
+        "PreToolUse",
+        "PostToolUse"
+      ],
+      "expected_deliveries": 1,
+      "isolation": "scratch Git repository outside registered projects with project-local hooks",
+      "notes": "One capability per run; hook inputs and outputs stayed in scratch."
+    },
+    "stages": {
+      "adapter": {
+        "evidence": "The native adapter ran for each callback; the wrapper relayed its stdout, stderr and exit status unchanged.",
+        "failure_category": null,
+        "starts": 1,
+        "state": "confirmed"
+      },
+      "callbacks": {
+        "evidence": "Minimum expected count per event; input shapes are in capabilities.",
+        "expected": 1,
+        "missing": 0,
+        "missing_attribution": "not_applicable",
+        "observed": 1
+      },
+      "end_to_end_delivery": {
+        "evidence": "Read back from the session transcript.",
+        "expected": 1,
+        "failure_attribution": "not_applicable",
+        "failure_detail": null,
+        "persisted": 1,
+        "read_back": 1,
+        "state": "confirmed"
+      },
+      "persistence": {
+        "accepted": 0,
+        "evidence": "Not applicable: the probe does not exercise Watchdog persistence.",
+        "losses": []
+      },
+      "provider_dispatch": {
+        "attempts": 1,
+        "detail": null,
+        "evidence": "Claude emitted a result event",
+        "state": "confirmed"
+      },
+      "retries": {
+        "count": 0,
+        "evidence": "One run per case.",
+        "outcome": "not_attempted",
+        "reason": null,
+        "scopes": []
+      }
+    },
+    "started_at": "2026-10-19T22:48:45.737945Z"
+  },
+  {
+    "capabilities": {
+      "adapter-rewrite": {
+        "callbacks": {
+          "PreToolUse": {
+            "input_fields": [
+              "cwd",
+              "effort",
+              "hook_event_name",
+              "permission_mode",
+              "prompt_id",
+              "scratchpad_dir",
+              "session_id",
+              "tool_input",
+              "tool_name",
+              "tool_use_id",
+              "transcript_path"
+            ],
+            "observed": 1,
+            "tool_names": [
+              "Agent"
+            ]
+          },
+          "SubagentStart": {
+            "input_fields": [
+              "agent_id",
+              "agent_type",
+              "cwd",
+              "hook_event_name",
+              "prompt_id",
+              "scratchpad_dir",
+              "session_id",
+              "transcript_path"
+            ],
+            "observed": 1,
+            "tool_names": []
+          }
+        },
+        "models": [
+          "claude-haiku-5-5",
+          "claude-sonnet-5-5"
+        ],
+        "response_shape": "hookSpecificOutput.updatedInput.model",
+        "state": "supported"
+      }
+    },
+    "classification": "live_provider",
+    "cleanup": {
+      "complete": true,
+      "remaining_state": null,
+      "resources": [
+        {
+          "action": "removed",
+          "alias": "temporary-claude-settings",
+          "detail": "Project-local .claude/settings.local.json in the scratch folder.",
+          "evidence": "Scratch directory check",
+          "failure_attribution": "not_applicable",
+          "kind": "hook_installation",
+          "state": "confirmed"
+        },
+        {
+          "action": "removed",
+          "alias": "scratch-repository",
+          "detail": null,
+          "evidence": "Scratch directory check",
+          "failure_attribution": "not_applicable",
+          "kind": "temporary_state",
+          "state": "confirmed"
+        },
+        {
+          "action": "removed",
+          "alias": "claude-project-state",
+          "detail": "Claude's per-directory state for the scratch repository.",
+          "evidence": "Directory check",
+          "failure_attribution": "not_applicable",
+          "kind": "temporary_state",
+          "state": "confirmed"
+        }
+      ]
+    },
+    "finished_at": "2026-10-19T22:58:43.620138Z",
+    "format_version": "watchdog.probe-result.v1",
+    "provenance": {
+      "adapter": {
+        "invocation": "provider hook via a recording wrapper around the native adapter",
+        "name": "agent-watchdog-hook",
+        "version": "agent-watchdog-hook 0.1.5 (providers: codex, claude; decision schema 2)"
+      },
+      "harness": {
+        "name": "claude-desktop",
+        "version": null
+      },
+      "os": {
+        "architecture": "AMD64",
+        "name": "Windows",
+        "version": null
+      },
+      "provider": {
+        "name": "claude",
+        "surface": "desktop",
+        "version": "2.1.299"
+      },
+      "source": {
+        "kind": "manual-observation",
+        "sanitized_reference": "wd156-adapter-rewrite"
+      }
+    },
+    "record_id": "wd156-claude-desktop-adapter-rewrite-2026-10-19-attempt-1",
+    "result": {
+      "limitations": [
+        "One Windows desktop session, the model the user selected, one scripted prompt."
+      ],
+      "state": "passed"
+    },
+    "scope": {
+      "expected_callback_kinds": [
+        "PreToolUse",
+        "SubagentStart"
+      ],
+      "expected_deliveries": 1,
+      "isolation": "scratch Git repository outside registered projects with project-local hooks",
+      "notes": "One capability per run; hook inputs and outputs stayed in scratch."
+    },
+    "stages": {
+      "adapter": {
+        "evidence": "The native adapter ran for each callback; the wrapper relayed its stdout, stderr and exit status unchanged.",
+        "failure_category": null,
+        "starts": 2,
+        "state": "confirmed"
+      },
+      "callbacks": {
+        "evidence": "Minimum expected count per event; input shapes are in capabilities.",
+        "expected": 1,
+        "missing": 0,
+        "missing_attribution": "not_applicable",
+        "observed": 1
+      },
+      "end_to_end_delivery": {
+        "evidence": "Read back from the session transcript.",
+        "expected": 1,
+        "failure_attribution": "not_applicable",
+        "failure_detail": null,
+        "persisted": 1,
+        "read_back": 1,
+        "state": "confirmed"
+      },
+      "persistence": {
+        "accepted": 0,
+        "evidence": "Not applicable: the probe does not exercise Watchdog persistence.",
+        "losses": []
+      },
+      "provider_dispatch": {
+        "attempts": 1,
+        "detail": null,
+        "evidence": "Claude emitted a result event",
+        "state": "confirmed"
+      },
+      "retries": {
+        "count": 0,
+        "evidence": "One run per case.",
+        "outcome": "not_attempted",
+        "reason": null,
+        "scopes": []
+      }
+    },
+    "started_at": "2026-10-19T22:48:45.737945Z"
+  },
+  {
+    "capabilities": {
+      "adapter-context": {
+        "callbacks": {
+          "PostToolUse": {
+            "input_fields": [
+              "cwd",
+              "duration_ms",
+              "effort",
+              "hook_event_name",
+              "permission_mode",
+              "prompt_id",
+              "scratchpad_dir",
+              "session_id",
+              "tool_input",
+              "tool_name",
+              "tool_response",
+              "tool_use_id",
+              "transcript_path"
+            ],
+            "observed": 1,
+            "tool_names": [
+              "Bash"
+            ]
+          },
+          "PreToolUse": {
+            "input_fields": [
+              "cwd",
+              "effort",
+              "hook_event_name",
+              "permission_mode",
+              "prompt_id",
+              "scratchpad_dir",
+              "session_id",
+              "tool_input",
+              "tool_name",
+              "tool_use_id",
+              "transcript_path"
+            ],
+            "observed": 1,
+            "tool_names": [
+              "Bash"
+            ]
+          }
+        },
+        "models": [
+          "claude-haiku-5-5"
+        ],
+        "response_shape": "hookSpecificOutput.additionalContext",
+        "state": "supported"
+      }
+    },
+    "classification": "live_provider",
+    "cleanup": {
+      "complete": true,
+      "remaining_state": null,
+      "resources": [
+        {
+          "action": "removed",
+          "alias": "temporary-claude-settings",
+          "detail": "Project-local .claude/settings.local.json in the scratch folder.",
+          "evidence": "Scratch directory check",
+          "failure_attribution": "not_applicable",
+          "kind": "hook_installation",
+          "state": "confirmed"
+        },
+        {
+          "action": "removed",
+          "alias": "scratch-repository",
+          "detail": null,
+          "evidence": "Scratch directory check",
+          "failure_attribution": "not_applicable",
+          "kind": "temporary_state",
+          "state": "confirmed"
+        },
+        {
+          "action": "removed",
+          "alias": "claude-project-state",
+          "detail": "Claude's per-directory state for the scratch repository.",
+          "evidence": "Directory check",
+          "failure_attribution": "not_applicable",
+          "kind": "temporary_state",
+          "state": "confirmed"
+        }
+      ]
+    },
+    "finished_at": "2026-10-19T22:58:43.620138Z",
+    "format_version": "watchdog.probe-result.v1",
+    "provenance": {
+      "adapter": {
+        "invocation": "provider hook via a recording wrapper around the native adapter",
+        "name": "agent-watchdog-hook",
+        "version": "agent-watchdog-hook 0.1.5 (providers: codex, claude; decision schema 2)"
+      },
+      "harness": {
+        "name": "claude-desktop",
+        "version": null
+      },
+      "os": {
+        "architecture": "AMD64",
+        "name": "Windows",
+        "version": null
+      },
+      "provider": {
+        "name": "claude",
+        "surface": "desktop",
+        "version": "2.1.299"
+      },
+      "source": {
+        "kind": "manual-observation",
+        "sanitized_reference": "wd156-adapter-context"
+      }
+    },
+    "record_id": "wd156-claude-desktop-adapter-context-2026-10-19-attempt-1",
+    "result": {
+      "limitations": [
+        "One Windows desktop session, the model the user selected, one scripted prompt."
+      ],
+      "state": "passed"
+    },
+    "scope": {
+      "expected_callback_kinds": [
+        "PreToolUse",
+        "PostToolUse"
+      ],
+      "expected_deliveries": 1,
+      "isolation": "scratch Git repository outside registered projects with project-local hooks",
+      "notes": "One capability per run; hook inputs and outputs stayed in scratch."
+    },
+    "stages": {
+      "adapter": {
+        "evidence": "The native adapter ran for each callback; the wrapper relayed its stdout, stderr and exit status unchanged.",
+        "failure_category": null,
+        "starts": 2,
+        "state": "confirmed"
+      },
+      "callbacks": {
+        "evidence": "Minimum expected count per event; input shapes are in capabilities.",
+        "expected": 1,
+        "missing": 0,
+        "missing_attribution": "not_applicable",
+        "observed": 1
+      },
+      "end_to_end_delivery": {
+        "evidence": "Read back from the session transcript.",
+        "expected": 1,
+        "failure_attribution": "not_applicable",
+        "failure_detail": null,
+        "persisted": 1,
+        "read_back": 1,
+        "state": "confirmed"
+      },
+      "persistence": {
+        "accepted": 0,
+        "evidence": "Not applicable: the probe does not exercise Watchdog persistence.",
+        "losses": []
+      },
+      "provider_dispatch": {
+        "attempts": 1,
+        "detail": null,
+        "evidence": "Claude emitted a result event",
+        "state": "confirmed"
+      },
+      "retries": {
+        "count": 0,
+        "evidence": "One run per case.",
+        "outcome": "not_attempted",
+        "reason": null,
+        "scopes": []
+      }
+    },
+    "started_at": "2026-10-19T22:48:45.737945Z"
+  },
+  {
+    "capabilities": {
+      "adapter-stop-block": {
+        "callbacks": {
+          "Stop": {
+            "input_fields": [
+              "background_tasks",
+              "cwd",
+              "effort",
+              "hook_event_name",
+              "last_assistant_message",
+              "permission_mode",
+              "prompt_id",
+              "scratchpad_dir",
+              "session_crons",
+              "session_id",
+              "stop_hook_active",
+              "transcript_path"
+            ],
+            "observed": 2,
+            "tool_names": []
+          }
+        },
+        "models": [
+          "claude-haiku-5-5"
+        ],
+        "response_shape": "decision=block",
+        "state": "supported"
+      }
+    },
+    "classification": "live_provider",
+    "cleanup": {
+      "complete": true,
+      "remaining_state": null,
+      "resources": [
+        {
+          "action": "removed",
+          "alias": "temporary-claude-settings",
+          "detail": "Project-local .claude/settings.local.json in the scratch folder.",
+          "evidence": "Scratch directory check",
+          "failure_attribution": "not_applicable",
+          "kind": "hook_installation",
+          "state": "confirmed"
+        },
+        {
+          "action": "removed",
+          "alias": "scratch-repository",
+          "detail": null,
+          "evidence": "Scratch directory check",
+          "failure_attribution": "not_applicable",
+          "kind": "temporary_state",
+          "state": "confirmed"
+        },
+        {
+          "action": "removed",
+          "alias": "claude-project-state",
+          "detail": "Claude's per-directory state for the scratch repository.",
+          "evidence": "Directory check",
+          "failure_attribution": "not_applicable",
+          "kind": "temporary_state",
+          "state": "confirmed"
+        }
+      ]
+    },
+    "finished_at": "2026-10-19T22:58:43.620138Z",
+    "format_version": "watchdog.probe-result.v1",
+    "provenance": {
+      "adapter": {
+        "invocation": "provider hook via a recording wrapper around the native adapter",
+        "name": "agent-watchdog-hook",
+        "version": "agent-watchdog-hook 0.1.5 (providers: codex, claude; decision schema 2)"
+      },
+      "harness": {
+        "name": "claude-desktop",
+        "version": null
+      },
+      "os": {
+        "architecture": "AMD64",
+        "name": "Windows",
+        "version": null
+      },
+      "provider": {
+        "name": "claude",
+        "surface": "desktop",
+        "version": "2.1.299"
+      },
+      "source": {
+        "kind": "manual-observation",
+        "sanitized_reference": "wd156-adapter-stop-block"
+      }
+    },
+    "record_id": "wd156-claude-desktop-adapter-stop-block-2026-10-19-attempt-1",
+    "result": {
+      "limitations": [
+        "One Windows desktop session, the model the user selected, one scripted prompt."
+      ],
+      "state": "passed"
+    },
+    "scope": {
+      "expected_callback_kinds": [
+        "Stop"
+      ],
+      "expected_deliveries": 1,
+      "isolation": "scratch Git repository outside registered projects with project-local hooks",
+      "notes": "One capability per run; hook inputs and outputs stayed in scratch."
+    },
+    "stages": {
+      "adapter": {
+        "evidence": "The native adapter ran for each callback; the wrapper relayed its stdout, stderr and exit status unchanged.",
+        "failure_category": null,
+        "starts": 2,
+        "state": "confirmed"
+      },
+      "callbacks": {
+        "evidence": "Minimum expected count per event; input shapes are in capabilities.",
+        "expected": 1,
+        "missing": 0,
+        "missing_attribution": "not_applicable",
+        "observed": 1
+      },
+      "end_to_end_delivery": {
+        "evidence": "Read back from the session transcript.",
+        "expected": 1,
+        "failure_attribution": "not_applicable",
+        "failure_detail": null,
+        "persisted": 1,
+        "read_back": 1,
+        "state": "confirmed"
+      },
+      "persistence": {
+        "accepted": 0,
+        "evidence": "Not applicable: the probe does not exercise Watchdog persistence.",
+        "losses": []
+      },
+      "provider_dispatch": {
+        "attempts": 1,
+        "detail": null,
+        "evidence": "Claude emitted a result event",
+        "state": "confirmed"
+      },
+      "retries": {
+        "count": 0,
+        "evidence": "One run per case.",
+        "outcome": "not_attempted",
+        "reason": null,
+        "scopes": []
+      }
+    },
+    "started_at": "2026-10-19T22:48:45.737945Z"
+  }
+]
