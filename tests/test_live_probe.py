@@ -874,3 +874,144 @@ def test_collect_judges_a_desktop_case_from_the_log_and_transcript(tmp_path):
     }
     assert record["cleanup"]["complete"] is False
     assert "pre-tool-deny" not in result["not_run"] and "stop-block" in result["not_run"]
+
+
+# --- WD-156 adapter-control: the real adapter and daemon in a scratch instance ---
+
+
+ADAPTER_CASES = ("adapter-deny", "adapter-rewrite", "adapter-context", "adapter-stop-block")
+
+
+def test_adapter_cases_cover_the_four_cells_with_the_base_case_judges():
+    assert tuple(live_probe.ADAPTER_CASES) == ADAPTER_CASES
+    bases = {name: case.base for name, case in live_probe.ADAPTER_CASES.items()}
+    assert bases == {
+        "adapter-deny": "pre-tool-deny",
+        "adapter-rewrite": "agent-rewrite",
+        "adapter-context": "post-tool-context",
+        "adapter-stop-block": "stop-block",
+    }
+
+
+@pytest.mark.parametrize("name", ADAPTER_CASES)
+def test_each_adapter_rule_is_valid_and_fires_on_its_base_case_cell(name):
+    from agent_watchdog.rules.declarative import parse_rule
+
+    case = live_probe.ADAPTER_CASES[name]
+    rule = parse_rule(case.rule_text)
+    base = live_probe.CLAUDE_CASES[case.base]
+    assert rule.origin == "user"
+    assert rule.event in {event for event, _matcher in base.events}
+    expected_kind = {
+        "adapter-deny": "deny",
+        "adapter-rewrite": "rewrite",
+        "adapter-context": "context",
+        "adapter-stop-block": "block",
+    }[name]
+    assert rule.action.kind == expected_kind
+
+
+def test_adapter_instance_registers_the_work_dir_and_approves_only_the_case_rule(tmp_path):
+    import hashlib
+
+    from agent_watchdog.config import load_config
+
+    case = live_probe.ADAPTER_CASES["adapter-deny"]
+    work = tmp_path / "work"
+    work.mkdir()
+
+    paths = live_probe.prepare_adapter_instance(tmp_path / "instance", work, case)
+
+    config = load_config(paths.config)
+    assert [project.root for project in config.projects] == [work.resolve()]
+    rule_file = paths.config.parent / "rules" / f"{case.rule_name}.toml"
+    digest = hashlib.sha256(rule_file.read_bytes()).hexdigest()
+    assert config.rules.approved == {case.rule_name: digest}
+    # Built-ins stay off so one capability is exercised per run.
+    assert {
+        "destructive_command",
+        "repeat_same_input_output",
+        "stop_without_verification",
+        "subagent_same_model",
+    } <= set(config.rules.disabled)
+    assert config.defaults.policy_intervene is True
+
+
+def test_adapter_settings_hook_only_the_case_events_through_the_recording_wrapper(tmp_path):
+    case = live_probe.ADAPTER_CASES["adapter-rewrite"]
+    paths = live_probe.UserPaths(tmp_path / "c.toml", tmp_path / "d", tmp_path / "r")
+
+    command = live_probe.adapter_hook_command(
+        Path("/probe/live_probe.py"), tmp_path / "log.ndjson", Path("/bin/adapter"), paths
+    )
+    settings = live_probe.hooks_settings(live_probe.CLAUDE_CASES[case.base], command)
+
+    assert sorted(settings["hooks"]) == ["PreToolUse", "SubagentStart"]
+    assert "claude-adapter-handler" in command
+    assert "/bin/adapter" in command
+
+
+def test_recording_wrapper_logs_the_input_and_relays_the_adapter_answer(
+    monkeypatch, capsys, tmp_path
+):
+    fake = tmp_path / "adapter.py"
+    fake.write_text(
+        'import sys\nsys.stdin.read()\nprint(\'{"decision": "block", "reason": "r"}\')\n',
+        encoding="utf-8",
+    )
+    log = tmp_path / "probe.ndjson"
+    payload = {"hook_event_name": "Stop", "stop_hook_active": False}
+    monkeypatch.setattr(
+        live_probe.sys, "stdin", io.TextIOWrapper(io.BytesIO(json.dumps(payload).encode()))
+    )
+
+    status = live_probe.handle_adapter_tee(log, [sys.executable, str(fake)])
+
+    assert status == 0
+    assert json.loads(capsys.readouterr().out) == {"decision": "block", "reason": "r"}
+    (record,) = live_probe._read_records(log)
+    assert record["event"] == "Stop"
+    assert record["input"] == payload
+    assert record["output"] == {"decision": "block", "reason": "r"}
+
+
+def test_recording_wrapper_fails_open_when_the_adapter_cannot_run(monkeypatch, capsys, tmp_path):
+    log = tmp_path / "probe.ndjson"
+    monkeypatch.setattr(
+        live_probe.sys,
+        "stdin",
+        io.TextIOWrapper(io.BytesIO(b'{"hook_event_name": "Stop"}')),
+    )
+
+    assert live_probe.handle_adapter_tee(log, [str(tmp_path / "missing-adapter")]) == 0
+
+    assert capsys.readouterr().out.strip() == "{}"
+    assert live_probe._read_records(log)[0]["event"] == "Stop"
+
+
+def test_adapter_record_names_the_production_adapter_and_the_real_adapter_stage():
+    case = live_probe.CLAUDE_CASES["stop-block"]
+    records = [
+        {"event": "Stop", "input": {"hook_event_name": "Stop"}},
+        {"event": "Stop", "input": {"hook_event_name": "Stop", "stop_hook_active": True}},
+    ]
+    evidence = _evidence(records, _stream(live_probe.STOP_ACK))
+
+    record = live_probe.claude_record(
+        case,
+        evidence,
+        verdict=live_probe.evaluate(case, evidence),
+        version="2.1.292",
+        started_at="2026-10-20T00:00:00Z",
+        finished_at="2026-10-20T00:01:00Z",
+        removed={"scratch": True},
+        adapter="agent-watchdog-hook 0.1.5",
+        record_name="adapter-stop-block",
+    )
+
+    assert record["provenance"]["adapter"]["name"] == "agent-watchdog-hook"
+    assert record["provenance"]["adapter"]["version"] == "agent-watchdog-hook 0.1.5"
+    assert record["stages"]["adapter"]["state"] == "confirmed"
+    assert "adapter-stop-block" in record["capabilities"]
+    assert record["capabilities"]["adapter-stop-block"]["state"] == "supported"
+    assert "adapter-stop-block" in record["record_id"]

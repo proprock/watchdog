@@ -26,7 +26,7 @@ from pathlib import Path
 from uuid import uuid4
 
 from agent_watchdog._proc import hidden_creationflags
-from agent_watchdog.config import load_config, user_paths
+from agent_watchdog.config import UserPaths, load_config, save_config, user_paths
 
 USER_PROMPT_MARKER = "WD139_USER_PROMPT_CONTEXT"
 POST_TOOL_MARKER = "WD139_POST_TOOL_CONTEXT"
@@ -1680,6 +1680,11 @@ def claude_settings(case: ClaudeCase, handler: Path, log: Path) -> dict[str, obj
             case.name,
         ]
     )
+    return hooks_settings(case, command)
+
+
+def hooks_settings(case: ClaudeCase, command: str) -> dict[str, object]:
+    """Settings whose only hooks are *case*'s events, all running *command*."""
     hooks: dict[str, list[dict[str, object]]] = {}
     for event, matcher in case.events:
         entry: dict[str, object] = {
@@ -1774,10 +1779,18 @@ def claude_record(
     finished_at: str,
     removed: Mapping[str, bool],
     surface: str = "cli",
+    adapter: str | None = None,
+    record_name: str | None = None,
 ) -> dict[str, object]:
-    """Build one `watchdog.probe-result.v1` record that keeps only shapes, never content."""
+    """Build one `watchdog.probe-result.v1` record that keeps only shapes, never content.
+
+    *adapter* is the production adapter's version banner when the run went through it
+    (WD-156); *record_name* then names the run instead of the base case.
+    """
     state, notes = verdict
     desktop = surface == "desktop"
+    run_name = record_name or case.name
+    prefix = "wd156" if adapter else "wd139"
     expected = sum(case.expected.values())
     observed = sum(min(len(evidence.calls(event)), count) for event, count in case.expected.items())
     result = evidence.result()
@@ -1832,18 +1845,26 @@ def claude_record(
     delivery = {"supported": "confirmed", "unsupported": "failed"}.get(state, "incomplete")
     return {
         "format_version": "watchdog.probe-result.v1",
-        "record_id": f"wd139-claude-{surface}-{case.name}-{finished_at[:10]}-attempt-1",
+        "record_id": f"{prefix}-claude-{surface}-{run_name}-{finished_at[:10]}-attempt-1",
         "classification": "live_provider",
         "started_at": started_at,
         "finished_at": finished_at,
         "provenance": {
             "provider": {"name": "claude", "version": version, "surface": surface},
             "harness": {"name": f"claude-{surface}", "version": None if desktop else version},
-            "adapter": {"name": "none", "version": None, "invocation": "provider"},
+            "adapter": (
+                {
+                    "name": "agent-watchdog-hook",
+                    "version": adapter,
+                    "invocation": "provider hook via a recording wrapper around the native adapter",
+                }
+                if adapter
+                else {"name": "none", "version": None, "invocation": "provider"}
+            ),
             "os": {"name": platform.system(), "version": None, "architecture": platform.machine()},
             "source": {
                 "kind": "manual-observation" if desktop else "generated-workload",
-                "sanitized_reference": f"wd139-{case.name}",
+                "sanitized_reference": f"{prefix}-{run_name}",
             },
         },
         "scope": {
@@ -1863,12 +1884,22 @@ def claude_record(
                 "evidence": "Claude emitted a result event" if dispatched else "No result event",
                 "detail": None,
             },
-            "adapter": {
-                "state": "not_invoked",
-                "starts": 0,
-                "failure_category": None,
-                "evidence": "The probe calls no Watchdog adapter.",
-            },
+            "adapter": (
+                {
+                    "state": "confirmed" if observed else "failed",
+                    "starts": sum(len(evidence.calls(event)) for event, _m in case.events),
+                    "failure_category": None if observed else "no_callback",
+                    "evidence": "The native adapter ran for each callback; the wrapper relayed "
+                    "its stdout, stderr and exit status unchanged.",
+                }
+                if adapter
+                else {
+                    "state": "not_invoked",
+                    "starts": 0,
+                    "failure_category": None,
+                    "evidence": "The probe calls no Watchdog adapter.",
+                }
+            ),
             "callbacks": {
                 "expected": expected,
                 "observed": observed,
@@ -1903,7 +1934,7 @@ def claude_record(
             },
         },
         "capabilities": {
-            case.name: {
+            run_name: {
                 "state": state,
                 "response_shape": case.response_shape,
                 "callbacks": callbacks,
@@ -2052,6 +2083,354 @@ def run_claude_control(args: argparse.Namespace) -> list[dict[str, object]]:
     version = claude_version(claude)
     names = sorted(CLAUDE_CASES) if args.all else args.case
     return [run_claude_case(CLAUDE_CASES[name], args, claude, version, roots) for name in names]
+
+
+# --- Claude adapter control (WD-156) --------------------------------------------------
+#
+# `claude-control` answers hooks with a stub, so it never exercises Watchdog. These runs
+# put the production native adapter, a real daemon and a real approved rule between Claude
+# and the same prompts and judges. Each run has its own scratch instance (config, data,
+# runtime) and daemon; a recording wrapper logs every callback and relays the adapter's
+# stdout, stderr and exit status unchanged, because the judges read that log.
+
+_ADAPTER_BUILTINS = (
+    "destructive_command",
+    "repeat_same_input_output",
+    "stop_without_verification",
+    "subagent_same_model",
+)
+_RULE_HEAD = (
+    'schema_version = 1\nname = "{name}"\nversion = "1"\norigin = "user"\n'
+    'description = "WD-156 live probe."\nprovider = ["claude"]\nevent = "{event}"\n'
+)
+
+
+@dataclass(frozen=True)
+class AdapterCase:
+    """One cell: the base case's prompt and judge, answered by an approved rule."""
+
+    name: str
+    base: str
+    rule_name: str
+    rule_text: str
+
+
+def _adapter_rule(name: str, event: str, match: str, action: str) -> str:
+    head = _RULE_HEAD.format(name=name, event=event)
+    section = f"\n[match]\n{match}\n" if match else ""
+    return f"{head}{section}\n[action]\n{action}\n"
+
+
+ADAPTER_CASES: dict[str, AdapterCase] = {
+    case.name: case
+    for case in [
+        AdapterCase(
+            "adapter-deny",
+            "pre-tool-deny",
+            "wd156_deny",
+            _adapter_rule(
+                "wd156_deny",
+                "PreToolUse",
+                'tool_name = "Bash"\ninput_regex = "WD139_PERMISSION"',
+                f'kind = "deny"\nmessage = "{DENY_REASON}"',
+            ),
+        ),
+        AdapterCase(
+            "adapter-rewrite",
+            "agent-rewrite",
+            "wd156_rewrite",
+            _adapter_rule(
+                "wd156_rewrite",
+                "PreToolUse",
+                'tool_name = "Agent"',
+                'kind = "rewrite"\nmessage = "WD-156 rewrite probe"\n'
+                'rewrite = { "tool_input.model" = "sonnet" }',
+            ),
+        ),
+        AdapterCase(
+            "adapter-context",
+            "post-tool-context",
+            "wd156_context",
+            _adapter_rule(
+                "wd156_context",
+                "PostToolUse",
+                'tool_name = "Bash"',
+                f'kind = "context"\nmessage = "{CTX}POST_TOOL"',
+            ),
+        ),
+        AdapterCase(
+            "adapter-stop-block",
+            "stop-block",
+            "wd156_stop_block",
+            _adapter_rule(
+                "wd156_stop_block",
+                "Stop",
+                "",
+                f'kind = "block"\nmessage = "Reply with exactly {STOP_ACK} and nothing else."\n'
+                "max_per_turn = 1",
+            ),
+        ),
+    ]
+}
+
+
+def prepare_adapter_instance(root: Path, work: Path, case: AdapterCase):
+    """Create a scratch Watchdog instance that approves only *case*'s rule for *work*."""
+    import hashlib
+
+    from agent_watchdog.daemon import mutate_registry
+
+    paths = UserPaths(root / "config" / "config.toml", root / "data", root / "runtime")
+    for directory in (paths.config.parent / "rules", paths.data, paths.runtime):
+        directory.mkdir(parents=True, exist_ok=True)
+    rule_file = paths.config.parent / "rules" / f"{case.rule_name}.toml"
+    rule_file.write_text(case.rule_text, encoding="utf-8", newline="\n")
+    mutate_registry(paths, lambda registry: registry.add(work))
+    config = load_config(paths.config)
+    rules = config.rules.model_copy(
+        update={
+            "approved": {case.rule_name: hashlib.sha256(rule_file.read_bytes()).hexdigest()},
+            "disabled": list(_ADAPTER_BUILTINS),
+        }
+    )
+    save_config(paths.config, config.model_copy(update={"rules": rules}))
+    return paths
+
+
+def adapter_hook_command(handler: Path, log: Path, adapter: Path, paths) -> str:
+    """The hook command: the recording wrapper in front of the production adapter."""
+    python = Path(sys.executable).as_posix()
+    return shlex.join(
+        [
+            python,
+            handler.as_posix(),
+            "claude-adapter-handler",
+            "--log",
+            log.as_posix(),
+            "--",
+            adapter.as_posix(),
+            "--python",
+            python,
+            "--config",
+            paths.config.as_posix(),
+            "--data",
+            paths.data.as_posix(),
+            "--runtime",
+            paths.runtime.as_posix(),
+            "hook",
+            "claude",
+        ]
+    )
+
+
+def handle_adapter_tee(log: Path, adapter_argv: Sequence[str]) -> int:
+    """Log one callback, run the adapter on the same bytes, relay its answer unchanged."""
+    raw = sys.stdin.buffer.read(MAX_HOOK_INPUT_BYTES + 1)
+    try:
+        payload = json.loads(raw)
+        event = payload.get("hook_event_name") if isinstance(payload, dict) else None
+    except ValueError:
+        payload, event = None, None
+    record: dict[str, object] = {"event": event, "input": payload}
+    stdout, stderr, status = b"{}", b"", 0
+    try:
+        completed = subprocess.run(
+            list(adapter_argv),
+            input=raw,
+            capture_output=True,
+            timeout=25,
+            creationflags=hidden_creationflags(),
+        )
+        stdout, stderr, status = completed.stdout, completed.stderr, completed.returncode
+    except (OSError, subprocess.SubprocessError) as error:
+        record["adapter_error"] = type(error).__name__
+    try:
+        output = json.loads(stdout) if stdout.strip() else {}
+    except ValueError:
+        output = {}
+    record.update(output=output, exit_status=status)
+    _append_log(log, record)
+    sys.stdout.buffer.write(stdout if stdout.strip() else b"{}\n")
+    sys.stdout.buffer.flush()
+    sys.stderr.buffer.write(stderr)
+    sys.stderr.buffer.flush()
+    return status
+
+
+def run_scratch_daemon(config: Path, data: Path, runtime: Path) -> int:
+    from agent_watchdog import daemon
+
+    return daemon.run(UserPaths(config, data, runtime))
+
+
+def _wait_for_subscription(paths, timeout: float) -> bool:
+    document = paths.data / "policy" / "socket.json"
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        try:
+            if json.loads(document.read_text(encoding="utf-8")).get("subscriptions"):
+                return True
+        except (OSError, ValueError):
+            pass
+        time.sleep(0.2)
+    return False
+
+
+def _stop_process(process: subprocess.Popen) -> None:
+    """Stop *process* and its children; a venv launcher on Windows spawns the real daemon."""
+    if os.name == "nt":
+        subprocess.run(
+            ["taskkill", "/PID", str(process.pid), "/T", "/F"],
+            capture_output=True,
+            check=False,
+            creationflags=hidden_creationflags(),
+        )
+    process.terminate()
+    try:
+        process.wait(timeout=10)
+    except subprocess.TimeoutExpired:
+        process.kill()
+        process.wait(timeout=10)
+
+
+def adapter_version(adapter: Path) -> str:
+    result = subprocess.run(
+        [str(adapter), "--version"],
+        capture_output=True,
+        check=True,
+        text=True,
+        creationflags=hidden_creationflags(),
+    )
+    return result.stdout.strip()
+
+
+def run_adapter_case(
+    case: AdapterCase,
+    args: argparse.Namespace,
+    claude: str,
+    version: str,
+    adapter: Path,
+    adapter_banner: str,
+    roots: Sequence[Path],
+) -> dict[str, object]:
+    base = CLAUDE_CASES[case.base]
+    started_at = datetime.now(UTC).isoformat().replace("+00:00", "Z")
+    with tempfile.TemporaryDirectory(
+        prefix="watchdog-wd156-claude-", ignore_cleanup_errors=True
+    ) as temporary:
+        scratch = Path(temporary)
+        ensure_scratch_outside_roots(scratch, roots)
+        work = scratch / "work"
+        work.mkdir()
+        subprocess.run(
+            ["git", "init", str(work)],
+            capture_output=True,
+            text=True,
+            check=True,
+            creationflags=hidden_creationflags(),
+        )
+        paths = prepare_adapter_instance(scratch / "instance", work, case)
+        log = scratch / "control" / "probe.ndjson"
+        settings = scratch / "control" / "settings.json"
+        settings.parent.mkdir()
+        command = adapter_hook_command(Path(__file__).resolve(), log, adapter, paths)
+        settings.write_text(
+            json.dumps(hooks_settings(base, command)), encoding="utf-8", newline="\n"
+        )
+        daemon = subprocess.Popen(
+            [
+                sys.executable,
+                str(Path(__file__).resolve()),
+                "scratch-daemon",
+                "--config",
+                str(paths.config),
+                "--data",
+                str(paths.data),
+                "--runtime",
+                str(paths.runtime),
+            ],
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            creationflags=hidden_creationflags(),
+        )
+        stdout, timed_out, published = "", False, False
+        try:
+            published = _wait_for_subscription(paths, 30)
+            if published:
+                try:
+                    completed = subprocess.run(
+                        claude_command(claude, base, settings, args.budget),
+                        input=claude_stdin(base),
+                        capture_output=True,
+                        text=True,
+                        timeout=args.timeout,
+                        cwd=work,
+                        creationflags=hidden_creationflags(),
+                    )
+                    stdout = completed.stdout
+                except subprocess.TimeoutExpired as error:
+                    timed_out = True
+                    partial = error.stdout
+                    stdout = (
+                        partial.decode("utf-8", "replace")
+                        if isinstance(partial, bytes)
+                        else partial or ""
+                    )
+        finally:
+            _stop_process(daemon)
+        evidence = ClaudeEvidence(
+            records=_read_records(log),
+            stream=parse_stream(stdout),
+            files=frozenset(entry.name for entry in work.iterdir() if entry.name != ".git"),
+            timed_out=timed_out,
+        )
+    verdict = (
+        evaluate(base, evidence)
+        if published
+        else ("inconclusive", ["the scratch daemon never published a subscription"])
+    )
+    removed: dict[str, bool] = {"scratch": not scratch.exists()}
+    provider_state = remove_claude_state(scratch)
+    if provider_state is not None:
+        removed["provider_state"] = provider_state
+    return claude_record(
+        base,
+        evidence,
+        verdict=verdict,
+        version=version,
+        started_at=started_at,
+        finished_at=datetime.now(UTC).isoformat().replace("+00:00", "Z"),
+        removed=removed,
+        adapter=adapter_banner,
+        record_name=case.name,
+    )
+
+
+def default_adapter() -> Path:
+    suffix = ".exe" if os.name == "nt" else ""
+    return (
+        Path(__file__).resolve().parents[1]
+        / "native"
+        / "target"
+        / "release"
+        / (f"agent-watchdog-hook{suffix}")
+    )
+
+
+def run_adapter_control(args: argparse.Namespace) -> list[dict[str, object]]:
+    require_standalone_claude()
+    roots = registered_roots(args.config)
+    ensure_scratch_outside_roots(Path(tempfile.gettempdir()), roots)
+    claude = _resolve_executable(args.claude, "Claude Code CLI", "--claude")
+    adapter = Path(_resolve_executable(str(args.adapter), "native adapter", "--adapter"))
+    require_claude_login(claude)
+    version, banner = claude_version(claude), adapter_version(adapter)
+    names = sorted(ADAPTER_CASES) if args.all else args.case
+    return [
+        run_adapter_case(ADAPTER_CASES[name], args, claude, version, adapter, banner, roots)
+        for name in names
+    ]
 
 
 # --- Claude desktop kit ---------------------------------------------------------------
@@ -2326,6 +2705,25 @@ def main() -> int:
     control.add_argument("--config", type=Path)
     control.add_argument("--timeout", type=float, default=180)
     control.add_argument("--budget", type=float, default=0.5, help="USD cap per case")
+    adapter_handler = commands.add_parser(
+        "claude-adapter-handler", help="internal recording wrapper around the native adapter"
+    )
+    adapter_handler.add_argument("--log", type=Path, required=True)
+    adapter_handler.add_argument("adapter_argv", nargs=argparse.REMAINDER)
+    scratch = commands.add_parser("scratch-daemon", help="internal daemon for a scratch instance")
+    for option in ("--config", "--data", "--runtime"):
+        scratch.add_argument(option, type=Path, required=True)
+    adapter_control = commands.add_parser(
+        "adapter-control", help="run Claude control probes through the production adapter"
+    )
+    adapter_selection = adapter_control.add_mutually_exclusive_group(required=True)
+    adapter_selection.add_argument("--case", action="append", choices=sorted(ADAPTER_CASES))
+    adapter_selection.add_argument("--all", action="store_true")
+    adapter_control.add_argument("--claude", default="claude")
+    adapter_control.add_argument("--adapter", type=Path, default=default_adapter())
+    adapter_control.add_argument("--config", type=Path)
+    adapter_control.add_argument("--timeout", type=float, default=180)
+    adapter_control.add_argument("--budget", type=float, default=0.5, help="USD cap per case")
     routed = commands.add_parser("claude-routed-handler", help="internal Claude desktop handler")
     routed.add_argument("--dir", type=Path, required=True)
     prepare = commands.add_parser(
@@ -2343,6 +2741,12 @@ def main() -> int:
         return handle_codex(args.log, args.case)
     if args.action == "claude-handler":
         return handle_claude(args.log, args.case)
+    if args.action == "claude-adapter-handler":
+        # argparse keeps the "--" separator at the head of the remainder.
+        argv = args.adapter_argv[1:] if args.adapter_argv[:1] == ["--"] else args.adapter_argv
+        return handle_adapter_tee(args.log, argv)
+    if args.action == "scratch-daemon":
+        return run_scratch_daemon(args.config, args.data, args.runtime)
     if args.action == "claude-routed-handler":
         return handle_routed(args.dir)
     try:
@@ -2352,6 +2756,8 @@ def main() -> int:
             print(json.dumps(collect_desktop(args.dir, clean=args.clean), indent=2, sort_keys=True))
         elif args.action == "claude-control":
             print(json.dumps(run_claude_control(args), indent=2, sort_keys=True))
+        elif args.action == "adapter-control":
+            print(json.dumps(run_adapter_control(args), indent=2, sort_keys=True))
         elif args.action == "codex-control":
             print(json.dumps(run_codex_control(args), indent=2, sort_keys=True))
         else:
