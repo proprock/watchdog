@@ -1015,3 +1015,135 @@ def test_adapter_record_names_the_production_adapter_and_the_real_adapter_stage(
     assert "adapter-stop-block" in record["capabilities"]
     assert record["capabilities"]["adapter-stop-block"]["state"] == "supported"
     assert "adapter-stop-block" in record["record_id"]
+
+
+# --- WD-156 adapter-control on Claude desktop ---
+
+
+def _fake_adapter(tmp_path, answer):
+    script = tmp_path / "fake_adapter.py"
+    script.write_text(f"import sys\nsys.stdin.read()\nprint({answer!r})\n", encoding="utf-8")
+    return [sys.executable, str(script)]
+
+
+def _routed(monkeypatch, directory, adapter_argv, payload):
+    monkeypatch.setattr(
+        live_probe.sys, "stdin", io.TextIOWrapper(io.BytesIO(json.dumps(payload).encode()))
+    )
+    return live_probe.handle_adapter_routed(directory, adapter_argv)
+
+
+def test_desktop_adapter_kit_arms_the_four_cells_behind_the_routed_wrapper(tmp_path):
+    started = []
+    result = live_probe.prepare_desktop_adapter(
+        tmp_path / "kit",
+        [],
+        Path("/bin/adapter"),
+        "agent-watchdog-hook 0.1.5",
+        lambda paths: started.append(paths) or 4242,
+    )
+
+    kit = tmp_path / "kit"
+    assert [step["case"] for step in result["steps"]] == list(ADAPTER_CASES)
+    assert all(step["prompt"].startswith(f"WD156[{step['case']}] ") for step in result["steps"])
+    settings = json.loads((kit / ".claude" / "settings.local.json").read_text(encoding="utf-8"))
+    command = settings["hooks"]["PreToolUse"][0]["hooks"][0]["command"]
+    assert "claude-adapter-routed-handler" in command and "/bin/adapter" in command
+    assert (kit / ".wd156" / "daemon.pid").read_text(encoding="utf-8") == "4242"
+    assert len(started) == 1
+    # Every case rule is approved in the kit's own instance, not in a user configuration.
+    from agent_watchdog.config import load_config
+
+    config = load_config(kit / ".wd156" / "instance" / "config" / "config.toml")
+    assert set(config.rules.approved) == {
+        case.rule_name for case in live_probe.ADAPTER_CASES.values()
+    }
+    assert [project.root for project in config.projects] == [kit.resolve()]
+
+
+def test_routed_wrapper_forwards_only_the_armed_cells_events(monkeypatch, capsys, tmp_path):
+    control = tmp_path / ".wd156"
+    control.mkdir()
+    adapter = _fake_adapter(tmp_path, '{"decision": "block", "reason": "r"}')
+    prompt = {"hook_event_name": "UserPromptSubmit", "prompt": "WD156[adapter-stop-block] go"}
+
+    assert _routed(monkeypatch, tmp_path, adapter, prompt) == 0
+    assert capsys.readouterr().out.strip() == "{}"
+    assert (control / "case").read_text(encoding="utf-8") == "adapter-stop-block"
+
+    # The armed cell's event reaches the adapter; another cell's event does not.
+    _routed(monkeypatch, tmp_path, adapter, {"hook_event_name": "Stop", "session_id": "s"})
+    assert json.loads(capsys.readouterr().out) == {"decision": "block", "reason": "r"}
+    _routed(monkeypatch, tmp_path, adapter, {"hook_event_name": "PostToolUse", "session_id": "s"})
+    assert capsys.readouterr().out.strip() == "{}"
+
+    logged = live_probe._read_records(control / "probe.ndjson")
+    assert [(item["event"], item["case"]) for item in logged] == [
+        ("UserPromptSubmit", "adapter-stop-block"),
+        ("Stop", "adapter-stop-block"),
+        ("PostToolUse", "adapter-stop-block"),
+    ]
+    assert logged[1]["output"] == {"decision": "block", "reason": "r"}
+
+
+def _desktop_adapter_log(kit, case, payload, events):
+    control = kit / ".wd156"
+    control.mkdir(exist_ok=True)
+    entries = [{"event": event, "case": case, "input": payload} for event in events]
+    (control / "probe.ndjson").write_text(
+        "\n".join(json.dumps(entry) for entry in entries), encoding="utf-8"
+    )
+    (control / "adapter.txt").write_text("agent-watchdog-hook 0.1.5", encoding="utf-8")
+
+
+def test_desktop_rewrite_is_judged_from_the_subagent_transcript_models(tmp_path):
+    transcript = tmp_path / "session.jsonl"
+    transcript.write_text(
+        json.dumps({"type": "assistant", "message": {"model": "claude-haiku-4-5", "content": []}}),
+        encoding="utf-8",
+    )
+    subagents = tmp_path / "session" / "subagents"
+    subagents.mkdir(parents=True)
+    (subagents / "agent-a1.jsonl").write_text(
+        json.dumps({"type": "assistant", "message": {"model": "claude-sonnet-5-5", "content": []}}),
+        encoding="utf-8",
+    )
+    payload = {"session_id": "s1", "transcript_path": str(transcript), "agent_id": "a1"}
+    _desktop_adapter_log(
+        tmp_path,
+        "adapter-rewrite",
+        payload,
+        ["UserPromptSubmit", "PreToolUse", "SubagentStart"],
+    )
+
+    result = live_probe.collect_desktop_adapter(tmp_path, clean=False)
+
+    (record,) = result["records"]
+    capability = record["capabilities"]["adapter-rewrite"]
+    assert capability["state"] == "supported"
+    assert "claude-sonnet-5-5" in capability["models"]
+    assert record["provenance"]["adapter"]["version"] == "agent-watchdog-hook 0.1.5"
+    assert record["provenance"]["provider"]["surface"] == "desktop"
+    assert "adapter-deny" in result["not_run"]
+
+
+def test_desktop_rewrite_without_a_sonnet_subagent_is_unsupported(tmp_path):
+    transcript = tmp_path / "session.jsonl"
+    transcript.write_text(
+        json.dumps({"type": "assistant", "message": {"model": "claude-haiku-4-5", "content": []}}),
+        encoding="utf-8",
+    )
+    subagents = tmp_path / "session" / "subagents"
+    subagents.mkdir(parents=True)
+    (subagents / "agent-a1.jsonl").write_text(
+        json.dumps({"type": "assistant", "message": {"model": "claude-haiku-4-5", "content": []}}),
+        encoding="utf-8",
+    )
+    payload = {"session_id": "s1", "transcript_path": str(transcript), "agent_id": "a1"}
+    _desktop_adapter_log(
+        tmp_path, "adapter-rewrite", payload, ["UserPromptSubmit", "PreToolUse", "SubagentStart"]
+    )
+
+    (record,) = live_probe.collect_desktop_adapter(tmp_path, clean=False)["records"]
+
+    assert record["capabilities"]["adapter-rewrite"]["state"] == "unsupported"

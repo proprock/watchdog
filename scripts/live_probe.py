@@ -2174,24 +2174,25 @@ ADAPTER_CASES: dict[str, AdapterCase] = {
 }
 
 
-def prepare_adapter_instance(root: Path, work: Path, case: AdapterCase):
-    """Create a scratch Watchdog instance that approves only *case*'s rule for *work*."""
+def prepare_adapter_instance(root: Path, work: Path, cases: AdapterCase | Sequence[AdapterCase]):
+    """Create a scratch Watchdog instance that approves only the given case rules for *work*."""
     import hashlib
 
     from agent_watchdog.daemon import mutate_registry
 
+    chosen = [cases] if isinstance(cases, AdapterCase) else list(cases)
     paths = UserPaths(root / "config" / "config.toml", root / "data", root / "runtime")
     for directory in (paths.config.parent / "rules", paths.data, paths.runtime):
         directory.mkdir(parents=True, exist_ok=True)
-    rule_file = paths.config.parent / "rules" / f"{case.rule_name}.toml"
-    rule_file.write_text(case.rule_text, encoding="utf-8", newline="\n")
+    approved: dict[str, str] = {}
+    for case in chosen:
+        rule_file = paths.config.parent / "rules" / f"{case.rule_name}.toml"
+        rule_file.write_text(case.rule_text, encoding="utf-8", newline="\n")
+        approved[case.rule_name] = hashlib.sha256(rule_file.read_bytes()).hexdigest()
     mutate_registry(paths, lambda registry: registry.add(work))
     config = load_config(paths.config)
     rules = config.rules.model_copy(
-        update={
-            "approved": {case.rule_name: hashlib.sha256(rule_file.read_bytes()).hexdigest()},
-            "disabled": list(_ADAPTER_BUILTINS),
-        }
+        update={"approved": approved, "disabled": list(_ADAPTER_BUILTINS)}
     )
     save_config(paths.config, config.model_copy(update={"rules": rules}))
     return paths
@@ -2526,8 +2527,8 @@ def handle_routed(directory: Path) -> int:
     return 0
 
 
-def desktop_settings(directory: Path) -> dict[str, object]:
-    command = shlex.join(
+def desktop_settings(directory: Path, command: str | None = None) -> dict[str, object]:
+    command = command or shlex.join(
         [
             Path(sys.executable).as_posix(),
             Path(__file__).resolve().as_posix(),
@@ -2671,6 +2672,277 @@ def collect_desktop(directory: Path, *, clean: bool) -> dict[str, object]:
     return {"records": records, "not_run": not_run}
 
 
+ADAPTER_ROUTE = re.compile(r"WD156\[(adapter-[a-z-]+)\]")
+
+
+def adapter_desktop_prompt(case: AdapterCase) -> str:
+    return f"WD156[{case.name}] " + desktop_prompt(CLAUDE_CASES[case.base]).split("] ", 1)[1]
+
+
+def _adapter_events(case: AdapterCase) -> frozenset[str]:
+    return frozenset(event for event, _matcher in CLAUDE_CASES[case.base].events)
+
+
+def handle_adapter_routed(directory: Path, adapter_argv: Sequence[str]) -> int:
+    """Desktop wrapper: log every callback, forward only the armed cell's events to the adapter.
+
+    The kit approves all four rules at once, so an unarmed rule (the `Stop` block above all)
+    would otherwise change another chat's turn. The prompt prefix arms one cell per chat.
+    """
+    control = directory / ".wd156"
+    case_file = control / "case"
+    raw = sys.stdin.buffer.read(MAX_HOOK_INPUT_BYTES + 1)
+    try:
+        payload = json.loads(raw)
+        event = payload.get("hook_event_name") if isinstance(payload, dict) else None
+    except ValueError:
+        payload, event = None, None
+    name = IDLE
+    try:
+        prompt = payload.get("prompt") if isinstance(payload, dict) else None
+        route = (
+            ADAPTER_ROUTE.search(prompt)
+            if event == "UserPromptSubmit" and isinstance(prompt, str)
+            else None
+        )
+        if route is not None and route.group(1) in ADAPTER_CASES:
+            case_file.write_text(route.group(1), encoding="utf-8")
+            (directory / SENTINEL).unlink(missing_ok=True)  # each case starts clean
+        name = case_file.read_text(encoding="utf-8").strip() if case_file.is_file() else IDLE
+    except OSError:
+        pass
+    case = ADAPTER_CASES.get(name)
+    stdout, stderr, status = b"{}", b"", 0
+    record: dict[str, object] = {"event": event, "case": name, "input": payload}
+    if case is not None and event in _adapter_events(case):
+        try:
+            completed = subprocess.run(
+                list(adapter_argv),
+                input=raw,
+                capture_output=True,
+                timeout=25,
+                creationflags=hidden_creationflags(),
+            )
+            stdout, stderr, status = completed.stdout, completed.stderr, completed.returncode
+        except (OSError, subprocess.SubprocessError) as error:
+            record["adapter_error"] = type(error).__name__
+    try:
+        output = json.loads(stdout) if stdout.strip() else {}
+    except ValueError:
+        output = {}
+    record.update(output=output, exit_status=status)
+    if event == "Stop" and not output:
+        record["files"] = _scratch_files(directory)
+        try:
+            case_file.write_text(IDLE, encoding="utf-8")  # a finished turn disarms the cell
+        except OSError:
+            pass
+    try:
+        _append_log(control / "probe.ndjson", record)
+    except OSError:
+        pass
+    sys.stdout.buffer.write(stdout if stdout.strip() else b"{}\n")
+    sys.stdout.buffer.flush()
+    sys.stderr.buffer.write(stderr)
+    sys.stderr.buffer.flush()
+    return status
+
+
+def start_scratch_daemon(paths: UserPaths) -> int:
+    """Start the kit's daemon detached; it outlives this command until `desktop-collect`."""
+    flags = hidden_creationflags(getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0))
+    process = subprocess.Popen(
+        [
+            sys.executable,
+            str(Path(__file__).resolve()),
+            "scratch-daemon",
+            "--config",
+            str(paths.config),
+            "--data",
+            str(paths.data),
+            "--runtime",
+            str(paths.runtime),
+        ],
+        stdin=subprocess.DEVNULL,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+        creationflags=flags,
+    )
+    if not _wait_for_subscription(paths, 30):
+        _stop_process(process)
+        raise RuntimeError("the scratch daemon never published a subscription")
+    return process.pid
+
+
+def prepare_desktop_adapter(
+    directory: Path | None,
+    roots: Sequence[Path],
+    adapter: Path,
+    banner: str,
+    start_daemon: Callable[[UserPaths], int] = start_scratch_daemon,
+) -> dict[str, object]:
+    target = (
+        directory
+        if directory is not None
+        else Path(tempfile.mkdtemp(prefix="watchdog-wd156-desktop-"))
+    )
+    ensure_scratch_outside_roots(target, roots)
+    target.mkdir(parents=True, exist_ok=True)
+    subprocess.run(
+        ["git", "init", str(target)],
+        capture_output=True,
+        text=True,
+        check=True,
+        creationflags=hidden_creationflags(),
+    )
+    control = target / ".wd156"
+    control.mkdir(exist_ok=True)
+    cases = list(ADAPTER_CASES.values())
+    paths = prepare_adapter_instance(control / "instance", target, cases)
+    python = Path(sys.executable).as_posix()
+    command = shlex.join(
+        [
+            python,
+            Path(__file__).resolve().as_posix(),
+            "claude-adapter-routed-handler",
+            "--dir",
+            target.as_posix(),
+            "--",
+            adapter.as_posix(),
+            "--python",
+            python,
+            "--config",
+            paths.config.as_posix(),
+            "--data",
+            paths.data.as_posix(),
+            "--runtime",
+            paths.runtime.as_posix(),
+            "hook",
+            "claude",
+        ]
+    )
+    (target / ".claude").mkdir(exist_ok=True)
+    (target / ".claude" / "settings.local.json").write_text(
+        json.dumps(desktop_settings(target, command), indent=2), encoding="utf-8", newline="\n"
+    )
+    (control / "case").write_text(IDLE, encoding="utf-8")
+    (control / "adapter.txt").write_text(banner, encoding="utf-8")
+    (control / "daemon.pid").write_text(str(start_daemon(paths)), encoding="utf-8")
+    return {
+        "dir": str(target),
+        "steps": [{"case": case.name, "prompt": adapter_desktop_prompt(case)} for case in cases],
+    }
+
+
+def _subagent_models(transcript: Path | None, agent_ids: Sequence[str]) -> set[str]:
+    """Models of the subagents' own transcripts; the parent transcript carries none."""
+    if transcript is None:
+        return set()
+    models: set[str] = set()
+    for agent_id in agent_ids:
+        path = transcript.with_suffix("") / "subagents" / f"agent-{agent_id}.jsonl"
+        for event in parse_stream(_read_rollout(path)):
+            message = event.get("message")
+            model = message.get("model") if isinstance(message, dict) else None
+            if event.get("type") == "assistant" and isinstance(model, str):
+                models.add(model)
+    return models
+
+
+def collect_desktop_adapter(directory: Path, *, clean: bool) -> dict[str, object]:
+    control = directory / ".wd156"
+    logged = _read_records(control / "probe.ndjson")
+    banner = (control / "adapter.txt").read_text(encoding="utf-8").strip()
+    prepared = directory / ".claude" / "settings.local.json"
+    marker = prepared if prepared.is_file() else control / "probe.ndjson"
+    started = datetime.fromtimestamp(marker.stat().st_mtime, UTC)
+    gathered: list[tuple[AdapterCase, ClaudeEvidence, str | None]] = []
+    not_run: list[str] = []
+    for case in ADAPTER_CASES.values():
+        tagged = [record for record in logged if record.get("case") == case.name]
+        sessions = [
+            payload.get("session_id")
+            for record in tagged
+            if record.get("event") == "UserPromptSubmit"
+            and isinstance(payload := record.get("input"), dict)
+        ]
+        if not sessions:
+            not_run.append(case.name)
+            continue
+        mine = [
+            record
+            for record in tagged
+            if isinstance(payload := record.get("input"), dict)
+            and payload.get("session_id") == sessions[-1]
+        ]
+        rollout = _rollout_path(mine)
+        stream, version = transcript_stream(parse_stream(_read_rollout(rollout)))
+        agent_ids = [
+            agent_id
+            for record in mine
+            if record.get("event") == "SubagentStart"
+            and isinstance(payload := record.get("input"), dict)
+            and isinstance(agent_id := payload.get("agent_id"), str)
+        ]
+        extra = _subagent_models(rollout, agent_ids)
+        if extra and stream and stream[-1].get("type") == "result":
+            usage = stream[-1].get("modelUsage")
+            merged = {**(usage if isinstance(usage, dict) else {}), **{m: {} for m in extra}}
+            stream[-1] = {**stream[-1], "modelUsage": merged}
+        snapshots = [
+            [name for name in listed if isinstance(name, str)]
+            for record in mine
+            if isinstance(listed := record.get("files"), list)
+        ]
+        files = frozenset(snapshots[-1] if snapshots else _scratch_files(directory))
+        gathered.append((case, ClaudeEvidence(records=mine, stream=stream, files=files), version))
+    pid_file = control / "daemon.pid"
+    if pid_file.is_file():
+        try:
+            _stop_pid(int(pid_file.read_text(encoding="utf-8")))
+        except ValueError:
+            pass
+    removed = {"scratch": False}
+    if clean:
+        shutil.rmtree(directory, ignore_errors=True)
+        removed = {"scratch": not directory.exists() or not any(directory.iterdir())}
+        provider_state = remove_claude_state(directory)
+        if provider_state is not None:
+            removed["provider_state"] = provider_state
+    finished_at = datetime.now(UTC).isoformat().replace("+00:00", "Z")
+    records = [
+        claude_record(
+            CLAUDE_CASES[case.base],
+            evidence,
+            verdict=evaluate(CLAUDE_CASES[case.base], evidence),
+            version=version,
+            started_at=started.isoformat().replace("+00:00", "Z"),
+            finished_at=finished_at,
+            removed=removed,
+            surface="desktop",
+            adapter=banner,
+            record_name=case.name,
+        )
+        for case, evidence, version in gathered
+    ]
+    return {"records": records, "not_run": not_run}
+
+
+def _stop_pid(pid: int) -> None:
+    if os.name == "nt":
+        subprocess.run(
+            ["taskkill", "/PID", str(pid), "/T", "/F"],
+            capture_output=True,
+            check=False,
+            creationflags=hidden_creationflags(),
+        )
+    else:
+        try:
+            os.kill(pid, 15)
+        except OSError:
+            pass
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     commands = parser.add_subparsers(dest="action", required=True)
@@ -2731,6 +3003,18 @@ def main() -> int:
     )
     prepare.add_argument("--dir", type=Path)
     prepare.add_argument("--config", type=Path)
+    prepare.add_argument(
+        "--adapter",
+        type=Path,
+        nargs="?",
+        const=default_adapter(),
+        help="route the hooks through the production adapter and a scratch daemon (WD-156)",
+    )
+    adapter_routed = commands.add_parser(
+        "claude-adapter-routed-handler", help="internal desktop wrapper around the native adapter"
+    )
+    adapter_routed.add_argument("--dir", type=Path, required=True)
+    adapter_routed.add_argument("adapter_argv", nargs=argparse.REMAINDER)
     collect = commands.add_parser("desktop-collect", help="judge the desktop cases that were run")
     collect.add_argument("--dir", type=Path, required=True)
     collect.add_argument("--clean", action="store_true", help="remove the folder afterwards")
@@ -2749,11 +3033,21 @@ def main() -> int:
         return run_scratch_daemon(args.config, args.data, args.runtime)
     if args.action == "claude-routed-handler":
         return handle_routed(args.dir)
+    if args.action == "claude-adapter-routed-handler":
+        argv = args.adapter_argv[1:] if args.adapter_argv[:1] == ["--"] else args.adapter_argv
+        return handle_adapter_routed(args.dir, argv)
     try:
-        if args.action == "desktop-prepare":
+        if args.action == "desktop-prepare" and args.adapter is not None:
+            adapter = Path(_resolve_executable(str(args.adapter), "native adapter", "--adapter"))
+            kit = prepare_desktop_adapter(
+                args.dir, registered_roots(args.config), adapter, adapter_version(adapter)
+            )
+            print(json.dumps(kit, indent=2))
+        elif args.action == "desktop-prepare":
             print(json.dumps(prepare_desktop(args.dir, registered_roots(args.config)), indent=2))
         elif args.action == "desktop-collect":
-            print(json.dumps(collect_desktop(args.dir, clean=args.clean), indent=2, sort_keys=True))
+            collect = collect_desktop_adapter if (args.dir / ".wd156").is_dir() else collect_desktop
+            print(json.dumps(collect(args.dir, clean=args.clean), indent=2, sort_keys=True))
         elif args.action == "claude-control":
             print(json.dumps(run_claude_control(args), indent=2, sort_keys=True))
         elif args.action == "adapter-control":
