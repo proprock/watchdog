@@ -1223,10 +1223,13 @@ _POLICY_REQUEST_OVERHEAD_BYTES = 64 * 1024
 
 def _policy_request_bytes(paths: UserPaths) -> int:
     try:
-        payload_bytes = spool_payload_bytes(load_config(paths.config))
+        return _request_budget(load_config(paths.config))
     except (ConfigError, OSError):
-        payload_bytes = Limits().payload_bytes
-    return payload_bytes + _POLICY_REQUEST_OVERHEAD_BYTES
+        return Limits().payload_bytes + _POLICY_REQUEST_OVERHEAD_BYTES
+
+
+def _request_budget(config: Config) -> int:
+    return spool_payload_bytes(config) + _POLICY_REQUEST_OVERHEAD_BYTES
 
 
 def _record_control(
@@ -1502,9 +1505,11 @@ class _Channel:
         paths: UserPaths,
         document: dict[str, object] | None = None,
         stats: _ChannelStats | None = None,
+        server: _PolicyServer | None = None,
     ) -> None:
         self._paths = paths
         self._document = document
+        self._server = server
         self._failing = False
         self.stats = stats if stats is not None else _ChannelStats()
 
@@ -1530,11 +1535,22 @@ class _Channel:
             return
         try:
             wanted = subscriptions(self._paths, config)
-            if wanted == self._document["subscriptions"]:
+            budget = _request_budget(config)
+            if wanted == self._document["subscriptions"] and budget == self._document.get(
+                "max_request_bytes"
+            ):
                 self._failing = False
                 return
-            document = {**self._document, "subscriptions": wanted}
+            document = {**self._document, "subscriptions": wanted, "max_request_bytes": budget}
+            server = self._server
+            raising = server is not None and budget > server.watchdog_request_bytes
+            # The server must never read less than the file promises: raise it
+            # before publishing, lower it only after the file is published.
+            if raising and server is not None:
+                server.watchdog_request_bytes = budget
             atomic_write(self._paths.data / "policy" / "socket.json", json.dumps(document).encode())
+            if server is not None:
+                server.watchdog_request_bytes = budget
         except Exception as error:  # noqa: BLE001 - a rule-loading bug must not stop the poll loop
             if not self._failing:
                 _log(
@@ -1656,7 +1672,7 @@ def _policy_server(
                         decision="degraded",
                         error_type=error_code(error),
                     )
-            yield _Channel(paths, document, stats)
+            yield _Channel(paths, document, stats, server)
     finally:
         try:
             socket_path.unlink(missing_ok=True)

@@ -56,7 +56,9 @@ Without overrides, locations come from platformdirs. No login service is install
   size budget `max_request_bytes`, and the `subscriptions` the adapter may ask
   about (`{provider, hook_event_name, tool_name?}`). Since WD-142 the daemon
   derives them from the enabled, approved rules and rewrites only the
-  `subscriptions` field, at the next poll tick, when that set changes (a rule
+  `subscriptions` and `max_request_bytes` fields (the latter follows a changed
+  `payload_bytes` and also moves the server's read limit, WD-156), at the next
+  poll tick, when that set changes (a rule
   approved, edited, enabled or disabled); `[defaults] policy_intervene = false`
   publishes none. The port and token stay valid. With the
   built-ins they are Claude `PreToolUse` on `Agent` and on `Bash`, and

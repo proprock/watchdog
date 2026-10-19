@@ -982,6 +982,67 @@ def test_policy_server_answers_nothing_beyond_the_request_budget(paths, tmp_path
     assert raw == b""
 
 
+def _set_payload_bytes(paths, payload_bytes):
+    config = load_config(paths.config)
+    save_config(
+        paths.config,
+        config.model_copy(
+            update={"defaults": config.defaults.model_copy(update={"payload_bytes": payload_bytes})}
+        ),
+    )
+
+
+def _answered(discovery, root, prompt_bytes):
+    request = _decision_request(discovery, root)
+    request["input"]["tool_input"]["prompt"] = "x" * prompt_bytes
+    return _policy_request(discovery["port"], **request)
+
+
+def test_a_reloaded_payload_budget_moves_discovery_and_the_server_read_limit(paths, tmp_path):
+    """Both halves reload together: a raised discovery value alone would let
+    the adapter send what the old server limit still drops."""
+    root, _ = _same_model_setup(paths, tmp_path)
+    with _policy_server(paths, _tracker()) as channel:
+        old = _published(paths)["max_request_bytes"]
+        assert _answered(_published(paths), root, old) == b""
+
+        _set_payload_bytes(paths, 2 * Limits().payload_bytes)
+        channel.sync(load_config(paths.config))
+        raised = _published(paths)
+        assert raised["max_request_bytes"] == old + Limits().payload_bytes
+        # Past the old limit but inside the new one.
+        assert json.loads(_answered(raised, root, old + 4096))["action"] == "rewrite"
+        assert _answered(raised, root, raised["max_request_bytes"]) == b""
+
+        _set_payload_bytes(paths, 100_000)
+        channel.sync(load_config(paths.config))
+        lowered = _published(paths)
+        assert lowered["max_request_bytes"] < old
+        assert json.loads(_answered(lowered, root, 50_000))["action"] == "rewrite"
+        assert _answered(lowered, root, lowered["max_request_bytes"]) == b""
+        # Only the budget moves; the adapter's token and port stay valid.
+        assert (lowered["token"], lowered["port"]) == (raised["token"], raised["port"])
+
+
+def test_a_failed_budget_publish_keeps_the_server_limit_in_step_with_the_file(
+    paths, tmp_path, monkeypatch
+):
+    import agent_watchdog.daemon as daemon_module
+
+    root, _ = _same_model_setup(paths, tmp_path)
+    with _policy_server(paths, _tracker()) as channel:
+        previous = _published(paths)
+        monkeypatch.setattr(
+            daemon_module, "atomic_write", lambda *_a, **_k: (_ for _ in ()).throw(OSError("full"))
+        )
+        _set_payload_bytes(paths, 100_000)
+        channel.sync(load_config(paths.config))
+        # The stale file still promises the old budget, so the server must still honor it.
+        assert _published(paths) == previous
+        size = previous["max_request_bytes"] - 4096
+        assert json.loads(_answered(previous, root, size))["action"] == "rewrite"
+
+
 def test_policy_server_records_a_control_event_for_a_delivered_action(paths, tmp_path):
     root, project = _same_model_setup(paths, tmp_path)
     event_id = uuid4()
