@@ -93,6 +93,14 @@ Keep intervention separate from observations: proposal, evidence, required capab
 
 ## M3 guidance policy (WD-013)
 
+The [2026-10-18 WD-147 review](#wd-147-calibration-and-promotion-review-2026-10-18)
+supersedes mandatory threshold enforcement below as the planned default:
+eligibility is advisory, with explicit human confirmation for below-threshold
+promotion; strict enforcement remains configurable. It also fixes the independent
+sample unit, deterministic criteria, changed-body grants and human-confirmed
+prefill below. Historical calibration results and current delivery status remain
+unchanged; specification review is resolved and implementation remains open.
+
 This section is the M3 decision gate: it fixes the delivery mechanism and applies the WD-012 calibration to select rules. It is a design decision, not an implementation; M3 is only built once a rule actually clears the gate below.
 
 **Mechanism, for whenever a rule qualifies:**
@@ -121,13 +129,18 @@ The release gate depends on the action a rule may take (ROADMAP M3): `log` needs
 
 ## M4 LLM/control design (WD-014)
 
+The [2026-10-18 WD-145 review](#wd-145-semantic-judge-review-2026-10-18)
+supersedes the historical calibrated-trigger requirement for diagnostic analysis
+and the proposed default context delivery below. It also resolves cancellation,
+budget accounting, result scope and default limits; this is a planned design.
+
 This section is the M4 execution/control decision gate: it fixes how a semantic-judge LLM call would be invoked, bounded, isolated, and escalated, if and when a future trigger is authorized, and separately fixes a rule system for deterministic policy rules that need no calibration. It is a design decision, not an implementation; nothing below installs a hook, calls a model, or changes runtime behavior.
 
 **Execution mechanism:** local analysis calls the provider's own CLI in headless mode (`claude -p ...` / `codex exec ...`), not a raw provider API client — this reuses the user's already-authenticated CLI/subscription, avoids adding an API-key/secrets surface, and reuses the existing no-window subprocess wrapper (`src/agent_watchdog/_proc.py::run`/`popen`). A hosted API path is out of scope until a CLI limitation is demonstrated. The call happens only from the daemon or an explicit user-run CLI command, never inside a hook (existing invariant above: "Do not run Git diff, analysis, or LLM calls inside a hook"). Every call records provider name, CLI binary path, and version (`--version`) as provenance, alongside the evidence bundle sent and the structured response received.
 
-**Opt-in and kill switch:** disabled by default everywhere. WD-148 confirmed that the daemon may make automatic calls on a project that opts in, within its budget and timeout, with provenance and a kill switch (TENETS.md); the implementation is WD-145. A project needs an explicit opt-in flag, `semantic_judge_enabled` (default `false`), distinct from `content_capture` and the WD-013 `guidance` opt-in. A global `semantic_judge_enabled = false` at the top-level `[defaults]` scope stops all future calls immediately regardless of a project override (mirroring how `capture_content` composes today); in-flight calls finish or hit their timeout, never force-killed mid-write.
+**Opt-in and kill switch:** disabled by default everywhere. WD-148 confirmed that the daemon may make automatic calls on a project that opts in, within its budget and timeout, with provenance and a kill switch (TENETS.md); the implementation is WD-145. A project needs an explicit opt-in flag, `semantic_judge_enabled` (default `false`), distinct from `content_capture` and the WD-013 `guidance` opt-in. A global `semantic_judge_enabled = false` at the top-level `[defaults]` scope stops all future calls immediately regardless of a project override (mirroring how `capture_content` composes today). The historical finish-in-flight-only policy is superseded by the [2026-10-18 cancellation decision](#wd-145-semantic-judge-review-2026-10-18): cancel owned provider calls by default, with finish-within-timeout available in configuration and no delivery while paused or disabled.
 
-**Budget and timeout — explicit, named config settings, not hidden constants:** `semantic_judge_timeout_seconds` (default `60`, generous next to the 2 s hook timeout since this never runs in the hook path) is the per-call wall-clock timeout; exceeding it kills the call and records `timeout`, with no automatic retry. `semantic_judge_daily_call_budget` (default `5`) is the per-project daily call cap; exhausting it refuses new calls with a clear error rather than queuing or silently skipping. Both settings live under `[defaults]` in `config.example.toml`, overridable per project under `[projects.overrides]`, the same mechanism `capture_content` and the byte/day limits already use; WD-014 fixes their exact names and defaults now, but neither is implemented or added to `config.example.toml` yet, since no code reads them. Budget exhaustion, timeout, nonzero exit, or malformed output all record as `unavailable`, never as a `progress`/`stuck` verdict, and never block or delay hook responses.
+**Budget and timeout — explicit, named config settings, not hidden constants:** `semantic_judge_timeout_seconds` (default `120`, selected in the 2026-10-18 WD-145 review, superseding the former `60`) is the per-call wall-clock timeout; exceeding it ends the owned call and records `unavailable` with a timeout reason, with no automatic retry. `semantic_judge_daily_call_budget` (default `5`) is the per-project daily call cap; exhausting it refuses new calls with an inspectable `unavailable` reason rather than queuing or silently skipping. Settings are planned under `[defaults]` with project overrides, but examples and readers must ship together. The [current WD-145 decision](#wd-145-semantic-judge-review-2026-10-18) defines durable reservation, failed-attempt accounting and recovery. Budget exhaustion, timeout, nonzero exit or malformed output never become `progress`/`stuck` verdicts and never block or delay hook responses.
 
 **Exclusion of the product's own analytical sessions (recursion control):** the spawned CLI call runs against an isolated, throwaway config/home directory with Watchdog hooks NOT installed into it, not merely tagged or filtered after the fact, so the call has no hook wiring through which to recurse into the event spool. If isolation cannot be established (for example, the CLI needs the user's real config to authenticate), the call is refused rather than run un-isolated. The bundle sent to the model never includes Watchdog's own source, logs, or database.
 
@@ -216,3 +229,234 @@ this contract with approval, separate Python enablement and offline replay; see
 the [implementation evidence](evidence/wd143.md). TENETS.md is unchanged, and no
 rule approval or live model call is implied. WD-144's proposed-rule lifecycle
 remains separately specified.
+
+### WD-144 candidate approval and replay decision (2026-10-18)
+
+**Accepted by the user; planned, not implemented.** Model-generated candidates
+follow `rules approve` -> replay with `rules test` -> separate `rules enable`.
+The user selected one code approval, with activation kept separate, rather than
+distinct replay and live approval scopes. See the [review record](evidence/wd144-review.md).
+
+- Generation, provenance recording, TOML validation and Python syntax compilation
+  do not import or execute proposed Python rules. Candidates remain inactive.
+- `rules approve` authorizes the exact reviewed bytes before any Python replay;
+  the candidate remains inactive in the live daemon after approval.
+- Replay executes approved bytes through WD-143's cooperative-thread contract
+  against saved evidence, reports hypothetical decisions, and never delivers
+  those actions to live provider sessions or activates the candidate.
+- A separate explicit `rules enable` activates the approved candidate for normal
+  evaluation. Unchanged bytes need no second code approval. Changes invalidate
+  approval; neither replay nor enablement may bypass that check.
+- Existing action/capability, kill-switch and promotion gates still apply. Code
+  approval and replay are not measured rule precision or promotion authorization.
+- Implementation format (`toml|python`) is stored separately from the existing
+  deterministic/statistical signal classification. The model proposes the signal
+  classification; the user explicitly confirms it at `rules approve`, and the
+  approval record retains that confirmed classification. TOML is not inherently
+  deterministic, and Python is not inherently statistical. Deterministic means
+  enforcement of a specified policy, rather than merely repeatable code output;
+  statistical means an inference from behavioral evidence. A model's label alone
+  never grants approval, activation or stronger intervention. WD-147's promotion
+  policy is defined in the separate WD-147 decision below. Candidate metadata edits cannot silently
+  overwrite the human-confirmed classification in an existing approval record;
+  changing that classification requires explicit human review and a recorded update.
+
+This workflow targets generated candidates; it does not describe a change already
+made to the current declarative-rule commands. The user also accepted the separate
+format and human-confirmed classification contract on 2026-10-18. TENETS.md is
+unchanged, and these decisions approve no rule body or live model call.
+
+### WD-145 semantic judge review (2026-10-18)
+
+**Accepted by the user; planned, not implemented.** Specification review is
+resolved; implementation and live acceptance remain open. The
+[review record](evidence/wd145-review.md) records the selected alternatives.
+
+- Judge analysis is disabled by default. Explicit project opt-in and configured
+  diagnostic triggers may request bounded analysis without first calibrating or
+  promoting the originating statistical signal. Analysis is separate from the
+  authority to send context or stronger control actions. This is the independent
+  judge-specific diagnostic trigger decision anticipated by the historical M4
+  re-opening clause; it does not open the M3 guidance/promotion gate.
+- Results default to log/status only. Sending `context` needs separate explicit
+  configuration, an approved enabled delivery rule, current global/project kill
+  switches, and a confirmed provider/surface/version/event capability. LLM output
+  itself is never an authorized control decision. An unsupported event leaves
+  the result in log/status; never silently replace context with block or another
+  action. Any stronger action needs its own explicit rule and applicable gates.
+  An explicitly configured Stop block additionally requires confirmed Stop/block
+  capability and `stop_hook_active` to be false; unknown or active state fails open.
+- Every comparable user preference must be exposed in configuration, with
+  validated defaults and project overrides: trigger selection and thresholds,
+  backend/model/effort, timeout, daily call budget/accounting/day boundary,
+  cooldown, delivery mode, pending-result lifetime/scope and pause behavior. Effective settings
+  and reasons for unavailable or suppressed behavior must be inspectable in
+  `judge status`. Configured preferences cannot waive approval, confirmed
+  capabilities, kill switches, hard budget enforcement or fail-open invariants.
+- Reuse the selected analysis backend independently of the observed session's
+  provider. The Codex backend remains unavailable until WD-166 establishes its
+  isolation/execution contract; no silent provider fallback is allowed.
+- Pause or judge disablement defaults to cancelling the active analysis. Terminate
+  only the provider CLI processes/descendants owned by that call, record
+  `cancelled`, and complete owned-process cleanup before deleting temporary,
+  scratch or authentication material. Already-started calls count toward the
+  budget. Local CLI cancellation does not promise cancellation of remote work.
+  The configurable alternative may finish within its timeout, retaining log/status
+  only. Both modes stop new launches and delivery while paused or disabled;
+  late output cannot authorize an action.
+- Pending results may cross turns and, after the source session ends, move to a
+  new session of the same project while configured validity permits. Never move
+  a result to another project or treat a source session ending as an implicit
+  expiry. Preserve source project/session/turn, evidence fingerprint, rule
+  version/body and completion time; record the target session/turn separately.
+  TTL starts at result completion. Apply configured lifetime/scope, and recheck
+  source evidence relevance in the target context, current rule approval and
+  enablement, current global/project opt-ins and kill switches, and the target
+  provider/surface/version/event capability. Stale or unverifiable relevance
+  leaves log/status only. Config may narrow scope to the source session/turn.
+  A longer lifetime does not waive these checks.
+- Reserve a call slot durably before starting the analysis invocation. Charge
+  started or uncertain attempts, including failure, timeout and cancellation;
+  refund only with proof that the analysis CLI never started. A configurable
+  stricter mode may charge every reservation. Preflight refusal with proof of
+  no analysis launch can therefore refund under the default mode. Crash-unknown
+  reservations stay charged, with no automatic retry. Persist trigger/evidence
+  deduplication and per-session cooldown; duplicate events and daemon restart
+  must not recreate the same call. Use a documented configurable daily boundary;
+  rollover or config reload must not erase charged history or allow outstanding
+  reservations to bypass the applicable launch-day cap. Test these transitions.
+- Persist delivery-attempt identity and suppress duplicate sends after replay or
+  restart. Uncertain delivery acknowledgment is not permission to send again or
+  proof of provider effect. Record selection, sent response, adapter rendering
+  and observed provider effect separately as in WD-168. Cross-session delivery
+  consumes an existing result, not a fresh analysis call or a per-session copy.
+- Preserve structured analysis and `suggested_*` annotation suggestions with
+  evidence and provenance; these do not replace human verdicts. Actual delivery
+  remains a separately recorded rule-authorized control action.
+
+Accepted starting defaults, all configurable:
+
+| Preference | Default |
+|---|---|
+| Automatic judge enabled | `false` |
+| Result delivery | log/status only; context opt-in |
+| Per-call timeout | 120 seconds |
+| Per-project daily call cap | 5 |
+| Per-session cooldown | 600 seconds |
+| Pending-result validity from completion | 1800 seconds |
+| Pending-result scope | same project, including a new session after source end |
+| Pause/disable behavior | cancel owned active analysis |
+| Budget accounting | charge started/unknown; refund proven nonlaunch |
+
+Keep explicit backend/model/effort selection independent of observed provider;
+an unavailable selection stays unavailable. Configuration names, validation,
+readers, defaults, project overrides and examples must ship together. Do not add
+unsupported keys to `config.example.toml` just to document the future design.
+Use one bounded worker and bounded admission, never an unbounded retry queue.
+Implementation must preserve optional assistant-text capture under
+`capture_content` and the planned `insights_redact = true` compatibility default.
+Tests/CI remain provider-free; live acceptance is separately authorized. This
+review does not deploy, enable or launch a judge, approve any rule body, change
+TENETS.md. WD-147's promotion policy is defined in the separate decision below.
+
+### WD-147 calibration and promotion review (2026-10-18)
+
+**Accepted by the user; planned, not implemented.** Specification review is resolved;
+implementation, dependencies and acceptance remain open. The
+[review record](evidence/wd147-review.md) records the selected alternatives.
+
+- Threshold enforcement defaults to advisory. `rules stats` shows the relevant
+  reviewed count, precision, eligibility and risks. A human may explicitly confirm
+  manual promotion despite insufficient sample size or precision. Record the
+  eligibility shortfall, evaluated evidence scope and human override with the
+  promotion event. Insufficient evidence stays insufficient, not a passing gate.
+- A configurable strict mode refuses promotion below the configured threshold.
+  Thresholds and mode are user preferences, with validated configuration and
+  inspectable effective settings. Neither mode automatically promotes a rule.
+- For actual runtime delivery, advisory mode does not waive exact-body approval,
+  current rule enablement, project opt-in, global/project kill switches or
+  confirmed target capabilities. A promotion grant may be recorded for a disabled
+  candidate, but never acts as implicit code approval or enables that candidate.
+- Reuse WD-144's separate format/classification and human confirmation contract.
+  Scope reviewed data and recommendations to provider, rule version and body hash;
+  historical precision must never be represented as evidence for changed code.
+- Store intervention grants outside executable rule bytes, bound to the provider,
+  rule version and approved body hash, with a durable promotion/demotion history.
+  A grant change does not rewrite code or require fresh approval of unchanged
+  code. Grants may select only actions/payloads supported by the approved rule;
+  they do not invent a decision the rule did not authorize.
+- Changed code is inert until fresh hash approval and inherits no old grant or
+  precision. At reapproval, offer restoration of the prior level through a
+  separate explicit confirmation. Record restoration as a manual promotion for
+  the new body, disclose its empty/insufficient sample and respect the configured
+  advisory/strict mode. Code approval alone never restores the grant. Without
+  confirmed restoration or a later promotion, the new body has no permission
+  above log; any disabled candidate still needs separate enablement. Historical
+  grants/verdicts remain inspectable under their original version/body/provider.
+- The default sample unit is a unique human-reviewed finding, counted once per
+  evidence fingerprint within provider/version/body scope. Show distinct session
+  counts separately to disclose concentrated samples. Precision is
+  `TP / (TP + FP)`; uncertain, unreviewed and unconfirmed model suggestions do
+  not enter either that denominator or the reviewed minimum. No reviewed data
+  means unavailable precision, not zero or perfect precision. Disclose cohort,
+  review coverage and denominator. Reannotations update one authoritative human
+  verdict with history, not an extra observation. The sample unit is configurable;
+  session aggregation may be selected explicitly, with partial sessions excluded
+  from its qualifying minimum and any confirmed FP making a complete session FP.
+- If later reviewed precision falls below the current level's threshold, default
+  to a warning and recommended manual demotion; retain the level until human
+  action. This applies even when strict mode governs new promotion requests.
+  Precision-drop reaction is separately configurable: an explicitly selected
+  automatic-demotion mode may lower to the strongest currently qualifying level,
+  or log if none qualifies, and records the change. Recovery never automatically
+  raises the level. Approval revocation, stale bodies and kill switches are not
+  statistical preferences and still take effect immediately.
+
+Accepted starting eligibility criteria, all configurable. Statistical percentages
+use confirmed `TP / (TP + FP)` and the reviewed minimum; deterministic strong-action
+criteria require confirmed positive cases, not merely unreviewed firings without
+an FP label. The default unit is a unique reviewed finding, as defined above.
+
+| Action | Statistical rule | Human-confirmed deterministic rule |
+|---|---|---|
+| log | No minimum | No minimum |
+| context | >=60%, at least 10 reviewed cases | No calibration minimum |
+| ask | >=80%, at least 20 reviewed cases | At least 10 TP, 0 FP |
+| rewrite | >=90%, at least 30 reviewed cases | At least 10 TP, 0 FP |
+| deny | >=90%, at least 30 reviewed cases | At least 10 TP, 0 FP |
+| block | >=90%, at least 30 reviewed cases | At least 10 TP, 0 FP |
+
+These values describe eligibility/recommendations in advisory mode and enforced
+criteria for new promotions in strict mode. Deterministic exemptions do not
+approve, enable or promote a rule, or override provider/kill-switch checks.
+Sharing an eligibility threshold does not make rewrite/deny/block interchangeable;
+select only actions the approved rule supports. Configurable automatic-demotion
+uses a declared supported fallback order, ending at log, without inventing payloads.
+
+Prefill defaults to per-case human confirmation: show the case, evidence and
+suggested TP/FP/uncertain; the user confirms or corrects it. Suggestions remain
+`suggested` until that action, preserve analysis provenance and evidence identity,
+and never overwrite a human verdict. A human-confirmed uncertain case remains
+uncertain and does not increase TP/FP or the qualifying minimum. A configurable
+batch mode requires explicit case selection and confirmation with recorded batch
+membership and provenance; it never silently accepts every suggestion.
+Suggestions for another provider/version/body/fingerprint cannot label the current
+case. Reuse saved suggestions where available; fresh model analysis must be an
+explicitly requested invocation through the selected backend, with no fallback
+when backend/isolation is unavailable. This design review launches no such call.
+
+Expose enforcement mode, per-action thresholds, deterministic exemptions, sample
+unit, precision-drop reaction and confirmation mode through validated config with
+defaults/project overrides and inspectable effective values. Record promotion,
+demotion, changed-body restoration and advisory override confirmations durably,
+including evaluated evidence scope, approved body, eligibility and provenance.
+Keep recomputation/invalidation aligned with WD-162 and Codex evidence with WD-167.
+Reports must separate raw observations, unique reviewed cases, session diversity,
+uncertain/unreviewed counts, precision denominator and delivery-stage coverage;
+human correctness verdicts do not prove provider effect or task success.
+
+This decision changes the planned promotion policy, not runtime state. It does
+not promote or enable any rule, approve a code body or authorize a model call.
+Implementation and existing task dependencies/acceptance stay open. Historical
+cohort measurements and selected rules remain as recorded; this review neither
+relabels those cohorts nor changes TENETS.md.

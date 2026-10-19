@@ -327,3 +327,41 @@ uses cooperative worker threads with bounded concurrency, rule disablement after
 a timeout, and daemon restart for recovery from a hung thread. It provides no
 forced thread termination or sandbox. Implementation evidence is recorded in
 [WD-143](evidence/wd143.md).
+
+The accepted [WD-144 candidate lifecycle](architecture.md#wd-144-candidate-approval-and-replay-decision-2026-10-18)
+is `rules approve` -> replay with `rules test` -> separate `rules enable`. A
+generated candidate remains inactive after code approval and replay. One approval
+covers unchanged bytes for both replay and later live evaluation; edited bytes
+need fresh approval. Replay never delivers actions to live sessions. This is a
+planned candidate workflow, not the behavior of the currently implemented
+declarative-rule commands. Candidate implementation format (`toml|python`) and
+deterministic/statistical signal classification are separate. The model proposes
+the classification and the user confirms it at `rules approve`; the confirmed
+classification is recorded with approval. A deterministic label does not itself
+enable the candidate or promote its intervention strength.
+
+The accepted [WD-145 judge design](architecture.md#wd-145-semantic-judge-review-2026-10-18)
+separates opt-in diagnostic analysis from rule-authorized delivery. Results default
+to log/status; context is enabled separately and requires confirmed target
+capabilities and current approval/kill-switch checks. Configured validity may
+carry a still-relevant result into a new session of the same project, never
+another project. Defaults are a 120-second timeout, 5 calls/project/day,
+600-second per-session cooldown and 1800-second result validity. Pause/disable
+cancels owned calls by default; started or unknown attempts consume budget, with
+refund only for proven nonlaunch. All comparable preferences are configurable;
+these are planned contracts, not currently available commands or settings.
+
+The accepted [WD-147 calibration design](architecture.md#wd-147-calibration-and-promotion-review-2026-10-18)
+defaults to advisory eligibility and explicit manual promotion; strict mode is
+configurable. Grants are separate from code and scoped to provider/version/body.
+Reapproval of changed code may offer restoration only through a separate explicit
+promotion confirmation; former precision is never inherited. Count unique
+human-reviewed fingerprints and show session counts separately. Prefill requires
+per-case human confirmation by default; unconfirmed suggestions and uncertain
+cases never increase TP/FP or reviewed minimums, and human labels are preserved.
+Falling precision warns and recommends demotion by default without changing the
+level. Thresholds, deterministic exemptions, sample unit, enforcement/drop modes
+and confirmation mode are configurable. The architecture decision contains the
+complete action table and optional stricter/batch/demotion modes. These are planned
+contracts; existing control-versus-shadow stats and commands above remain the
+implemented behavior until WD-147 ships.

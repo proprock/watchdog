@@ -55,6 +55,19 @@ WD-101 closes practical offline test boundaries identified by the audit, and WD-
 - Record proposed/delivered/response observed; delivery is not acceptance of advice. Provide a kill switch and per-project opt-in.
 - Compare time, tool calls, outcome quality, and overhead against the baseline. Do not automatically change models, skills, or AGENTS in monitored projects.
 
+**2026-10-18 WD-147 review:** planned threshold enforcement now defaults to
+advisory, with an explicit human confirmation for manual below-threshold promotion;
+strict enforcement and thresholds are configurable. This supersedes mandatory
+threshold enforcement as the default in the preceding ladder, without changing
+historical evidence or approving any live action. The review also resolves separate
+policy grants and explicit restoration after code changes, unique-finding review
+counts, warning-only precision-drop behavior by default, configurable deterministic
+exemptions and per-case human confirmation of prefill. Statistical rewrite/deny/block
+share the >=90%/30 criterion; confirmed deterministic ask/rewrite/deny/block use
+10 TP and 0 FP, while log/context have no calibration minimum. Specification
+review is resolved; implementation/dependencies and acceptance remain open. See
+the [current decision](docs/architecture.md#wd-147-calibration-and-promotion-review-2026-10-18).
+
 **Acceptance:** observe behavior is unchanged; feedback has no recursion or endless Stop continuation; repeated blockers do not spam; disabling feedback stops delivery immediately. Do not promise forced interruption through a textual nudge.
 
 ## M4 - Semantic judge and controlled escalation
@@ -67,6 +80,16 @@ WD-101 closes practical offline test boundaries identified by the audit, and WD-
 - Distinguish model-mediated questions from actual pause/resume. Never automatically grant approvals. Actions are limited by the current adapter's capabilities.
 
 **Acceptance:** budget exhaustion, timeout, or model failure does not break the harness; no recursive analysis; measure false escalation and rescue rates alongside task outcomes. Approve exact policy defaults using M2/M3 results before implementing M4.
+
+**2026-10-18 review:** the [WD-145 decision](docs/architecture.md#wd-145-semantic-judge-review-2026-10-18)
+approves the diagnostic trigger policy and configurable starting defaults.
+Opt-in analysis does not require prior calibration of its originating signal;
+delivery defaults to log/status and remains separate from intervention/promotion
+authorization. It also resolves cancellation, durable call accounting and
+same-project result validity across sessions. This supersedes the earlier
+calibrated-originating-trigger/default-policy review requirement for diagnostic
+judge analysis only; implementation and separately authorized live acceptance
+remain open, and promotion follows the separate accepted WD-147 decision above.
 
 ## M-Anthropic - Independent Claude coding support
 
