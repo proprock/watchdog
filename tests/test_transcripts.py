@@ -467,6 +467,7 @@ def model_hook(project, transcript: Path, model: str, agent_id: str | None = Non
         turn_id="turn-1",
         kind="tool.start",
         source="hook",
+        received_at=datetime(2026, 9, 7, 10, tzinfo=UTC),
         payload={"codex": {"transcript_path": str(transcript), "metadata": metadata}},
     )
 

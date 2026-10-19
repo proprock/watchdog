@@ -13,6 +13,7 @@ from datetime import datetime
 from typing import Any
 
 from agent_watchdog.analysis import EDIT_TOOLS, _fingerprint, captured_content, tool_outcome
+from agent_watchdog.codex_attribution import is_context
 from agent_watchdog.events import Envelope
 from agent_watchdog.execution import normalize_events
 from agent_watchdog.facts import observed_model, turn_of
@@ -108,6 +109,9 @@ def _hash(value: object) -> str | None:
 
 def apply(state: SessionState, envelope: Mapping[str, Any]) -> SessionState:
     """Fold one envelope into ``state``; deterministic and free of side effects."""
+    # A historical configuration snapshot is not fresh session activity.
+    if is_context(dict(envelope)):
+        return state
     kind = envelope.get("kind")
     received_at = str(envelope.get("received_at"))
     provider_payload = (envelope.get("payload") or {}).get(state.provider)

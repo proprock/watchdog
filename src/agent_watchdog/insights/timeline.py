@@ -38,6 +38,10 @@ class Request:
     output: int | None
     cache_write: int | None
     model: str | None
+    reasoning_effort: str | None = None
+    model_attribution: str = "unavailable"
+    reasoning_effort_attribution: str = "unavailable"
+    native_time_available: bool = True
 
 
 @dataclass
@@ -100,8 +104,10 @@ def requests(
     def load_rows():
         cursor = db.execute(
             "SELECT event_id, provider, session_id, agent_id, native_event_id, "
-            "COALESCE(occurred_at_us, received_at_us) AS at_us, model, input_tokens, "
-            "cached_input_tokens, cache_write_input_tokens, output_tokens "
+            "COALESCE(occurred_at_us, received_at_us) AS at_us, occurred_at_us, model, "
+            "input_tokens, "
+            "cached_input_tokens, cache_write_input_tokens, output_tokens, reasoning_effort, "
+            "model_attribution, reasoning_effort_attribution "
             f"FROM event_facts WHERE {where} ORDER BY at_us, event_id",
             params,
         )
@@ -143,6 +149,11 @@ def requests(
                 output=row["output_tokens"],
                 cache_write=row["cache_write_input_tokens"],
                 model=row["model"],
+                reasoning_effort=row["reasoning_effort"],
+                model_attribution=row["model_attribution"],
+                reasoning_effort_attribution=row["reasoning_effort_attribution"],
+                native_time_available=row["provider"] != "codex"
+                or row["occurred_at_us"] is not None,
             )
         )
     for key, sequence in series.items():

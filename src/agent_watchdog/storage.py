@@ -14,7 +14,7 @@ from pathlib import Path
 from typing import Self
 from uuid import UUID, uuid4
 
-from agent_watchdog import analysis, facts, resources, state
+from agent_watchdog import analysis, codex_attribution, facts, resources, state
 from agent_watchdog.config import Limits
 from agent_watchdog.events import Envelope
 from agent_watchdog.files import atomic_write as atomic_write
@@ -40,7 +40,7 @@ TRANSCRIPT_TAIL_BYTES = 33 * 1024**2
 SQLITE_INTEGER_MIN = -(2**63)
 SQLITE_INTEGER_MAX = 2**63 - 1
 SQLITE_UNSIGNED_INTEGER_MAX = 2**64 - 1
-CODEX_STATE_PROJECTION_VERSION = "wd-164.v1"
+CODEX_STATE_PROJECTION_VERSION = "wd-164.v1|wd-165.v1"
 
 
 class StorageError(ValueError):
@@ -402,7 +402,7 @@ class Store:
                     db.execute("ALTER TABLE events ADD COLUMN provider TEXT")
                 db.execute("DROP TABLE IF EXISTS event_facts")
                 db.execute(facts.CREATE_TABLE)
-                tracker = facts.ConfigTracker()
+                trackers: dict[tuple[str | None, str | None], facts.ConfigTracker] = {}
                 agent_turns: dict[tuple[str, str], str] = {}
                 for rowid, event_id, kind, received_at, document in db.execute(
                     "SELECT rowid, event_id, kind, received_at, envelope FROM events ORDER BY rowid"
@@ -410,6 +410,9 @@ class Store:
                     envelope = json.loads(document)
                     session_id = envelope.get("session_id")
                     agent_id = envelope.get("agent_id")
+                    tracker = trackers.setdefault(
+                        (envelope.get("provider"), agent_id), facts.ConfigTracker()
+                    )
                     turn_id, _ = facts.turn_of(envelope)
                     inherited = tracker.resolve(session_id, turn_id)
                     parent_turn = (
@@ -440,8 +443,7 @@ class Store:
                         and row["turn_id"]
                     ):
                         agent_turns[(session_id, agent_id)] = row["turn_id"]
-                    if row["agent_id"] is None:
-                        tracker.observe(session_id, row["turn_id"], *facts.observation(row))
+                    tracker.observe(session_id, row["turn_id"], *facts.observation(row))
                 for statement in facts.CREATE_INDEXES:
                     db.execute(statement)
                 db.execute("PRAGMA user_version=6")
@@ -482,6 +484,7 @@ class Store:
                 if "rule_version" not in columns:
                     db.execute("ALTER TABLE session_analysis ADD COLUMN rule_version TEXT")
                 db.execute("PRAGMA user_version=9")
+        self._refresh_codex_attribution()
         self._refresh_state_projection(invalidate_findings=version >= 8)
         # Existing v1 stores need a one-time rebuild to support physical reclamation.
         if db.execute("PRAGMA auto_vacuum").fetchone()[0] != 2:
@@ -495,6 +498,33 @@ class Store:
             "ON event_facts(received_at_us,event_id)"
         )
         db.execute("CREATE INDEX IF NOT EXISTS artifacts_digest ON artifacts(digest)")
+
+    def _refresh_codex_attribution(self) -> None:
+        """Rebuild this narrow facts projection once, without rewriting raw events."""
+        with self._transaction() as db:
+            db.execute(
+                "CREATE TABLE IF NOT EXISTS fact_projection_versions "
+                "(name TEXT PRIMARY KEY, version TEXT NOT NULL)"
+            )
+            db.execute(
+                "CREATE TABLE IF NOT EXISTS codex_attribution_dirty "
+                "(session_id TEXT NOT NULL, agent_id TEXT NOT NULL, "
+                "PRIMARY KEY(session_id,agent_id))"
+            )
+            db.execute(
+                "CREATE INDEX IF NOT EXISTS event_facts_native_config "
+                "ON event_facts(provider,session_id,agent_id,"
+                "COALESCE(occurred_at_us,received_at_us))"
+            )
+            row = db.execute(
+                "SELECT version FROM fact_projection_versions WHERE name='codex-attribution'"
+            ).fetchone()
+            if row != (codex_attribution.VERSION,):
+                codex_attribution.refresh(db)
+                db.execute(
+                    "INSERT OR REPLACE INTO fact_projection_versions VALUES (?,?)",
+                    ("codex-attribution", codex_attribution.VERSION),
+                )
 
     def _refresh_state_projection(self, *, invalidate_findings: bool) -> None:
         """Refold changed reducers atomically before restoring the daemon's state."""
@@ -693,6 +723,7 @@ class Store:
             self._codex_state_deferred = False
 
     def _flush_codex_state(self) -> None:
+        self._flush_codex_attribution()
         keys = self.connection.execute(
             "SELECT session_id, agent_id FROM codex_state_dirty ORDER BY session_id, agent_id"
         ).fetchall()
@@ -705,6 +736,18 @@ class Store:
                     "DELETE FROM codex_state_dirty WHERE session_id=? AND agent_id=?", key[1:]
                 )
             self.touched[key] = updated
+
+    def _flush_codex_attribution(self) -> None:
+        identities = self.connection.execute(
+            "SELECT session_id,agent_id FROM codex_attribution_dirty"
+        ).fetchall()
+        for session_id, agent_id in identities:
+            with self._transaction() as db:
+                codex_attribution.refresh(db, identity=(session_id, agent_id or None))
+                db.execute(
+                    "DELETE FROM codex_attribution_dirty WHERE session_id=? AND agent_id=?",
+                    (session_id, agent_id),
+                )
 
     @staticmethod
     def _replay_codex_state(db: sqlite3.Connection, key: StateKey) -> SessionState:
@@ -921,8 +964,17 @@ class Store:
             session_id = envelope.get("session_id")
             agent_id = envelope.get("agent_id")
             turn_id, _ = facts.turn_of(envelope)
-            inherited = self._inherited_config(
-                db, session_id, agent_id if isinstance(agent_id, str) else None, turn_id, rowid
+            inherited = (
+                codex_attribution.resolve(db, envelope)
+                if envelope.get("provider") == "codex"
+                else self._inherited_config(
+                    db,
+                    session_id,
+                    agent_id if isinstance(agent_id, str) else None,
+                    turn_id,
+                    rowid,
+                    provider=envelope.get("provider"),
+                )
             )
             if isinstance(agent_id, str) and agent_id and envelope.get("provider") == "claude":
                 parent_turn = self._parent_turn(db, session_id, agent_id, rowid)
@@ -935,6 +987,14 @@ class Store:
             parent_turn=parent_turn,
         )
         db.execute(facts.INSERT, [row[name] for name in facts.FACT_COLUMNS])
+        if codex_attribution.is_context(envelope):
+            if self._codex_state_deferred:
+                db.execute(
+                    "INSERT OR IGNORE INTO codex_attribution_dirty VALUES (?,?)",
+                    (envelope.get("session_id"), envelope.get("agent_id") or ""),
+                )
+            else:
+                codex_attribution.refresh(db, envelope)
 
     @staticmethod
     def _inherited_config(
@@ -943,6 +1003,8 @@ class Store:
         agent_id: str | None,
         turn_id: str | None,
         before_rowid: int,
+        *,
+        provider: str | None = None,
     ) -> tuple[str | None, str | None]:
         """Latest earlier observed model/effort of the same conversation agent, same turn first.
 
@@ -955,10 +1017,10 @@ class Store:
         def latest(value: str, attribution: str) -> str | None:
             found = db.execute(
                 f"SELECT ef.{value} FROM event_facts ef JOIN events e ON e.event_id = ef.event_id "
-                f"WHERE ef.session_id = ? AND ef.agent_id IS ? "
+                f"WHERE ef.session_id = ? AND ef.agent_id IS ? AND ef.provider IS ? "
                 f"AND ef.{attribution} = 'observed' AND ef.{value} IS NOT NULL AND e.rowid < ? "
                 f"ORDER BY (ef.turn_id IS ?) DESC, e.rowid DESC LIMIT 1",
-                (session_id, agent_id, before_rowid, turn_id),
+                (session_id, agent_id, provider, before_rowid, turn_id),
             ).fetchone()
             return found[0] if found else None
 
@@ -1288,6 +1350,7 @@ class Store:
                 )
             if provider == "codex":
                 db.execute("DELETE FROM codex_state_dirty WHERE session_id=?", (session_id,))
+                db.execute("DELETE FROM codex_attribution_dirty WHERE session_id=?", (session_id,))
             for key in [key for key in self.touched if key[:2] == (provider, session_id)]:
                 del self.touched[key]
             db.execute(
@@ -1341,10 +1404,11 @@ class Store:
                 f"DELETE FROM {table} WHERE NOT EXISTS (SELECT 1 FROM events e "
                 f"WHERE e.session_id = {table}.session_id AND e.provider = {table}.provider)"
             )
-        self.connection.execute(
-            "DELETE FROM codex_state_dirty WHERE NOT EXISTS (SELECT 1 FROM events e "
-            "WHERE e.provider='codex' AND e.session_id=codex_state_dirty.session_id)"
-        )
+        for table in ("codex_state_dirty", "codex_attribution_dirty"):
+            self.connection.execute(
+                f"DELETE FROM {table} WHERE NOT EXISTS (SELECT 1 FROM events e "
+                f"WHERE e.provider='codex' AND e.session_id={table}.session_id)"
+            )
         self.touched = {
             key: state
             for key, state in self.touched.items()

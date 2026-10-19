@@ -604,6 +604,7 @@ def test_v6_migration_creates_analysis_and_retention_indexes(tmp_path, project):
         "event_facts_tool_pair",
         "event_facts_tool_cost",
         "event_facts_retention",
+        "event_facts_native_config",
     }
     # Query-plan regression that these indexes are actually chosen lives in
     # tests/test_facts_query.py (WD-112).

@@ -67,6 +67,16 @@ def normalized_events(
         return None
     key = provider, session_id
     if key not in cache:
+        cache[key] = normalize_events(source_events(db, provider, session_id))
+    return cache[key]
+
+
+def source_events(
+    db: sqlite3.Connection, provider: str | None, session_id: str | None
+) -> list[Envelope]:
+    """Share raw namespace evidence and normalization from the same event query."""
+
+    def load() -> list[Envelope]:
         where, params = "1 = 1", []
         if provider is not None:
             where += " AND provider = ?"
@@ -76,9 +86,10 @@ def normalized_events(
             params.append(session_id)
         documents = db.execute(
             f"SELECT envelope FROM events WHERE {where} ORDER BY received_at", params
-        ).fetchall()
-        cache[key] = normalize_events(persisted(document) for (document,) in documents)
-    return cache[key]
+        )
+        return [persisted(document) for (document,) in documents]
+
+    return projection(db, ("source-events", provider, session_id), load)
 
 
 def projection(db: sqlite3.Connection, key: tuple[Any, ...], load: Callable[[], Any]) -> Any:

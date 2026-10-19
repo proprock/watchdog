@@ -249,6 +249,21 @@ single-table and partial indexes on `kind` are possible. It then holds:
   `unavailable` otherwise. Claude reasoning effort is read from the nested
   `effort.level`; Codex from the flat `reasoning_effort` key. Claude hook rows
   carry no model, so `model_attribution` is `unavailable` there.
+
+  WD-165 additionally retains bounded, version-gated Codex `turn_context`
+  observations (`kind = 'unknown'`, not a new turn). Their model and effort are
+  observed metadata; a usage row inheriting them is labeled `inherited`, with
+  resolution restricted to the same provider, conversation, agent and explicit
+  turn at or before the native response time. Without a turn ID, native time
+  selects the latest context. Missing context fields remain unavailable rather
+  than borrowing an older turn's value. Spawn requests never establish the
+  child's resolved configuration. Late context repairs only derived usage
+  fields; raw envelopes, response identities, receipts and token deltas remain
+  unchanged. `fact_projection_versions` records this narrow projection version;
+  `codex_attribution_dirty` makes deferred reader-window repairs recoverable
+  after interruption. The configuration time index is
+  `event_facts_native_config(provider, session_id, agent_id,
+  COALESCE(occurred_at_us, received_at_us))`.
 - Usage deltas (`usage` rows only): `input_tokens`, `cached_input_tokens`,
   `cache_write_input_tokens`, `output_tokens`, `reasoning_output_tokens`,
   `total_tokens`. Codex fills all six from the transcript delta. Claude maps

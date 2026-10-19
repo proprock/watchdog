@@ -31,9 +31,13 @@ if TYPE_CHECKING:
 
 READER = "codex-rollout-v1"
 TOOL_READER = "codex-tools-v1"
+ATTRIBUTION_READER = "codex-attribution-v1"
 # The tool grammar is fixture-bound; accepting an unknown usage version does
 # not establish that its execution records have the same meaning.
 CODEX_TOOL_VERSIONS = frozenset({"0.153.4", "0.160.0", "0.162.0-alpha.17.2"})
+# Configuration fields were independently inspected in the current local rollout.
+# This does not qualify that version's execution or control grammar.
+CODEX_ATTRIBUTION_VERSIONS = CODEX_TOOL_VERSIONS | {"0.163.0-alpha.10.2"}
 CLAUDE_READER = "claude-transcript-v1"
 READ_BYTES = 1024**2
 # One line is read whole up to this size, even across read windows. The longest
@@ -374,6 +378,53 @@ def _occurred_at(value: object) -> datetime | None:
     except ValueError:
         return None
     return candidate if candidate.tzinfo is not None else None
+
+
+def _attribution_event(
+    store: "Store", source: dict[str, object], record: dict[str, Any], version: str
+) -> Envelope | None:
+    if record.get("type") != "turn_context" or not isinstance(record.get("payload"), dict):
+        return None
+    payload = record["payload"]
+
+    def bounded(value: object) -> str | None:
+        return value if isinstance(value, str) and 0 < len(value) <= 256 else None
+
+    agent_id = _rollout_agent(source)
+    turn = bounded(payload.get("turn_id"))
+    model, effort = bounded(payload.get("model")), bounded(payload.get("effort"))
+    metadata: dict[str, Any] = {
+        "record_type": "turn_context",
+        "model": model,
+        "reasoning_effort": effort,
+        "attribution_projection": "wd-165.v1",
+    }
+    if payload.get("thread_id") not in (None, agent_id or source["session_id"]):
+        model, effort = None, None
+        metadata.update(model=None, reasoning_effort=None, reason="context_thread_mismatch")
+    occurred_at = _occurred_at(record.get("timestamp"))
+    identity = json.dumps(
+        [source["session_id"], agent_id, turn, str(occurred_at), metadata],
+        sort_keys=True,
+        separators=(",", ":"),
+    )
+    return Envelope(
+        event_id=uuid5(NAMESPACE_URL, f"{ATTRIBUTION_READER}|{identity}"),
+        provider="codex",
+        provider_version=version,
+        project_id=store.project_id,
+        session_id=str(source["session_id"]),
+        agent_id=agent_id,
+        turn_id=turn,
+        kind="unknown",
+        source="transcript",
+        occurred_at=occurred_at,
+        payload={"codex": {"reader": ATTRIBUTION_READER, "metadata": metadata}},
+        availability={
+            "model": "observed" if model else "unavailable",
+            "reasoning_effort": "observed" if effort else "unavailable",
+        },
+    )
 
 
 def _put_tool_observation(store: "Store", event: Envelope) -> bool:
@@ -814,8 +865,12 @@ def _process_source(store: "Store", source: dict[str, object]) -> EnrichmentResu
         or source["inode"] != inode
         or size < offset
         or (size == offset and source["mtime"] is not None and source["mtime"] != mtime)
-        # Upgrade the old usage-only cursor once, recovering raw tool history.
-        or (source["provider"] == "codex" and reader == READER)
+        # Recover newly supported projections once, preserving native receipts.
+        or (
+            source["provider"] == "codex"
+            and reader is not None
+            and ATTRIBUTION_READER not in reader.split("|")
+        )
     ):
         offset, tail, reader = 0, b"", None
     oversized = False
@@ -980,13 +1035,17 @@ def _consume_codex(
             if reader is None:
                 _meta_record(record, str(source["session_id"]), agent_id)
                 version = record["payload"]["cli_version"]
-                reader = f"{READER}|{TOOL_READER}|{version}"
+                reader = f"{READER}|{TOOL_READER}|{ATTRIBUTION_READER}|{version}"
                 if version not in CODEX_TOOL_VERSIONS:
                     _tool_gap(store, source, version)
                 continue
             if not isinstance(record, dict):
                 raise UnsupportedTranscript("rollout_record_invalid")
-            version = reader.split("|", 2)[-1] if "|" in reader else ""
+            version = reader.rsplit("|", 1)[-1] if "|" in reader else ""
+            if version in CODEX_ATTRIBUTION_VERSIONS:
+                context = _attribution_event(store, source, record, version)
+                if context is not None and _put_tool_observation(store, context):
+                    accepted += 1
             if version in CODEX_TOOL_VERSIONS:
                 tool = _tool_event(store, source, record, version)
                 if tool is not None and _put_tool_observation(store, tool):
