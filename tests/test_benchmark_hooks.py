@@ -1,5 +1,7 @@
 import importlib.util
 import json
+import socket
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -33,6 +35,72 @@ def test_each_tool_call_differs_so_the_repeat_rule_cannot_fire(benchmark):
     }
 
     assert len(calls) == 20
+
+
+@pytest.mark.parametrize("tool", ["Agent", "apply_patch"])
+def test_subscribed_payloads_cover_agent_and_codex_patch(benchmark, tool):
+    first = benchmark.hook_payload("PreToolUse", "/p", "s", 1, tool=tool)
+    second = benchmark.hook_payload("PreToolUse", "/p", "s", 2, tool=tool)
+    assert first["tool_name"] == tool
+    if tool == "Agent":
+        assert first["tool_input"]["model"] == "haiku"
+        assert first["tool_input"]["prompt"] != second["tool_input"]["prompt"]
+    else:
+        assert "*** Begin Patch" in first["tool_input"]["command"]
+        assert first["tool_input"] != second["tool_input"]
+
+
+@pytest.mark.parametrize(
+    ("response", "error"),
+    [
+        (b'{"action":"allow"}', None),
+        (b"", RuntimeError),
+        (b'{"action":"deny"}', RuntimeError),
+        (b"invalid", ValueError),
+        (b"x" * 16385, RuntimeError),
+    ],
+)
+def test_round_trip_sends_authenticated_profiled_request_and_checks_reply(
+    benchmark, response, error
+):
+    with socket.socket() as server, ThreadPoolExecutor(max_workers=1) as pool:
+        server.bind(("127.0.0.1", 0))
+        server.listen()
+        server.settimeout(2)
+
+        def receive():
+            conn, _ = server.accept()
+            with conn, conn.makefile("rb") as stream:
+                request = json.loads(stream.readline())
+                conn.sendall(response)
+                return request
+
+        received = pool.submit(receive)
+        discovery = {"port": server.getsockname()[1], "token": "synthetic", "timeout_ms": 300}
+        if error is None:
+            assert benchmark.decision_round_trip(discovery, "codex", {"x": 1}, "profile") >= 0
+        else:
+            with pytest.raises(error):
+                benchmark.decision_round_trip(discovery, "codex", {"x": 1}, "profile")
+        request = received.result(timeout=2)
+        assert request["token"] == "synthetic" and request["schema_version"] == 2
+        assert request["codex_control_profile"] == "profile" and request["input"] == {"x": 1}
+        assert request["event_id"]
+
+
+def test_scratch_subscription_is_approved_and_scoped_to_the_requested_cell(benchmark, tmp_path):
+    from agent_watchdog.config import UserPaths, load_config
+    from agent_watchdog.rules.registry import RuleRegistry
+
+    paths = UserPaths(tmp_path / "config.toml", tmp_path / "data", tmp_path / "runtime")
+    benchmark.prepare_subscription(paths, "codex", "PreToolUse", "apply_patch")
+    registry = RuleRegistry(paths)
+    active = [entry for entry in registry.entries(load_config(paths.config)) if entry.active]
+    rule = next(item for item in active if item.name == "benchmark_subscription")
+    assert rule.rule is not None
+    assert rule.rule.provider == ["codex"]
+    assert rule.rule.match.tool_name == "apply_patch"
+    assert rule.rule.match.input_regex == "WD154_NEVER_MATCH"
 
 
 def test_benchmark_waits_for_live_pid_after_status_invalidation(benchmark, monkeypatch):

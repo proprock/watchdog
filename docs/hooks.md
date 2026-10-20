@@ -218,9 +218,25 @@ whole round trip stays inside the fixed two-second hook timeout). An
 unsubscribed hook, or any hook while no daemon is publishing the file, never
 connects; the only added cost is that one file read. Measured against the
 previous adapter on the same host
-([A/B evidence](evidence/wd140-ab-bench.json)), the warm sequential and
-four-caller figures are indistinguishable from host noise, but the cold first
-call is consistently about 5-8 ms slower. A `Stop`/`SubagentStop` whose input carries
+([WD-140 A/B evidence](evidence/wd140-ab-bench.json)), the warm figures overlapped,
+while that historical cold first call was about 5-8 ms slower. The WD-154
+quiet-window re-run found current Codex unsubscribed p50 of 39.2-42.0 ms versus
+38.9-42.6 ms for the same-host pre-channel baseline; even that old adapter did
+not reproduce WD-027's 29.4 ms p50. Current-source normal/disabled-discovery
+builds gave inconsistent cold differences (-35.8, -57.4, +12.7 ms), so a stable
+5-8 ms discovery penalty was not reproduced. Retain the bounded read without a
+cache or skip ([data, cold ranges and limitations](evidence/wd154.md)).
+
+Subscribed `PreToolUse` measured 44.8-48.6 ms sequential p95 / 80.0-96.6 ms
+four-caller p95 for Claude `Agent`, and 44.1-45.2 / 86.0-99.2 ms for the evidenced
+Windows Codex CLI exec 0.162.0-alpha.17.2 `apply_patch` profile. Every native
+callback reached the decision channel. Separate Python socket-client p95 was
+16.2-26.1 / 12.4-21.9 ms for Claude and 15.8-17.8 / 2.9-5.4 ms for Codex, against
+the published 300 ms budget. These are synthetic direct-adapter and separately
+labeled socket measurements; they exclude actual provider-runner overhead and
+do not establish desktop control support ([WD-154 evidence](evidence/wd154.md)).
+
+A `Stop`/`SubagentStop` whose input carries
 `stop_hook_active` (anything but an explicit `false`) is never asked about. The
 event is spooled whatever the answer, and the answer is rendered after the
 spool write is attempted, so a quota or I/O failure still delivers it.
@@ -329,11 +345,14 @@ begin `--python <sys.executable> …`; without it, `command` is `sys.executable`
 and `args` begin `-m agent_watchdog …`. There is no `matcher` (optional per
 schema; absent matches all) and no `commandWindows` (Claude has no such field).
 
-**`timeout: 2` is fixed** for the observation entries — the same production
-budget as Codex. It is not parameterized and is not raised to pass acceptance. A
-control subscription may later get a separate entry with its own, longer timeout
-and latency budget (see "Processes and delivery" in
-[architecture](architecture.md)).
+**`timeout: 2` is fixed** for the shared observation/control entries — the same
+production budget as Codex. It is not parameterized and is not raised to pass
+acceptance. WD-154 closes the separate-entry question: subscribed native calls
+measured 44-49 ms sequential p95 and 80-99 ms four-caller p95; no separate entry
+or longer timeout is needed. The adapter's decision wait remains 300 ms by
+default and fail-open ([evidence and scope](evidence/wd154.md),
+[architecture](architecture.md)). These are direct-adapter measurements,
+excluding actual provider-runner overhead.
 
 **Empty stdout is required, not stylistic.** Claude adds a hook's stdout to the
 model context on `SessionStart` and `UserPromptSubmit`. Printing `{}` there would

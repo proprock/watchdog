@@ -1,0 +1,113 @@
+{
+  "schema_version": 2,
+  "python": "3.12.13",
+  "os": "Windows-11-10.0.22621-SP0",
+  "scope": "synthetic hook process wall time including selected launch, runtime and Git; daemon already running",
+  "process_timeout_seconds": 15,
+  "adapter": "rust",
+  "transport": "current",
+  "provider": "codex",
+  "event": "Stop",
+  "tool": null,
+  "codex_control_profile": null,
+  "surface": "synthetic_direct_adapter",
+  "adapter_version": "agent-watchdog-hook 0.1.4 (providers: codex, claude)",
+  "launch": "direct",
+  "first_ms": 63.997299992479384,
+  "warmup_calls": 16,
+  "host_cpu_percent": 12.35370611183355,
+  "host_cpu": {
+    "before_first": 8.34419817470665,
+    "before_concurrent": 7.022106631989597,
+    "during_sequential": 38.22222222222222,
+    "during_concurrent": 89.8989898989899
+  },
+  "sequential": {
+    "samples": 20,
+    "p50_ms": 42.58870001649484,
+    "p95_ms": 56.14980001701042,
+    "max_ms": 56.91839999053627
+  },
+  "concurrent_four": {
+    "samples": 20,
+    "p50_ms": 72.80310004716739,
+    "p95_ms": 94.445499998983,
+    "max_ms": 97.76989999227226
+  },
+  "raw_ms": {
+    "sequential": [
+      43.18089998560026,
+      42.85520000848919,
+      41.4755999809131,
+      41.65110003668815,
+      42.36819996731356,
+      44.03930000262335,
+      43.185200018342584,
+      42.37429995555431,
+      40.9988000174053,
+      39.05220003798604,
+      39.11010001320392,
+      38.37069997098297,
+      43.52330003166571,
+      43.83069998584688,
+      56.91839999053627,
+      56.14980001701042,
+      50.90249999193475,
+      42.58870001649484,
+      43.83449995657429,
+      42.42710000835359
+    ],
+    "concurrent_four": [
+      87.63570000883192,
+      94.445499998983,
+      79.6828999882564,
+      81.09970000805333,
+      76.25370001187548,
+      64.38450003042817,
+      88.43699999852106,
+      72.80310004716739,
+      71.28500001272187,
+      84.709600021597,
+      59.86170005053282,
+      61.036800034344196,
+      78.14739999594167,
+      77.73239997914061,
+      97.76989999227226,
+      62.69690004410222,
+      65.23160001961514,
+      72.179899958428,
+      64.99949999852106,
+      50.532200024463236
+    ]
+  },
+  "decision_round_trip": null,
+  "idle": {
+    "seconds": 3.5469999999622814,
+    "cpu_seconds": 0.0,
+    "working_set_bytes": 36536320
+  },
+  "events": 57,
+  "sessions": 2,
+  "checkouts": 2,
+  "restart_preserved": true,
+  "delivery_complete": true,
+  "errors": 0,
+  "decision_requests": 0,
+  "losses": {
+    "adapter": {
+      "quota": 0,
+      "payload": 0,
+      "invalid": 0,
+      "io": 0,
+      "busy": 0
+    },
+    "2544ee45-0654-4ae5-aec1-6155ace029dd": {
+      "quota": 0,
+      "payload": 0,
+      "invalid": 0,
+      "io": 0,
+      "busy": 0
+    }
+  },
+  "native_provider_validation": false
+}

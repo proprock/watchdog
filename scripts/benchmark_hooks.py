@@ -1,19 +1,23 @@
 """Opt-in synthetic hook benchmark; no provider invocation or hook installation."""
 
 import argparse
+import hashlib
 import json
 import math
 import os
 import platform
 import shlex
+import socket
 import subprocess
 import sys
 import tempfile
 import time
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
+from uuid import uuid4
 
 from agent_watchdog._proc import hidden_creationflags
+from agent_watchdog.config import UserPaths
 
 SHELLS = ("direct", "bash", "cmd.exe", "powershell.exe", "pwsh.exe")
 
@@ -49,20 +53,91 @@ def hook_invocation(shell: str, arguments: list[str]) -> list[str] | str:
 EVENTS = ("Stop", "PostToolUse", "PreToolUse")
 
 
-def hook_payload(event: str, cwd: str, session_id: str, index: int) -> dict:
+def hook_payload(event: str, cwd: str, session_id: str, index: int, *, tool: str = "Bash") -> dict:
     """One synthetic hook input.
 
-    `Stop` is never subscribed to the daemon's decision channel, so it measures the
-    zero path. `PostToolUse` and `PreToolUse` (a Bash call) are subscribed by the
-    built-in rules, so they measure the adapter's round trip to the daemon on a call
-    no rule matches. The command differs per call so the repeat rule cannot fire.
+    `Stop` is unsubscribed in the scratch default configuration. Tool events use
+    Bash by default; Agent and apply_patch cover the other measured cells. A
+    scratch rule can provide a subscription without matching these inputs.
+    Inputs differ per call so the repeat rule cannot fire.
     """
     payload: dict = {"cwd": cwd, "session_id": session_id, "hook_event_name": event}
     if event != "Stop":
-        payload |= {"tool_name": "Bash", "tool_input": {"command": f"echo benchmark {index}"}}
+        tool_input = {"command": f"echo benchmark {index}"}
+        if tool == "Agent":
+            tool_input = {"prompt": f"Synthetic benchmark {index}", "model": "haiku"}
+        elif tool == "apply_patch":
+            tool_input = {
+                "command": f"*** Begin Patch\n*** Add File: bench-{index}\n+x\n*** End Patch"
+            }
+        payload |= {"tool_name": tool, "tool_input": tool_input}
     if event == "PostToolUse":
         payload["tool_response"] = {"stdout": f"benchmark {index}", "exit_code": 0}
     return payload
+
+
+def prepare_subscription(paths: UserPaths, provider: str, event: str, tool: str) -> None:
+    """Approve one synthetic, never-matching rule in the benchmark's scratch home."""
+    import tomli_w
+
+    from agent_watchdog.rules.manage import approve
+
+    rule = {
+        "schema_version": 1,
+        "name": "benchmark_subscription",
+        "version": "1",
+        "origin": "user",
+        "provider": [provider],
+        "event": event,
+        "match": {"tool_name": tool, "input_regex": "WD154_NEVER_MATCH"},
+        "action": {"kind": "context", "message": "Synthetic benchmark only."},
+    }
+    path = paths.config.parent / "rules" / "benchmark_subscription.toml"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(tomli_w.dumps(rule), encoding="utf-8", newline="\n")
+    approve(paths, rule["name"], hashlib.sha256(path.read_bytes()).hexdigest())
+
+
+def decision_round_trip(
+    discovery: dict, provider: str, payload: dict, profile: str | None
+) -> float:
+    """Time a Python socket client, excluding process launch and discovery-file reading.
+
+    This complements native whole-hook timing; it does not instrument the native client.
+    A missing/malformed answer fails the benchmark rather than looking like a fast allow.
+    """
+    request = {
+        "schema_version": 2,
+        "token": discovery["token"],
+        "provider": provider,
+        "codex_control_profile": profile,
+        "event_id": str(uuid4()),
+        "input": payload,
+    }
+    wire = json.dumps(request).encode() + b"\n"
+    start = time.perf_counter()
+    deadline = time.monotonic() + discovery["timeout_ms"] / 1000
+    with socket.create_connection(
+        ("127.0.0.1", discovery["port"]), timeout=deadline - time.monotonic()
+    ) as stream:
+        stream.settimeout(max(0.000001, deadline - time.monotonic()))
+        stream.sendall(wire)
+        stream.shutdown(socket.SHUT_WR)
+        response = bytearray()
+        while b"\n" not in response:
+            stream.settimeout(max(0.000001, deadline - time.monotonic()))
+            part = stream.recv(16385 - len(response))
+            if not part:
+                break
+            if len(response) + len(part) > 16384:
+                raise RuntimeError("Missing or oversized decision response")
+            response.extend(part)
+    elapsed = (time.perf_counter() - start) * 1000
+    if not response:
+        raise RuntimeError("Missing or oversized decision response")
+    if json.loads(response).get("action") != "allow":
+        raise RuntimeError("Synthetic no-match request did not receive allow")
+    return elapsed
 
 
 def warm_up(hook, count: int) -> int:
@@ -173,6 +248,15 @@ def main() -> None:
     )
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--adapter-executable", type=Path)
+    parser.add_argument("--tool", choices=("Bash", "Agent", "apply_patch"), default="Bash")
+    parser.add_argument(
+        "--codex-control-profile", help="Exact evidenced CLI profile; synthetic only"
+    )
+    parser.add_argument(
+        "--subscribe",
+        action="store_true",
+        help="Install a never-matching scratch rule, verify native requests, and time socket RTT",
+    )
     parser.add_argument(
         "--benchmark-http",
         action="store_true",
@@ -190,6 +274,10 @@ def main() -> None:
         parser.error("Require at least 20 samples and 1..60 idle seconds")
     if args.warmup < 0 or args.cpu_seconds <= 0:
         parser.error("Require a non-negative warmup and a positive CPU window")
+    if args.subscribe and (not args.adapter_executable or args.event == "Stop"):
+        parser.error("--subscribe requires a native adapter and a tool event")
+    if args.codex_control_profile and (args.provider != "codex" or not args.adapter_executable):
+        parser.error("--codex-control-profile requires the native Codex adapter")
     if args.benchmark_http and (not args.adapter_executable or args.event == "Stop"):
         parser.error("--benchmark-http requires --adapter-executable and a subscribed tool event")
     if args.shell in ("powershell.exe", "pwsh.exe") and os.name != "nt":
@@ -218,8 +306,6 @@ def main() -> None:
         command = [sys.executable, "-m", "agent_watchdog", "--home", str(home / "state")]
         state_home = home / "state"
         if args.adapter_executable:
-            from agent_watchdog.config import UserPaths
-
             paths = UserPaths(
                 state_home / "config.toml", state_home / "data", state_home / "runtime"
             )
@@ -236,11 +322,15 @@ def main() -> None:
                 "hook",
                 args.provider,
             ]
+            if args.codex_control_profile:
+                arguments += ["--codex-control-profile", args.codex_control_profile]
         else:
             arguments = command + ["hook", args.provider]
         hook_command = hook_invocation(args.shell, arguments)
         expected_stdout = "" if args.provider == "claude" else "{}"
         project = json.loads(run(command + ["project", "add", str(root)]).stdout)
+        if args.subscribe:
+            prepare_subscription(paths, args.provider, args.event, args.tool)
         hook_env = dict(os.environ)
         hook_env.pop("WATCHDOG_BENCHMARK_HTTP", None)
         if args.benchmark_http:
@@ -248,6 +338,7 @@ def main() -> None:
         try:
             run(command + ["daemon", "start"], env=hook_env)
             wait_for_daemon(command)
+            initial_cpu = settle_host(args.max_host_cpu, args.cpu_seconds, args.settle_timeout)
 
             def hook(index: int) -> float:
                 payload = hook_payload(
@@ -255,6 +346,7 @@ def main() -> None:
                     str(root if index % 2 else worktree),
                     f"benchmark-{index % 2}",
                     index,
+                    tool=args.tool,
                 )
                 start = time.perf_counter()
                 result = run(hook_command, input=json.dumps(payload), env=hook_env)
@@ -265,9 +357,26 @@ def main() -> None:
             first = hook(0)
             warmup_calls = warm_up(hook, args.warmup)
             cpu_percent = settle_host(args.max_host_cpu, args.cpu_seconds, args.settle_timeout)
+            cpu_before = _system_times()
             sequential = [hook(index) for index in range(args.samples)]
+            cpu_after = _system_times()
+            seq_cpu = (
+                None
+                if cpu_before is None or cpu_after is None
+                else cpu_busy_percent(cpu_before, cpu_after)
+            )
+            concurrent_ready_cpu = settle_host(
+                args.max_host_cpu, args.cpu_seconds, args.settle_timeout
+            )
+            cpu_before = _system_times()
             with ThreadPoolExecutor(max_workers=4) as pool:
                 concurrent = list(pool.map(hook, range(args.samples)))
+            cpu_after = _system_times()
+            concurrent_cpu = (
+                None
+                if cpu_before is None or cpu_after is None
+                else cpu_busy_percent(cpu_before, cpu_after)
+            )
             expected = 1 + warmup_calls + 2 * args.samples
             deadline = time.monotonic() + 15
             while True:
@@ -299,11 +408,41 @@ def main() -> None:
             assert len(sessions["sessions"]) == 2 and len(checkouts) == 2
             state = wait_for_daemon(command)
             decision_requests = state.get("decision_channel", {}).get("requests", 0)
+            if args.subscribe and decision_requests != expected:
+                raise RuntimeError(
+                    f"Only {decision_requests}/{expected} hooks reached the decision channel"
+                )
             channel_errors = (
                 max(0, expected - decision_requests)
                 if args.adapter_executable and args.event != "Stop"
                 else 0
             )
+            round_trip = None
+            if args.subscribe:
+                discovery = json.loads((paths.data / "policy" / "socket.json").read_text())
+                rtt_ready_cpu = settle_host(
+                    args.max_host_cpu, args.cpu_seconds, args.settle_timeout
+                )
+
+                def request(index: int) -> float:
+                    payload = hook_payload(
+                        args.event, str(root), f"rtt-{index}", index, tool=args.tool
+                    )
+                    return decision_round_trip(
+                        discovery, args.provider, payload, args.codex_control_profile
+                    )
+
+                rtt_sequential = [request(index) for index in range(args.samples)]
+                with ThreadPoolExecutor(max_workers=4) as pool:
+                    rtt_concurrent = list(pool.map(request, range(args.samples, 2 * args.samples)))
+                round_trip = {
+                    "scope": "Python socket client; excludes native launch, spool and discovery",
+                    "budget_ms": discovery["timeout_ms"],
+                    "ready_host_cpu_percent": rtt_ready_cpu,
+                    "sequential": rtt_sequential,
+                    "concurrent_four": rtt_concurrent,
+                    "responses": 2 * args.samples,
+                }
             before = process_metrics(state["pid"])
             start = time.monotonic()
             time.sleep(args.idle_seconds)
@@ -333,7 +472,7 @@ def main() -> None:
                 }
 
             report = {
-                "schema_version": 1,
+                "schema_version": 2,
                 "python": platform.python_version(),
                 "os": platform.platform(),
                 "scope": (
@@ -345,12 +484,28 @@ def main() -> None:
                 "transport": "benchmark_http" if args.benchmark_http else "current",
                 "provider": args.provider,
                 "event": args.event,
+                "tool": None if args.event == "Stop" else args.tool,
+                "codex_control_profile": args.codex_control_profile,
+                "surface": "synthetic_direct_adapter",
+                "adapter_version": run(
+                    [str(args.adapter_executable.resolve()), "--version"]
+                ).stdout.strip()
+                if args.adapter_executable
+                else None,
                 "launch": args.shell,
                 "first_ms": first,
                 "warmup_calls": warmup_calls,
                 "host_cpu_percent": cpu_percent,
+                "host_cpu": {
+                    "before_first": initial_cpu,
+                    "before_concurrent": concurrent_ready_cpu,
+                    "during_sequential": seq_cpu,
+                    "during_concurrent": concurrent_cpu,
+                },
                 "sequential": distribution(sequential),
                 "concurrent_four": distribution(concurrent),
+                "raw_ms": {"sequential": sequential, "concurrent_four": concurrent},
+                "decision_round_trip": round_trip,
                 "idle": idle,
                 "events": expected,
                 "sessions": 2,

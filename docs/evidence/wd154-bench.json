@@ -1,0 +1,627 @@
+{
+  "schema_version": 1,
+  "ticket": "WD-154",
+  "date": "2026-10-20",
+  "scope": "Synthetic direct native adapter; separately labeled Python socket RTT; no provider invocation or live hook changes",
+  "configuration": {
+    "samples_per_warm_phase": 20,
+    "warmup_calls": 16,
+    "cpu_window_seconds": 3,
+    "pre_phase_cpu_limit_percent": 15,
+    "idle_seconds": 3,
+    "shell": "direct",
+    "daemon": "ready before first call",
+    "first_call": "process-cold; OS caches not evicted"
+  },
+  "binaries": {
+    "base": {
+      "source_revision": "9ea22f783e6f5611b5d8c23831824ee154014bf2",
+      "bytes": 452608,
+      "sha256": "e093902ef543fae75b1fdb8a8cc7471fc93be3740459229393b9dadecd7bd66e"
+    },
+    "current": {
+      "source_revision": "2468f1193ca4e2485bb5cf085fbb4d9fccfd85c5",
+      "bytes": 490496,
+      "sha256": "713b56040ecd7ef7051a17f04cfab7ce5ccbff3a101c44fd98ebf5030b1b717d"
+    },
+    "no-discovery": {
+      "source_revision": "2468f1193ca4e2485bb5cf085fbb4d9fccfd85c5",
+      "bytes": 436736,
+      "sha256": "af0ecf602945f6ccd28c0d7e2ad32f7ba19f67c8733d2d02a9f7fb1791ac7057"
+    }
+  },
+  "no_discovery_variant": {
+    "scope": "Experimental scratch build only; never installed",
+    "replacement": {
+      "old": "PolicySocket::read(&paths.data),",
+      "new": "None::<PolicySocket>,"
+    },
+    "build": "cargo build --release --locked --manifest-path <scratch>/Cargo.toml",
+    "caveat": "Release dead-code elimination changes code size; this measures the combined discovery/channel code-size effect, not pure file-read latency"
+  },
+  "legacy_runtime": {
+    "revision": "9ea22f783e6f5611b5d8c23831824ee154014bf2",
+    "reason": "Schema-1 spool is intentionally incompatible with current daemon; use matching legacy daemon via scratch PYTHONPATH"
+  },
+  "modeled_provider_cells": [
+    {
+      "provider": "claude",
+      "surface": "CLI 2.1.292 / desktop 2.1.299",
+      "event": "PreToolUse",
+      "tool": "Agent",
+      "capability_evidence": "wd156.md",
+      "native_provider_validation": false
+    },
+    {
+      "provider": "codex",
+      "surface": "Windows CLI exec",
+      "version": "0.162.0-alpha.17.2",
+      "profile": "windows-cli-exec-0.162.0-alpha.17.2",
+      "event": "PreToolUse",
+      "tool": "apply_patch",
+      "capability_evidence": "wd151.md",
+      "native_provider_validation": false
+    }
+  ],
+  "accepted_runs": 18,
+  "delivered_events": 1026,
+  "losses": 0,
+  "runs": [
+    {
+      "provider": "claude",
+      "event": "PreToolUse",
+      "tool": "Agent",
+      "codex_control_profile": null,
+      "first_ms": 64.6038000122644,
+      "sequential": {
+        "samples": 20,
+        "p50_ms": 44.832699990365654,
+        "p95_ms": 48.591400031000376,
+        "max_ms": 51.23789998469874
+      },
+      "concurrent_four": {
+        "samples": 20,
+        "p50_ms": 78.00630002748221,
+        "p95_ms": 96.56819998053834,
+        "max_ms": 105.9683000203222
+      },
+      "host_cpu_percent": 11.979166666666666,
+      "host_cpu": {
+        "before_first": 14.192708333333334,
+        "before_concurrent": 12.223667100130038,
+        "during_sequential": 18.025751072961373,
+        "during_concurrent": 83.63636363636364
+      },
+      "decision_requests": 57,
+      "file": "wd154-claude-agent-r1.json",
+      "decision_round_trip": {
+        "sequential": {
+          "p50_ms": 3.5540999961085618,
+          "p95_ms": 26.0673999437131,
+          "max_ms": 26.663700002245605
+        },
+        "concurrent_four": {
+          "p50_ms": 4.517800000030547,
+          "p95_ms": 12.448300025425851,
+          "max_ms": 13.27080000191927
+        },
+        "budget_ms": 300
+      }
+    },
+    {
+      "provider": "claude",
+      "event": "PreToolUse",
+      "tool": "Agent",
+      "codex_control_profile": null,
+      "first_ms": 68.59219999751076,
+      "sequential": {
+        "samples": 20,
+        "p50_ms": 41.99279996100813,
+        "p95_ms": 44.77989999577403,
+        "max_ms": 45.30429997248575
+      },
+      "concurrent_four": {
+        "samples": 20,
+        "p50_ms": 71.19009998859838,
+        "p95_ms": 79.99400002881885,
+        "max_ms": 82.4313999619335
+      },
+      "host_cpu_percent": 6.119791666666667,
+      "host_cpu": {
+        "before_first": 10.677083333333334,
+        "before_concurrent": 8.854166666666666,
+        "during_sequential": 25.462962962962962,
+        "during_concurrent": 94.56521739130434
+      },
+      "decision_requests": 57,
+      "file": "wd154-claude-agent-r2.json",
+      "decision_round_trip": {
+        "sequential": {
+          "p50_ms": 11.358899995684624,
+          "p95_ms": 16.162399959284812,
+          "max_ms": 16.289699997287244
+        },
+        "concurrent_four": {
+          "p50_ms": 5.2340999827720225,
+          "p95_ms": 21.872200013604015,
+          "max_ms": 22.574900009203702
+        },
+        "budget_ms": 300
+      }
+    },
+    {
+      "provider": "claude",
+      "event": "Stop",
+      "tool": null,
+      "codex_control_profile": null,
+      "first_ms": 69.12989995907992,
+      "sequential": {
+        "samples": 20,
+        "p50_ms": 43.44169999239966,
+        "p95_ms": 45.16650002915412,
+        "max_ms": 45.7641999819316
+      },
+      "concurrent_four": {
+        "samples": 20,
+        "p50_ms": 77.44060002733022,
+        "p95_ms": 104.81709998566657,
+        "max_ms": 108.88820001855493
+      },
+      "host_cpu_percent": 8.842652795838752,
+      "host_cpu": {
+        "before_first": 13.020833333333334,
+        "before_concurrent": 7.8125,
+        "during_sequential": 20.982142857142858,
+        "during_concurrent": 92.85714285714286
+      },
+      "decision_requests": 0,
+      "file": "wd154-claude-zero-r1.json"
+    },
+    {
+      "provider": "claude",
+      "event": "Stop",
+      "tool": null,
+      "codex_control_profile": null,
+      "first_ms": 60.223100008443,
+      "sequential": {
+        "samples": 20,
+        "p50_ms": 38.005399983376265,
+        "p95_ms": 43.033799971453846,
+        "max_ms": 52.22509999293834
+      },
+      "concurrent_four": {
+        "samples": 20,
+        "p50_ms": 76.83400000678375,
+        "p95_ms": 87.16669998830184,
+        "max_ms": 88.91109999967739
+      },
+      "host_cpu_percent": 11.603650586701434,
+      "host_cpu": {
+        "before_first": 12.760416666666666,
+        "before_concurrent": 6.910039113428944,
+        "during_sequential": 39.0,
+        "during_concurrent": 88.65979381443299
+      },
+      "decision_requests": 0,
+      "file": "wd154-claude-zero-r2.json"
+    },
+    {
+      "provider": "codex",
+      "event": "Stop",
+      "tool": null,
+      "codex_control_profile": null,
+      "first_ms": 47.49870003433898,
+      "sequential": {
+        "samples": 20,
+        "p50_ms": 39.43179995985702,
+        "p95_ms": 49.0472000092268,
+        "max_ms": 60.97280001267791
+      },
+      "concurrent_four": {
+        "samples": 20,
+        "p50_ms": 60.81940000876784,
+        "p95_ms": 74.93959995917976,
+        "max_ms": 78.04089999990538
+      },
+      "host_cpu_percent": 7.802340702210663,
+      "host_cpu": {
+        "before_first": 4.817708333333333,
+        "before_concurrent": 5.46875,
+        "during_sequential": 41.23222748815166,
+        "during_concurrent": 89.41176470588235
+      },
+      "decision_requests": 0,
+      "file": "wd154-codex-base-r1.json"
+    },
+    {
+      "provider": "codex",
+      "event": "Stop",
+      "tool": null,
+      "codex_control_profile": null,
+      "first_ms": 47.19949996797368,
+      "sequential": {
+        "samples": 20,
+        "p50_ms": 38.88609999557957,
+        "p95_ms": 42.85570001229644,
+        "max_ms": 45.28440005378798
+      },
+      "concurrent_four": {
+        "samples": 20,
+        "p50_ms": 61.265300028026104,
+        "p95_ms": 73.35429999511689,
+        "max_ms": 79.41949996165931
+      },
+      "host_cpu_percent": 10.9375,
+      "host_cpu": {
+        "before_first": 8.735332464146023,
+        "before_concurrent": 5.46875,
+        "during_sequential": 26.767676767676768,
+        "during_concurrent": 82.92682926829268
+      },
+      "decision_requests": 0,
+      "file": "wd154-codex-base-r2.json"
+    },
+    {
+      "provider": "codex",
+      "event": "Stop",
+      "tool": null,
+      "codex_control_profile": null,
+      "first_ms": 63.997299992479384,
+      "sequential": {
+        "samples": 20,
+        "p50_ms": 42.58870001649484,
+        "p95_ms": 56.14980001701042,
+        "max_ms": 56.91839999053627
+      },
+      "concurrent_four": {
+        "samples": 20,
+        "p50_ms": 72.80310004716739,
+        "p95_ms": 94.445499998983,
+        "max_ms": 97.76989999227226
+      },
+      "host_cpu_percent": 12.35370611183355,
+      "host_cpu": {
+        "before_first": 8.34419817470665,
+        "before_concurrent": 7.022106631989597,
+        "during_sequential": 38.22222222222222,
+        "during_concurrent": 89.8989898989899
+      },
+      "decision_requests": 0,
+      "file": "wd154-codex-base-r3.json"
+    },
+    {
+      "provider": "codex",
+      "event": "Stop",
+      "tool": null,
+      "codex_control_profile": null,
+      "first_ms": 114.17939997045323,
+      "sequential": {
+        "samples": 20,
+        "p50_ms": 39.248700020834804,
+        "p95_ms": 40.575999999418855,
+        "max_ms": 50.29569996986538
+      },
+      "concurrent_four": {
+        "samples": 20,
+        "p50_ms": 67.41179997334257,
+        "p95_ms": 102.38890000618994,
+        "max_ms": 113.55350003577769
+      },
+      "host_cpu_percent": 3.515625,
+      "host_cpu": {
+        "before_first": 4.166666666666667,
+        "before_concurrent": 9.635416666666666,
+        "during_sequential": 15.686274509803921,
+        "during_concurrent": 90.0990099009901
+      },
+      "decision_requests": 0,
+      "file": "wd154-codex-current-r1.json"
+    },
+    {
+      "provider": "codex",
+      "event": "Stop",
+      "tool": null,
+      "codex_control_profile": null,
+      "first_ms": 73.85380001505837,
+      "sequential": {
+        "samples": 20,
+        "p50_ms": 39.955300046131015,
+        "p95_ms": 51.1627999949269,
+        "max_ms": 53.83819999406114
+      },
+      "concurrent_four": {
+        "samples": 20,
+        "p50_ms": 60.90700003551319,
+        "p95_ms": 73.72210000175983,
+        "max_ms": 75.08059998508543
+      },
+      "host_cpu_percent": 11.428571428571429,
+      "host_cpu": {
+        "before_first": 11.067708333333334,
+        "before_concurrent": 5.46875,
+        "during_sequential": 31.455399061032864,
+        "during_concurrent": 89.41176470588235
+      },
+      "decision_requests": 0,
+      "file": "wd154-codex-current-r2.json"
+    },
+    {
+      "provider": "codex",
+      "event": "Stop",
+      "tool": null,
+      "codex_control_profile": null,
+      "first_ms": 87.34710002318025,
+      "sequential": {
+        "samples": 20,
+        "p50_ms": 42.033999983686954,
+        "p95_ms": 45.26839999016374,
+        "max_ms": 46.874299994669855
+      },
+      "concurrent_four": {
+        "samples": 20,
+        "p50_ms": 73.80890002241358,
+        "p95_ms": 91.3173999870196,
+        "max_ms": 112.47950000688434
+      },
+      "host_cpu_percent": 10.29986962190352,
+      "host_cpu": {
+        "before_first": 14.174252275682704,
+        "before_concurrent": 6.380208333333333,
+        "during_sequential": 18.34862385321101,
+        "during_concurrent": 92.0
+      },
+      "decision_requests": 0,
+      "file": "wd154-codex-current-r3.json"
+    },
+    {
+      "provider": "codex",
+      "event": "PreToolUse",
+      "tool": "apply_patch",
+      "codex_control_profile": "windows-cli-exec-0.162.0-alpha.17.2",
+      "first_ms": 63.571999955456704,
+      "sequential": {
+        "samples": 20,
+        "p50_ms": 42.46849997434765,
+        "p95_ms": 44.11009995965287,
+        "max_ms": 47.72949998732656
+      },
+      "concurrent_four": {
+        "samples": 20,
+        "p50_ms": 67.7243999671191,
+        "p95_ms": 86.018200032413,
+        "max_ms": 88.8097999850288
+      },
+      "host_cpu_percent": 8.051948051948052,
+      "host_cpu": {
+        "before_first": 10.403120936280883,
+        "before_concurrent": 6.510416666666667,
+        "during_sequential": 12.5,
+        "during_concurrent": 85.41666666666667
+      },
+      "decision_requests": 57,
+      "file": "wd154-codex-patch-r1.json",
+      "decision_round_trip": {
+        "sequential": {
+          "p50_ms": 1.66090001584962,
+          "p95_ms": 17.79689994873479,
+          "max_ms": 19.5718000177294
+        },
+        "concurrent_four": {
+          "p50_ms": 3.984999959357083,
+          "p95_ms": 5.353499960619956,
+          "max_ms": 5.606599966995418
+        },
+        "budget_ms": 300
+      }
+    },
+    {
+      "provider": "codex",
+      "event": "PreToolUse",
+      "tool": "apply_patch",
+      "codex_control_profile": "windows-cli-exec-0.162.0-alpha.17.2",
+      "first_ms": 58.180399995762855,
+      "sequential": {
+        "samples": 20,
+        "p50_ms": 42.71289997268468,
+        "p95_ms": 45.14619999099523,
+        "max_ms": 45.97900004591793
+      },
+      "concurrent_four": {
+        "samples": 20,
+        "p50_ms": 72.3399999551475,
+        "p95_ms": 99.19350000564009,
+        "max_ms": 109.44539995398372
+      },
+      "host_cpu_percent": 8.949416342412452,
+      "host_cpu": {
+        "before_first": 10.15625,
+        "before_concurrent": 6.119791666666667,
+        "during_sequential": 12.727272727272727,
+        "during_concurrent": 94.0
+      },
+      "decision_requests": 57,
+      "file": "wd154-codex-patch-r2.json",
+      "decision_round_trip": {
+        "sequential": {
+          "p50_ms": 1.5125999925658107,
+          "p95_ms": 15.814500045962632,
+          "max_ms": 16.446900030132383
+        },
+        "concurrent_four": {
+          "p50_ms": 2.5946999667212367,
+          "p95_ms": 2.8794999816454947,
+          "max_ms": 17.322400002740324
+        },
+        "budget_ms": 300
+      }
+    },
+    {
+      "provider": "codex",
+      "event": "Stop",
+      "tool": null,
+      "codex_control_profile": null,
+      "first_ms": 62.9143999540247,
+      "sequential": {
+        "samples": 20,
+        "p50_ms": 38.949000008869916,
+        "p95_ms": 41.17669997503981,
+        "max_ms": 41.473899967968464
+      },
+      "concurrent_four": {
+        "samples": 20,
+        "p50_ms": 63.5240999981761,
+        "p95_ms": 84.34480003779754,
+        "max_ms": 93.1300999945961
+      },
+      "host_cpu_percent": 9.87012987012987,
+      "host_cpu": {
+        "before_first": 8.842652795838752,
+        "before_concurrent": 10.026041666666666,
+        "during_sequential": 20.5,
+        "during_concurrent": 93.02325581395348
+      },
+      "decision_requests": 0,
+      "file": "wd154-isolate-current-r1.json"
+    },
+    {
+      "provider": "codex",
+      "event": "Stop",
+      "tool": null,
+      "codex_control_profile": null,
+      "first_ms": 52.95679997652769,
+      "sequential": {
+        "samples": 20,
+        "p50_ms": 39.239700010512024,
+        "p95_ms": 41.84780002105981,
+        "max_ms": 49.554500030353665
+      },
+      "concurrent_four": {
+        "samples": 20,
+        "p50_ms": 73.44499998725951,
+        "p95_ms": 90.14839999144897,
+        "max_ms": 90.63880000030622
+      },
+      "host_cpu_percent": 5.591677503250975,
+      "host_cpu": {
+        "before_first": 12.1251629726206,
+        "before_concurrent": 6.640625,
+        "during_sequential": 15.196078431372548,
+        "during_concurrent": 89.8989898989899
+      },
+      "decision_requests": 0,
+      "file": "wd154-isolate-current-r2.json"
+    },
+    {
+      "provider": "codex",
+      "event": "Stop",
+      "tool": null,
+      "codex_control_profile": null,
+      "first_ms": 59.37919998541474,
+      "sequential": {
+        "samples": 20,
+        "p50_ms": 37.84010000526905,
+        "p95_ms": 40.107699984218925,
+        "max_ms": 45.43330002343282
+      },
+      "concurrent_four": {
+        "samples": 20,
+        "p50_ms": 65.46409998554736,
+        "p95_ms": 111.56719998689368,
+        "max_ms": 119.43500000052154
+      },
+      "host_cpu_percent": 10.966057441253264,
+      "host_cpu": {
+        "before_first": 10.169491525423728,
+        "before_concurrent": 5.454545454545454,
+        "during_sequential": 36.224489795918366,
+        "during_concurrent": 88.42105263157895
+      },
+      "decision_requests": 0,
+      "file": "wd154-isolate-current-r3.json"
+    },
+    {
+      "provider": "codex",
+      "event": "Stop",
+      "tool": null,
+      "codex_control_profile": null,
+      "first_ms": 98.67620002478361,
+      "sequential": {
+        "samples": 20,
+        "p50_ms": 40.807200013659894,
+        "p95_ms": 49.90670003462583,
+        "max_ms": 64.66989999171346
+      },
+      "concurrent_four": {
+        "samples": 20,
+        "p50_ms": 71.59159996081144,
+        "p95_ms": 89.0141999698244,
+        "max_ms": 126.20649999007583
+      },
+      "host_cpu_percent": 14.713541666666666,
+      "host_cpu": {
+        "before_first": 13.671875,
+        "before_concurrent": 9.244791666666666,
+        "during_sequential": 55.04587155963303,
+        "during_concurrent": 96.90721649484536
+      },
+      "decision_requests": 0,
+      "file": "wd154-isolate-no-discovery-r1.json"
+    },
+    {
+      "provider": "codex",
+      "event": "Stop",
+      "tool": null,
+      "codex_control_profile": null,
+      "first_ms": 110.38720002397895,
+      "sequential": {
+        "samples": 20,
+        "p50_ms": 38.878099992871284,
+        "p95_ms": 40.62380001414567,
+        "max_ms": 48.462999984622
+      },
+      "concurrent_four": {
+        "samples": 20,
+        "p50_ms": 67.73209996754304,
+        "p95_ms": 93.2215999928303,
+        "max_ms": 98.47219998482615
+      },
+      "host_cpu_percent": 6.510416666666667,
+      "host_cpu": {
+        "before_first": 6.770833333333333,
+        "before_concurrent": 5.221932114882507,
+        "during_sequential": 14.705882352941176,
+        "during_concurrent": 90.52631578947368
+      },
+      "decision_requests": 0,
+      "file": "wd154-isolate-no-discovery-r2.json"
+    },
+    {
+      "provider": "codex",
+      "event": "Stop",
+      "tool": null,
+      "codex_control_profile": null,
+      "first_ms": 46.73180001555011,
+      "sequential": {
+        "samples": 20,
+        "p50_ms": 38.855699996929616,
+        "p95_ms": 40.37120001157746,
+        "max_ms": 40.47900001751259
+      },
+      "concurrent_four": {
+        "samples": 20,
+        "p50_ms": 64.27679996704683,
+        "p95_ms": 83.55850004591048,
+        "max_ms": 91.15570003632456
+      },
+      "host_cpu_percent": 8.181818181818182,
+      "host_cpu": {
+        "before_first": 8.203125,
+        "before_concurrent": 5.208333333333333,
+        "during_sequential": 13.0,
+        "during_concurrent": 87.5
+      },
+      "decision_requests": 0,
+      "file": "wd154-isolate-no-discovery-r3.json"
+    }
+  ]
+}
