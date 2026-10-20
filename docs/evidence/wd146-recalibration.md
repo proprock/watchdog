@@ -66,10 +66,59 @@ differ. "Dropped TP/FP" uses the stored or reviewed v1 verdict of each dropped f
 
 ## Precision of the v2 findings
 
-None of the six v2 findings on the WD-122 cohort has a recorded verdict. The table
-below is an assistant's contextual read of the retained timelines, **not a verdict**:
-the verdicts stay with the user, and precision stays unmeasured until they are
-recorded.
+Refreshed on 2026-10-20 by scoring the unchanged frozen
+`wd122-v2-sample.json` against the local store. Two human verdicts had already been
+recorded on 2026-10-08 (UTC): `dfe304b00890` is a true positive and `9ffcf21826f8`
+is a false positive, both without a reviewer note. The latter differs from the
+assistant's earlier assessment. The recorded verdict takes precedence; its reason
+must not be inferred from that assessment.
+
+The [exported verdicts](wd146-v2-review.json) preserve the full fingerprints,
+evidence IDs and review timestamps. On 2026-10-20 the user reviewed the four
+remaining findings: `ff7365b5aa06` and `16b783772132` are `uncertain`, while
+`56ef48f43d18` and `e68d67580762` are true positives. Those verdicts were recorded
+through the same daemon annotation channel used by `calibrate.py annotate` and
+confirmed by reading the store. No additional reason was supplied, and none is
+inferred. The refreshed
+[report](wd146-v2-calibration.md) ([JSON](wd146-v2-calibration.json)) scores the
+same frozen sample without recomputing findings or transferring v1 verdicts.
+
+| Rule | Observed | Reviewed | TP | FP | Uncertain | Precision |
+| --- | --- | --- | --- | --- | --- | --- |
+| `repeated_tool_outcome` | 4 | 4 | 2 | 0 | 2 | 100% (2/2 decided) |
+| `identical_error` | 2 | 2 | 1 | 1 | 0 | 50% (1/2) |
+
+Precision is TP / (TP + FP); `uncertain` is reviewed but excluded from that
+denominator. All six findings now have a human verdict, including two explicitly
+uncertain cases. The user verdicts, rather than the assistant's earlier reading,
+are the calibration input:
+
+| v2 fingerprint | Recorded verdict | Reviewed on (UTC) |
+| --- | --- | --- |
+| `ff7365b5aa06` | uncertain | 2026-10-20 |
+| `16b783772132` | uncertain | 2026-10-20 |
+| `56ef48f43d18` | true positive | 2026-10-20 |
+| `e68d67580762` | true positive | 2026-10-20 |
+| `dfe304b00890` | true positive | 2026-10-08 |
+| `9ffcf21826f8` | false positive | 2026-10-08 |
+
+| Rule | WD-122 v1 precision | WD-122 v2 precision |
+| --- | --- | --- |
+| `repeated_tool_outcome` | 11.76% (2 TP / 15 FP; 2 uncertain) | 100% (2 TP / 0 FP; 2 uncertain) |
+| `identical_error` | unmeasured (no observations) | 50% (1 TP / 1 FP) |
+
+The versions have different evidence sets and decided denominators (17 versus 2
+for repeats), so this is a disclosed small-sample comparison, not proof of
+generalisation. No threshold was tuned and no rule clears an M3 delivery rung:
+the repeat sample has two uncertain cases and only two decided observations;
+`identical_error` is below the first delivery rung and also has only two
+observations. WD-146 is complete; broader calibration and polling decisions stay
+with WD-167 and WD-161.
+
+### Historical assistant assessment (not verdicts)
+
+The table below preserves the assistant's original contextual read, **not
+verdicts**. It is superseded by the recorded verdicts above.
 
 | v2 fingerprint | Rule | Provider | Repeats | Read |
 | --- | --- | --- | --- | --- |
@@ -80,9 +129,9 @@ recorded.
 | `dfe304b00890` | `identical_error` | Claude | 4 | The same lint command failed four times in 45 s on a locked directory. Looks like a true positive. |
 | `9ffcf21826f8` | `identical_error` | Claude | 5 | The same test launch failed five times in 36 s on an interpreter spawn error. Looks like a true positive. |
 
-On that read the provisional precision is 0 of 4 for `repeated_tool_outcome` (the 60%
-target is not met) and 2 of 2 for `identical_error`. These are counts of six
-findings, one reviewer's reading, and not a gate input.
+On that original read the provisional precision was 0 of 4 for
+`repeated_tool_outcome` and 2 of 2 for `identical_error`. Those assistant estimates
+are not a gate input; the recorded `identical_error` precision is 1 of 2.
 
 ## Reproduce and record verdicts
 
@@ -102,11 +151,26 @@ Verdicts for the v2 findings are recorded with `calibrate.py annotate --sample
 docs/evidence/wd122-v2-sample.json` (same `--config/--data/--runtime/--project` as the
 installed hook); `report --sample docs/evidence/wd122-v2-sample.json` then scores them.
 
+The final 2026-10-20 score was produced without `--rule-version`, retaining the
+frozen v2 findings:
+
+```
+uv run python scripts/calibrate.py report --config CONFIG --data DATA --runtime RUNTIME \
+  --project PROJECT --sample docs/evidence/wd122-v2-sample.json \
+  --output docs/evidence/wd146-v2-calibration.json
+```
+
+Verification matched the frozen sample's SHA-256, all six fingerprints and exact
+evidence ID lists to the exported verdicts, and checked report TP/FP/uncertain
+counts and precision. `git diff --check` passed. This completion changes only
+calibration records and documentation; no runtime code or thresholds changed.
+
 ## Limits
 
 - Polling and waiting calls (`wait_agent`, background-run status checks) still trip
   `repeated_tool_outcome`. Excluding them by tool name would be fitted to this
-  cohort; the follow-up (WD-161) waits for user verdicts.
+  cohort. The final user review judged two such findings true positive and two
+  uncertain, so WD-161 cannot assume all four are false positives.
 - Codex outcomes remain unknown, so Codex repeats are keyed on the outcome `unknown`.
 - The oscillation gate recognises only edit tools and turn starts. A checkout changed
   through the shell (`git checkout`/`stash`, a formatter, `Set-Content`) reads as "no

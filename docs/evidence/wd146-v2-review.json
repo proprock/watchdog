@@ -1,0 +1,107 @@
+{
+  "findings": [
+    {
+      "evidence_ids": [
+        "146644f6-21d4-444d-a94d-cfa24cc3812d",
+        "07f5845f-787b-488b-be3f-6c61e7c3c72c",
+        "bb4fe345-249a-4899-b24c-c253ab2f8a9e",
+        "a4cb5c51-0256-44d5-a92f-0c65e6d24293",
+        "2ea67d4d-2f98-45cc-ac7b-de0c54c6fc43"
+      ],
+      "fingerprint": "ff7365b5aa0641a0ebabbb161183c3927be9ddaee631e3b4dfd091918f55efac",
+      "note": "Human verdict supplied in the WD-146 review on 2026-10-20; no additional reason supplied.",
+      "provider": "codex",
+      "reviewed_at": "2026-10-20T18:57:02.876775+00:00",
+      "rule": "repeated_tool_outcome",
+      "rule_version": "wd-010.v2",
+      "session_id": "01a0824c-df30-74d2-b88a-47f2a22f2229",
+      "verdict": "uncertain"
+    },
+    {
+      "evidence_ids": [
+        "7a3b8060-165e-46d7-8230-9a31bf8dab94",
+        "aef30004-bcb1-4d8f-9862-25e99b81adbf",
+        "692d7f59-b331-4c3e-bdf3-89b4c53ab8c3",
+        "f6f6adf7-4e03-4e24-b2fc-b825d8e7ce8d"
+      ],
+      "fingerprint": "dfe304b008907508f3d0b85fbdc253784dd4053e4f0aa72d3d1f3798b145d158",
+      "note": null,
+      "provider": "claude",
+      "reviewed_at": "2026-10-08T22:04:20.001326+00:00",
+      "rule": "identical_error",
+      "rule_version": "wd-010.v2",
+      "session_id": "ef62aae4-a871-4d0e-afe3-6bd534e8416a",
+      "verdict": "true_positive"
+    },
+    {
+      "evidence_ids": [
+        "95b605c1-3ee4-4543-93fa-986fda2e9908",
+        "be2f5cbd-0b0d-459a-9691-eec7cb8427f6",
+        "980f7107-1ce1-4e94-af85-c141689d7591",
+        "ecb2dd5c-3502-4848-b46f-d8599931153b",
+        "519205b6-f84b-489e-bead-bfb8bf062d7d"
+      ],
+      "fingerprint": "9ffcf21826f858c086a3427482cbc8bbfdf11202e8cfcf4214b21d94bcd3b34d",
+      "note": null,
+      "provider": "claude",
+      "reviewed_at": "2026-10-08T22:04:19.954136+00:00",
+      "rule": "identical_error",
+      "rule_version": "wd-010.v2",
+      "session_id": "ef62aae4-a871-4d0e-afe3-6bd534e8416a",
+      "verdict": "false_positive"
+    },
+    {
+      "evidence_ids": [
+        "e19f14d9-f693-4d85-b662-f8b53ed69990",
+        "bb25d436-9c85-4661-8e1c-062e98cc2561",
+        "e6f1f0a2-4720-4742-82cd-59518d5a386f",
+        "8a8c55cb-b826-4f42-8c62-2edcea870e0a"
+      ],
+      "fingerprint": "16b783772132663bd84577a00672b0117e81dfbe6313d3cea6bd59555731a70a",
+      "note": "Human verdict supplied in the WD-146 review on 2026-10-20; no additional reason supplied.",
+      "provider": "codex",
+      "reviewed_at": "2026-10-20T18:57:03.378498+00:00",
+      "rule": "repeated_tool_outcome",
+      "rule_version": "wd-010.v2",
+      "session_id": "01a08803-a9b7-7c91-8876-e55ba7829a6b",
+      "verdict": "uncertain"
+    },
+    {
+      "evidence_ids": [
+        "217eb013-d6c4-4f72-852a-e22abb51fdc5",
+        "657bf97d-a1e7-4a24-833f-b45680824fc4",
+        "96cb2d2b-6d29-4614-829f-0908d9b21ef7"
+      ],
+      "fingerprint": "56ef48f43d18b9c5ccc31cf62c95e8244b7cad7e12a1691e8750a9277acf70c0",
+      "note": "Human verdict supplied in the WD-146 review on 2026-10-20; no additional reason supplied.",
+      "provider": "codex",
+      "reviewed_at": "2026-10-20T18:57:03.849436+00:00",
+      "rule": "repeated_tool_outcome",
+      "rule_version": "wd-010.v2",
+      "session_id": "01a08cf5-f0bc-7951-bee5-da818343c835",
+      "verdict": "true_positive"
+    },
+    {
+      "evidence_ids": [
+        "0c3d2542-3c9a-4e2c-aaa8-12566a4d409b",
+        "21512b22-48a2-4e04-ae8b-692d71ad4c5e",
+        "06a72637-1cd2-4396-b00b-8b623b693959"
+      ],
+      "fingerprint": "e68d6758076240f9d31edde4bc7da85df41cef86ad82ffb7f70369295de39b54",
+      "note": "Human verdict supplied in the WD-146 review on 2026-10-20; no additional reason supplied.",
+      "provider": "claude",
+      "reviewed_at": "2026-10-20T18:57:04.306957+00:00",
+      "rule": "repeated_tool_outcome",
+      "rule_version": "wd-010.v2",
+      "session_id": "f06870ad-049c-45be-abdf-a265f4f87cba",
+      "verdict": "true_positive"
+    }
+  ],
+  "format_version": "wd-122.review.v1",
+  "pending_fingerprints": [],
+  "refreshed_at": "2026-10-20T18:57:18.926965+00:00",
+  "review_method": "Export of existing human verdicts from the local finding_verdicts table; no assistant assessment is recorded as a verdict.",
+  "rule_version": "wd-010.v2",
+  "sample_file": "wd122-v2-sample.json",
+  "sample_sha256": "0bad9e3eab1416778e3aeb997ae3e04bd32a5dac063b4c8c0dccdc107a19b7cd"
+}
