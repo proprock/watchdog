@@ -1,0 +1,64 @@
+{
+  "checkout_findings": {
+    "observed": 7,
+    "qualification": "excluded: shared checkout evidence is not Codex-session precision"
+  },
+  "dataset": {
+    "no_finding_sessions": 28,
+    "sample_file": "wd167-sample.json",
+    "sample_sha256": "a3edd084c4c5c32c0bcaf4360e2903d6ed0a44d153f04f811ee7a1e5cd28b532",
+    "scope": {
+      "analysis_body_sha256": "2705637e40c11928f5fd77fed89ed346d26783bb23d997ec9f6ff744c9892b35",
+      "attribution_projection": "wd-165.v1",
+      "execution_body_sha256": "7bebec02978c891f56798521cc771d60c7e23bc987d15257b8e6fad67ad55283",
+      "execution_projection": "wd-164.v1",
+      "provider": "codex",
+      "surface": "unavailable"
+    },
+    "sessions": 40,
+    "sessions_with_findings": 12
+  },
+  "false_negative_review": {
+    "false_negative_count": null,
+    "pending_sessions": 28,
+    "reviewed_sessions": 0
+  },
+  "format_version": "wd-167.calibration.v1",
+  "historical_labels": {
+    "qualification": "context only; not fresh body-scoped reviews",
+    "sessions": 11
+  },
+  "qualification": "Human verdicts are scoped to this freeze. Review remains incomplete; no promotion eligibility established.",
+  "session_scoped_rules": {
+    "identical_error": {
+      "false_positive": 0,
+      "observed": 2,
+      "precision": null,
+      "precision_denominator": 0,
+      "reason": "observed but not reviewed; precision is unmeasured",
+      "reviewed": 0,
+      "true_positive": 0,
+      "uncertain": 0
+    },
+    "repeated_test_failure": {
+      "false_positive": 0,
+      "observed": 1,
+      "precision": null,
+      "precision_denominator": 0,
+      "reason": "observed but not reviewed; precision is unmeasured",
+      "reviewed": 0,
+      "true_positive": 0,
+      "uncertain": 0
+    },
+    "repeated_tool_outcome": {
+      "false_positive": 3,
+      "observed": 29,
+      "precision": 0.5714,
+      "precision_denominator": 7,
+      "reviewed": 7,
+      "true_positive": 4,
+      "uncertain": 0
+    }
+  },
+  "status": "awaiting_human_review"
+}

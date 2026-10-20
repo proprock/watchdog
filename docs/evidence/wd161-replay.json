@@ -1,0 +1,103 @@
+{
+  "database_sha256": "77c453864f3f741983350cbf140325780874c612815b1f9db26c6e86248d2068",
+  "decision": {
+    "reason": "Reviewed true positives include waits, background polls and sleeps; no structural exemption or edit-rule change is justified.",
+    "remaining_calibration_task": "WD-167",
+    "repetition_threshold": 3,
+    "rule_version": "wd-010.v2",
+    "status": "final_no_change"
+  },
+  "exact_repeat_fingerprints_and_evidence_match": true,
+  "format_version": "wd-161.replay.v1",
+  "historical_lost_list_agents": {
+    "evidence_ids": [
+      "77628034-de42-48df-93d7-8a1744c42e72",
+      "887fbdae-af50-47b7-92ef-0b942c629021",
+      "75651f71-715f-439e-8aa4-9f2f30e95e77"
+    ],
+    "fingerprint": "0f0d672b6f186eeef2393a11aa792a49242f4f1103da17870fdf971bf8330b3a",
+    "qualification": "Historical context only; no verdict transfer to wd-010.v2 or wd-164.v1.",
+    "reason": "Three agent-list polls did not resolve stalled coordination.",
+    "retained_normalized_events": [
+      {
+        "event_id": "77628034-de42-48df-93d7-8a1744c42e72",
+        "kind": "tool.finish",
+        "tool": "collaborationlist_agents"
+      },
+      {
+        "event_id": "887fbdae-af50-47b7-92ef-0b942c629021",
+        "kind": "tool.finish",
+        "tool": "collaborationlist_agents"
+      },
+      {
+        "event_id": "75651f71-715f-439e-8aa4-9f2f30e95e77",
+        "kind": "tool.finish",
+        "tool": "collaborationlist_agents"
+      }
+    ],
+    "rule_version": "wd-010.v1",
+    "verdict": "true_positive"
+  },
+  "normalized_event_kinds": {
+    "agent.end": 26,
+    "agent.start": 15,
+    "compaction.end": 6,
+    "compaction.start": 6,
+    "observation.gap": 737,
+    "session.end": 17,
+    "session.start": 10,
+    "tool.finish": 3901,
+    "tool.start": 4007,
+    "turn.end": 149,
+    "turn.start": 135,
+    "unknown": 61,
+    "usage": 4420,
+    "waiting": 16
+  },
+  "pending_repeat_cases": [
+    "F01",
+    "F02",
+    "F03",
+    "F07",
+    "F08",
+    "F09",
+    "F10",
+    "F11",
+    "F13",
+    "F15",
+    "F16",
+    "F21",
+    "F23",
+    "F24",
+    "F25",
+    "F26",
+    "F27",
+    "F28",
+    "F29",
+    "F30",
+    "F31",
+    "F32"
+  ],
+  "precision": {
+    "false_positive": 3,
+    "observed": 29,
+    "precision": 0.5714,
+    "precision_denominator": 7,
+    "reviewed": 7,
+    "true_positive": 4,
+    "uncertain": 0
+  },
+  "qualification": "Final no-change decision on a partially reviewed cohort; no exclusion, edit-rule change, threshold change or delivery promotion qualified.",
+  "raw_events": 13950,
+  "sample_file": "wd167-sample.json",
+  "sample_sha256": "a3edd084c4c5c32c0bcaf4360e2903d6ed0a44d153f04f811ee7a1e5cd28b532",
+  "scope": {
+    "analysis_body_sha256": "2705637e40c11928f5fd77fed89ed346d26783bb23d997ec9f6ff744c9892b35",
+    "attribution_projection": "wd-165.v1",
+    "execution_body_sha256": "7bebec02978c891f56798521cc771d60c7e23bc987d15257b8e6fad67ad55283",
+    "execution_projection": "wd-164.v1",
+    "provider": "codex",
+    "surface": "unavailable"
+  },
+  "sessions": 40
+}

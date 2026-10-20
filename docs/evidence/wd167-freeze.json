@@ -1,0 +1,47 @@
+{
+  "commit": "ac38e4f557cdc700aaf7ef2cc3dfdf934f8bb5c9",
+  "coverage_script_sha256": "56686da4a3e0f735bc3134777d52f9fd4ae8c820b5519f44c07571655b5ecedb",
+  "database_sha256": "77c453864f3f741983350cbf140325780874c612815b1f9db26c6e86248d2068",
+  "files": {
+    "scripts/calibrate.py": "e1328acb38ee4eb074b85b8f1208d84bfadf0d4a0a7420768d4c4ed425145803",
+    "src/agent_watchdog/analysis.py": "2705637e40c11928f5fd77fed89ed346d26783bb23d997ec9f6ff744c9892b35",
+    "src/agent_watchdog/execution.py": "7bebec02978c891f56798521cc771d60c7e23bc987d15257b8e6fad67ad55283",
+    "src/agent_watchdog/insights/attribution.py": "d1b97d94ea248936935e4b58e9d448e69ad128a0baa56ff501cd015ab39218e2",
+    "src/agent_watchdog/insights/subagents.py": "641ea5bf1865c5611d29c9bd6cd2eaf4ca9543994057c8ac8961bed648447425",
+    "src/agent_watchdog/inspection.py": "baa08637be4d173d11b664c759438499ba3fb704fb42b056ee8f7a9375991250"
+  },
+  "format_version": "wd-167.freeze.v1",
+  "generated_at": "2026-10-20T19:03:38.222646+00:00",
+  "rule_version": "wd-010.v2",
+  "repository_sample_sha256": "49de2ac651e6139ef86e882f4362f00dc11f59e9849ba48266946b0b24461366",
+  "sample_sha256": "a3edd084c4c5c32c0bcaf4360e2903d6ed0a44d153f04f811ee7a1e5cd28b532",
+  "scope": {
+    "analysis_body_sha256": "2705637e40c11928f5fd77fed89ed346d26783bb23d997ec9f6ff744c9892b35",
+    "attribution_projection": "wd-165.v1",
+    "execution_body_sha256": "7bebec02978c891f56798521cc771d60c7e23bc987d15257b8e6fad67ad55283",
+    "execution_projection": "wd-164.v1",
+    "provider": "codex",
+    "surface": "unavailable"
+  },
+  "selection": {
+    "all_eligible": false,
+    "considered": 160,
+    "eligible": 60,
+    "min_events": 20,
+    "provider": "codex",
+    "seed": 167,
+    "settle_hours": 2.0,
+    "since": "2026-09-07T00:00:00+00:00",
+    "skipped": {
+      "below_min_events": 30,
+      "other_provider": 70
+    },
+    "strata": {
+      "with_finding": 12,
+      "without_finding_available": 48,
+      "without_finding_drawn": 28
+    },
+    "target": 40,
+    "until": "2026-10-20T00:00:00+00:00"
+  }
+}

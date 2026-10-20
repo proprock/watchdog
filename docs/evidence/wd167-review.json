@@ -1,0 +1,1441 @@
+{
+  "findings": [
+    {
+      "case": "F01",
+      "evidence_ids": [
+        "146644f6-21d4-444d-a94d-cfa24cc3812d",
+        "07f5845f-787b-488b-be3f-6c61e7c3c72c",
+        "bb4fe345-249a-4899-b24c-c253ab2f8a9e",
+        "a4cb5c51-0256-44d5-a92f-0c65e6d24293",
+        "2ea67d4d-2f98-45cc-ac7b-de0c54c6fc43"
+      ],
+      "execution_evidence_ids": [
+        "07f5845f-787b-488b-be3f-6c61e7c3c72c",
+        "146644f6-21d4-444d-a94d-cfa24cc3812d",
+        "2ea67d4d-2f98-45cc-ac7b-de0c54c6fc43",
+        "953ec757-2391-43d2-992a-7a42172b1f37",
+        "a4cb5c51-0256-44d5-a92f-0c65e6d24293",
+        "a9770fe7-4137-4e5c-a1a5-ec2ba3746f41",
+        "bb4fe345-249a-4899-b24c-c253ab2f8a9e"
+      ],
+      "fingerprint": "e26dd2db977072f20d3634c050ab2ced7ba3e4d8f304c9c19ef66f628306c571",
+      "provider": "codex",
+      "provider_versions": {
+        "unavailable": 5
+      },
+      "reviewed_at": null,
+      "reviewer_note": null,
+      "rule": "repeated_tool_outcome",
+      "rule_version": "wd-010.v2",
+      "session_id": "01a0824c-df30-74d2-b88a-47f2a22f2229",
+      "surfaces": {
+        "unknown": 5
+      },
+      "verdict": null
+    },
+    {
+      "case": "F02",
+      "evidence_ids": [
+        "e19f14d9-f693-4d85-b662-f8b53ed69990",
+        "bb25d436-9c85-4661-8e1c-062e98cc2561",
+        "e6f1f0a2-4720-4742-82cd-59518d5a386f",
+        "8a8c55cb-b826-4f42-8c62-2edcea870e0a"
+      ],
+      "execution_evidence_ids": [
+        "1e802404-7934-48a5-b5fa-3c6ddcda9924",
+        "8a8c55cb-b826-4f42-8c62-2edcea870e0a",
+        "8c2a9e61-4c2a-4853-858b-f59a410f027d",
+        "ab166654-f764-4cc0-8b1f-664cd178741f",
+        "bb25d436-9c85-4661-8e1c-062e98cc2561",
+        "e19f14d9-f693-4d85-b662-f8b53ed69990",
+        "e6f1f0a2-4720-4742-82cd-59518d5a386f"
+      ],
+      "fingerprint": "dc5d034321781feed4a566c868ce1447f9c79dc7d9c437170bd04af07907aaef",
+      "provider": "codex",
+      "provider_versions": {
+        "unavailable": 4
+      },
+      "reviewed_at": null,
+      "reviewer_note": null,
+      "rule": "repeated_tool_outcome",
+      "rule_version": "wd-010.v2",
+      "session_id": "01a08803-a9b7-7c91-8876-e55ba7829a6b",
+      "surfaces": {
+        "unknown": 4
+      },
+      "verdict": null
+    },
+    {
+      "case": "F03",
+      "evidence_ids": [
+        "217eb013-d6c4-4f72-852a-e22abb51fdc5",
+        "657bf97d-a1e7-4a24-833f-b45680824fc4",
+        "96cb2d2b-6d29-4614-829f-0908d9b21ef7"
+      ],
+      "execution_evidence_ids": [
+        "217eb013-d6c4-4f72-852a-e22abb51fdc5",
+        "5c8de28d-13da-4c94-9116-859fa28cdfb6",
+        "657bf97d-a1e7-4a24-833f-b45680824fc4",
+        "96cb2d2b-6d29-4614-829f-0908d9b21ef7",
+        "bc20866b-5ada-404a-b307-8fd98370cbbb",
+        "eaf70a0a-a07c-4579-a8e0-0b27772b2626"
+      ],
+      "fingerprint": "ab967f4aff02d68ec358b6e93161acaaf2e6f84b72f391b9049ece678c693c5c",
+      "provider": "codex",
+      "provider_versions": {
+        "unavailable": 3
+      },
+      "reviewed_at": null,
+      "reviewer_note": null,
+      "rule": "repeated_tool_outcome",
+      "rule_version": "wd-010.v2",
+      "session_id": "01a08cf5-f0bc-7951-bee5-da818343c835",
+      "surfaces": {
+        "unknown": 3
+      },
+      "verdict": null
+    },
+    {
+      "case": "F04",
+      "evidence_ids": [
+        "45432c95-9a73-4cc3-9c6a-a43eaeac1d05",
+        "fff098ec-a10d-4b17-9247-03e5e683d913",
+        "f95c197f-20e6-44be-8499-3ab00341921e",
+        "9d7ca9b4-ec99-4568-aec4-012097e22619",
+        "c3f2f795-b0eb-4961-859d-79547860b033",
+        "474c5532-45c4-45b2-9558-36681f42809a",
+        "fbd6a512-418c-446a-9c2e-6b7cfe63e8cd",
+        "5d3d9106-da8f-4191-bbd4-46510302ea9e",
+        "5809dc91-d66b-4ae8-96f1-58f15c8aa3b9",
+        "c5965c1d-d991-4bc6-b944-5b7bba8e659e",
+        "edd8560e-8941-40ff-8e28-afeb8d1ba586"
+      ],
+      "execution_evidence_ids": [
+        "0213097f-868d-4203-a411-4bdf872a1c03",
+        "34c91a19-7278-42f1-8b49-086658139727",
+        "3e50fdd6-9128-4876-8d0f-31507595bbc8",
+        "40ee9628-da00-4ed1-9fed-e283ceba20e6",
+        "45432c95-9a73-4cc3-9c6a-a43eaeac1d05",
+        "474c5532-45c4-45b2-9558-36681f42809a",
+        "4dfcc8ad-9d0c-44f5-b5b4-075bf6c276ef",
+        "5809dc91-d66b-4ae8-96f1-58f15c8aa3b9",
+        "5c859dcb-2768-4265-add1-dd070ba779d7",
+        "5d3d9106-da8f-4191-bbd4-46510302ea9e",
+        "95a69ef3-6cd9-4589-ad99-6f7aef2ae5c9",
+        "9d7ca9b4-ec99-4568-aec4-012097e22619",
+        "bbbaa0a8-2bf6-400e-92f2-7a1728c49ca2",
+        "c3f2f795-b0eb-4961-859d-79547860b033",
+        "c5965c1d-d991-4bc6-b944-5b7bba8e659e",
+        "e59be526-26f0-4392-8f94-e24149ee58d2",
+        "e9b60e17-36df-413f-9f16-d5375d1d7bf7",
+        "edd8560e-8941-40ff-8e28-afeb8d1ba586",
+        "f95c197f-20e6-44be-8499-3ab00341921e",
+        "fa23dd90-277a-4242-b73c-e6f356d61b0d",
+        "fbd6a512-418c-446a-9c2e-6b7cfe63e8cd",
+        "fff098ec-a10d-4b17-9247-03e5e683d913"
+      ],
+      "fingerprint": "72b53675c2992d75ba2ef104b2853faa17cae38c67a5be5bdbc29f539a53bd43",
+      "provider": "codex",
+      "provider_versions": {
+        "unavailable": 11
+      },
+      "reviewed_at": "2026-10-20T19:13:30.981234+00:00",
+      "reviewer_note": null,
+      "rule": "repeated_tool_outcome",
+      "rule_version": "wd-010.v2",
+      "sample_sha256": "a3edd084c4c5c32c0bcaf4360e2903d6ed0a44d153f04f811ee7a1e5cd28b532",
+      "scope_provenance": "WD-167 F04; direct human verdict in chat; sample SHA-256 a3edd084c4c5c32c0bcaf4360e2903d6ed0a44d153f04f811ee7a1e5cd28b532; analysis SHA-256 2705637e40c11928f5fd77fed89ed346d26783bb23d997ec9f6ff744c9892b35; execution SHA-256 7bebec02978c891f56798521cc771d60c7e23bc987d15257b8e6fad67ad55283; provider=codex; surface=unavailable; no reviewer reason supplied",
+      "session_id": "01a0e47d-1b42-70d0-8558-c6fe07cbabb9",
+      "source": "direct human reply in this chat",
+      "store_confirmed": true,
+      "surfaces": {
+        "unknown": 11
+      },
+      "verdict": "true_positive"
+    },
+    {
+      "case": "F05",
+      "evidence_ids": [
+        "b36992d0-6cbb-41ca-b29b-5ed1d5da417f",
+        "1ffc4316-f8c5-4388-92e9-a9b3bfe1f74a",
+        "291cbcb7-aa3e-4b24-836e-c0b7eecc33e9"
+      ],
+      "execution_evidence_ids": [
+        "1ffc4316-f8c5-4388-92e9-a9b3bfe1f74a",
+        "291cbcb7-aa3e-4b24-836e-c0b7eecc33e9",
+        "79839ef4-b72a-4ad3-a1e1-ce3aaecb7b33",
+        "b36992d0-6cbb-41ca-b29b-5ed1d5da417f",
+        "b72a8d02-7dc4-4b93-bb8c-5def39a014a0",
+        "c81e7b05-d4a6-40f3-881b-ee5c75db73cf"
+      ],
+      "fingerprint": "b2c322a1e5f447df0b1b7f64cda45d9d0804f495dda934270cae16a1caa75b24",
+      "provider": "codex",
+      "provider_versions": {
+        "unavailable": 3
+      },
+      "reviewed_at": "2026-10-20T19:36:58.823330+00:00",
+      "reviewer_note": null,
+      "rule": "repeated_tool_outcome",
+      "rule_version": "wd-010.v2",
+      "sample_sha256": "a3edd084c4c5c32c0bcaf4360e2903d6ed0a44d153f04f811ee7a1e5cd28b532",
+      "scope_provenance": "WD-167 F05; direct human verdict in chat; sample SHA-256 a3edd084c4c5c32c0bcaf4360e2903d6ed0a44d153f04f811ee7a1e5cd28b532; analysis SHA-256 2705637e40c11928f5fd77fed89ed346d26783bb23d997ec9f6ff744c9892b35; execution SHA-256 7bebec02978c891f56798521cc771d60c7e23bc987d15257b8e6fad67ad55283; provider=codex; surface=unavailable; no reviewer reason supplied",
+      "session_id": "01a0e47d-1b42-70d0-8558-c6fe07cbabb9",
+      "source": "direct human reply in this chat",
+      "store_confirmed": true,
+      "surfaces": {
+        "unknown": 3
+      },
+      "verdict": "false_positive"
+    },
+    {
+      "case": "F06",
+      "evidence_ids": [
+        "d2096835-1813-4291-820c-e6e670fbab06",
+        "4490622c-7732-4fd1-a390-74719827f99f",
+        "58c8fd20-8552-4e53-9c32-3ce2ce457606"
+      ],
+      "execution_evidence_ids": [
+        "2ae87b52-0ffe-493b-9533-91dd174663e1",
+        "4490622c-7732-4fd1-a390-74719827f99f",
+        "4696b329-ec0c-44c2-aa32-6fcb62a64949",
+        "58c8fd20-8552-4e53-9c32-3ce2ce457606",
+        "7b080392-e0c1-4235-b437-b5bf588d490b",
+        "d2096835-1813-4291-820c-e6e670fbab06"
+      ],
+      "fingerprint": "e526c4def402373bd8ba147d4bdcf99fa118c4761cb7e654c7579f9def8419c7",
+      "provider": "codex",
+      "provider_versions": {
+        "unavailable": 3
+      },
+      "reviewed_at": "2026-10-20T19:37:00.284382+00:00",
+      "reviewer_note": null,
+      "rule": "repeated_tool_outcome",
+      "rule_version": "wd-010.v2",
+      "sample_sha256": "a3edd084c4c5c32c0bcaf4360e2903d6ed0a44d153f04f811ee7a1e5cd28b532",
+      "scope_provenance": "WD-167 F06; direct human verdict in chat; sample SHA-256 a3edd084c4c5c32c0bcaf4360e2903d6ed0a44d153f04f811ee7a1e5cd28b532; analysis SHA-256 2705637e40c11928f5fd77fed89ed346d26783bb23d997ec9f6ff744c9892b35; execution SHA-256 7bebec02978c891f56798521cc771d60c7e23bc987d15257b8e6fad67ad55283; provider=codex; surface=unavailable; no reviewer reason supplied",
+      "session_id": "01a0e47d-1b42-70d0-8558-c6fe07cbabb9",
+      "source": "direct human reply in this chat",
+      "store_confirmed": true,
+      "surfaces": {
+        "unknown": 3
+      },
+      "verdict": "false_positive"
+    },
+    {
+      "case": "F07",
+      "evidence_ids": [
+        "38578a74-1869-46df-a5ca-ec900b7826f3",
+        "1a6921c5-12f8-4c84-9676-093080fd43ee",
+        "744daca6-840d-4271-9215-038f49c8fbb9"
+      ],
+      "execution_evidence_ids": [
+        "1a6921c5-12f8-4c84-9676-093080fd43ee",
+        "38578a74-1869-46df-a5ca-ec900b7826f3",
+        "639f4e5b-491a-4610-8b36-e22a27443845",
+        "744daca6-840d-4271-9215-038f49c8fbb9",
+        "7ce7f484-8834-4c5c-970e-875741963067",
+        "8e5f27d1-9d1e-4615-87e9-856e8fc043c4"
+      ],
+      "fingerprint": "5b67395d1eb26649b2fd9f746787a17a8e906b42a06c0a227df648a90e912efb",
+      "provider": "codex",
+      "provider_versions": {
+        "unavailable": 3
+      },
+      "reviewed_at": null,
+      "reviewer_note": null,
+      "rule": "repeated_tool_outcome",
+      "rule_version": "wd-010.v2",
+      "session_id": "01a112b9-0d0c-74d2-84e2-4f8ca956e859",
+      "surfaces": {
+        "unknown": 3
+      },
+      "verdict": null
+    },
+    {
+      "case": "F08",
+      "evidence_ids": [
+        "4d3e1055-8260-432d-9e8d-cfacdfc43403",
+        "cda2e3b2-a831-4099-8acf-3ad9cdbc4a29",
+        "320c6029-7ab9-4320-ba2f-9a76d8906f43",
+        "2f0aaa30-9251-4439-8588-a34b743c4a93",
+        "f0aab876-853e-4daf-a875-80196c135cb0"
+      ],
+      "execution_evidence_ids": [
+        "19761247-258d-4341-a39e-b3265325ce54",
+        "2f0aaa30-9251-4439-8588-a34b743c4a93",
+        "320c6029-7ab9-4320-ba2f-9a76d8906f43",
+        "3615eba6-9bee-465e-85da-4e03c6e3d753",
+        "37460087-e299-442b-a6bd-3b8774aeb3f5",
+        "4d3e1055-8260-432d-9e8d-cfacdfc43403",
+        "54100c7b-28a1-47cf-9a4b-087ac8b82bdb",
+        "cda2e3b2-a831-4099-8acf-3ad9cdbc4a29",
+        "da620b33-0c8c-453d-8338-c8393f377c76",
+        "f0aab876-853e-4daf-a875-80196c135cb0"
+      ],
+      "fingerprint": "e228b495d415afb55e066b25762cd26ca9033cbd795e262ad10711a9bd14162a",
+      "provider": "codex",
+      "provider_versions": {
+        "unavailable": 5
+      },
+      "reviewed_at": null,
+      "reviewer_note": null,
+      "rule": "repeated_tool_outcome",
+      "rule_version": "wd-010.v2",
+      "session_id": "01a112b9-0d0c-74d2-84e2-4f8ca956e859",
+      "surfaces": {
+        "unknown": 5
+      },
+      "verdict": null
+    },
+    {
+      "case": "F09",
+      "evidence_ids": [
+        "8489ed90-4afd-4162-9fdf-63f8520b555c",
+        "c34352bf-e8a6-49b0-8944-52ce3de53151",
+        "ffb83d5c-7f01-4bb1-a7c0-ac346a7ec21b"
+      ],
+      "execution_evidence_ids": [
+        "8489ed90-4afd-4162-9fdf-63f8520b555c",
+        "b8c2b978-519f-4863-a530-8983ac54f949",
+        "c34352bf-e8a6-49b0-8944-52ce3de53151",
+        "f334bd50-df22-44e7-a410-b8240bac6c43",
+        "f821e807-65cc-4145-8838-de5697d02882",
+        "ffb83d5c-7f01-4bb1-a7c0-ac346a7ec21b"
+      ],
+      "fingerprint": "ffd586e659c2932a24470247743c7ac2489bf067a954f7fbe59848f97da21315",
+      "provider": "codex",
+      "provider_versions": {
+        "unavailable": 3
+      },
+      "reviewed_at": null,
+      "reviewer_note": null,
+      "rule": "repeated_tool_outcome",
+      "rule_version": "wd-010.v2",
+      "session_id": "01a112b9-0d0c-74d2-84e2-4f8ca956e859",
+      "surfaces": {
+        "unknown": 3
+      },
+      "verdict": null
+    },
+    {
+      "case": "F10",
+      "evidence_ids": [
+        "a143dd90-4ac1-4b83-aca2-81ab15e8ae70",
+        "697fc35a-09cc-4aed-b600-aeffde65bc8b",
+        "a8a7b90d-eb0f-4844-9b89-e38c34e28946"
+      ],
+      "execution_evidence_ids": [
+        "0cfdabd7-47de-4fec-885e-859c57cfe13a",
+        "3b512c62-893f-40d1-9c4d-689746e4f9db",
+        "697fc35a-09cc-4aed-b600-aeffde65bc8b",
+        "a143dd90-4ac1-4b83-aca2-81ab15e8ae70",
+        "a8a7b90d-eb0f-4844-9b89-e38c34e28946",
+        "f9ffd9b7-d0c9-4d32-ab59-670f7ed7217c"
+      ],
+      "fingerprint": "09a5571ae316aa98ce0c3ac86bc780735e7571c95ab42f7a3e43b6c8b4068cf1",
+      "provider": "codex",
+      "provider_versions": {
+        "unavailable": 3
+      },
+      "reviewed_at": null,
+      "reviewer_note": null,
+      "rule": "repeated_tool_outcome",
+      "rule_version": "wd-010.v2",
+      "session_id": "01a112b9-0d0c-74d2-84e2-4f8ca956e859",
+      "surfaces": {
+        "unknown": 3
+      },
+      "verdict": null
+    },
+    {
+      "case": "F11",
+      "evidence_ids": [
+        "dfcab37e-9ad4-4818-bd1b-4c32e52d7ebc",
+        "f601b26c-9e73-4d16-a968-fc7f62127cf8",
+        "6a930863-e17c-4b9f-b134-7ae68d492559",
+        "3d630fde-8d07-4288-a5c9-e5ca5a0f9c94"
+      ],
+      "execution_evidence_ids": [
+        "2899b980-651e-4724-9806-4d7c903ea2d9",
+        "3d630fde-8d07-4288-a5c9-e5ca5a0f9c94",
+        "6a930863-e17c-4b9f-b134-7ae68d492559",
+        "d5035e39-12ad-4b36-b9c1-f799d6a2e07d",
+        "dfcab37e-9ad4-4818-bd1b-4c32e52d7ebc",
+        "eb93f6ce-f9c2-40bd-8f2e-a467dcdc0253",
+        "f601b26c-9e73-4d16-a968-fc7f62127cf8"
+      ],
+      "fingerprint": "1bbd95c1f5811737a21b64454076545f8da33386246cdeab498d2c183435e116",
+      "provider": "codex",
+      "provider_versions": {
+        "unavailable": 4
+      },
+      "reviewed_at": null,
+      "reviewer_note": null,
+      "rule": "repeated_tool_outcome",
+      "rule_version": "wd-010.v2",
+      "session_id": "01a114a6-fedb-74d3-82fa-8ab2a0d232d6",
+      "surfaces": {
+        "unknown": 4
+      },
+      "verdict": null
+    },
+    {
+      "case": "F12",
+      "evidence_ids": [
+        "4d330b0c-074f-4756-9695-54981c0e30f6",
+        "daaf5a7c-15ff-4bb6-8b78-842c531803a2",
+        "792cfa76-dd2e-4b6b-af63-209a455bf907"
+      ],
+      "execution_evidence_ids": [
+        "0f031e74-aa2f-407a-b3ce-63f143292cb1",
+        "3f7d5be5-4f90-4657-8e9c-caa664c835db",
+        "48af5c73-dae2-4437-aad8-e7b15b22d7c7",
+        "4d330b0c-074f-4756-9695-54981c0e30f6",
+        "792cfa76-dd2e-4b6b-af63-209a455bf907",
+        "daaf5a7c-15ff-4bb6-8b78-842c531803a2"
+      ],
+      "fingerprint": "3afb2d623b0a0c548b7986cdf5671f3d151b112c67a386d9061c7e8895dcdb64",
+      "provider": "codex",
+      "provider_versions": {
+        "unavailable": 3
+      },
+      "reviewed_at": "2026-10-20T19:37:01.513875+00:00",
+      "reviewer_note": null,
+      "rule": "repeated_tool_outcome",
+      "rule_version": "wd-010.v2",
+      "sample_sha256": "a3edd084c4c5c32c0bcaf4360e2903d6ed0a44d153f04f811ee7a1e5cd28b532",
+      "scope_provenance": "WD-167 F12; direct human verdict in chat; sample SHA-256 a3edd084c4c5c32c0bcaf4360e2903d6ed0a44d153f04f811ee7a1e5cd28b532; analysis SHA-256 2705637e40c11928f5fd77fed89ed346d26783bb23d997ec9f6ff744c9892b35; execution SHA-256 7bebec02978c891f56798521cc771d60c7e23bc987d15257b8e6fad67ad55283; provider=codex; surface=unavailable; no reviewer reason supplied",
+      "session_id": "01a11757-fb26-7472-b688-e975e4c69e3e",
+      "source": "direct human reply in this chat",
+      "store_confirmed": true,
+      "surfaces": {
+        "unknown": 3
+      },
+      "verdict": "false_positive"
+    },
+    {
+      "case": "F13",
+      "evidence_ids": [
+        "5db17a1a-4d5c-4421-907d-ad9f73a3a3b6",
+        "e7dbb8dd-89d5-43c8-bdbf-bf3142fc3320",
+        "1de20d94-8c34-4b76-adc8-c0b073cebb9d"
+      ],
+      "execution_evidence_ids": [
+        "1de20d94-8c34-4b76-adc8-c0b073cebb9d",
+        "58b8d244-a26c-402d-a57b-d71e3e38962e",
+        "5db17a1a-4d5c-4421-907d-ad9f73a3a3b6",
+        "adf4bb4f-e170-46b3-bf32-b83a904f4b73",
+        "e7dbb8dd-89d5-43c8-bdbf-bf3142fc3320",
+        "f0b2d250-b0cc-4734-9daa-4b316504fe6f"
+      ],
+      "fingerprint": "5d6659b4f6b531a216251f251dd52154c7e8b76bcc6ed67bf9c48cfdb16fb4a0",
+      "provider": "codex",
+      "provider_versions": {
+        "unavailable": 3
+      },
+      "reviewed_at": null,
+      "reviewer_note": null,
+      "rule": "repeated_tool_outcome",
+      "rule_version": "wd-010.v2",
+      "session_id": "01a11757-fb26-7472-b688-e975e4c69e3e",
+      "surfaces": {
+        "unknown": 3
+      },
+      "verdict": null
+    },
+    {
+      "case": "F14",
+      "evidence_ids": [
+        "d750e5b2-f436-4426-9505-eb6039421cdf",
+        "8c27eba8-5860-4c33-ab9c-d1d54cb23e1a",
+        "c160673c-411e-4ebe-bb41-9ccc76fa346a"
+      ],
+      "execution_evidence_ids": [
+        "8c27eba8-5860-4c33-ab9c-d1d54cb23e1a",
+        "b011f74c-ec47-4a1d-95ee-065102528f6b",
+        "c160673c-411e-4ebe-bb41-9ccc76fa346a",
+        "caa9ae40-6f7a-4bf5-9c96-ebef50f68d52",
+        "d44d0a73-251d-43c4-b0e3-98868c964651",
+        "d750e5b2-f436-4426-9505-eb6039421cdf"
+      ],
+      "fingerprint": "bf1c999f4adb4546333def2155e1270f01d8f02add938f92be96ceab7e9b4650",
+      "provider": "codex",
+      "provider_versions": {
+        "unavailable": 3
+      },
+      "reviewed_at": "2026-10-20T19:37:04.293109+00:00",
+      "reviewer_note": null,
+      "rule": "repeated_tool_outcome",
+      "rule_version": "wd-010.v2",
+      "sample_sha256": "a3edd084c4c5c32c0bcaf4360e2903d6ed0a44d153f04f811ee7a1e5cd28b532",
+      "scope_provenance": "WD-167 F14; direct human verdict in chat; sample SHA-256 a3edd084c4c5c32c0bcaf4360e2903d6ed0a44d153f04f811ee7a1e5cd28b532; analysis SHA-256 2705637e40c11928f5fd77fed89ed346d26783bb23d997ec9f6ff744c9892b35; execution SHA-256 7bebec02978c891f56798521cc771d60c7e23bc987d15257b8e6fad67ad55283; provider=codex; surface=unavailable; no reviewer reason supplied",
+      "session_id": "01a11a03-3ac1-7c70-995a-aed4e68246c9",
+      "source": "direct human reply in this chat",
+      "store_confirmed": true,
+      "surfaces": {
+        "unknown": 3
+      },
+      "verdict": "true_positive"
+    },
+    {
+      "case": "F15",
+      "evidence_ids": [
+        "589ef136-9480-41e6-b506-13aa88ac3a35",
+        "b09e6ef9-5a09-4112-9a38-ccfadd892ce7",
+        "4062071c-79ad-40e2-a30a-bda2dd3e8420"
+      ],
+      "execution_evidence_ids": [
+        "039c850a-5fd9-4a72-bff1-f9addc206dcc",
+        "1a9239fa-401c-5580-8408-b138e3b422de",
+        "4062071c-79ad-40e2-a30a-bda2dd3e8420",
+        "589ef136-9480-41e6-b506-13aa88ac3a35",
+        "70a4d74b-ba06-5bf3-8a32-58ceeaa0547a",
+        "9cc84740-6336-4b95-ad77-c12ba0b93c53",
+        "b09e6ef9-5a09-4112-9a38-ccfadd892ce7",
+        "d11bcc9d-fc44-595b-894e-4557b252c781"
+      ],
+      "fingerprint": "2367ca4425aac91b416682919855cad4f858d1101a1212ee12e5d2025ded7474",
+      "provider": "codex",
+      "provider_versions": {
+        "unavailable": 3
+      },
+      "reviewed_at": null,
+      "reviewer_note": null,
+      "rule": "repeated_tool_outcome",
+      "rule_version": "wd-010.v2",
+      "session_id": "01a13c67-4002-78d2-9ff5-af61ded99eaa",
+      "surfaces": {
+        "unknown": 3
+      },
+      "verdict": null
+    },
+    {
+      "case": "F16",
+      "evidence_ids": [
+        "cf51b019-fc2b-4bcd-b846-d16473e5809e",
+        "3b237d11-b10a-4124-ada4-83368201599e",
+        "69cd59d3-a380-4136-9f95-916fbc5fe95a"
+      ],
+      "execution_evidence_ids": [
+        "13f2e680-8eb4-5827-9ecb-c3b0ee7e8e6d",
+        "3b237d11-b10a-4124-ada4-83368201599e",
+        "4aae7c1a-0d10-4e6e-8655-5eabc2d36571",
+        "575fde83-4600-501f-81d8-c69f16df4563",
+        "69cd59d3-a380-4136-9f95-916fbc5fe95a",
+        "7dd9433d-9154-4cbf-bb25-20f5139375b7",
+        "cf51b019-fc2b-4bcd-b846-d16473e5809e",
+        "d9188ff8-07d0-4230-a758-ee758b7545d4",
+        "eb9828d8-4911-57c3-99fa-e4f66b1186b7"
+      ],
+      "fingerprint": "63d1315fa0515017ebf5cf230ad43726a2fb2590e05e908698328f4fa365e0df",
+      "provider": "codex",
+      "provider_versions": {
+        "unavailable": 3
+      },
+      "reviewed_at": null,
+      "reviewer_note": null,
+      "rule": "repeated_tool_outcome",
+      "rule_version": "wd-010.v2",
+      "session_id": "01a13c67-4002-78d2-9ff5-af61ded99eaa",
+      "surfaces": {
+        "unknown": 3
+      },
+      "verdict": null
+    },
+    {
+      "case": "F17",
+      "evidence_ids": [
+        "3836815f-f35e-4698-a61b-cd15873f6f76",
+        "2242acd1-1f7c-42b9-a86e-75287d999520",
+        "c4b5e749-9cda-403a-88be-5fd624169c59"
+      ],
+      "execution_evidence_ids": [
+        "03673d19-ea4f-4257-87b6-fb946ba095b9",
+        "2242acd1-1f7c-42b9-a86e-75287d999520",
+        "3836815f-f35e-4698-a61b-cd15873f6f76",
+        "3f73aaf0-7db6-5532-b68f-97a31cb018d1",
+        "9cbe9990-9f4e-4d34-8d37-d86c3ccb2503",
+        "be4ca2f7-b600-5574-ac01-6e311b0e169a",
+        "c4b5e749-9cda-403a-88be-5fd624169c59",
+        "dd37b1bf-0a57-566e-8c7d-f21b566b9baa",
+        "e36819ab-b3ef-4d3f-a050-db580445c7e2"
+      ],
+      "fingerprint": "1710519323a10d1c21f07c2d1f1370a1d56dd0d7d34af92ae4baab56188dda06",
+      "provider": "codex",
+      "provider_versions": {
+        "unavailable": 3
+      },
+      "reviewed_at": null,
+      "reviewer_note": null,
+      "rule": "identical_error",
+      "rule_version": "wd-010.v2",
+      "session_id": "01a14184-99e2-7a32-a053-c31341fd3ae9",
+      "surfaces": {
+        "unknown": 3
+      },
+      "verdict": null
+    },
+    {
+      "case": "F18",
+      "evidence_ids": [
+        "4b15800f-9e3e-42cb-9410-aea5ac983ae9",
+        "6f33bc0a-a0f4-42f5-846b-0debfa707118",
+        "918435a7-be46-445e-a5b0-d0b1903e72db",
+        "f2de70bb-e179-47fe-8920-5388895095e9"
+      ],
+      "execution_evidence_ids": [
+        "09c36a3f-127c-4ca1-8dbb-556cf08e4506",
+        "4b15800f-9e3e-42cb-9410-aea5ac983ae9",
+        "4c7a68b4-b9bb-5e17-9c52-7787f2d504bc",
+        "5ff7e707-06cf-504f-8f1d-db6049f3ef58",
+        "6f33bc0a-a0f4-42f5-846b-0debfa707118",
+        "763469b1-988a-4e9e-b6f5-f3581c8c4513",
+        "7d750e01-df98-5749-8f9e-3bebb90ee8df",
+        "918435a7-be46-445e-a5b0-d0b1903e72db",
+        "d5cc9593-bcd6-5798-bc9e-b084b158a9b1",
+        "d5f30053-d97e-48b0-b43f-3b9304427515",
+        "e7a874f6-d1dd-4e08-9091-48e187cbccc5",
+        "f2de70bb-e179-47fe-8920-5388895095e9"
+      ],
+      "fingerprint": "f35bcd61cf10a8f3143865d20e8b977217bc2ebe2c10ea2f67c3ee3c5bdcedb0",
+      "provider": "codex",
+      "provider_versions": {
+        "unavailable": 4
+      },
+      "reviewed_at": null,
+      "reviewer_note": null,
+      "rule": "identical_error",
+      "rule_version": "wd-010.v2",
+      "session_id": "01a14184-99e2-7a32-a053-c31341fd3ae9",
+      "surfaces": {
+        "unknown": 4
+      },
+      "verdict": null
+    },
+    {
+      "case": "F19",
+      "evidence_ids": [
+        "dbac59e5-4b8d-4cb6-a756-4c3ebda0a384",
+        "eaa123b8-857f-49f6-b490-6eeca412af0f",
+        "3836815f-f35e-4698-a61b-cd15873f6f76",
+        "2242acd1-1f7c-42b9-a86e-75287d999520",
+        "c4b5e749-9cda-403a-88be-5fd624169c59",
+        "95d6f48d-55f6-4256-a774-35eee13afce5"
+      ],
+      "execution_evidence_ids": [
+        "03673d19-ea4f-4257-87b6-fb946ba095b9",
+        "2242acd1-1f7c-42b9-a86e-75287d999520",
+        "3836815f-f35e-4698-a61b-cd15873f6f76",
+        "3f73aaf0-7db6-5532-b68f-97a31cb018d1",
+        "4de0d569-a871-5a97-afa2-3b0b95ea83e3",
+        "95d6f48d-55f6-4256-a774-35eee13afce5",
+        "9ac73239-f43b-5d8d-942a-d20eb037a5b0",
+        "9cbe9990-9f4e-4d34-8d37-d86c3ccb2503",
+        "a6f1a851-a967-46eb-a07a-428427543212",
+        "b34f7484-0074-4174-95fb-d9062dbb47e8",
+        "be4ca2f7-b600-5574-ac01-6e311b0e169a",
+        "c4b5e749-9cda-403a-88be-5fd624169c59",
+        "cfd01896-fe57-4c37-852b-9d93c8a19988",
+        "dbac59e5-4b8d-4cb6-a756-4c3ebda0a384",
+        "dd37b1bf-0a57-566e-8c7d-f21b566b9baa",
+        "de1d745f-ed6b-5cad-a770-d4b76d3d15f1",
+        "e36819ab-b3ef-4d3f-a050-db580445c7e2",
+        "eaa123b8-857f-49f6-b490-6eeca412af0f"
+      ],
+      "fingerprint": "fbe538071b975dc1c476a58820cd2466a4d5d4d9bf9a23b9d22869d8f01584c4",
+      "provider": "codex",
+      "provider_versions": {
+        "unavailable": 6
+      },
+      "reviewed_at": null,
+      "reviewer_note": null,
+      "rule": "repeated_test_failure",
+      "rule_version": "wd-010.v2",
+      "session_id": "01a14184-99e2-7a32-a053-c31341fd3ae9",
+      "surfaces": {
+        "unknown": 6
+      },
+      "verdict": null
+    },
+    {
+      "case": "F20",
+      "evidence_ids": [
+        "0cd8aea0-5980-5be5-b3ce-2860aaf023ff",
+        "f016942c-f932-5619-a75c-19413641b0b7",
+        "a0d3c027-a0f0-50cb-ac38-9f4dd8454c7e",
+        "02fdddaa-2002-5f62-ab9d-b3121924494f"
+      ],
+      "execution_evidence_ids": [
+        "02fdddaa-2002-5f62-ab9d-b3121924494f",
+        "0cd8aea0-5980-5be5-b3ce-2860aaf023ff",
+        "6ca0ba42-cdd8-580b-8ae4-763f05f8a2c0",
+        "6cb23f6f-6ace-5bdf-acfc-454568415838",
+        "803c73e4-79b4-5460-9ba7-1186f4fa3021",
+        "a0d3c027-a0f0-50cb-ac38-9f4dd8454c7e",
+        "f016942c-f932-5619-a75c-19413641b0b7",
+        "fa4ee2d1-05cd-5eb2-b650-10a48b573c1e"
+      ],
+      "fingerprint": "8108373f1ca1f89db099e994085c3e0b3ca72cb2c6df2169cd83af8daff912e0",
+      "provider": "codex",
+      "provider_versions": {
+        "0.162.0-alpha.17.2": 4
+      },
+      "reviewed_at": "2026-10-20T19:37:05.813613+00:00",
+      "reviewer_note": null,
+      "rule": "repeated_tool_outcome",
+      "rule_version": "wd-010.v2",
+      "sample_sha256": "a3edd084c4c5c32c0bcaf4360e2903d6ed0a44d153f04f811ee7a1e5cd28b532",
+      "scope_provenance": "WD-167 F20; direct human verdict in chat; sample SHA-256 a3edd084c4c5c32c0bcaf4360e2903d6ed0a44d153f04f811ee7a1e5cd28b532; analysis SHA-256 2705637e40c11928f5fd77fed89ed346d26783bb23d997ec9f6ff744c9892b35; execution SHA-256 7bebec02978c891f56798521cc771d60c7e23bc987d15257b8e6fad67ad55283; provider=codex; surface=unavailable; no reviewer reason supplied",
+      "session_id": "01a14184-99e2-7a32-a053-c31341fd3ae9",
+      "source": "direct human reply in this chat",
+      "store_confirmed": true,
+      "surfaces": {
+        "unknown": 4
+      },
+      "verdict": "true_positive"
+    },
+    {
+      "case": "F21",
+      "evidence_ids": [
+        "58491f61-cf6b-57e6-8011-1700af34c58b",
+        "20404cac-a2f3-5fe4-bed5-1c4092f2e10d",
+        "d1f7b360-ebfb-5cdb-9057-a2abd51dde4f",
+        "d3d5bb26-240b-534a-8a9e-a4d767fca29f"
+      ],
+      "execution_evidence_ids": [
+        "20404cac-a2f3-5fe4-bed5-1c4092f2e10d",
+        "58491f61-cf6b-57e6-8011-1700af34c58b",
+        "8b8ec984-72d9-5889-92ad-e5494b0d3312",
+        "b016f07f-e56b-5237-8605-c4d1e9998297",
+        "c4348e08-5db8-56ef-949f-8a0654053a93",
+        "cca6c83a-8684-56f8-a9b1-045e0322b882",
+        "d1f7b360-ebfb-5cdb-9057-a2abd51dde4f",
+        "d3d5bb26-240b-534a-8a9e-a4d767fca29f"
+      ],
+      "fingerprint": "10d4e862de885363f44329eedc9d0382507b9e30f2849fb6cda438a9fe136fce",
+      "provider": "codex",
+      "provider_versions": {
+        "0.162.0-alpha.17.2": 4
+      },
+      "reviewed_at": null,
+      "reviewer_note": null,
+      "rule": "repeated_tool_outcome",
+      "rule_version": "wd-010.v2",
+      "session_id": "01a14184-99e2-7a32-a053-c31341fd3ae9",
+      "surfaces": {
+        "unknown": 4
+      },
+      "verdict": null
+    },
+    {
+      "case": "F22",
+      "evidence_ids": [
+        "58d44859-f415-491d-a2f6-15864418e3fe",
+        "bbc07b7b-6279-4258-ba6f-16e7d381145a",
+        "ce31e124-83e0-4e8e-9d87-c7bd1bad100b",
+        "ec3e8e72-bbd1-4e48-ac39-52263b5691f3",
+        "deb11f36-5b2d-42c8-aea8-c246347960c3",
+        "13630016-2a26-43d3-a615-2e210e5d3503"
+      ],
+      "execution_evidence_ids": [
+        "0060d466-08f4-4ee0-9cde-578d1a83c0a5",
+        "0952a639-779f-51ad-a380-213c30313f34",
+        "13630016-2a26-43d3-a615-2e210e5d3503",
+        "17d9bd0c-f829-57ea-aa88-f24ceca4e280",
+        "21c60d09-7d85-579f-9000-d9d2d7b9b102",
+        "2c79ec9c-9b6c-5760-9954-94af3d00b9fd",
+        "2cea400f-42c0-5564-b061-6502ee104a63",
+        "4e72fd63-67d0-5b8f-b4ee-3e586d9c0ffc",
+        "569316af-026b-4374-a1e0-3ab2f6788161",
+        "58d44859-f415-491d-a2f6-15864418e3fe",
+        "655091ae-79a5-591c-b33e-3201cd028622",
+        "7a91258a-cd42-4e15-8897-ea3f468913fd",
+        "8ae8acc0-da72-5200-97b2-8b41cc946def",
+        "8c790818-88e8-5bc9-b42e-a0a1e2b45261",
+        "8ed4f427-690e-4fb7-beb7-f2779bff6f15",
+        "9d54f378-47c2-46b5-b010-dd82f04d5817",
+        "a30e3845-b0f9-50ce-9dde-7e4e456bfada",
+        "bbc07b7b-6279-4258-ba6f-16e7d381145a",
+        "cdd703a2-7130-4a4d-b1db-9651aa7a4350",
+        "ce31e124-83e0-4e8e-9d87-c7bd1bad100b",
+        "d2bf0015-2199-5f65-a584-94297987fc62",
+        "da74b81d-f582-5515-8e37-593a7041933c",
+        "deb11f36-5b2d-42c8-aea8-c246347960c3",
+        "ec3e8e72-bbd1-4e48-ac39-52263b5691f3"
+      ],
+      "fingerprint": "1ddd182797b7e58b91fa4ef9ffb25c4bfcb98e557b2c16fedda76e8c7b5b55a5",
+      "provider": "codex",
+      "provider_versions": {
+        "unavailable": 6
+      },
+      "reviewed_at": "2026-10-20T19:37:07.095863+00:00",
+      "reviewer_note": null,
+      "rule": "repeated_tool_outcome",
+      "rule_version": "wd-010.v2",
+      "sample_sha256": "a3edd084c4c5c32c0bcaf4360e2903d6ed0a44d153f04f811ee7a1e5cd28b532",
+      "scope_provenance": "WD-167 F22; direct human verdict in chat; sample SHA-256 a3edd084c4c5c32c0bcaf4360e2903d6ed0a44d153f04f811ee7a1e5cd28b532; analysis SHA-256 2705637e40c11928f5fd77fed89ed346d26783bb23d997ec9f6ff744c9892b35; execution SHA-256 7bebec02978c891f56798521cc771d60c7e23bc987d15257b8e6fad67ad55283; provider=codex; surface=unavailable; no reviewer reason supplied",
+      "session_id": "01a14184-99e2-7a32-a053-c31341fd3ae9",
+      "source": "direct human reply in this chat",
+      "store_confirmed": true,
+      "surfaces": {
+        "unknown": 6
+      },
+      "verdict": "true_positive"
+    },
+    {
+      "case": "F23",
+      "evidence_ids": [
+        "7959cf4f-68e2-48ca-a016-07153fac555a",
+        "787343ac-0bb4-4448-a326-6151fff55e56",
+        "c86d0d88-e7f8-4689-9f5a-12307f2788e8"
+      ],
+      "execution_evidence_ids": [
+        "2cdc986d-9ebf-57e6-a947-ad2fe59ad823",
+        "3adfef43-9879-5c42-b99d-bf832e17206a",
+        "497fbb5c-4b8e-5859-9522-37b413f3104b",
+        "4bf0c01b-9943-53f1-a0c0-450ff4e52e15",
+        "4c8f4a74-ee6f-4246-b234-14bfb4e205e8",
+        "70e8b646-a6b9-4340-8611-8d820778ec24",
+        "787343ac-0bb4-4448-a326-6151fff55e56",
+        "7959cf4f-68e2-48ca-a016-07153fac555a",
+        "b510907c-16a5-55e7-bb33-02838254bd8a",
+        "c86d0d88-e7f8-4689-9f5a-12307f2788e8",
+        "d12d6501-1733-4639-b87a-2328a9eba1ec",
+        "db8d1e19-93aa-5fff-be44-2618ff579c7f"
+      ],
+      "fingerprint": "f2bc9b64d8e47d6eff8afd563ff0a7e21ea48ae247c697eb2c1c117d453c8442",
+      "provider": "codex",
+      "provider_versions": {
+        "unavailable": 3
+      },
+      "reviewed_at": null,
+      "reviewer_note": null,
+      "rule": "repeated_tool_outcome",
+      "rule_version": "wd-010.v2",
+      "session_id": "01a14184-99e2-7a32-a053-c31341fd3ae9",
+      "surfaces": {
+        "unknown": 3
+      },
+      "verdict": null
+    },
+    {
+      "case": "F24",
+      "evidence_ids": [
+        "83b18ce7-f87a-457e-aecf-6438f1a8e850",
+        "9e7093ff-3fc2-4df0-b4ca-9fd94df6b3c6",
+        "e09444a9-be7f-4c19-acee-3d60c6bce8e7"
+      ],
+      "execution_evidence_ids": [
+        "078f7d9d-ad34-53af-865a-b7ca6347497b",
+        "206f92e7-5fdc-5a7f-9268-a5b883d1d01a",
+        "4271024d-bd87-5861-901d-1e722d864dd9",
+        "50c4bcc7-a6f6-46cc-851b-ce9b04b31f79",
+        "6bca9196-66a6-4f84-a97d-18273ba52ea4",
+        "80b2c783-e4e4-4fac-aa95-92699a45b477",
+        "83b18ce7-f87a-457e-aecf-6438f1a8e850",
+        "8f41e8f8-b815-57b0-aca4-566e90f92905",
+        "9e7093ff-3fc2-4df0-b4ca-9fd94df6b3c6",
+        "c9d8db32-df9b-5e31-9d89-855e5662fc06",
+        "e09444a9-be7f-4c19-acee-3d60c6bce8e7",
+        "f134921d-3dd7-5c03-bb2a-22ece97ba592"
+      ],
+      "fingerprint": "c49c935931e262734cf8d0524938081eb78e51933bb727d040c1d49302f3500d",
+      "provider": "codex",
+      "provider_versions": {
+        "unavailable": 3
+      },
+      "reviewed_at": null,
+      "reviewer_note": null,
+      "rule": "repeated_tool_outcome",
+      "rule_version": "wd-010.v2",
+      "session_id": "01a14184-99e2-7a32-a053-c31341fd3ae9",
+      "surfaces": {
+        "unknown": 3
+      },
+      "verdict": null
+    },
+    {
+      "case": "F25",
+      "evidence_ids": [
+        "8e821f05-3a11-4343-ad48-2a843f4d7d18",
+        "a4f3a6fe-823d-4238-9024-7e01287c83fa",
+        "206b280b-80d6-4fef-a8b5-ec7aa8992379"
+      ],
+      "execution_evidence_ids": [
+        "11a143a2-806a-5421-ad92-626c125ab84b",
+        "206b280b-80d6-4fef-a8b5-ec7aa8992379",
+        "3c9a0d69-1faf-5839-9e7c-403a83ee1a45",
+        "5912692c-1c91-4c5b-b4a2-7ca8f974722f",
+        "6377fab5-6028-57b8-8ca0-33bd04c77b3f",
+        "8e821f05-3a11-4343-ad48-2a843f4d7d18",
+        "9305f7cd-701e-4b62-b655-204bdca6b2c9",
+        "a4f3a6fe-823d-4238-9024-7e01287c83fa",
+        "c383a2f7-f3dd-46ca-8d18-16e64b075d4c",
+        "c851a20e-a062-5560-a71d-231be689a5e6",
+        "f9f907bd-b4ba-5b0b-ad9d-b9140ef5e1a1",
+        "fe304742-d2a0-58ef-b4a4-3d5c49e429f1"
+      ],
+      "fingerprint": "4ba2dbc5da0ae92e4c0dc148693ba39558aedda54829702ad18ce67b1f0757c1",
+      "provider": "codex",
+      "provider_versions": {
+        "unavailable": 3
+      },
+      "reviewed_at": null,
+      "reviewer_note": null,
+      "rule": "repeated_tool_outcome",
+      "rule_version": "wd-010.v2",
+      "session_id": "01a14184-99e2-7a32-a053-c31341fd3ae9",
+      "surfaces": {
+        "unknown": 3
+      },
+      "verdict": null
+    },
+    {
+      "case": "F26",
+      "evidence_ids": [
+        "918435a7-be46-445e-a5b0-d0b1903e72db",
+        "efd7ed9f-6f13-47ed-bc5e-310805ff7d22",
+        "f2de70bb-e179-47fe-8920-5388895095e9"
+      ],
+      "execution_evidence_ids": [
+        "09c36a3f-127c-4ca1-8dbb-556cf08e4506",
+        "4c7a68b4-b9bb-5e17-9c52-7787f2d504bc",
+        "7d750e01-df98-5749-8f9e-3bebb90ee8df",
+        "918435a7-be46-445e-a5b0-d0b1903e72db",
+        "aa31f886-b5de-5a90-9c19-ee1b673b300f",
+        "e7067914-feb4-4328-b9b4-ab7252dba8fc",
+        "e7a874f6-d1dd-4e08-9091-48e187cbccc5",
+        "efd7ed9f-6f13-47ed-bc5e-310805ff7d22",
+        "f2de70bb-e179-47fe-8920-5388895095e9"
+      ],
+      "fingerprint": "e83e272a26c8829a012bbdcd81c0e2be01a7cd732c3122f52328829b0d205b28",
+      "provider": "codex",
+      "provider_versions": {
+        "unavailable": 3
+      },
+      "reviewed_at": null,
+      "reviewer_note": null,
+      "rule": "repeated_tool_outcome",
+      "rule_version": "wd-010.v2",
+      "session_id": "01a14184-99e2-7a32-a053-c31341fd3ae9",
+      "surfaces": {
+        "unknown": 3
+      },
+      "verdict": null
+    },
+    {
+      "case": "F27",
+      "evidence_ids": [
+        "a95114be-35b7-5fe4-a211-2ba6901d1e2c",
+        "8a9115dd-1cce-5e13-92dd-1746f220cf12",
+        "f933bdb1-6489-59d4-b69d-ceb2720c299b",
+        "6ef990dc-83b4-5209-9509-eedc6d9f9169",
+        "edee7f52-b69f-50cb-a103-74c8b9ff06e8",
+        "295b898f-59d7-53c9-926d-3c443dea35b4",
+        "029fa53f-f0ef-50a1-a590-9ed39d50df8a",
+        "8119e20d-b9f7-594b-a3a8-aacaca8d20e0"
+      ],
+      "execution_evidence_ids": [
+        "029fa53f-f0ef-50a1-a590-9ed39d50df8a",
+        "0a440994-4211-5f98-8d5f-45bbf594c664",
+        "1ea17bd7-9034-515b-a593-6f34fbcfd174",
+        "295b898f-59d7-53c9-926d-3c443dea35b4",
+        "6114713e-5ce4-54df-a3a4-64f3b12c80bf",
+        "6d3016da-8925-5bb8-b7fd-3ee3229594eb",
+        "6ef990dc-83b4-5209-9509-eedc6d9f9169",
+        "7b125f5e-e74d-515c-8b10-7fe010529b61",
+        "8119e20d-b9f7-594b-a3a8-aacaca8d20e0",
+        "8a9115dd-1cce-5e13-92dd-1746f220cf12",
+        "9ee54e76-59a9-545b-bb81-b848c77c1b08",
+        "a95114be-35b7-5fe4-a211-2ba6901d1e2c",
+        "b8d83832-3e5c-5fa8-9a25-ac56d2dd2bcb",
+        "ca064d1c-f6af-54d2-94fb-e0189a5269d8",
+        "edee7f52-b69f-50cb-a103-74c8b9ff06e8",
+        "f933bdb1-6489-59d4-b69d-ceb2720c299b"
+      ],
+      "fingerprint": "78266072e3b399fd485fd9e8b77692f2fab1151fe2d72b9ddec30314bcecaa05",
+      "provider": "codex",
+      "provider_versions": {
+        "0.162.0-alpha.17.2": 8
+      },
+      "reviewed_at": null,
+      "reviewer_note": null,
+      "rule": "repeated_tool_outcome",
+      "rule_version": "wd-010.v2",
+      "session_id": "01a14184-99e2-7a32-a053-c31341fd3ae9",
+      "surfaces": {
+        "unknown": 8
+      },
+      "verdict": null
+    },
+    {
+      "case": "F28",
+      "evidence_ids": [
+        "c57f6011-76ce-4484-acbc-76ee9ba65348",
+        "06ead790-9c8a-4598-b2fa-77f9ca216e0d",
+        "df422991-65f9-48eb-b324-9c04478f85f5",
+        "75315066-4fd2-41a5-8fa7-be3732b1a128",
+        "90e51c79-4cad-47b3-88f4-027c209e037f",
+        "88c773d4-2c54-4578-a806-1322f74836e9"
+      ],
+      "execution_evidence_ids": [
+        "01ce8426-c98d-5ee1-a3de-948a6130ba67",
+        "06ead790-9c8a-4598-b2fa-77f9ca216e0d",
+        "0b60e7c7-ac12-5ff1-acaf-79628f838218",
+        "316a81e1-4fa1-56a5-b4c1-cde601939877",
+        "401f9346-1a9c-59bf-9fbc-1eb23f20e27d",
+        "572da1a4-7d3b-5f86-bb92-9d2c04b571bb",
+        "67f3d94f-ed1f-4f81-9b98-f03cd0a9b77a",
+        "75315066-4fd2-41a5-8fa7-be3732b1a128",
+        "838b5d03-f3a4-4dc4-aeb1-1c0f21f10e29",
+        "88c773d4-2c54-4578-a806-1322f74836e9",
+        "8cb62665-eafb-57f9-950e-73c3ffd445fe",
+        "90e51c79-4cad-47b3-88f4-027c209e037f",
+        "98db5dcd-0754-465f-9b67-7c708e76e9c1",
+        "9e58097c-10e8-4100-a6d0-ae81687a5d79",
+        "c57f6011-76ce-4484-acbc-76ee9ba65348",
+        "df422991-65f9-48eb-b324-9c04478f85f5",
+        "df763b58-a1d5-4bac-87b5-e32570e4a475",
+        "f22e4277-49ff-410d-85ab-5f2aaf9c14ec"
+      ],
+      "fingerprint": "e77dd1c5c6b988e8affd2a1ef0d13f481c0727a1845e6f75dd60512f9a1e51f9",
+      "provider": "codex",
+      "provider_versions": {
+        "unavailable": 6
+      },
+      "reviewed_at": null,
+      "reviewer_note": null,
+      "rule": "repeated_tool_outcome",
+      "rule_version": "wd-010.v2",
+      "session_id": "01a14184-99e2-7a32-a053-c31341fd3ae9",
+      "surfaces": {
+        "unknown": 6
+      },
+      "verdict": null
+    },
+    {
+      "case": "F29",
+      "evidence_ids": [
+        "c971ddb2-76d9-4e93-bd07-56adce13bcba",
+        "4eae7780-a1d2-46e3-aea8-6144307dc6e5",
+        "430ad034-84a8-4c03-b56a-00e69787806d",
+        "6f357012-5808-46d1-a7e3-ae0a3b36b672",
+        "e5abbcb8-bbe4-4002-bcba-07979f371dcb",
+        "e0c979ab-557d-4f0a-9a71-279b6069d904"
+      ],
+      "execution_evidence_ids": [
+        "03e583b9-5766-4aee-82a1-1e95b44cf87a",
+        "0bc9f7a8-ee5d-4ee9-92b4-a7b4fdcabadb",
+        "0f092e82-20d9-538b-afc5-802d482fd279",
+        "1ea540f0-eec8-4700-be9c-2c67d5a146ce",
+        "20f32507-92b2-521f-8dc1-dbb44c1dd1ce",
+        "2466a6eb-fb4a-4a4d-8688-beeacf93bf37",
+        "430ad034-84a8-4c03-b56a-00e69787806d",
+        "4eae7780-a1d2-46e3-aea8-6144307dc6e5",
+        "4f4670b8-13d4-5bc1-9fa7-492b2cfa2316",
+        "5b9d4abe-43ae-4599-a51d-7e3d29283f6f",
+        "6f357012-5808-46d1-a7e3-ae0a3b36b672",
+        "6fc5d94d-680f-4969-8547-301018549a53",
+        "718074ae-b871-5ee1-b8dc-76636ae6e2fa",
+        "80e60b38-da37-5c29-9aad-34fbe78c30da",
+        "8f4ddaed-5196-5956-8126-882d1f48f6c4",
+        "b13f80b6-4113-5eb2-8ea3-f2651b397d32",
+        "b40d8c8e-0709-5e1f-bb7f-929392d267e9",
+        "c154b046-c705-539b-a471-4b35b13dfe43",
+        "c971ddb2-76d9-4e93-bd07-56adce13bcba",
+        "e0c979ab-557d-4f0a-9a71-279b6069d904",
+        "e5abbcb8-bbe4-4002-bcba-07979f371dcb",
+        "f0a71dda-8773-548c-8933-0a9728e80012",
+        "f18dfeee-2b2e-5fa9-9214-f2cab15eb452",
+        "f6909669-8f63-5fb0-acef-f58a4c95ba0f"
+      ],
+      "fingerprint": "ad52be1bde8e9feae9ffa9548f449248b6e58395003d3ae37ec97404eaffc14a",
+      "provider": "codex",
+      "provider_versions": {
+        "unavailable": 6
+      },
+      "reviewed_at": null,
+      "reviewer_note": null,
+      "rule": "repeated_tool_outcome",
+      "rule_version": "wd-010.v2",
+      "session_id": "01a14184-99e2-7a32-a053-c31341fd3ae9",
+      "surfaces": {
+        "unknown": 6
+      },
+      "verdict": null
+    },
+    {
+      "case": "F30",
+      "evidence_ids": [
+        "d2ad0f20-f259-4986-b9b5-295171e27e41",
+        "9cceb5c2-acb7-4272-b7f2-af0ad30eee84",
+        "673b40d1-7666-4846-9474-6b468e2101fd",
+        "1a99b1d1-eae3-4251-af78-d2303bf98600"
+      ],
+      "execution_evidence_ids": [
+        "089bcee4-fc64-5d40-a425-00e86e902c24",
+        "1a99b1d1-eae3-4251-af78-d2303bf98600",
+        "2b77cdcd-8b6f-5752-bb42-16389686e03e",
+        "3fca64fa-36f8-4e70-8e94-6dedd998430b",
+        "5ac041c7-2fc4-4c07-b0bb-e5972b8b2a65",
+        "673b40d1-7666-4846-9474-6b468e2101fd",
+        "6ec8b9e0-dbfb-543a-9e26-f3b6d9690a4e",
+        "7a81f05e-ff26-53fa-901b-563c9ba4b89e",
+        "8113d856-2a68-5c3f-a70d-8bd1cd1830dc",
+        "9af295dc-fcc7-44f0-829a-d1b31c0ed596",
+        "9cceb5c2-acb7-4272-b7f2-af0ad30eee84",
+        "a4f00321-1a5b-491e-ab46-a1c00894fc20",
+        "b966066d-d035-5c0a-984d-74182c714ad2",
+        "d2ad0f20-f259-4986-b9b5-295171e27e41",
+        "e35a6bfa-3f55-5da5-8aa6-41beae2f73d7",
+        "e682375b-c40f-5ffb-b857-385e06fbd1ee"
+      ],
+      "fingerprint": "4769aa5a15e80b2007ba1799cda7ba717267d1add255d8ee391f6658c91056a9",
+      "provider": "codex",
+      "provider_versions": {
+        "unavailable": 4
+      },
+      "reviewed_at": null,
+      "reviewer_note": null,
+      "rule": "repeated_tool_outcome",
+      "rule_version": "wd-010.v2",
+      "session_id": "01a14184-99e2-7a32-a053-c31341fd3ae9",
+      "surfaces": {
+        "unknown": 4
+      },
+      "verdict": null
+    },
+    {
+      "case": "F31",
+      "evidence_ids": [
+        "0b762ed3-809e-4d45-bc6d-d22d9e102908",
+        "a123923f-e595-419d-b54e-48b3df98e14b",
+        "e6de488c-ea57-4be3-a576-a53ad64db1f8",
+        "1be0eb6e-ee85-4232-b582-123d73d9ce1d",
+        "630d8c9d-18e8-4a27-a231-d14d88e62ec6"
+      ],
+      "execution_evidence_ids": [
+        "0b762ed3-809e-4d45-bc6d-d22d9e102908",
+        "1be0eb6e-ee85-4232-b582-123d73d9ce1d",
+        "2d7a4278-e04d-4841-952f-920745238266",
+        "630d8c9d-18e8-4a27-a231-d14d88e62ec6",
+        "9f453e38-cc39-4ee5-8b85-d448117c51e8",
+        "a123923f-e595-419d-b54e-48b3df98e14b",
+        "a88a202e-39ca-42ec-94a9-64218b8faa29",
+        "aa640f8c-646e-4cab-bf76-9cf1b72d747c",
+        "e6de488c-ea57-4be3-a576-a53ad64db1f8",
+        "f44ac09d-ac5a-47e7-a8ff-df8da6d83566"
+      ],
+      "fingerprint": "faa52ddb0a4fb93664b9ade5d786eb22b52cdadcc8f5c758c9048b8ef5e39f44",
+      "provider": "codex",
+      "provider_versions": {
+        "unavailable": 5
+      },
+      "reviewed_at": null,
+      "reviewer_note": null,
+      "rule": "repeated_tool_outcome",
+      "rule_version": "wd-010.v2",
+      "session_id": "01a1464c-bbe3-7742-b102-3e7d04616493",
+      "surfaces": {
+        "unknown": 5
+      },
+      "verdict": null
+    },
+    {
+      "case": "F32",
+      "evidence_ids": [
+        "6b05fe6d-a4ff-430c-9187-133c31a50260",
+        "3eeaee88-30a8-494c-a75e-4ff20333545b",
+        "f3d817b7-70a2-4d20-b530-39bdc9bac005"
+      ],
+      "execution_evidence_ids": [
+        "3eeaee88-30a8-494c-a75e-4ff20333545b",
+        "56c253bf-339d-4b3d-9abe-f2a87b5978c7",
+        "6b05fe6d-a4ff-430c-9187-133c31a50260",
+        "98f47e2d-ed05-46a7-92c4-34fe0a0ae0d2",
+        "d9f2c421-d9d3-4c2f-9184-96387ea42d79",
+        "f3d817b7-70a2-4d20-b530-39bdc9bac005"
+      ],
+      "fingerprint": "81def4cade79db85b337a7ff5031250fbb8438a4087bdb1214f57cb6256d1ec9",
+      "provider": "codex",
+      "provider_versions": {
+        "unavailable": 3
+      },
+      "reviewed_at": null,
+      "reviewer_note": null,
+      "rule": "repeated_tool_outcome",
+      "rule_version": "wd-010.v2",
+      "session_id": "01a150ab-fcf7-73c2-aa5e-953699bba788",
+      "surfaces": {
+        "unknown": 3
+      },
+      "verdict": null
+    }
+  ],
+  "format_version": "wd-167.review.v1",
+  "no_finding_sessions": [
+    {
+      "case": "S01",
+      "progress_state": null,
+      "provider": "codex",
+      "reviewed_at": null,
+      "reviewer_note": null,
+      "session_id": "01a07d94-c681-7693-a877-cebec978bf3a",
+      "task_outcome": null
+    },
+    {
+      "case": "S02",
+      "progress_state": null,
+      "provider": "codex",
+      "reviewed_at": null,
+      "reviewer_note": null,
+      "session_id": "01a07dbc-329e-7c31-9557-cfe097b14b8d",
+      "task_outcome": null
+    },
+    {
+      "case": "S03",
+      "progress_state": null,
+      "provider": "codex",
+      "reviewed_at": null,
+      "reviewer_note": null,
+      "session_id": "01a07e04-373d-70a1-acc8-290c81a23d33",
+      "task_outcome": null
+    },
+    {
+      "case": "S04",
+      "progress_state": null,
+      "provider": "codex",
+      "reviewed_at": null,
+      "reviewer_note": null,
+      "session_id": "01a07e28-900f-7b23-bc55-2f2571ce1bb7",
+      "task_outcome": null
+    },
+    {
+      "case": "S05",
+      "progress_state": null,
+      "provider": "codex",
+      "reviewed_at": null,
+      "reviewer_note": null,
+      "session_id": "01a07d4a-630a-7033-8543-67a236ffa8ff",
+      "task_outcome": null
+    },
+    {
+      "case": "S06",
+      "progress_state": null,
+      "provider": "codex",
+      "reviewed_at": null,
+      "reviewer_note": null,
+      "session_id": "01a07f73-550e-7213-ad08-f2090014c1fc",
+      "task_outcome": null
+    },
+    {
+      "case": "S07",
+      "progress_state": null,
+      "provider": "codex",
+      "reviewed_at": null,
+      "reviewer_note": null,
+      "session_id": "01a07f8f-8592-7580-adeb-2312d3cf86de",
+      "task_outcome": null
+    },
+    {
+      "case": "S08",
+      "progress_state": null,
+      "provider": "codex",
+      "reviewed_at": null,
+      "reviewer_note": null,
+      "session_id": "01a08236-2423-7570-909d-9967f4913195",
+      "task_outcome": null
+    },
+    {
+      "case": "S09",
+      "progress_state": null,
+      "provider": "codex",
+      "reviewed_at": null,
+      "reviewer_note": null,
+      "session_id": "01a08255-497c-7540-a2f4-ceeca3b7e876",
+      "task_outcome": null
+    },
+    {
+      "case": "S10",
+      "progress_state": null,
+      "provider": "codex",
+      "reviewed_at": null,
+      "reviewer_note": null,
+      "session_id": "01a082be-a3a1-7812-beb3-af9e42131bc4",
+      "task_outcome": null
+    },
+    {
+      "case": "S11",
+      "progress_state": null,
+      "provider": "codex",
+      "reviewed_at": null,
+      "reviewer_note": null,
+      "session_id": "01a084a9-7398-7293-ad52-fb6ff081f6b7",
+      "task_outcome": null
+    },
+    {
+      "case": "S12",
+      "progress_state": null,
+      "provider": "codex",
+      "reviewed_at": null,
+      "reviewer_note": null,
+      "session_id": "01a08805-66f3-76f1-91be-28fb974debc7",
+      "task_outcome": null
+    },
+    {
+      "case": "S13",
+      "progress_state": null,
+      "provider": "codex",
+      "reviewed_at": null,
+      "reviewer_note": null,
+      "session_id": "01a0880a-8923-70e3-a23e-5341ca58622c",
+      "task_outcome": null
+    },
+    {
+      "case": "S14",
+      "progress_state": null,
+      "provider": "codex",
+      "reviewed_at": null,
+      "reviewer_note": null,
+      "session_id": "01a0881a-f104-7863-bfb8-78585c3f5a3a",
+      "task_outcome": null
+    },
+    {
+      "case": "S15",
+      "progress_state": null,
+      "provider": "codex",
+      "reviewed_at": null,
+      "reviewer_note": null,
+      "session_id": "01a08d04-8b94-7440-ac77-cf71ffc628d3",
+      "task_outcome": null
+    },
+    {
+      "case": "S16",
+      "progress_state": null,
+      "provider": "codex",
+      "reviewed_at": null,
+      "reviewer_note": null,
+      "session_id": "01a09b21-7809-7110-be03-0596a102ecb2",
+      "task_outcome": null
+    },
+    {
+      "case": "S17",
+      "progress_state": null,
+      "provider": "codex",
+      "reviewed_at": null,
+      "reviewer_note": null,
+      "session_id": "01a0e454-c911-70f0-93cb-a814c0b85ee0",
+      "task_outcome": null
+    },
+    {
+      "case": "S18",
+      "progress_state": null,
+      "provider": "codex",
+      "reviewed_at": null,
+      "reviewer_note": null,
+      "session_id": "01a0fdda-fe51-7161-bf97-09119fc4fda6",
+      "task_outcome": null
+    },
+    {
+      "case": "S19",
+      "progress_state": null,
+      "provider": "codex",
+      "reviewed_at": null,
+      "reviewer_note": null,
+      "session_id": "01a11298-a075-7a92-a28d-bd13a567cb20",
+      "task_outcome": null
+    },
+    {
+      "case": "S20",
+      "progress_state": null,
+      "provider": "codex",
+      "reviewed_at": null,
+      "reviewer_note": null,
+      "session_id": "01a11301-bf7e-73e1-b049-a2ea67e84a93",
+      "task_outcome": null
+    },
+    {
+      "case": "S21",
+      "progress_state": null,
+      "provider": "codex",
+      "reviewed_at": null,
+      "reviewer_note": null,
+      "session_id": "01a11778-176a-7131-9cd3-5223511b6001",
+      "task_outcome": null
+    },
+    {
+      "case": "S22",
+      "progress_state": null,
+      "provider": "codex",
+      "reviewed_at": null,
+      "reviewer_note": null,
+      "session_id": "01a11809-53ce-7262-9f3e-3c3829d50d35",
+      "task_outcome": null
+    },
+    {
+      "case": "S23",
+      "progress_state": null,
+      "provider": "codex",
+      "reviewed_at": null,
+      "reviewer_note": null,
+      "session_id": "01a1435d-fbbc-77f2-9899-3838f18431cb",
+      "task_outcome": null
+    },
+    {
+      "case": "S24",
+      "progress_state": null,
+      "provider": "codex",
+      "reviewed_at": null,
+      "reviewer_note": null,
+      "session_id": "01a14362-b7ed-7ac3-838b-d2cc70741af1",
+      "task_outcome": null
+    },
+    {
+      "case": "S25",
+      "progress_state": null,
+      "provider": "codex",
+      "reviewed_at": null,
+      "reviewer_note": null,
+      "session_id": "01a1436a-e645-7211-8e0b-5e285a109066",
+      "task_outcome": null
+    },
+    {
+      "case": "S26",
+      "progress_state": null,
+      "provider": "codex",
+      "reviewed_at": null,
+      "reviewer_note": null,
+      "session_id": "01a1466d-f1b9-7961-af18-29df36e1e022",
+      "task_outcome": null
+    },
+    {
+      "case": "S27",
+      "progress_state": null,
+      "provider": "codex",
+      "reviewed_at": null,
+      "reviewer_note": null,
+      "session_id": "01a14dc7-3d8c-78d0-9a28-a342f30283fa",
+      "task_outcome": null
+    },
+    {
+      "case": "S28",
+      "progress_state": null,
+      "provider": "codex",
+      "reviewed_at": null,
+      "reviewer_note": null,
+      "session_id": "01a15064-789d-7230-a675-51467b7e0f31",
+      "task_outcome": null
+    }
+  ],
+  "note": "Null fields are pending human review. No previous verdicts transfer.",
+  "sample_sha256": "a3edd084c4c5c32c0bcaf4360e2903d6ed0a44d153f04f811ee7a1e5cd28b532",
+  "scope": {
+    "analysis_body_sha256": "2705637e40c11928f5fd77fed89ed346d26783bb23d997ec9f6ff744c9892b35",
+    "attribution_projection": "wd-165.v1",
+    "execution_body_sha256": "7bebec02978c891f56798521cc771d60c7e23bc987d15257b8e6fad67ad55283",
+    "execution_projection": "wd-164.v1",
+    "provider": "codex",
+    "surface": "unavailable"
+  },
+  "status": "awaiting_human_review"
+}
