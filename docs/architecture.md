@@ -40,6 +40,16 @@ Decision: a cross-project view is a read-only fan-out over the per-project store
 
 A local web UI is not built with WD-016. It is recorded as the next milestone (WD-136, split into a, b, and c) with an entry gate: build it only if the `overview` JSON proves insufficient in daily use. `overview` took 9.3 s, mostly per-call re-analysis; WD-138 removed redundant parsing and `json_extract` scans and brought it to about 5.1 s in process (6.4 s through the CLI). WD-141 removed the analysis from the call: the daemon keeps the findings warm in `session_findings`, and `overview` on a copy of the live stores took 1.4-1.9 s, of which the findings are 0.3 s ([evidence](evidence/wd141.md)). The UI would be convenience only.
 
+WD-158 keeps one usage API for both overview polling and detailed UI statistics:
+`inspection.usage(..., detailed=True)` remains the full report by default;
+`detailed=False` returns project/window metadata, provider token totals, and
+optional provider pricing, omitting `token_by`, `process`, and `coverage`.
+`overview` selects that quick mode. Both modes use the same windowing,
+first-copy deduplication, and pricing queries. Additive SQLite indexes cover
+provider/session counts and pending watermarks, and usage-identity grouping;
+the writer installs them on existing stores without a schema-version bump.
+Readers never create indexes or persist report caches.
+
 Decision: the UI is a separate, on-demand process (`agent-watchdog ui`), not part of the core daemon. The daemon is shared by Codex and Claude observation and must not fail because of an optional surface (the same rule as the WD-022b policy socket), and a long analysis or a configuration write must not compete with polling. The UI reuses `inspection.overview`, stays loopback-only, and adds no plugin or framework layer. It grows in three steps with different risk:
 
 - **WD-136a, viewer.** Read-only: `overview` and saved `insights` reports. It opens the stores read-only and writes nothing.

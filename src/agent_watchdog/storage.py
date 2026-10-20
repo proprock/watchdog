@@ -484,6 +484,17 @@ class Store:
                 if "rule_version" not in columns:
                     db.execute("ALTER TABLE session_analysis ADD COLUMN rule_version TEXT")
                 db.execute("PRAGMA user_version=9")
+        # Additive reporting indexes also apply to already-current stores.
+        # The implicit rowid covers pending-session watermarks and first-copy usage.
+        db.execute(
+            "CREATE INDEX IF NOT EXISTS events_provider_session "
+            "ON events(provider,session_id) WHERE session_id IS NOT NULL"
+        )
+        db.execute(
+            "CREATE INDEX IF NOT EXISTS event_facts_usage_identity "
+            "ON event_facts(provider,session_id,agent_id,native_event_id) "
+            "WHERE kind='usage' AND native_event_id IS NOT NULL"
+        )
         self._refresh_codex_attribution()
         self._refresh_state_projection(invalidate_findings=version >= 8)
         # Existing v1 stores need a one-time rebuild to support physical reclamation.

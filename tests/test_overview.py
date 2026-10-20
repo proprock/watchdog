@@ -7,12 +7,12 @@ from datetime import UTC, datetime, timedelta
 from hashlib import sha256
 from uuid import uuid4
 
-from test_facts_query import seed
+from test_facts_query import sample_events, seed
 from test_insights import _finish
 from test_pricing import TARIFFS
 from test_storage_v6 import BASE, build_v5
 
-from agent_watchdog import _proc, analysis, inspection
+from agent_watchdog import _proc, analysis, facts_query, inspection
 from agent_watchdog.cli import main
 from agent_watchdog.config import Config, Project, UserPaths, save_config
 from agent_watchdog.events import Envelope
@@ -320,6 +320,117 @@ def test_since_bounds_usage(tmp_path, monkeypatch, capsys):
     _, result = overview(monkeypatch, capsys, tmp_path, "--since", cut)
 
     assert {item["provider"] for item in rows(result)["a"]["usage"]["token_usage"]} == {"claude"}
+
+
+def test_overview_usage_matches_full_usage_for_windows_and_duplicate_first_copy(
+    tmp_path, monkeypatch, capsys
+):
+    paths, projects = register(tmp_path, "a", seeded=("a",))
+    project = projects["a"]
+    original = next(
+        event
+        for event in sample_events(project.id)
+        if event.provider == "codex" and event.kind == "usage"
+    )
+    duplicate = original.model_copy(
+        update={"event_id": uuid4(), "received_at": original.received_at + timedelta(seconds=20)}
+    )
+    with Store(paths.project_data(project.id), project.id) as store:
+        store.put(duplicate)
+
+    tariffs = tmp_path / "tariffs.toml"
+    tariffs.write_text(TARIFFS, encoding="utf-8")
+    since = (BASE + timedelta(seconds=20)).isoformat()
+    until = (BASE + timedelta(seconds=30)).isoformat()
+    windows = ((), ("--since", since, "--until", until))
+    all_time_usage = None
+
+    for window in windows:
+        usage_args = [
+            "agent-watchdog",
+            "--home",
+            str(tmp_path),
+            "usage",
+            "--project",
+            str(project.id),
+            *window,
+            "--tariffs",
+            str(tariffs),
+        ]
+        monkeypatch.setattr(sys, "argv", usage_args)
+        assert main() == 0
+        full_usage = json.loads(capsys.readouterr().out)
+
+        _, result = overview(monkeypatch, capsys, tmp_path, *window, "--tariffs", str(tariffs))
+        overview_usage = rows(result)["a"]["usage"]
+        assert overview_usage["token_usage"] == full_usage["token_usage"]
+        assert overview_usage["pricing"] == {
+            "currency": full_usage["pricing"]["currency"],
+            "estimate": full_usage["pricing"]["estimate"],
+            "caveat": full_usage["pricing"]["caveat"],
+            "by_provider": full_usage["pricing"]["by"]["provider"],
+        }
+        if not window:
+            all_time_usage = full_usage
+
+    assert all_time_usage is not None
+    all_time = {item["provider"]: item for item in all_time_usage["token_usage"]}
+    assert all_time["codex"]["usage_rows"] == 1
+    bounded = {item["provider"] for item in overview_usage["token_usage"]}
+    assert "codex" not in bounded
+
+
+def test_overview_queries_only_provider_usage_and_pricing(tmp_path, monkeypatch, capsys):
+    register(tmp_path, "a", seeded=("a",))
+    tariffs = tmp_path / "tariffs.toml"
+    tariffs.write_text(TARIFFS, encoding="utf-8")
+    token_groups = []
+    cost_groups = []
+    token_usage = facts_query.token_usage
+    cost = facts_query.cost
+
+    def record_token_group(db, *, group_by="provider", **kwargs):
+        token_groups.append(group_by)
+        return token_usage(db, group_by=group_by, **kwargs)
+
+    def record_cost_group(db, tariffs, *, group_by="provider", **kwargs):
+        cost_groups.append(group_by)
+        return cost(db, tariffs, group_by=group_by, **kwargs)
+
+    def unexpected(*args, **kwargs):
+        raise AssertionError("overview must not query process efficiency or coverage")
+
+    monkeypatch.setattr(facts_query, "token_usage", record_token_group)
+    monkeypatch.setattr(facts_query, "cost", record_cost_group)
+    monkeypatch.setattr(facts_query, "process_efficiency", unexpected)
+    monkeypatch.setattr(facts_query, "coverage", unexpected)
+
+    overview(monkeypatch, capsys, tmp_path, "--tariffs", str(tariffs))
+
+    assert token_groups == ["provider"]
+    assert cost_groups == ["provider"]
+
+
+def test_usage_detailed_flag_preserves_shared_provider_results(tmp_path):
+    paths, projects = register(tmp_path, "a", seeded=("a",))
+    project = projects["a"]
+    tariffs = tmp_path / "tariffs.toml"
+    tariffs.write_text(TARIFFS, encoding="utf-8")
+
+    full = inspection.usage(paths, project, since=None, until=None, tariffs=tariffs)
+    quick = inspection.usage(
+        paths, project, since=None, until=None, tariffs=tariffs, detailed=False
+    )
+    unpriced_quick = inspection.usage(paths, project, since=None, until=None, detailed=False)
+
+    assert {"token_by", "process", "coverage"} <= full.keys()
+    assert {"token_by", "process", "coverage"}.isdisjoint(quick)
+    assert {"provider", "model", "day"} <= full["pricing"]["by"].keys()
+    assert quick["project_id"] == full["project_id"]
+    assert quick["window"] == full["window"]
+    assert quick["token_usage"] == full["token_usage"]
+    assert quick["pricing"]["by"]["provider"] == full["pricing"]["by"]["provider"]
+    assert "pricing" not in unpriced_quick
 
 
 def test_tariffs_add_a_labeled_estimate_and_a_bad_file_fails_the_command(

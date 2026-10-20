@@ -65,6 +65,10 @@ Each project is read through its own short-lived read-only snapshots and nothing
 
 The analysis is CPU-bound, so the command lowers its own process priority and does not compete with hook handling.
 
+`overview` reads only the provider totals it exposes. The full `usage` command
+continues to include model, effort, attribution, conversation, turn, and day
+breakdowns, process statistics, and coverage.
+
 ## Pipeline telemetry
 
 ```console

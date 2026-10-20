@@ -1,5 +1,21 @@
 # Foundation verification
 
+## WD-158 quick/full usage and live overview (2026-10-20, Windows, Python 3.12.13)
+
+`inspection.usage` now supports `detailed=False` for overview polling while
+retaining the full report by default for CLI and future WebUI statistics.
+Provider/session and usage-identity indexes accelerate both modes. On the same
+60,816-event live-store backup, overview fell from 3.38-3.89 s after the initial
+cold sample to 0.17-0.21 s in process; largest-store full usage fell from
+1.07-1.28 s to 0.67-0.90 s. The updated live instance returned CLI overview in
+1.1151, 0.9678, and 1.0714 s; a fresh-process profile attributes about 0.82 s to
+imports and 0.21 s to overview itself. All five live findings sections are ready,
+pending sessions drained from one to zero, and no findings-refresh failures were
+logged. Existing `transcript_unreadable` keeps global health degraded; this is
+recorded separately from successful findings/reporting acceptance. Full offline
+suite: 1,735 passed, one skipped; static checks and package build passed.
+[Methods, samples, live update, and limits](evidence/wd158.md).
+
 ## WD-149 unified event queue (2026-10-17, Windows, Python 3.12.13)
 
 Native, dev, and control observations now share schema 2 spool publication and

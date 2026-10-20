@@ -510,12 +510,17 @@ def usage(
     since: datetime | None,
     until: datetime | None,
     tariffs: Path | None = None,
+    detailed: bool = True,
 ) -> dict[str, Any]:
     """Compare raw token use and per-turn process cost from a v6 read-only snapshot.
 
     With ``tariffs`` (a list-price file), a ``pricing`` block is added: a
     list-price estimate recomputed from the raw counters, never billed spend and
     never persisted. Absent it, the output is unchanged.
+
+    ``detailed=False`` reads provider totals and optional provider pricing only.
+    It omits ``token_by``, ``process``, and ``coverage`` for overview consumers;
+    the default full report remains available to CLI and UI callers.
     """
     from agent_watchdog import facts_query, pricing
 
@@ -525,12 +530,6 @@ def usage(
     with database(paths, project) as db:
         if db.execute("PRAGMA user_version").fetchone()[0] < 6:
             raise StorageError("Project database predates schema v6; run the daemon to migrate")
-        token_by = {
-            dimension: facts_query.token_usage(
-                db, since_us=since_us, until_us=until_us, group_by=dimension
-            )
-            for dimension in ("model", "effort", "attribution", "conversation", "turn", "day")
-        }
         result: dict[str, Any] = {
             "project_id": str(project.id),
             "window": {
@@ -540,10 +539,25 @@ def usage(
             "token_usage": facts_query.token_usage(
                 db, since_us=since_us, until_us=until_us, group_by="provider"
             ),
-            "token_by": token_by,
-            "process": facts_query.process_efficiency(db, since_us=since_us, until_us=until_us),
-            "coverage": facts_query.coverage(db),
         }
+        if detailed:
+            result |= {
+                "token_by": {
+                    dimension: facts_query.token_usage(
+                        db, since_us=since_us, until_us=until_us, group_by=dimension
+                    )
+                    for dimension in (
+                        "model",
+                        "effort",
+                        "attribution",
+                        "conversation",
+                        "turn",
+                        "day",
+                    )
+                },
+                "process": facts_query.process_efficiency(db, since_us=since_us, until_us=until_us),
+                "coverage": facts_query.coverage(db),
+            }
         if loaded is not None:
             result["pricing"] = {
                 "tariffs_path": loaded.path,
@@ -557,7 +571,7 @@ def usage(
                     dimension: facts_query.cost(
                         db, loaded, since_us=since_us, until_us=until_us, group_by=dimension
                     )
-                    for dimension in ("provider", "model", "day")
+                    for dimension in (("provider", "model", "day") if detailed else ("provider",))
                 },
             }
         return result
@@ -880,7 +894,7 @@ def _overview_sections(
     if schema < 6:
         usage_section: dict[str, Any] = {"state": "unsupported", "reason": "schema_predates_v6"}
     else:
-        measured = usage(paths, project, since=since, until=until, tariffs=tariffs)
+        measured = usage(paths, project, since=since, until=until, tariffs=tariffs, detailed=False)
         usage_section = {"state": "ready", "token_usage": measured["token_usage"]}
         if "pricing" in measured:
             pricing = measured["pricing"]
