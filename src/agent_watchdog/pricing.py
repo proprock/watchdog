@@ -115,14 +115,37 @@ class Tariffs:
         return Rate(effective, model, table.get(model, {}))
 
 
-def estimate(counts: Mapping[str, int | None], rate: Rate) -> tuple[Decimal, dict[str, object]]:
-    """Return ``(cost_estimate, provenance)`` for one usage row's raw counters."""
+def billable_counts(counts: Mapping[str, int | None], *, provider: str) -> dict[str, int | None]:
+    """Return non-overlapping pricing counters without changing stored telemetry."""
+    result = {counter: counts.get(counter) for counter in RATE_FIELDS.values()}
+    if provider == "codex":
+        total = result["input_tokens"]
+        cached = result["cached_input_tokens"]
+        result["input_tokens"] = (
+            max(0, total - cached) if isinstance(total, int) and isinstance(cached, int) else None
+        )
+    return result
+
+
+def estimate(
+    counts: Mapping[str, int | None], rate: Rate, *, provider: str
+) -> tuple[Decimal, dict[str, object]]:
+    """Price one usage row using its provider's input-counter convention."""
+    billable = billable_counts(counts, provider=provider)
     cost = Decimal(0)
     by_field: dict[str, Decimal] = {}
+    priced_tokens: dict[str, int] = {}
     unpriced_tokens = 0
     missing_field = False
+    cached_unavailable = (
+        provider == "codex"
+        and counts.get("cached_input_tokens") is None
+        and isinstance(counts.get("input_tokens"), int)
+    )
+    if cached_unavailable:
+        unpriced_tokens = max(0, counts["input_tokens"] or 0)
     for field, counter in RATE_FIELDS.items():
-        tokens = counts.get(counter)
+        tokens = billable[counter]
         if not isinstance(tokens, int) or tokens <= 0:
             continue
         unit = rate.rates.get(field)
@@ -133,14 +156,18 @@ def estimate(counts: Mapping[str, int | None], rate: Rate) -> tuple[Decimal, dic
         line = Decimal(tokens) * unit / _MILLION
         cost += line
         by_field[field] = line
+        priced_tokens[field] = tokens
     provenance: dict[str, object] = {
         "tariff_date": rate.effective.isoformat(),
         "priced_fields": list(by_field),
         "by_field": by_field,
+        "priced_tokens": priced_tokens,
         "unpriced_tokens": unpriced_tokens,
     }
     if not rate.rates:
         provenance["unpriced_reason"] = "model_not_in_tariff"
+    elif cached_unavailable:
+        provenance["unpriced_reason"] = "cached_input_unavailable"
     elif missing_field:
         provenance["unpriced_reason"] = "rate_field_missing"
     return cost.quantize(QUANTUM), provenance

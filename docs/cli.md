@@ -109,7 +109,13 @@ editing the tariff file re-prices history. Provenance is explicit: per-group
 `cost_estimate` (a decimal string), a `by_field` split
 (`input`/`output`/`cache_read`/`cache_write`), `unpriced_tokens` with
 `unpriced_reasons` (`model_not_in_tariff`, `before_earliest_tariff`,
-`rate_field_missing`), and the `tariff_dates` applied. `reasoning_output_tokens`
+`rate_field_missing`, `cached_input_unavailable`), and the `tariff_dates` applied.
+Codex's full-rate input is `max(0, input_tokens - cached_input_tokens)`;
+Claude's `input_tokens` already excludes cache reads and is priced as reported.
+If Codex's cached counter is missing, its input remains unpriced with
+`cached_input_unavailable`; independently known output is still priced.
+The `by_field` token counts describe these billable classes, while raw token
+blocks retain the provider's counters. `reasoning_output_tokens`
 and `total_tokens` are never priced. A missing or malformed tariff file is an
 error. See [`pricing.example.toml`](../pricing.example.toml) for the format.
 

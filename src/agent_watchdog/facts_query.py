@@ -132,7 +132,7 @@ def cost(
     counters = ", ".join(pricing.RATE_FIELDS.values())
     rows = _rows(
         db,
-        f"SELECT {select_keys}, model, received_at_us, {counters} "
+        f"SELECT {select_keys}, provider, model, received_at_us, {counters} "
         f"FROM event_facts WHERE kind = 'usage'{where}{_FIRST_COPY} "
         "ORDER BY received_at_us, rowid",
         tuple(params),
@@ -158,22 +158,25 @@ def cost(
         )
         rate = tariffs.rate(row["model"], at)
         if rate is None:
+            counts = pricing.billable_counts(row, provider=row["provider"])
             acc["unpriced_tokens"] += sum(
-                row[counter]
-                for counter in pricing.RATE_FIELDS.values()
-                if isinstance(row[counter], int)
+                tokens for tokens in counts.values() if isinstance(tokens, int)
             )
+            if row["provider"] == "codex" and counts["input_tokens"] is None:
+                acc["unpriced_tokens"] += row["input_tokens"] or 0
             reason = "before_earliest_tariff" if at is not None else "timestamp_unavailable"
             acc["unpriced_reasons"][reason] = acc["unpriced_reasons"].get(reason, 0) + 1
             continue
-        line_cost, provenance = pricing.estimate(row, rate)
+        line_cost, provenance = pricing.estimate(row, rate, provider=row["provider"])
         acc["_cost"] += line_cost
         acc["_dates"].add(provenance["tariff_date"])
         acc["unpriced_tokens"] += provenance["unpriced_tokens"]
         by_field = provenance["by_field"]
         assert isinstance(by_field, dict)
+        priced_tokens = provenance["priced_tokens"]
+        assert isinstance(priced_tokens, dict)
         for field, field_cost in by_field.items():
-            acc["by_field"][field]["tokens"] += row[pricing.RATE_FIELDS[field]] or 0
+            acc["by_field"][field]["tokens"] += priced_tokens[field]
             acc["by_field"][field]["_cost"] += field_cost
         reason = provenance.get("unpriced_reason")
         if isinstance(reason, str):

@@ -7,7 +7,7 @@ no counter is ever a synthetic total. Reasoning/thinking tokens and Codex
 
 import json
 import sys
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 from decimal import Decimal
 from uuid import uuid4
 
@@ -86,7 +86,7 @@ def test_estimate_prices_only_the_four_billable_classes(tariffs_file):
         "reasoning_output_tokens": 300_000,  # subset of output -> never priced
         "total_tokens": 9_999_999,  # overlapping sum -> never priced
     }
-    cost, provenance = pricing.estimate(counts, rate)
+    cost, provenance = pricing.estimate(counts, rate, provider="claude")
     # 1*3.00 + 2*0.30 + 0.4*3.75 + 0.5*15.00 = 3.00 + 0.60 + 1.50 + 7.50 = 12.60
     assert cost == Decimal("12.600000")
     assert provenance["unpriced_tokens"] == 0
@@ -102,11 +102,27 @@ def test_estimate_marks_a_missing_rate_field_unpriced_without_inventing_a_value(
     rate = tariffs.rate("m", datetime(2026, 2, 1, tzinfo=UTC))
     assert rate is not None
     cost, provenance = pricing.estimate(
-        {"input_tokens": 1_000_000, "cached_input_tokens": 5_000_000}, rate
+        {"input_tokens": 1_000_000, "cached_input_tokens": 5_000_000}, rate, provider="claude"
     )
     assert cost == Decimal("1.000000")
     assert provenance["unpriced_tokens"] == 5_000_000
     assert provenance["unpriced_reason"] == "rate_field_missing"
+
+
+@pytest.mark.parametrize("provider, unpriced", [("codex", 1_200_000), ("claude", 1_800_000)])
+@pytest.mark.parametrize("rates", [{}, {"output": Decimal("10")}])
+def test_unpriced_tokens_follow_provider_input_conventions(provider, unpriced, rates):
+    counts = {"input_tokens": 1_000_000, "cached_input_tokens": 600_000, "output_tokens": 200_000}
+    raw = counts.copy()
+    cost, provenance = pricing.estimate(
+        counts, pricing.Rate(date(2026, 1, 1), "m", rates), provider=provider
+    )
+    assert counts == raw
+    assert cost == (Decimal("2.000000") if rates else Decimal("0.000000"))
+    assert provenance["unpriced_tokens"] == (unpriced - 200_000 if rates else unpriced)
+    assert provenance["unpriced_reason"] == (
+        "rate_field_missing" if rates else "model_not_in_tariff"
+    )
 
 
 def _seed(root, project, *, twin=False):
@@ -232,3 +248,76 @@ def test_usage_cli_price_flag_adds_a_pricing_block_and_no_flag_changes_nothing(
     assert "not billed spend" in priced["pricing"]["caveat"]
     totals = {r["provider"]: r for r in priced["pricing"]["by"]["provider"]}
     assert totals["claude"]["cost_estimate"] == "8.400000"
+
+
+@pytest.mark.parametrize("command", ["usage", "overview"])
+@pytest.mark.parametrize("provider", ["codex", "claude"])
+@pytest.mark.parametrize("cached", [0, 600_000, 1_200_000, None])
+def test_tariff_commands_price_provider_input_conventions(
+    tmp_path, project, monkeypatch, capsys, tariffs_file, command, provider, cached
+):
+    save_config(tmp_path / "config.toml", Config(projects=(Project(id=project, root=tmp_path),)))
+    session = "cccccccc-cccc-4ccc-8ccc-cccccccccccc"
+    counts = {"input_tokens": 1_000_000, "output_tokens": 200_000}
+    if cached is not None:
+        counts["cached_input_tokens" if provider == "codex" else "cache_read_input_tokens"] = cached
+    if provider == "codex":
+        events = [
+            codex_hook(
+                project,
+                session=session,
+                kind="tool.finish",
+                offset=1,
+                turn_id="t1",
+                model="gpt-5.6",
+            ),
+            codex_usage(
+                project, session=session, offset=2, response_id="r1", turn_id="t1", delta=counts
+            ),
+        ]
+    else:
+        # Use the same model name: the provider, not the tariff/model, defines the convention.
+        events = [
+            claude_usage(
+                project,
+                session=session,
+                offset=2,
+                request_id="r1",
+                model="gpt-5.6",
+                response=counts,
+            )
+        ]
+    root = tmp_path / "data" / "projects" / str(project)
+    root.mkdir(parents=True)
+    build_v5(root, project, events)
+    with Store(root, project):
+        pass
+    base = ["agent-watchdog", "--home", str(tmp_path), command]
+    if command == "usage":
+        base += ["--project", str(project)]
+    monkeypatch.setattr(sys, "argv", [*base, "--tariffs", str(tariffs_file)])
+    assert main() == 0
+    result = json.loads(capsys.readouterr().out)
+    usage = result if command == "usage" else result["projects"][0]["usage"]
+    raw = usage["token_usage"][0]
+    assert raw["input_tokens"] == 1_000_000
+    assert raw["cached_input_tokens"] == cached
+    uncached = (
+        1_000_000
+        if provider == "claude"
+        else (max(0, 1_000_000 - cached) if cached is not None else None)
+    )
+    expected = Decimal("2") + Decimal(uncached or 0) * Decimal("1.25") / 1_000_000
+    expected += Decimal(cached or 0) * Decimal("0.125") / 1_000_000
+    groups = (
+        usage["pricing"]["by"].values() if command == "usage" else [usage["pricing"]["by_provider"]]
+    )
+    for rows in groups:
+        assert len(rows) == 1
+        row = rows[0]
+        assert row["cost_estimate"] == str(expected.quantize(pricing.QUANTUM))
+        assert row["by_field"]["input"]["tokens"] == (uncached or 0)
+        assert row["by_field"]["cache_read"]["tokens"] == (cached or 0)
+        unavailable = provider == "codex" and cached is None
+        assert row["unpriced_tokens"] == (1_000_000 if unavailable else 0)
+        assert row["unpriced_reasons"] == ({"cached_input_unavailable": 1} if unavailable else {})

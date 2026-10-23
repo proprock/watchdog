@@ -321,8 +321,13 @@ beside the aggregates, never folded in.
 `agent_watchdog.pricing` and `facts_query.cost` add an optional list-price
 estimate over the same rows: each `usage` row is priced from its own `model` and
 timestamp against a dated tariff file, never persisted and recomputed on every
-call. Only `input_tokens`, `output_tokens`, `cached_input_tokens`, and
-`cache_write_input_tokens` are priced; `reasoning_output_tokens` (a subset of
+call. The billable classes derive from `input_tokens`, `output_tokens`,
+`cached_input_tokens`, and `cache_write_input_tokens`. For Codex, full-rate input
+is `max(0, input_tokens - cached_input_tokens)` because its input includes cache
+reads; a missing cached counter leaves that input unpriced, with reason
+`cached_input_unavailable`. Claude's input excludes cache reads and is priced
+unchanged. Stored counters and raw usage aggregates are untouched.
+`reasoning_output_tokens` (a subset of
 `output_tokens`, already billed) and `total_tokens` (an overlapping sum) are
 not. A single `cache_write` rate is a blend across Anthropic's 5-minute and
 1-hour cache-creation tiers, which bill at different multiples of the input
