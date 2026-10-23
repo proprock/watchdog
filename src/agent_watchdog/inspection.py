@@ -5,7 +5,7 @@ import sqlite3
 from collections import defaultdict
 from collections.abc import Iterator
 from contextlib import closing, contextmanager
-from datetime import datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any, Literal, TypedDict, cast
 
@@ -1005,11 +1005,85 @@ def overview(
     return result
 
 
-def doctor(paths: UserPaths) -> dict:
+COVERAGE_WINDOW = timedelta(hours=24)
+_TRANSCRIPT_PATTERNS = {"claude": "*/*.jsonl", "codex": "**/*.jsonl"}
+
+
+def _default_transcript_roots() -> dict[str, Path]:
+    return {
+        "claude": Path.home() / ".claude" / "projects",
+        "codex": Path.home() / ".codex" / "sessions",
+    }
+
+
+def _newest_transcript(root: Path, provider: str) -> datetime | None:
+    """Newest transcript mtime under a provider root, or None when the root is unreadable."""
+    if not root.is_dir():
+        return None
+    newest = 0.0
+    try:
+        for path in root.glob(_TRANSCRIPT_PATTERNS[provider]):
+            try:
+                newest = max(newest, path.stat().st_mtime)
+            except OSError:
+                continue
+    except OSError:
+        return None
+    return datetime.fromtimestamp(newest, UTC) if newest else datetime.fromtimestamp(0, UTC)
+
+
+def _provider_coverage(
+    last_events: dict[str, datetime],
+    roots: dict[str, Path],
+    now: datetime,
+) -> tuple[dict[str, dict], list[dict]]:
+    """Compare provider transcript activity with stored events across registered projects.
+
+    A transcript without a stored event in the window means hooks stopped reaching the
+    store. Unregistered projects also write transcripts, so this is a prompt to check,
+    not proof of loss. A missing root is unknown, never "idle".
+    """
+    coverage: dict[str, dict] = {}
+    warnings: list[dict] = []
+    for provider, root in roots.items():
+        newest = _newest_transcript(root, provider)
+        last_event = last_events.get(provider)
+        active = None if newest is None else now - newest <= COVERAGE_WINDOW
+        coverage[provider] = {
+            "transcript_activity": active,
+            "last_transcript_at": newest.isoformat() if newest and newest.timestamp() else None,
+            "last_event_at": last_event.isoformat() if last_event else None,
+        }
+        if active and (last_event is None or now - last_event > COVERAGE_WINDOW):
+            warnings.append(
+                {
+                    "code": "provider_transcripts_without_events",
+                    "provider": provider,
+                    "window_hours": COVERAGE_WINDOW // timedelta(hours=1),
+                    "message": (
+                        f"{provider} transcripts changed in the last "
+                        f"{COVERAGE_WINDOW // timedelta(hours=1)} h but no {provider} event "
+                        "was stored; check the installed hook adapter and the spool."
+                    ),
+                }
+            )
+    return coverage, warnings
+
+
+def doctor(
+    paths: UserPaths,
+    *,
+    now: datetime | None = None,
+    transcript_roots: dict[str, Path] | None = None,
+) -> dict:
+    from agent_watchdog.spool import Spool
+
+    now = now or datetime.now(UTC)
     config = load_config(paths.config)
     aliases = project_aliases(config.projects)
     projects = []
     healthy = True
+    last_events: dict[str, datetime] = {}
     for project in config.projects:
         root = paths.project_data(project.id)
         state: dict = {"state": "unavailable"}
@@ -1021,6 +1095,13 @@ def doctor(paths: UserPaths) -> dict:
                         "schema_version": db.execute("PRAGMA user_version").fetchone()[0],
                         "event_count": db.execute("SELECT COUNT(*) FROM events").fetchone()[0],
                     }
+                    for provider, stamp in db.execute(
+                        f"SELECT {_provider_expression(db)}, MAX(received_at) FROM events "
+                        "GROUP BY 1"
+                    ):
+                        seen = datetime.fromisoformat(stamp)
+                        if provider and seen > last_events.get(provider, seen - timedelta(1)):
+                            last_events[provider] = seen
             counters = resources.losses(root)
             used = resources.usage(root)
             capacity = (
@@ -1045,8 +1126,35 @@ def doctor(paths: UserPaths) -> dict:
         )
     core = daemon.status(paths)
     healthy &= core["state"] != "degraded"
+    mismatch = Spool(paths.data).schema_mismatch()
+    warnings: list[dict] = []
+    if mismatch is not None:
+        try:
+            recent = now - datetime.fromisoformat(mismatch["last_at"]) <= COVERAGE_WINDOW
+        except ValueError:
+            recent = True
+        if recent:
+            healthy = False
+            warnings.append(
+                {
+                    "code": "adapter_schema_mismatch",
+                    "message": (
+                        f"Spool records with schema {sorted(mismatch['seen'])} were rejected; "
+                        f"the daemon expects {mismatch['expected']}. The installed hook adapter "
+                        "is stale: update it from a non-packaged process and compare its hash."
+                    ),
+                }
+            )
+    coverage, coverage_warnings = _provider_coverage(
+        last_events,
+        _default_transcript_roots() if transcript_roots is None else transcript_roots,
+        now,
+    )
     return {
         "ok": healthy,
+        "adapter": {"schema_mismatch": mismatch},
+        "coverage": coverage,
+        "warnings": warnings + coverage_warnings,
         "projects": projects,
         "daemon": core,
         "gaps": [

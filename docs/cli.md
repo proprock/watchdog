@@ -125,6 +125,17 @@ means collection is unavailable, not corrupt. Corrupt, wrong-project, and future
 databases are errors. An unregistered fresh installation does not create state.
 Existing daemon lock files may be probed for process ownership. Doctor does not
 repair files, inspect native trust, or infer event coverage from hook definitions.
+
+Two checks surface silent loss of provider coverage (WD-174). `adapter.schema_mismatch`
+lists the spool record schema versions the daemon rejected, with the expected version
+and the last time one was seen; within 24 hours it adds an `adapter_schema_mismatch`
+warning and makes `ok` false, because a stale hook adapter is installed. `coverage`
+compares, per provider, the newest transcript under `~/.claude/projects` or
+`~/.codex/sessions` with the newest stored event across registered projects. If a
+transcript changed in the last 24 hours and no event of that provider is stored in that
+window, `warnings` gains `provider_transcripts_without_events` (`ok` stays unchanged;
+unregistered projects also write transcripts, so treat it as a prompt to check). A
+missing transcript root reports `transcript_activity: null`, not idle.
 Use [`readiness`](#readiness) for the delivery path.
 
 ## Readiness

@@ -28,6 +28,7 @@ SCHEMA_VERSION = 2
 SPOOL_BYTES = 64 * 1024**2
 SPOOL_FILES = 4096
 RECORD_OVERHEAD = 64 * 1024
+MISMATCH_FILE = "schema-mismatch.json"
 
 
 class Spool:
@@ -166,6 +167,35 @@ class Spool:
             path.unlink()
         resources.count_loss(self.root, "invalid")
 
+    def _note_schema_mismatch(self, seen: int) -> None:
+        """Keep a per-version tally: a stale adapter would otherwise only inflate ``invalid``."""
+        report = self.schema_mismatch() or {"seen": {}}
+        tally = report["seen"]
+        tally[str(seen)] = tally.get(str(seen), 0) + 1
+        document = {
+            "expected": SCHEMA_VERSION,
+            "seen": tally,
+            "last_at": datetime.now(UTC).isoformat(),
+        }
+        try:
+            atomic_write(self.root / MISMATCH_FILE, json.dumps(document).encode())
+        except OSError:
+            pass  # Diagnostics must not stop the drain; the invalid counter still records the loss.
+
+    def schema_mismatch(self) -> dict | None:
+        """Return the cumulative record-schema mismatch report, or None if never observed."""
+        try:
+            document = json.loads((self.root / MISMATCH_FILE).read_bytes())
+        except (OSError, ValueError):
+            return None
+        if (
+            not isinstance(document, dict)
+            or not isinstance(document.get("seen"), dict)
+            or not isinstance(document.get("last_at"), str)
+        ):
+            return None
+        return document
+
     def records(
         self,
         result: DrainResult,
@@ -203,6 +233,12 @@ class Spool:
                 if len(data) > self.payload_bytes + RECORD_OVERHEAD:
                     raise RejectedEvent("Spool record exceeds payload limit")
                 record = json.loads(data)
+                if (
+                    isinstance(record, dict)
+                    and type(record.get("schema_version")) is int
+                    and record["schema_version"] != SCHEMA_VERSION
+                ):
+                    self._note_schema_mismatch(record["schema_version"])
                 if (
                     not isinstance(record, dict)
                     or type(record.get("schema_version")) is not int
