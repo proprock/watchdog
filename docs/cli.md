@@ -135,7 +135,10 @@ compares, per provider, the newest transcript under `~/.claude/projects` or
 transcript changed in the last 24 hours and no event of that provider is stored in that
 window, `warnings` gains `provider_transcripts_without_events` (`ok` stays unchanged;
 unregistered projects also write transcripts, so treat it as a prompt to check). A
-missing transcript root reports `transcript_activity: null`, not idle.
+missing transcript root reports `transcript_activity: null`, not idle. `daemon status`
+carries the schema mismatch too (`health.schema_mismatch`, reason
+`adapter_schema_mismatch`, state `degraded` for 24 hours); the transcript scan runs
+only in `doctor`.
 Use [`readiness`](#readiness) for the delivery path.
 
 ## Readiness

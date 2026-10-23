@@ -40,6 +40,35 @@ def test_startup_death_has_a_reason_in_one_status_call(paths, monkeypatch, attem
     assert report["health"]["startup"]["starts_without_heartbeat"] == attempts
 
 
+def test_recent_spool_schema_mismatch_degrades_status_with_a_reason(paths):
+    from agent_watchdog.spool import Spool
+    from agent_watchdog.storage import DrainResult
+
+    queue = Spool(paths.data)
+    queue.publish_record({"schema_version": 1, "provider": "claude"})
+    list(queue.records(DrainResult()))
+    heartbeat(paths, datetime.now(UTC).timestamp())
+    with writer_lock(paths.data / "daemon.lock"):
+        report = daemon.status(paths)
+    assert report["state"] == "degraded"
+    assert "adapter_schema_mismatch" in report["reasons"]
+    assert report["health"]["schema_mismatch"]["seen"] == {"1": 1}
+
+
+def test_stale_spool_schema_mismatch_does_not_degrade_status(paths, monkeypatch):
+    from agent_watchdog.spool import Spool
+    from agent_watchdog.storage import DrainResult
+
+    queue = Spool(paths.data)
+    queue.publish_record({"schema_version": 1, "provider": "claude"})
+    list(queue.records(DrainResult()))
+    heartbeat(paths, datetime.now(UTC).timestamp())
+    monkeypatch.setattr(daemon.time, "time", lambda: datetime.now(UTC).timestamp() + 2 * 86400)
+    with writer_lock(paths.data / "daemon.lock"):
+        report = daemon.status(paths)
+    assert "adapter_schema_mismatch" not in report["reasons"]
+
+
 @pytest.mark.parametrize(
     "payload, reason",
     [

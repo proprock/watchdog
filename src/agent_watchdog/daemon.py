@@ -347,6 +347,16 @@ def status(paths: UserPaths) -> dict:
     if starts >= 3:
         reasons.append("startup_crash_loop")
     health: dict[str, object] = {"startup": startup}
+    # A stale hook adapter fills `invalid` losses while everything else looks healthy.
+    mismatch = Spool(paths.data).schema_mismatch()
+    if mismatch is not None:
+        health["schema_mismatch"] = mismatch
+        try:
+            last = datetime.fromisoformat(mismatch["last_at"]).timestamp()
+        except ValueError:
+            last = now
+        if now - last <= 24 * 3600:
+            reasons.append("adapter_schema_mismatch")
     queues: dict[str, object] = {}
     try:
         loss_report = {"adapter": resources.losses(paths.data)}
