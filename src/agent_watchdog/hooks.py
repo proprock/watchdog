@@ -25,6 +25,8 @@ EVENTS: dict[str, dict[str, EventKind]] = {
         "SubagentStop": "agent.end",
         "Stop": "turn.end",
         "Interrupt": "interrupt",
+        # A pending approval prompt, the Codex counterpart of Claude's `Notification`.
+        "PermissionRequest": "waiting",
     },
     "claude": {
         "SessionStart": "session.start",
@@ -40,6 +42,26 @@ EVENTS: dict[str, dict[str, EventKind]] = {
         "SubagentStop": "agent.end",
         "Notification": "waiting",
     },
+}
+
+# Installation records written before a provider gained a later event; they remain
+# valid for uninstall and are completed by the next install.
+LEGACY_EVENTS: dict[str, tuple[tuple[str, ...], ...]] = {
+    "codex": (
+        (
+            "SessionStart",
+            "SessionEnd",
+            "UserPromptSubmit",
+            "PreToolUse",
+            "PostToolUse",
+            "PreCompact",
+            "PostCompact",
+            "SubagentStart",
+            "SubagentStop",
+            "Stop",
+            "Interrupt",
+        ),
+    ),
 }
 
 _CONTENT_FIELDS = ("prompt", "tool_input", "tool_response", "last_assistant_message")

@@ -254,6 +254,70 @@ def test_legacy_codex_manifest_without_provider_still_uninstalls(paths, tmp_path
     assert not target.exists()
 
 
+LEGACY_CODEX_EVENTS = [
+    "SessionStart",
+    "SessionEnd",
+    "UserPromptSubmit",
+    "PreToolUse",
+    "PostToolUse",
+    "PreCompact",
+    "PostCompact",
+    "SubagentStart",
+    "SubagentStop",
+    "Stop",
+    "Interrupt",
+]
+
+
+def _legacy_codex_install(paths, target):
+    """An installation written before `PermissionRequest` was an observed event."""
+    change(target, paths, install=True, apply=True)
+    record_path = target.with_name("hooks.json.watchdog.json")
+    record = json.loads(record_path.read_text())
+    record["events"] = LEGACY_CODEX_EVENTS
+    record_path.write_text(json.dumps(record))
+    document = json.loads(target.read_text())
+    document["hooks"].pop("PermissionRequest")
+    target.write_text(json.dumps(document))
+    return record_path
+
+
+def test_codex_install_observes_permission_requests(paths, tmp_path):
+    target = tmp_path / "hooks.json"
+    change(target, paths, install=True, apply=True)
+    assert "PermissionRequest" in json.loads(target.read_text())["hooks"]
+
+
+def test_legacy_codex_installation_is_upgraded_in_place(paths, tmp_path):
+    target = tmp_path / "hooks.json"
+    record_path = _legacy_codex_install(paths, target)
+    preview = change(target, paths, install=True, apply=False)
+    assert preview["changed"]
+    change(target, paths, install=True, apply=True)
+    assert "PermissionRequest" in json.loads(target.read_text())["hooks"]
+    assert "PermissionRequest" in json.loads(record_path.read_text())["events"]
+    assert not change(target, paths, install=True, apply=True)["changed"]
+    change(target, paths, install=False, apply=True)
+    assert not target.exists()
+
+
+def test_legacy_codex_installation_still_uninstalls(paths, tmp_path):
+    target = tmp_path / "hooks.json"
+    _legacy_codex_install(paths, target)
+    change(target, paths, install=False, apply=True)
+    assert not target.exists()
+
+
+def test_other_event_lists_are_still_rejected(paths, tmp_path):
+    target = tmp_path / "hooks.json"
+    record_path = _legacy_codex_install(paths, target)
+    record = json.loads(record_path.read_text())
+    record["events"] = ["Stop"]
+    record_path.write_text(json.dumps(record))
+    with pytest.raises(ValueError, match="Invalid installation record"):
+        change(target, paths, install=True, apply=True)
+
+
 def test_claude_symlink_target_is_refused(paths, tmp_path):
     real = tmp_path / "real.json"
     real.write_bytes(b'{"hooks":{}}\n')

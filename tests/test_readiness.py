@@ -240,6 +240,27 @@ def test_broken_hook_fails_with_a_specific_reason(
     assert target.read_bytes() == before
 
 
+def test_a_codex_installation_without_permission_events_asks_for_an_update(
+    setup, tmp_path, rust_adapter
+):
+    paths, _ = setup
+    copy = tmp_path / ("adapter.exe" if os.name == "nt" else "adapter")
+    copy.write_bytes(rust_adapter.read_bytes())
+    copy.chmod(0o755)
+    target = tmp_path / "provider" / "hooks.json"
+    change(target, paths, install=True, apply=True, adapter_executable=copy, provider="codex")
+    record_path = target.with_name("hooks.json.watchdog.json")
+    record = json.loads(record_path.read_text())
+    record["events"] = [event for event in record["events"] if event != "PermissionRequest"]
+    record_path.write_text(json.dumps(record))
+    document = json.loads(target.read_text())
+    del document["hooks"]["PermissionRequest"]
+    target.write_text(json.dumps(document))
+    report = readiness.check(paths, "codex", target, project_ref=None)
+    assert stages(report)["hook"] == "failed" and not report["ok"]
+    assert report["stages"]["hook"]["evidence"]["reason"] == "hook_events_outdated"
+
+
 def test_python_fallback_command_is_not_a_native_artifact(setup, provider, tmp_path):
     paths, _ = setup
     name = "hooks.json" if provider == "codex" else "settings.json"

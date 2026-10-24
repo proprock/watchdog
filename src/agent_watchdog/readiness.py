@@ -22,7 +22,7 @@ from uuid import uuid4
 from agent_watchdog import _proc, daemon, resources
 from agent_watchdog.config import ConfigError, Project, UserPaths, load_config, project_aliases
 from agent_watchdog.hook_install import TARGETS, parse, read, unique_pairs
-from agent_watchdog.hooks import EVENTS
+from agent_watchdog.hooks import EVENTS, LEGACY_EVENTS
 from agent_watchdog.storage import StorageError
 
 PROBE_PREFIX = "watchdog-readiness-probe-"
@@ -111,6 +111,15 @@ def _hook(paths: UserPaths, provider: str, target: Path) -> tuple[dict, dict | N
         )
     except (ValueError, KeyError, TypeError) as error:
         return _hook_failure("hook_file_invalid", reinstall, error_type=type(error).__name__)
+    if not valid and (
+        isinstance(manifest, dict)
+        and manifest.get("provider", "codex") == provider
+        and manifest.get("events") in [list(old) for old in LEGACY_EVENTS.get(provider, ())]
+    ):
+        return _hook_failure(
+            "hook_events_outdated",
+            "Rerun the hook install command to add the newly observed events.",
+        )
     if not valid:
         return _hook_failure("ownership_record_invalid", reinstall)
     for event in manifest["events"]:

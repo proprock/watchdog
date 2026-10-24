@@ -33,6 +33,7 @@ def setup(tmp_path, monkeypatch):
         ("PostToolUse", "tool.finish"),
         ("Stop", "turn.end"),
         ("SubagentStop", "agent.end"),
+        ("PermissionRequest", "waiting"),
         ("FutureEvent", "unknown"),
     ],
 )

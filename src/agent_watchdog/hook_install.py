@@ -10,7 +10,7 @@ from uuid import uuid4
 
 from agent_watchdog.config import UserPaths
 from agent_watchdog.files import atomic_write
-from agent_watchdog.hooks import EVENTS
+from agent_watchdog.hooks import EVENTS, LEGACY_EVENTS
 from agent_watchdog.native_artifacts import install_artifact
 from agent_watchdog.storage import writer_lock
 
@@ -173,6 +173,11 @@ def change(
         )
 
 
+def _accepted_events(provider: str) -> list[list[str]]:
+    """Event lists an ownership record may carry: the current one, or a recorded older one."""
+    return [list(EVENTS[provider]), *(list(old) for old in LEGACY_EVENTS.get(provider, ()))]
+
+
 def _change(
     target: Path,
     paths: UserPaths,
@@ -199,7 +204,7 @@ def _change(
         or not isinstance(manifest.get("token"), str)
         or not isinstance(manifest.get("group"), dict)
         or record_provider != provider
-        or manifest.get("events") != list(EVENTS[provider])
+        or manifest.get("events") not in _accepted_events(provider)
         or "original" not in manifest
         or (manifest["original"] is not None and not isinstance(manifest["original"], str))
     ):
@@ -220,6 +225,9 @@ def _change(
             "events": list(EVENTS[provider]),
             "original": original.decode("utf-8") if original is not None else None,
         }
+    if install and manifest["events"] != list(EVENTS[provider]):
+        # An older installation: add only the events it lacks, under its own token.
+        manifest = {**manifest, "events": list(EVENTS[provider])}
     expected = manifest["group"]
     previous = manifest["original"]
     baseline = parse(previous.encode() if previous is not None else None)
