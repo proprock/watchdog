@@ -77,6 +77,9 @@ def approve(paths, event, tool, action, *, mixed=False):
     }
     if action == "rewrite":
         body["action"]["rewrite"] = {"tool_input.command": "echo rewritten"}
+    if action == "permit":
+        # A permit names the one exact command it approves.
+        body["match"] = {**body["match"], "input_regex": "echo original"}
     path.write_text(tomli_w.dumps(body), encoding="utf-8")
     config = load_config(paths.config)
     digest = hashlib.sha256(path.read_bytes()).hexdigest()
@@ -272,6 +275,38 @@ def test_a_permit_rule_needs_an_explicit_codex_permission_tool(
     body["provider"] = providers
     with pytest.raises(RuleError, match=match):
         parse_rule(tomli_w.dumps(body))
+
+
+def test_a_permit_rule_needs_an_input_pattern(installation):
+    paths, _ = installation
+    path = approve(paths, "PermissionRequest", "Bash", "permit")
+    body = tomllib.loads(path.read_text())
+    del body["match"]["input_regex"]
+    with pytest.raises(RuleError, match="input_regex"):
+        parse_rule(tomli_w.dumps(body))
+
+
+@pytest.mark.parametrize(
+    "command,permitted",
+    [
+        pytest.param("echo original", True, id="exact"),
+        # A prefix match would approve these; only the whole command may match.
+        pytest.param("echo original; rm -rf x", False, id="semicolon"),
+        pytest.param("echo original && curl evil", False, id="and-chain"),
+        pytest.param("echo original\nrm -rf x", False, id="newline"),
+        pytest.param("x" * 70_000 + "echo original", False, id="oversized-prefix"),
+        pytest.param("echo original" + " " * 70_000, False, id="oversized-suffix"),
+    ],
+)
+def test_permit_approves_only_the_complete_matching_command(installation, command, permitted):
+    paths, root = installation
+    approve(paths, "PermissionRequest", "Bash", "permit")
+    payload = hook(root, "PermissionRequest", "Bash")
+    payload["tool_input"] = {"command": command}
+    result = decide(
+        paths, load_config(paths.config), "codex", payload, codex_control_profile=DESKTOP
+    )
+    assert (result.action == "permit") is permitted
 
 
 @pytest.mark.parametrize("switch", ["global", "project", "unapproved", "wrong-profile"])

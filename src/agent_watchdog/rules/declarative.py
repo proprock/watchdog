@@ -210,6 +210,8 @@ class DeclarativeRule(Versioned):
         # A permit approves a prompt on the user's behalf: never for "any tool".
         if kind == "permit" and None in self.match.tools():
             raise ValueError("A permit rule must name its tool explicitly")
+        if kind == "permit" and self.match.input_regex is None:
+            raise ValueError("A permit rule needs an input_regex for the whole command")
         if not any(
             subscription_tools(p, self.event, kind, tool)
             for p in self.provider
@@ -356,7 +358,16 @@ def evaluate(rule: DeclarativeRule, ctx: Context, *, now: datetime) -> Decision:
     tool_input = hook.get("tool_input")
     if rule.match.input_regex is not None:
         text = _input_text(tool_input)
-        if text is None or _compiled(rule.match.input_regex).search(text) is None:
+        if rule.action.kind == "permit":
+            # Approving a prompt needs the complete command: no truncation, no prefix match.
+            command = tool_input.get("command") if isinstance(tool_input, Mapping) else None
+            if (
+                not isinstance(command, str)
+                or len(command) > INPUT_LIMIT
+                or _compiled(rule.match.input_regex).fullmatch(command) is None
+            ):
+                return ALLOW
+        elif text is None or _compiled(rule.match.input_regex).search(text) is None:
             return ALLOW
     if rule.match.error_regex is not None:
         error = hook.get("error")

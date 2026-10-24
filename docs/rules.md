@@ -119,7 +119,10 @@ name an action the adapter renders on its event:
 
 `permit` approves a pending permission prompt on the user's behalf, so it bypasses
 the approval the user would otherwise give. It is not `allow` (no opinion). A
-`permit` rule must name its tool (`tool_name`, or `tool_names`), is deliverable only
+`permit` rule must name its tool (`tool_name`, or `tool_names`) and an `input_regex`
+that must match the entire command (full match, never a prefix; a command over 64 KiB
+or a non-string command is never permitted). A Python rule that returns `permit` is
+approved code and carries its own responsibility for the same care. It is deliverable only
 for `PermissionRequest`/`Bash` on the exact Codex desktop profile, and is held to
 the strictest release rung (see the architecture calibration ladder). The global and
 per-project kill switches, rule approval by content hash and the control-finding

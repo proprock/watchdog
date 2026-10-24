@@ -1547,6 +1547,8 @@ def test_native_codex_profile_round_trips_through_approved_daemon_rule(
     }
     if action == "rewrite":
         rule["action"]["rewrite"] = {"tool_input.command": "echo rewritten"}
+    if action == "permit":
+        rule["match"] = {**rule["match"], "input_regex": "echo original"}
     rule_path.write_text(tomli_w.dumps(rule), encoding="utf-8")
     config = load_config(paths.config)
     digest = hashlib.sha256(rule_path.read_bytes()).hexdigest()
