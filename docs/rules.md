@@ -114,7 +114,16 @@ name an action the adapter renders on its event:
 | `PostToolUse` | `block`, `context` |
 | `UserPromptSubmit`, `SessionStart`, `PreCompact` | `context` |
 | `Stop`, `SubagentStop` | `block` |
+| `PermissionRequest` (Codex desktop profile only) | `deny`, `permit` |
 | `PostToolUseFailure` | `log` only |
+
+`permit` approves a pending permission prompt on the user's behalf, so it bypasses
+the approval the user would otherwise give. It is not `allow` (no opinion). A
+`permit` rule must name its tool (`tool_name`, or `tool_names`), is deliverable only
+for `PermissionRequest`/`Bash` on the exact Codex desktop profile, and is held to
+the strictest release rung (see the architecture calibration ladder). The global and
+per-project kill switches, rule approval by content hash and the control-finding
+record apply as for any action.
 
 `rewrite = { "tool_input.model" = "$lower_tier" }` sets fields under `tool_input`;
 the daemon sends the whole original input with those fields changed, because the

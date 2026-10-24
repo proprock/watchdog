@@ -124,7 +124,7 @@ remain observation-only.
 | `windows-cli-0.160.0` | `SessionStart` and `UserPromptSubmit` context; `PostToolUse`/`Bash` context; `PreToolUse`/`Bash` deny or rewrite; `SubagentStop` block |
 | `windows-cli-exec-0.162.0-alpha.17.2` | `PreToolUse`/`Bash` context; `PreToolUse`/`apply_patch` deny or context; `SubagentStart` context; `Stop` block |
 | `windows-cli-interactive-0.162.0-alpha.17.2` | `PreToolUse`/`apply_patch` rewrite only; the evidence is an operator-approved scratch edit |
-| `windows-desktop-26.1016.62342-0.163.0-alpha.11.2` | `SessionStart` context; `PreToolUse`/`Bash` and `PreToolUse`/`apply_patch` deny or rewrite; `PostToolUse`/`Bash` block; `Stop` and `SubagentStop` block |
+| `windows-desktop-26.1016.62342-0.163.0-alpha.11.2` | `SessionStart` context; `PreToolUse`/`Bash` and `PreToolUse`/`apply_patch` deny or rewrite; `PermissionRequest`/`Bash` deny or permit; `PostToolUse`/`Bash` block; `Stop` and `SubagentStop` block |
 
 The desktop profile names the exact app and backend pair that WD-153 probed
 and belongs only in a desktop installation's native hook command; the CLI
@@ -136,9 +136,13 @@ observation-only there because their probes were unsupported or inconclusive.
 The profile is an exact allowlist, not a general compatibility claim. For an
 unsupported matched request the hook stays fail-open and records only the bounded
 `unsupported_codex_cell` capability gap described in [rules.md](rules.md#minimal-codex-rule-and-approval).
-`PermissionRequest` and the named MCP fixture are not enabled by these profiles
-(desktop `PermissionRequest` allow/deny is confirmed but needs an allow action
-that rules do not have; tracked as WD-177).
+Only the desktop profile enables `PermissionRequest`; the CLI profiles and the named
+MCP fixture do not. The desktop deny renders
+`hookSpecificOutput.decision = {behavior: "deny", message}` and `permit` renders
+`{behavior: "allow"}`, the shapes WD-153 confirmed. Codex installations observe
+`PermissionRequest` as a `waiting` event; an installation made before that
+(readiness reason `hook_events_outdated`) is completed by rerunning the hook install
+command, and can still be uninstalled unchanged.
 
 ## Ownership and recovery
 

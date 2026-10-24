@@ -73,14 +73,15 @@ hook commands must not carry a CLI profile; desktop has its own exact profile.
 | `windows-cli-0.160.0` | `SessionStart`/context; `UserPromptSubmit`/context; `PostToolUse` with tool `Bash`/context; `PreToolUse` with tool `Bash`/deny or rewrite; `SubagentStop`/block |
 | `windows-cli-exec-0.162.0-alpha.17.2` | `PreToolUse` with tool `Bash`/context; `PreToolUse` with tool `apply_patch`/deny or context; `SubagentStart`/context; `Stop`/block |
 | `windows-cli-interactive-0.162.0-alpha.17.2` | `PreToolUse` with tool `apply_patch`/rewrite only, based on the operator-approved scratch-edit probe |
-| `windows-desktop-26.1016.62342-0.163.0-alpha.11.2` | `SessionStart`/context; `PreToolUse` with tool `Bash` or `apply_patch`/deny or rewrite; `PostToolUse` with tool `Bash`/block; `Stop`/block; `SubagentStop`/block, from the WD-153 desktop probes ([evidence](evidence/wd153.md)) |
+| `windows-desktop-26.1016.62342-0.163.0-alpha.11.2` | `SessionStart`/context; `PreToolUse` with tool `Bash` or `apply_patch`/deny or rewrite; `PermissionRequest` with tool `Bash`/deny or permit; `PostToolUse` with tool `Bash`/block; `Stop`/block; `SubagentStop`/block, from the WD-153 desktop probes ([evidence](evidence/wd153.md)) |
 
 The desktop profile is a separate surface and never shares cells with the CLI
 profiles. Desktop `UserPromptSubmit`, `PreToolUse` and `PostToolUse` context,
 `ask`, `SubagentStart` and compaction cells are unsupported or inconclusive and
-stay log-only. Desktop `PermissionRequest` allow/deny is confirmed but not
-enabled until rules gain an allow action (WD-177). Offline adapter/daemon round
-trips cover all eight cells; no production-adapter desktop run exists yet.
+stay log-only. Desktop `PermissionRequest`/`Bash` deny and allow are enabled as
+the rule actions `deny` and `permit` (WD-177); `permit` approves a prompt for the
+user and is never the same as the no-opinion `allow`. Offline adapter/daemon round
+trips cover all ten cells; no production-adapter desktop run exists yet.
 
 `PermissionRequest` and the named MCP fixture are not enabled despite historical
 probe observations. Native apply-patch rewrite requires a string
