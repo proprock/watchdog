@@ -1193,6 +1193,7 @@ RENDER_EVENTS = (
     "SubagentStop",
 )
 RENDER_ACTIONS = ("deny", "ask", "rewrite", "context", "block")
+DESKTOP_PROFILE = "windows-desktop-26.1016.62342-0.163.0-alpha.11.2"
 
 
 @pytest.mark.parametrize("action", RENDER_ACTIONS)
@@ -1292,8 +1293,39 @@ def test_native_never_renders_a_decision_for_codex(rust_adapter, native_setup):
             None,
             "rewrite",
         ),
+        (DESKTOP_PROFILE, "SessionStart", None, "context", None, "ctx", "context"),
+        (DESKTOP_PROFILE, "PreToolUse", "Bash", "deny", None, None, "deny"),
+        (
+            DESKTOP_PROFILE,
+            "PreToolUse",
+            "Bash",
+            "rewrite",
+            {"command": "echo changed"},
+            None,
+            "rewrite",
+        ),
+        (DESKTOP_PROFILE, "PreToolUse", "apply_patch", "deny", None, None, "deny"),
+        (
+            DESKTOP_PROFILE,
+            "PreToolUse",
+            "apply_patch",
+            "rewrite",
+            {"command": "echo changed"},
+            None,
+            "rewrite",
+        ),
+        (DESKTOP_PROFILE, "PostToolUse", "Bash", "block", None, None, "block"),
+        (DESKTOP_PROFILE, "Stop", None, "block", None, None, "block"),
+        (DESKTOP_PROFILE, "SubagentStop", None, "block", None, None, "block"),
         # Same event/action with an unsupported tool or profile must stay silent.
+        (DESKTOP_PROFILE, "UserPromptSubmit", None, "context", None, "ctx", None),
+        (DESKTOP_PROFILE, "PreToolUse", "Bash", "context", None, "ctx", None),
+        (DESKTOP_PROFILE, "PostToolUse", "Bash", "context", None, "ctx", None),
+        (DESKTOP_PROFILE, "PreToolUse", "Bash", "ask", None, None, None),
+        (DESKTOP_PROFILE, "SubagentStart", None, "context", None, "ctx", None),
+        (DESKTOP_PROFILE, "PostToolUse", "apply_patch", "block", None, None, None),
         ("windows-cli-0.160.0", "PreToolUse", "apply_patch", "deny", None, None, None),
+        ("windows-cli-0.160.0", "Stop", None, "block", None, None, None),
         ("windows-cli-0.160.0", "SessionStart", None, "deny", None, None, None),
         ("windows-cli-exec-0.162.0-alpha.17.2", "PreToolUse", "Bash", "deny", None, None, None),
         (
@@ -1460,6 +1492,14 @@ def test_native_codex_stop_guard_does_not_query_daemon_while_continuing(rust_ada
             "rewrite",
             "rewrite",
         ),
+        (DESKTOP_PROFILE, "SessionStart", None, "context", "context"),
+        (DESKTOP_PROFILE, "PreToolUse", "Bash", "deny", "deny"),
+        (DESKTOP_PROFILE, "PreToolUse", "Bash", "rewrite", "rewrite"),
+        (DESKTOP_PROFILE, "PreToolUse", "apply_patch", "deny", "deny"),
+        (DESKTOP_PROFILE, "PreToolUse", "apply_patch", "rewrite", "rewrite"),
+        (DESKTOP_PROFILE, "PostToolUse", "Bash", "block", "block"),
+        (DESKTOP_PROFILE, "Stop", None, "block", "block"),
+        (DESKTOP_PROFILE, "SubagentStop", None, "block", "block"),
     ],
 )
 @pytest.mark.parametrize("http_bridge", [False, True])

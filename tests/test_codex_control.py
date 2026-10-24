@@ -18,6 +18,18 @@ from agent_watchdog.rules.engine import decide, subscriptions
 OLD = "windows-cli-0.160.0"
 EXEC = "windows-cli-exec-0.162.0-alpha.17.2"
 INTERACTIVE = "windows-cli-interactive-0.162.0-alpha.17.2"
+DESKTOP = "windows-desktop-26.1016.62342-0.163.0-alpha.11.2"
+
+DESKTOP_CELLS = [
+    (DESKTOP, "SessionStart", None, "context"),
+    (DESKTOP, "PreToolUse", "Bash", "deny"),
+    (DESKTOP, "PreToolUse", "Bash", "rewrite"),
+    (DESKTOP, "PreToolUse", "apply_patch", "deny"),
+    (DESKTOP, "PreToolUse", "apply_patch", "rewrite"),
+    (DESKTOP, "PostToolUse", "Bash", "block"),
+    (DESKTOP, "Stop", None, "block"),
+    (DESKTOP, "SubagentStop", None, "block"),
+]
 
 CELLS = [
     (OLD, "SessionStart", None, "context"),
@@ -32,6 +44,7 @@ CELLS = [
     (EXEC, "SubagentStart", None, "context"),
     (EXEC, "Stop", None, "block"),
     (INTERACTIVE, "PreToolUse", "apply_patch", "rewrite"),
+    *DESKTOP_CELLS,
 ]
 
 
@@ -147,6 +160,72 @@ def test_unsupported_cells_are_log_only(installation, event, tool, action, profi
         hook(root, event, tool),
         codex_control_profile=profile,
     )
+    assert result.action == "log"
+    assert result.capability_gap == "unsupported_codex_cell"
+
+
+@pytest.mark.parametrize(
+    "event,tool,action",
+    [
+        # Probed unsupported or inconclusive on the desktop build (WD-153).
+        ("UserPromptSubmit", None, "context"),
+        ("PreToolUse", "Bash", "context"),
+        ("PreToolUse", "apply_patch", "context"),
+        ("PostToolUse", "Bash", "context"),
+        ("PreToolUse", "Bash", "ask"),
+        ("SubagentStart", None, "context"),
+        ("PreCompact", None, "context"),
+        # Supported event and action, but never probed for this tool.
+        ("PreToolUse", "mcp__other__emit", "deny"),
+        ("PostToolUse", "apply_patch", "block"),
+    ],
+)
+def test_desktop_profile_keeps_unsupported_cells_log_only(installation, event, tool, action):
+    paths, root = installation
+    approve(paths, event, tool, action, mixed=True)
+    result = decide(
+        paths,
+        load_config(paths.config),
+        "codex",
+        hook(root, event, tool),
+        codex_control_profile=DESKTOP,
+    )
+    assert result.action == "log"
+    assert result.capability_gap == "unsupported_codex_cell"
+    assert not renderable("codex", event, action, tool=tool, codex_control_profile=DESKTOP)
+
+
+@pytest.mark.parametrize(
+    "profile,event,tool,action",
+    [
+        # The desktop gate must not leak into CLI profiles, nor the reverse.
+        (OLD, "PreToolUse", "apply_patch", "deny"),
+        (OLD, "Stop", None, "block"),
+        (OLD, "PostToolUse", "Bash", "block"),
+        (EXEC, "SessionStart", None, "context"),
+        (INTERACTIVE, "PreToolUse", "Bash", "deny"),
+        (DESKTOP, "UserPromptSubmit", None, "context"),
+        (DESKTOP, "SubagentStart", None, "context"),
+        ("windows-desktop-26.1016.62342", "PreToolUse", "Bash", "deny"),
+        ("windows-desktop-26.1016.62343-0.163.0-alpha.11.2", "PreToolUse", "Bash", "deny"),
+        ("windows-desktop-26.1016.62342-0.163.0-alpha.11.3", "PreToolUse", "Bash", "deny"),
+    ],
+)
+def test_profiles_do_not_inherit_each_others_cells(profile, event, tool, action):
+    assert not renderable("codex", event, action, tool=tool, codex_control_profile=profile)
+
+
+@pytest.mark.parametrize("surface,version", [("desktop", "26.1016.62342"), ("cli", "0.163.0")])
+def test_payload_surface_cannot_select_the_desktop_profile(installation, surface, version):
+    paths, root = installation
+    approve(paths, "PreToolUse", "Bash", "deny")
+    payload = {
+        **hook(root, "PreToolUse", "Bash"),
+        "surface": surface,
+        "provider_version": version,
+        "codex_control_profile": DESKTOP,
+    }
+    result = decide(paths, load_config(paths.config), "codex", payload)
     assert result.action == "log"
     assert result.capability_gap == "unsupported_codex_cell"
 

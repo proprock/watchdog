@@ -70,6 +70,18 @@ CODEX_CELLS: Mapping[str, tuple[tuple[str, str | None, str], ...]] = {
         ("Stop", None, "block"),
     ),
     "windows-cli-interactive-0.162.0-alpha.17.2": (("PreToolUse", "apply_patch", "rewrite"),),
+    # Codex desktop is a separate surface; only the cells WD-153 confirmed on this exact
+    # app/backend pair. `PermissionRequest` needs an allow action the rules lack.
+    "windows-desktop-26.1016.62342-0.163.0-alpha.11.2": (
+        ("SessionStart", None, "context"),
+        ("PreToolUse", "Bash", "deny"),
+        ("PreToolUse", "Bash", "rewrite"),
+        ("PreToolUse", "apply_patch", "deny"),
+        ("PreToolUse", "apply_patch", "rewrite"),
+        ("PostToolUse", "Bash", "block"),
+        ("Stop", None, "block"),
+        ("SubagentStop", None, "block"),
+    ),
 }
 
 
