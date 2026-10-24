@@ -340,7 +340,11 @@ fn ask_decision(
         return None;
     }
     let action = value["action"].as_str()?;
-    if !["allow", "deny", "ask", "rewrite", "context", "block"].contains(&action) {
+    if ![
+        "allow", "deny", "ask", "rewrite", "context", "block", "permit",
+    ]
+    .contains(&action)
+    {
         return None;
     }
     let text = |key: &str| value[key].as_str().map(str::to_owned);
@@ -358,9 +362,9 @@ fn ask_decision(
 /// installation-scoped Codex WD-151 cells confirmed live are rendered;
 /// every other combination is `None` (silence),
 /// and `allow` is always silence -- an explicit `permissionDecision: "allow"`
-/// would auto-approve the tool and bypass the user's permission rules. Keep in
-/// step with `_RENDERABLE` in
-/// `agent_watchdog/rules/api.py`.
+/// would auto-approve the tool and bypass the user's permission rules. The one
+/// deliberate approval is `permit` on the desktop `PermissionRequest` cell. Keep
+/// in step with `_RENDERABLE` and `CODEX_CELLS` in `agent_watchdog/rules/api.py`.
 fn render(
     provider: &str,
     codex_control_profile: Option<&str>,
@@ -483,6 +487,20 @@ fn render_codex(profile: &str, event: &str, input: &Value, decision: &Decision) 
                 "reason": reason(),
             })
         }
+        (DESKTOP_PROFILE, "PermissionRequest", Some("Bash"), "deny") => json!({
+            "hookSpecificOutput": {
+                "hookEventName": event,
+                "decision": { "behavior": "deny", "message": reason() },
+            }
+        }),
+        // The only place a decision approves anything: `permit` on the one probed
+        // permission prompt. Every other `allow`-like value stays silence.
+        (DESKTOP_PROFILE, "PermissionRequest", Some("Bash"), "permit") => json!({
+            "hookSpecificOutput": {
+                "hookEventName": event,
+                "decision": { "behavior": "allow" },
+            }
+        }),
         (DESKTOP_PROFILE, "PostToolUse", Some("Bash"), "block") => json!({
             "decision": "block",
             "reason": reason(),

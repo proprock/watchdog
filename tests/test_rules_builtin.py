@@ -282,7 +282,10 @@ def test_other_tools_are_not_matched_by_the_command_rule():
 def test_every_event_a_rule_may_name_is_one_the_installed_hooks_deliver():
     """The installer registers every Claude event unconditionally, with no matcher; a
     rule on an event outside that list would be approved and never fire."""
-    assert set(get_args(HookEvent)) <= set(EVENTS["claude"])
+    # `PermissionRequest` is a Codex-only rule event (Claude's equivalent is not installed).
+    assert set(get_args(HookEvent)) - {"PermissionRequest"} <= set(EVENTS["claude"])
+    assert "PermissionRequest" in EVENTS["codex"]
+    assert "PermissionRequest" not in EVENTS["claude"]
 
 
 def test_every_shipped_rule_names_an_event_the_installed_hooks_deliver():

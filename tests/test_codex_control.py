@@ -26,6 +26,8 @@ DESKTOP_CELLS = [
     (DESKTOP, "PreToolUse", "Bash", "rewrite"),
     (DESKTOP, "PreToolUse", "apply_patch", "deny"),
     (DESKTOP, "PreToolUse", "apply_patch", "rewrite"),
+    (DESKTOP, "PermissionRequest", "Bash", "deny"),
+    (DESKTOP, "PermissionRequest", "Bash", "permit"),
     (DESKTOP, "PostToolUse", "Bash", "block"),
     (DESKTOP, "Stop", None, "block"),
     (DESKTOP, "SubagentStop", None, "block"),
@@ -196,12 +198,35 @@ def test_desktop_profile_keeps_unsupported_cells_log_only(installation, event, t
 
 
 @pytest.mark.parametrize(
+    "tool,action",
+    [
+        ("Bash", "rewrite"),
+        ("Bash", "ask"),
+        ("Bash", "context"),
+        ("apply_patch", "deny"),
+        ("apply_patch", "permit"),
+    ],
+)
+def test_unprobed_permission_cells_cannot_be_promised_by_a_rule(installation, tool, action):
+    paths, _ = installation
+    path = approve(paths, "PermissionRequest", tool, action)
+    with pytest.raises(RuleError, match="cannot be delivered"):
+        parse_rule(path.read_text())
+
+
+@pytest.mark.parametrize(
     "profile,event,tool,action",
     [
         # The desktop gate must not leak into CLI profiles, nor the reverse.
         (OLD, "PreToolUse", "apply_patch", "deny"),
         (OLD, "Stop", None, "block"),
         (OLD, "PostToolUse", "Bash", "block"),
+        (OLD, "PermissionRequest", "Bash", "deny"),
+        (EXEC, "PermissionRequest", "Bash", "permit"),
+        (INTERACTIVE, "PermissionRequest", "Bash", "permit"),
+        # `permit` auto-approves; no event but the permission prompt may carry it.
+        (DESKTOP, "PreToolUse", "Bash", "permit"),
+        (DESKTOP, "PostToolUse", "Bash", "permit"),
         (EXEC, "SessionStart", None, "context"),
         (INTERACTIVE, "PreToolUse", "Bash", "deny"),
         (DESKTOP, "UserPromptSubmit", None, "context"),
@@ -228,6 +253,74 @@ def test_payload_surface_cannot_select_the_desktop_profile(installation, surface
     result = decide(paths, load_config(paths.config), "codex", payload)
     assert result.action == "log"
     assert result.capability_gap == "unsupported_codex_cell"
+
+
+@pytest.mark.parametrize(
+    "event,tool,providers,match",
+    [
+        ("PermissionRequest", None, ["codex"], "cannot be delivered|names? .*tool"),
+        ("PreToolUse", "Bash", ["codex"], "cannot be delivered"),
+        ("PermissionRequest", "Bash", ["claude"], "cannot be delivered"),
+    ],
+)
+def test_a_permit_rule_needs_an_explicit_codex_permission_tool(
+    installation, event, tool, providers, match
+):
+    paths, _ = installation
+    path = approve(paths, event, tool, "permit")
+    body = tomllib.loads(path.read_text())
+    body["provider"] = providers
+    with pytest.raises(RuleError, match=match):
+        parse_rule(tomli_w.dumps(body))
+
+
+@pytest.mark.parametrize("switch", ["global", "project", "unapproved", "wrong-profile"])
+def test_permit_respects_every_guard(installation, switch):
+    paths, root = installation
+    approve(paths, "PermissionRequest", "Bash", "permit")
+    config = load_config(paths.config)
+    profile = DESKTOP
+    if switch == "global":
+        config = config.model_copy(
+            update={"defaults": config.defaults.model_copy(update={"policy_intervene": False})}
+        )
+    elif switch == "project":
+        project = config.projects[0]
+        overrides = project.overrides.model_copy(update={"policy_intervene": False})
+        config = config.model_copy(
+            update={"projects": [project.model_copy(update={"overrides": overrides})]}
+        )
+    elif switch == "unapproved":
+        config = config.model_copy(update={"rules": Rules()})
+    else:
+        profile = OLD
+    result = decide(
+        paths,
+        config,
+        "codex",
+        hook(root, "PermissionRequest", "Bash"),
+        codex_control_profile=profile,
+    )
+    assert result.action in {"allow", "log"}
+    assert result.action != "permit"
+
+
+def test_permit_is_recorded_as_a_control_finding(installation):
+    paths, root = installation
+    approve(paths, "PermissionRequest", "Bash", "permit")
+    payload = {**hook(root, "PermissionRequest", "Bash"), "codex_control_profile": OLD}
+    with _policy_server(paths, _SessionTracker()):
+        discovery = json.loads((paths.data / "policy" / "socket.json").read_text())
+        assert request(discovery, payload, DESKTOP)["action"] == "permit"
+    records = [
+        json.loads(p.read_text())["envelope"]["payload"]["codex"]
+        for p in (paths.data / "spool").glob("*.json")
+        if p.name != "limits.json"
+    ]
+    assert any(
+        r["action"] == "permit" and r["rule"] == "codex_guard" and r["delivered_at"] and r["text"]
+        for r in records
+    )
 
 
 def test_non_windows_deployment_is_unavailable(monkeypatch):

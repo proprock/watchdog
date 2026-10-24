@@ -209,6 +209,7 @@ def stats(paths: UserPaths, config: Config, *, since: datetime | None) -> list[d
                             "rewrite",
                             "context",
                             "block",
+                            "permit",
                         }
                         if is_attempt:
                             coverage = delivery.setdefault(rule, Counter())

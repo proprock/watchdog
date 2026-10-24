@@ -525,7 +525,7 @@ def control_findings(events: Iterable[Envelope]) -> list[dict[str, Any]]:
                 isinstance(ack, Mapping)
                 and ack.get("response_received") is True
                 and ack.get("requested_action") == selected_action
-                and selected_action in {"deny", "ask", "rewrite", "context", "block"}
+                and selected_action in {"deny", "ask", "rewrite", "context", "block", "permit"}
                 and type(ack.get("adapter_rendered")) is bool
             ):
                 rendered = ack["adapter_rendered"]

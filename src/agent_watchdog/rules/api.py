@@ -13,9 +13,15 @@ from agent_watchdog.config import Config, UserPaths
 from agent_watchdog.state import SessionState
 
 # ``log`` records a finding and sends nothing: the adapter is told ``allow``.
-Action = Literal["allow", "log", "deny", "ask", "rewrite", "context", "block"]
+#
+# ``permit`` approves a pending permission prompt and so bypasses the user's own
+# approval. It differs from ``allow`` (no opinion) and is deliverable only for a
+# Codex ``PermissionRequest`` on an exact profile (see ``CODEX_CELLS``).
+Action = Literal["allow", "log", "deny", "ask", "rewrite", "context", "block", "permit"]
 
-ACTIONS: frozenset[str] = frozenset({"allow", "log", "deny", "ask", "rewrite", "context", "block"})
+ACTIONS: frozenset[str] = frozenset(
+    {"allow", "log", "deny", "ask", "rewrite", "context", "block", "permit"}
+)
 
 # Event values are recursively frozen before being handed to Python rules.
 Event = Mapping[str, object]
@@ -71,13 +77,15 @@ CODEX_CELLS: Mapping[str, tuple[tuple[str, str | None, str], ...]] = {
     ),
     "windows-cli-interactive-0.162.0-alpha.17.2": (("PreToolUse", "apply_patch", "rewrite"),),
     # Codex desktop is a separate surface; only the cells WD-153 confirmed on this exact
-    # app/backend pair. `PermissionRequest` needs an allow action the rules lack.
+    # app/backend pair.
     "windows-desktop-26.1016.62342-0.163.0-alpha.11.2": (
         ("SessionStart", None, "context"),
         ("PreToolUse", "Bash", "deny"),
         ("PreToolUse", "Bash", "rewrite"),
         ("PreToolUse", "apply_patch", "deny"),
         ("PreToolUse", "apply_patch", "rewrite"),
+        ("PermissionRequest", "Bash", "deny"),
+        ("PermissionRequest", "Bash", "permit"),
         ("PostToolUse", "Bash", "block"),
         ("Stop", None, "block"),
         ("SubagentStop", None, "block"),

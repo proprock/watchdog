@@ -1026,7 +1026,7 @@ def _drain_spool(
                 if type(received) is bool and (rendered is None or type(rendered) is bool):
                     bounded = {"response_received": received, "adapter_rendered": rendered}
                     action = control.get("requested_action")
-                    if action in {"allow", "deny", "ask", "rewrite", "context", "block"}:
+                    if action in {"allow", "deny", "ask", "rewrite", "context", "block", "permit"}:
                         bounded["requested_action"] = action
                     control_fields["control"] = bounded
             if config.pipeline_telemetry:

@@ -1314,6 +1314,8 @@ def test_native_never_renders_a_decision_for_codex(rust_adapter, native_setup):
             None,
             "rewrite",
         ),
+        (DESKTOP_PROFILE, "PermissionRequest", "Bash", "deny", None, None, "permission-deny"),
+        (DESKTOP_PROFILE, "PermissionRequest", "Bash", "permit", None, None, "permission-permit"),
         (DESKTOP_PROFILE, "PostToolUse", "Bash", "block", None, None, "block"),
         (DESKTOP_PROFILE, "Stop", None, "block", None, None, "block"),
         (DESKTOP_PROFILE, "SubagentStop", None, "block", None, None, "block"),
@@ -1322,6 +1324,12 @@ def test_native_never_renders_a_decision_for_codex(rust_adapter, native_setup):
         (DESKTOP_PROFILE, "PreToolUse", "Bash", "context", None, "ctx", None),
         (DESKTOP_PROFILE, "PostToolUse", "Bash", "context", None, "ctx", None),
         (DESKTOP_PROFILE, "PreToolUse", "Bash", "ask", None, None, None),
+        (DESKTOP_PROFILE, "PermissionRequest", "apply_patch", "deny", None, None, None),
+        (DESKTOP_PROFILE, "PermissionRequest", "apply_patch", "permit", None, None, None),
+        (DESKTOP_PROFILE, "PermissionRequest", "Bash", "context", None, "ctx", None),
+        (DESKTOP_PROFILE, "PreToolUse", "Bash", "permit", None, None, None),
+        (DESKTOP_PROFILE, "PostToolUse", "Bash", "permit", None, None, None),
+        ("windows-cli-0.160.0", "PermissionRequest", "Bash", "permit", None, None, None),
         (DESKTOP_PROFILE, "SubagentStart", None, "context", None, "ctx", None),
         (DESKTOP_PROFILE, "PostToolUse", "apply_patch", "block", None, None, None),
         ("windows-cli-0.160.0", "PreToolUse", "apply_patch", "deny", None, None, None),
@@ -1388,6 +1396,20 @@ def test_native_codex_control_profiles_render_only_confirmed_cells(
                 "hookEventName": event,
                 "permissionDecision": "deny",
                 "permissionDecisionReason": "reason",
+            }
+        }
+    elif expected == "permission-deny":
+        assert output == {
+            "hookSpecificOutput": {
+                "hookEventName": "PermissionRequest",
+                "decision": {"behavior": "deny", "message": "reason"},
+            }
+        }
+    elif expected == "permission-permit":
+        assert output == {
+            "hookSpecificOutput": {
+                "hookEventName": "PermissionRequest",
+                "decision": {"behavior": "allow"},
             }
         }
     elif expected == "rewrite":
@@ -1497,6 +1519,8 @@ def test_native_codex_stop_guard_does_not_query_daemon_while_continuing(rust_ada
         (DESKTOP_PROFILE, "PreToolUse", "Bash", "rewrite", "rewrite"),
         (DESKTOP_PROFILE, "PreToolUse", "apply_patch", "deny", "deny"),
         (DESKTOP_PROFILE, "PreToolUse", "apply_patch", "rewrite", "rewrite"),
+        (DESKTOP_PROFILE, "PermissionRequest", "Bash", "deny", "permission-deny"),
+        (DESKTOP_PROFILE, "PermissionRequest", "Bash", "permit", "permission-permit"),
         (DESKTOP_PROFILE, "PostToolUse", "Bash", "block", "block"),
         (DESKTOP_PROFILE, "Stop", None, "block", "block"),
         (DESKTOP_PROFILE, "SubagentStop", None, "block", "block"),
@@ -1555,6 +1579,11 @@ def test_native_codex_profile_round_trips_through_approved_daemon_rule(
     if expected == "context":
         assert output["hookSpecificOutput"]["hookEventName"] == event
         assert output["hookSpecificOutput"]["additionalContext"]
+    elif expected == "permission-deny":
+        decision = output["hookSpecificOutput"]["decision"]
+        assert decision == {"behavior": "deny", "message": "Watchdog native control test."}
+    elif expected == "permission-permit":
+        assert output["hookSpecificOutput"]["decision"] == {"behavior": "allow"}
     elif expected == "deny":
         assert output["hookSpecificOutput"]["permissionDecision"] == "deny"
     elif expected == "rewrite":

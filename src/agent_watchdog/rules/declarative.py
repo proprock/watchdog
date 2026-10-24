@@ -48,6 +48,7 @@ HookEvent = Literal[
     "SubagentStart",
     "SessionStart",
     "PreCompact",
+    "PermissionRequest",
 ]
 
 
@@ -135,7 +136,7 @@ class StatePredicates(StrictModel):
 
 
 class RuleAction(StrictModel):
-    kind: Literal["log", "context", "ask", "rewrite", "deny", "block"]
+    kind: Literal["log", "context", "ask", "rewrite", "deny", "block", "permit"]
     message: str
     rewrite: dict[str, str] | None = None
     cooldown_seconds: NonNegative = 0
@@ -206,6 +207,9 @@ class DeclarativeRule(Versioned):
         # Recording an action as sent while the adapter drops it would be a false
         # audit trail, so a rule may only ask for what some listed provider renders.
         kind = self.action.kind
+        # A permit approves a prompt on the user's behalf: never for "any tool".
+        if kind == "permit" and None in self.match.tools():
+            raise ValueError("A permit rule must name its tool explicitly")
         if not any(
             subscription_tools(p, self.event, kind, tool)
             for p in self.provider
