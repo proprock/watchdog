@@ -113,9 +113,8 @@ See the [official hook reference](https://learn.chatgpt.com/docs/hooks).
 Control-enabled Codex CLI installations use the native adapter option
 `--codex-control-profile VALUE`. This value is installation-scoped and belongs
 only in that CLI installation's native hook command. Configure it only after
-confirming the executable and mode for that installation. Do not add it to a
-shared CLI-and-desktop command or a global hook source: desktop control has no probe
-evidence (WD-153). Confirm the running executable's exact version and invocation
+confirming the executable and mode for that installation. Do not add a CLI profile to a
+shared CLI-and-desktop command or a global hook source; desktop has its own profile below. Confirm the running executable's exact version and invocation
 mode before selecting a profile. A newer version, a payload's `provider_version`,
 or its claimed surface does not inherit a profile. Unknown or missing profiles
 remain observation-only.
@@ -125,11 +124,21 @@ remain observation-only.
 | `windows-cli-0.160.0` | `SessionStart` and `UserPromptSubmit` context; `PostToolUse`/`Bash` context; `PreToolUse`/`Bash` deny or rewrite; `SubagentStop` block |
 | `windows-cli-exec-0.162.0-alpha.17.2` | `PreToolUse`/`Bash` context; `PreToolUse`/`apply_patch` deny or context; `SubagentStart` context; `Stop` block |
 | `windows-cli-interactive-0.162.0-alpha.17.2` | `PreToolUse`/`apply_patch` rewrite only; the evidence is an operator-approved scratch edit |
+| `windows-desktop-26.1016.62342-0.163.0-alpha.11.2` | `SessionStart` context; `PreToolUse`/`Bash` and `PreToolUse`/`apply_patch` deny or rewrite; `PostToolUse`/`Bash` block; `Stop` and `SubagentStop` block |
+
+The desktop profile names the exact app and backend pair that WD-153 probed
+and belongs only in a desktop installation's native hook command; the CLI
+profiles above never apply to it, nor it to them. The operator confirms the app
+version (About) and the backend before selecting it. Prompt, `PreToolUse` and
+`PostToolUse` context, `ask`, `SubagentStart` and compaction events stay
+observation-only there because their probes were unsupported or inconclusive.
 
 The profile is an exact allowlist, not a general compatibility claim. For an
 unsupported matched request the hook stays fail-open and records only the bounded
 `unsupported_codex_cell` capability gap described in [rules.md](rules.md#minimal-codex-rule-and-approval).
-`PermissionRequest` and the named MCP fixture are not enabled by these profiles.
+`PermissionRequest` and the named MCP fixture are not enabled by these profiles
+(desktop `PermissionRequest` allow/deny is confirmed but needs an allow action
+that rules do not have; tracked as WD-177).
 
 ## Ownership and recovery
 
