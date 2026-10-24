@@ -1,0 +1,164 @@
+{
+  "capabilities": {
+    "permission-allow": {
+      "callbacks": {
+        "PermissionRequest": {
+          "input_fields": [
+            "cwd",
+            "effort",
+            "hook_event_name",
+            "permission_mode",
+            "permission_suggestions",
+            "prompt_id",
+            "scratchpad_dir",
+            "session_id",
+            "tool_input",
+            "tool_name",
+            "transcript_path"
+          ],
+          "observed": 1,
+          "tool_names": [
+            "Bash"
+          ]
+        },
+        "UserPromptSubmit": {
+          "input_fields": [
+            "cwd",
+            "hook_event_name",
+            "permission_mode",
+            "prompt",
+            "prompt_id",
+            "scratchpad_dir",
+            "session_id",
+            "transcript_path"
+          ],
+          "observed": 1,
+          "tool_names": []
+        }
+      },
+      "models": [
+        "claude-sonnet-5-5"
+      ],
+      "response_shape": "hookSpecificOutput.decision.behavior=allow",
+      "state": "supported"
+    }
+  },
+  "classification": "live_provider",
+  "cleanup": {
+    "complete": false,
+    "remaining_state": "See the cleanup resources.",
+    "resources": [
+      {
+        "action": "removed",
+        "alias": "temporary-claude-settings",
+        "detail": "Project-local .claude/settings.local.json in scratch; CLI launched with ordinary settings discovery.",
+        "evidence": "Scratch directory check",
+        "failure_attribution": "not_applicable",
+        "kind": "hook_installation",
+        "state": "confirmed"
+      },
+      {
+        "action": "retained",
+        "alias": "scratch-repository",
+        "detail": null,
+        "evidence": "Scratch directory check",
+        "failure_attribution": "unknown",
+        "kind": "temporary_state",
+        "state": "unknown"
+      }
+    ]
+  },
+  "finished_at": "2026-10-24T06:13:59.321992Z",
+  "format_version": "watchdog.probe-result.v1",
+  "provenance": {
+    "adapter": {
+      "invocation": "provider",
+      "name": "none",
+      "version": null
+    },
+    "harness": {
+      "name": "claude-cli-manual",
+      "version": "2.1.292"
+    },
+    "os": {
+      "architecture": "AMD64",
+      "name": "Windows",
+      "version": null
+    },
+    "provider": {
+      "name": "claude",
+      "surface": "cli-manual",
+      "version": "2.1.292"
+    },
+    "source": {
+      "kind": "manual-observation",
+      "sanitized_reference": "wd153-permission-allow"
+    }
+  },
+  "record_id": "wd153-claude-manual-permission-allow-95b9d8b9deeb4cf29d76864c5a7b5db0",
+  "result": {
+    "limitations": [
+      "One operator-run session and one prompt; CLI version was operator-reported.",
+      "Watchdog persistence and end-to-end daemon delivery were not exercised.",
+      "One operator-run session and one prompt; CLI version was operator-reported from `claude --version`, not transcript-verified."
+    ],
+    "state": "incomplete"
+  },
+  "scope": {
+    "expected_callback_kinds": [
+      "UserPromptSubmit",
+      "PermissionRequest"
+    ],
+    "expected_deliveries": 1,
+    "isolation": "Scratch Git repository outside registered projects with project-local .claude/settings.local.json; ordinary user and project settings may also load.",
+    "notes": "Callbacks and transcript are bound to one session in this scratch repository. Prompt and transcript content are not copied into the record.",
+    "wd153": {
+      "case_id": "wd153-permission-allow-v1",
+      "settings_scope_sha256": "1c5c65c461ecc8b5b02f7ea2550826d45fd3a8c246cc4def053561de667d0fbc",
+      "workload_sha256": "39457ba925e5baf74acd78f78c71ebfaab21856ca294cbc31d32a665737712fb"
+    }
+  },
+  "stages": {
+    "adapter": {
+      "evidence": "The probe calls no Watchdog adapter.",
+      "failure_category": null,
+      "starts": 0,
+      "state": "not_invoked"
+    },
+    "callbacks": {
+      "evidence": "Minimum expected count per event; input shapes are in capabilities.",
+      "expected": 1,
+      "missing": 0,
+      "missing_attribution": "not_applicable",
+      "observed": 1
+    },
+    "end_to_end_delivery": {
+      "evidence": "Manual provider callback and same-session transcript evidence only.",
+      "expected": 1,
+      "failure_attribution": "not_applicable",
+      "failure_detail": null,
+      "persisted": 0,
+      "read_back": 0,
+      "state": "not_applicable"
+    },
+    "persistence": {
+      "accepted": 0,
+      "evidence": "The manual provider probe does not exercise Watchdog persistence.",
+      "losses": []
+    },
+    "provider_dispatch": {
+      "attempts": 1,
+      "detail": null,
+      "evidence": "Claude emitted a result event",
+      "state": "confirmed"
+    },
+    "retries": {
+      "count": 0,
+      "evidence": "One run per case.",
+      "outcome": "not_attempted",
+      "reason": null,
+      "scopes": []
+    }
+  },
+  "started_at": "2026-10-23T23:27:22.016815Z"
+}

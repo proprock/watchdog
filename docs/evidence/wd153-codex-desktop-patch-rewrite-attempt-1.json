@@ -1,0 +1,148 @@
+{
+  "format_version": "watchdog.probe-result.v1",
+  "record_id": "wd153-codex-desktop-pre-tool-apply-patch-rewrite-923e3ec4e868402abdd1db003a013cc3",
+  "classification": "live_provider",
+  "started_at": "2026-10-23T22:16:32.023756Z",
+  "finished_at": "2026-10-23T22:29:55.441995Z",
+  "provenance": {
+    "provider": {
+      "name": "codex",
+      "version": "0.163.0-alpha.11.2",
+      "surface": "desktop"
+    },
+    "harness": {
+      "name": "codex-desktop",
+      "version": "26.1016.62342"
+    },
+    "adapter": {
+      "name": "none",
+      "version": null,
+      "invocation": "provider"
+    },
+    "os": {
+      "name": "Windows",
+      "version": null,
+      "architecture": "AMD64"
+    },
+    "source": {
+      "kind": "manual-observation",
+      "sanitized_reference": "wd153-pre-tool-apply-patch-rewrite"
+    }
+  },
+  "scope": {
+    "isolation": "One scratch Git repository outside registered projects.",
+    "expected_callback_kinds": [
+      "PreToolUse"
+    ],
+    "expected_deliveries": 0,
+    "notes": "Operator-driven desktop session; inherited global hooks may also run."
+  },
+  "stages": {
+    "provider_dispatch": {
+      "state": "confirmed",
+      "attempts": 1,
+      "evidence": "Same-session task_complete read-back; collector launches no process.",
+      "detail": null
+    },
+    "adapter": {
+      "state": "not_invoked",
+      "starts": 0,
+      "failure_category": null,
+      "evidence": "The probe calls no Watchdog adapter."
+    },
+    "callbacks": {
+      "expected": 1,
+      "observed": 1,
+      "missing": 0,
+      "missing_attribution": "not_applicable",
+      "evidence": "Expected callback counts and sanitized input shapes are in capabilities."
+    },
+    "retries": {
+      "count": 0,
+      "scopes": [],
+      "reason": null,
+      "outcome": "not_attempted",
+      "evidence": "One run per case."
+    },
+    "persistence": {
+      "accepted": 0,
+      "losses": [],
+      "evidence": "Not applicable: the probe does not exercise Watchdog persistence."
+    },
+    "end_to_end_delivery": {
+      "expected": 0,
+      "persisted": 0,
+      "read_back": 0,
+      "state": "not_applicable",
+      "failure_attribution": "not_applicable",
+      "failure_detail": null,
+      "evidence": "Direct provider probe; no Watchdog store or daemon delivery exercised."
+    }
+  },
+  "capabilities": {
+    "pre-tool-apply-patch-rewrite": {
+      "state": "supported",
+      "response_shape": "hookSpecificOutput.permissionDecision=allow,updatedInput.command",
+      "callbacks": {
+        "PreToolUse": {
+          "observed": 1,
+          "input_fields": [
+            "cwd",
+            "hook_event_name",
+            "model",
+            "permission_mode",
+            "session_id",
+            "tool_input",
+            "tool_name",
+            "transcript_path",
+            "turn_id"
+          ],
+          "tool_names": [
+            "apply_patch"
+          ]
+        }
+      }
+    }
+  },
+  "cleanup": {
+    "resources": [
+      {
+        "kind": "hook_installation",
+        "alias": "scratch-project-hooks",
+        "action": "removed",
+        "state": "confirmed",
+        "failure_attribution": "not_applicable",
+        "detail": "Owned hooks renamed to a disabled file; artifacts retained for review.",
+        "evidence": "Owned hook hash and disabled-file check."
+      },
+      {
+        "kind": "temporary_state",
+        "alias": "scratch-and-provider-transcript",
+        "action": "retained",
+        "state": "confirmed",
+        "failure_attribution": "not_applicable",
+        "detail": "Raw diagnostics intentionally retained; no recursive cleanup performed.",
+        "evidence": "Collection reads scratch and transcript without deleting either."
+      },
+      {
+        "kind": "task",
+        "alias": "operator-desktop-chat",
+        "action": "retained",
+        "state": "unknown",
+        "failure_attribution": "unknown",
+        "detail": null,
+        "evidence": "Chat archival and process cleanup are not established by collection."
+      }
+    ],
+    "complete": false,
+    "remaining_state": "Scratch folder and provider transcript retained."
+  },
+  "result": {
+    "state": "incomplete",
+    "limitations": [
+      "App version/surface attributed by the operator; backend version from session metadata.",
+      "One desktop/backend version and one case; no CLI or cross-version inheritance.",
+      "Trust records are retained; no global hook or runtime control profile was changed."
+    ]
+  }
+}

@@ -1,0 +1,145 @@
+{
+  "format_version": "watchdog.probe-result.v1",
+  "record_id": "wd153-codex-desktop-session-end-observe-af7d95913fd444c8a4e4c83e14f2b6cd",
+  "classification": "live_provider",
+  "started_at": "2026-10-23T22:41:02.522908Z",
+  "finished_at": "2026-10-23T23:13:12.180313Z",
+  "provenance": {
+    "provider": {
+      "name": "codex",
+      "version": null,
+      "surface": "desktop"
+    },
+    "harness": {
+      "name": "codex-desktop",
+      "version": "26.1016.62342"
+    },
+    "adapter": {
+      "name": "none",
+      "version": null,
+      "invocation": "provider"
+    },
+    "os": {
+      "name": "Windows",
+      "version": null,
+      "architecture": "AMD64"
+    },
+    "source": {
+      "kind": "manual-observation",
+      "sanitized_reference": "wd153-session-end-observe"
+    }
+  },
+  "scope": {
+    "isolation": "One scratch Git repository outside registered projects.",
+    "expected_callback_kinds": [
+      "SessionEnd"
+    ],
+    "expected_deliveries": 0,
+    "notes": "Operator-driven desktop session; inherited global hooks may also run."
+  },
+  "stages": {
+    "provider_dispatch": {
+      "state": "unknown",
+      "attempts": 1,
+      "evidence": "Same-session terminal-event read-back; collector launches no process.",
+      "detail": null
+    },
+    "adapter": {
+      "state": "not_invoked",
+      "starts": 0,
+      "failure_category": null,
+      "evidence": "The probe calls no Watchdog adapter."
+    },
+    "callbacks": {
+      "expected": 1,
+      "observed": 1,
+      "missing": 0,
+      "missing_attribution": "not_applicable",
+      "evidence": "Expected callback counts and sanitized input shapes are in capabilities."
+    },
+    "retries": {
+      "count": 0,
+      "scopes": [],
+      "reason": null,
+      "outcome": "not_attempted",
+      "evidence": "One run per case."
+    },
+    "persistence": {
+      "accepted": 0,
+      "losses": [],
+      "evidence": "Not applicable: the probe does not exercise Watchdog persistence."
+    },
+    "end_to_end_delivery": {
+      "expected": 0,
+      "persisted": 0,
+      "read_back": 0,
+      "state": "not_applicable",
+      "failure_attribution": "not_applicable",
+      "failure_detail": null,
+      "evidence": "Direct provider probe; no Watchdog store or daemon delivery exercised."
+    }
+  },
+  "capabilities": {
+    "session-end-observe": {
+      "state": "inconclusive",
+      "response_shape": "{} (observation only)",
+      "callbacks": {
+        "SessionEnd": {
+          "observed": 1,
+          "input_fields": [
+            "cwd",
+            "hook_event_name",
+            "session_id",
+            "transcript_path"
+          ],
+          "tool_names": []
+        }
+      }
+    }
+  },
+  "cleanup": {
+    "resources": [
+      {
+        "kind": "hook_installation",
+        "alias": "scratch-project-hooks",
+        "action": "removed",
+        "state": "confirmed",
+        "failure_attribution": "not_applicable",
+        "detail": "Owned hooks renamed to a disabled file; artifacts retained for review.",
+        "evidence": "Owned hook hash and disabled-file check."
+      },
+      {
+        "kind": "temporary_state",
+        "alias": "scratch-and-provider-transcript",
+        "action": "retained",
+        "state": "confirmed",
+        "failure_attribution": "not_applicable",
+        "detail": "Raw diagnostics intentionally retained; no recursive cleanup performed.",
+        "evidence": "Collection reads scratch and transcript without deleting either."
+      },
+      {
+        "kind": "task",
+        "alias": "operator-desktop-chat",
+        "action": "retained",
+        "state": "unknown",
+        "failure_attribution": "unknown",
+        "detail": null,
+        "evidence": "Chat archival and process cleanup are not established by collection."
+      }
+    ],
+    "complete": false,
+    "remaining_state": "Scratch folder and provider transcript retained."
+  },
+  "result": {
+    "state": "incomplete",
+    "limitations": [
+      "Exactly one callback session is required; use a fresh scratch folder.",
+      "Explicit transcript differs from the callback transcript.",
+      "One same-session transcript path is required.",
+      "Backend version was not established from same-session metadata.",
+      "App version/surface attributed by the operator; backend version from session metadata.",
+      "One desktop/backend version and one case; no CLI or cross-version inheritance.",
+      "Trust records are retained; no global hook or runtime control profile was changed."
+    ]
+  }
+}

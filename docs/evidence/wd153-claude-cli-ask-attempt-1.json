@@ -1,0 +1,192 @@
+{
+  "capabilities": {
+    "pre-tool-ask": {
+      "callbacks": {
+        "PermissionRequest": {
+          "input_fields": [
+            "cwd",
+            "effort",
+            "hook_event_name",
+            "permission_mode",
+            "prompt_id",
+            "scratchpad_dir",
+            "session_id",
+            "tool_input",
+            "tool_name",
+            "transcript_path"
+          ],
+          "observed": 1,
+          "tool_names": [
+            "Bash"
+          ]
+        },
+        "PostToolUse": {
+          "input_fields": [],
+          "observed": 0,
+          "tool_names": []
+        },
+        "PreToolUse": {
+          "input_fields": [
+            "cwd",
+            "effort",
+            "hook_event_name",
+            "permission_mode",
+            "prompt_id",
+            "scratchpad_dir",
+            "session_id",
+            "tool_input",
+            "tool_name",
+            "tool_use_id",
+            "transcript_path"
+          ],
+          "observed": 1,
+          "tool_names": [
+            "Bash"
+          ]
+        },
+        "UserPromptSubmit": {
+          "input_fields": [
+            "cwd",
+            "hook_event_name",
+            "permission_mode",
+            "prompt",
+            "prompt_id",
+            "scratchpad_dir",
+            "session_id",
+            "transcript_path"
+          ],
+          "observed": 1,
+          "tool_names": []
+        }
+      },
+      "models": [
+        "claude-sonnet-5-5"
+      ],
+      "operator_dialog": "denied",
+      "response_shape": "hookSpecificOutput.permissionDecision=ask",
+      "state": "inconclusive"
+    }
+  },
+  "classification": "live_provider",
+  "cleanup": {
+    "complete": false,
+    "remaining_state": "See the cleanup resources.",
+    "resources": [
+      {
+        "action": "removed",
+        "alias": "temporary-claude-settings",
+        "detail": "Project-local .claude/settings.local.json in scratch; CLI launched with ordinary settings discovery.",
+        "evidence": "Scratch directory check",
+        "failure_attribution": "not_applicable",
+        "kind": "hook_installation",
+        "state": "confirmed"
+      },
+      {
+        "action": "retained",
+        "alias": "scratch-repository",
+        "detail": null,
+        "evidence": "Scratch directory check",
+        "failure_attribution": "unknown",
+        "kind": "temporary_state",
+        "state": "unknown"
+      }
+    ]
+  },
+  "finished_at": "2026-10-24T06:23:53.975871Z",
+  "format_version": "watchdog.probe-result.v1",
+  "provenance": {
+    "adapter": {
+      "invocation": "provider",
+      "name": "none",
+      "version": null
+    },
+    "harness": {
+      "name": "claude-cli-manual",
+      "version": "2.1.292"
+    },
+    "os": {
+      "architecture": "AMD64",
+      "name": "Windows",
+      "version": null
+    },
+    "provider": {
+      "name": "claude",
+      "surface": "cli-manual",
+      "version": "2.1.292"
+    },
+    "source": {
+      "kind": "manual-observation",
+      "sanitized_reference": "wd153-pre-tool-ask"
+    }
+  },
+  "record_id": "wd153-claude-manual-pre-tool-ask-d9f2f5dd558f4fecbaa308cb0e2b5e58",
+  "result": {
+    "limitations": [
+      "same-session transcript has no real terminal assistant completion event",
+      "One operator-run session and one prompt; CLI version was operator-reported from `claude --version`, not transcript-verified.",
+      "Watchdog persistence and end-to-end daemon delivery were not exercised.",
+      "same-session transcript has no real terminal assistant completion event"
+    ],
+    "state": "incomplete"
+  },
+  "scope": {
+    "baseline_record_id": null,
+    "expected_callback_kinds": [
+      "UserPromptSubmit",
+      "PreToolUse",
+      "PostToolUse",
+      "PermissionRequest"
+    ],
+    "expected_deliveries": 1,
+    "isolation": "Scratch Git repository outside registered projects with project-local .claude/settings.local.json; ordinary user and project settings may also load.",
+    "notes": "Callbacks and transcript are bound to one session in this scratch repository. Prompt and transcript content are not copied into the record.",
+    "wd153": {
+      "case_id": "wd153-interactive-permission-v1",
+      "settings_scope_sha256": "67880d6e3fd298fab52150c873dbb5696b37b8ff1e6404bd6a1c875534bac380",
+      "workload_sha256": "95a2d795d6c15a770b507f91bfab18d5214d24faf92aafd2cfe319293c911138"
+    }
+  },
+  "stages": {
+    "adapter": {
+      "evidence": "The probe calls no Watchdog adapter.",
+      "failure_category": null,
+      "starts": 0,
+      "state": "not_invoked"
+    },
+    "callbacks": {
+      "evidence": "Minimum expected count per event; input shapes are in capabilities.",
+      "expected": 2,
+      "missing": 0,
+      "missing_attribution": "not_applicable",
+      "observed": 2
+    },
+    "end_to_end_delivery": {
+      "evidence": "Manual provider callback and same-session transcript evidence only.",
+      "expected": 1,
+      "failure_attribution": "not_applicable",
+      "failure_detail": null,
+      "persisted": 0,
+      "read_back": 0,
+      "state": "not_applicable"
+    },
+    "persistence": {
+      "accepted": 0,
+      "evidence": "The manual provider probe does not exercise Watchdog persistence.",
+      "losses": []
+    },
+    "provider_dispatch": {
+      "attempts": 1,
+      "detail": "same-session transcript has no real terminal assistant completion event",
+      "evidence": "Same-session transcript has no terminal assistant completion event.",
+      "state": "incomplete"
+    },
+    "retries": {
+      "count": 0,
+      "evidence": "One run per case.",
+      "outcome": "not_attempted",
+      "reason": null,
+      "scopes": []
+    }
+  },
+  "started_at": "2026-10-23T23:27:18.823980Z"
+}
