@@ -113,4 +113,5 @@ def test_control_request_sends_authenticated_legitimate_input_within_budget(tmp_
     assert request["schema_version"] == 2 and request["token"] == "synthetic-token"
     assert request["input"]["hook_event_name"] == "PreToolUse"
     assert request["input"]["tool_input"] == {"command": "printf benchmark-control"}
-    assert all(0 < timeout <= 0.3 for timeout in connection.timeouts)
+    # The remaining budget is `deadline - monotonic()`, which can exceed 0.3 by float rounding.
+    assert all(0 < timeout <= 0.3 + 1e-6 for timeout in connection.timeouts)
