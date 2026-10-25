@@ -1288,7 +1288,7 @@ def _record_control(
         and session_id
         and tool_use_id
     ):
-        remember_denial(session_id, tool_use_id, decision.codex_control_profile)
+        remember_denial(session_id, tool_use_id, decision.codex_control_profile, decision.reason)
     control_id = uuid5(
         NAMESPACE_URL, f"watchdog|control|{event_id}|{decision.rule}|{decision.action}"
     )

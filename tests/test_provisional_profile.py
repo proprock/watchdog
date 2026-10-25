@@ -131,20 +131,44 @@ def test_a_demoted_profile_logs_instead_of_acting_and_leaves_others_alone(instal
     assert decide(paths, config, "codex", payload, codex_control_profile=DESKTOP).action == "deny"
 
 
-def finish(session=SESSION, tool_use_id="call-1", *, provider="codex", kind="tool.finish"):
+def finish(
+    session=SESSION, tool_use_id="call-1", *, provider="codex", kind="tool.finish", content=None
+):
+    namespace = {"tool_use_id": tool_use_id}
+    if content is not None:
+        namespace["content"] = content
     return Envelope(
         provider=provider,
         project_id=uuid4(),
         session_id=session,
         kind=kind,
         source="hook",
-        payload={provider: {"tool_use_id": tool_use_id}},
+        payload={provider: namespace},
     )
+
+
+@pytest.mark.parametrize(
+    "content,demoted",
+    [
+        # The harness echoing the daemon's own refusal is not an execution.
+        ({"tool_response": "Command blocked by PreToolUse hook: WD151_DENY."}, False),
+        ({"tool_response": {"output": "x", "error": "blocked: WD151_DENY"}}, False),
+        ({"tool_response": "original output"}, True),
+        ("omitted", True),  # content capture off: nothing shows it was a refusal
+        ({}, True),
+    ],
+)
+def test_a_finish_that_only_echoes_the_denial_does_not_demote(installation, content, demoted):
+    paths, _ = installation
+    demotion.remember_denial(SESSION, "call-1", PROVISIONAL, "WD151_DENY")
+    result = demotion.observe(paths, finish(content=content))
+    assert (result == PROVISIONAL) is demoted
+    assert demotion.is_demoted(paths, PROVISIONAL) is demoted
 
 
 def test_only_a_remembered_denial_is_contradicted_by_a_finished_call(installation):
     paths, _ = installation
-    demotion.remember_denial(SESSION, "call-1", PROVISIONAL)
+    demotion.remember_denial(SESSION, "call-1", PROVISIONAL, None)
     for other in (
         finish(tool_use_id="call-2"),
         finish(session="other"),

@@ -23,7 +23,7 @@ _REMEMBERED = 256
 _lock = threading.Lock()
 # (session, tool_use_id) -> profile of denials the daemon delivered; bounded, in memory,
 # because the contradicting event arrives within the same turn.
-_denials: OrderedDict[tuple[str, str], str] = OrderedDict()
+_denials: OrderedDict[tuple[str, str], tuple[str, str | None]] = OrderedDict()
 # path -> (mtime_ns, demoted profiles); None when the record is unreadable.
 _cache: dict[Path, tuple[int, frozenset[str] | None]] = {}
 
@@ -34,9 +34,9 @@ def reset() -> None:
         _cache.clear()
 
 
-def remember_denial(session_id: str, tool_use_id: str, profile: str) -> None:
+def remember_denial(session_id: str, tool_use_id: str, profile: str, reason: str | None) -> None:
     with _lock:
-        _denials[(session_id, tool_use_id)] = profile
+        _denials[(session_id, tool_use_id)] = (profile, reason)
         while len(_denials) > _REMEMBERED:
             _denials.popitem(last=False)
 
@@ -55,11 +55,28 @@ def observe(paths: UserPaths, event: Envelope) -> str | None:
     if tool_use_id is None:
         return None
     with _lock:
-        profile = _denials.pop((event.session_id, tool_use_id), None)
-    if profile is None:
+        remembered = _denials.pop((event.session_id, tool_use_id), None)
+    if remembered is None:
+        return None
+    profile, reason = remembered
+    if _echoes_refusal(event, reason):
         return None
     demote(paths, profile, evidence=tool_use_id)
     return profile
+
+
+def _echoes_refusal(event: Envelope, reason: str | None) -> bool:
+    """Whether the finish only carries the daemon's own refusal text back.
+
+    A harness may report a denied call as finished with the refusal as its result; that
+    is not an execution. When the response is not visible (content capture off), the
+    finish counts as a contradiction: unknown is not a confirmation.
+    """
+    namespace = event.payload.get(event.provider)
+    content = namespace.get("content") if isinstance(namespace, dict) else None
+    if not reason or not isinstance(content, dict) or "tool_response" not in content:
+        return False
+    return reason in json.dumps(content["tool_response"], ensure_ascii=False)
 
 
 def _record(paths: UserPaths) -> dict[str, dict[str, str]]:
