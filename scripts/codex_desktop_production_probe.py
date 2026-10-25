@@ -32,7 +32,9 @@ from agent_watchdog.daemon import _drain_spool, _policy_server, _SessionTracker,
 from agent_watchdog.storage import Store, WriterBusy, writer_lock
 
 APP_VERSION = "26.1016.62342"
-PROFILE = "windows-desktop-26.1016.62342-0.163.0-alpha.11.2"
+BACKEND = "0.163.0-alpha.11.2"
+PROFILE = f"windows-desktop-{APP_VERSION}-{BACKEND}"
+BACKEND_VERSION = re.compile(r'"cli_version"\s*:\s*"([^"]{1,64})"')
 RULE_NAME = "codex_desktop_probe"
 RULE_FILE = f"{RULE_NAME}.toml"
 SENTINEL = "wd151-sentinel.txt"
@@ -69,12 +71,37 @@ CASES = {
 
 
 @dataclass(frozen=True)
+class Target:
+    """One app/backend pair and the cases that make sense for its profile."""
+
+    app_version: str
+    backend: str
+    cases: tuple[str, ...]
+
+    @property
+    def profile(self) -> str:
+        return f"windows-desktop-{self.app_version}-{self.backend}"
+
+
+TARGETS = {
+    "probed": Target(APP_VERSION, BACKEND, tuple(CASES)),
+    # The profile is provisional: it carries no `permit`, so that case does not apply.
+    "provisional": Target(
+        "26.1021.31345",
+        "0.164.0-alpha.11.1",
+        ("bash-deny", "permission-deny", "no-profile-deny"),
+    ),
+}
+
+
+@dataclass(frozen=True)
 class Facts:
     callbacks: int
     controls: int
     sentinel: bool
     dialog_seen: bool | None
     app_version: str
+    backend_version: str | None
 
 
 def now() -> str:
@@ -85,7 +112,7 @@ def digest(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
-def _hook_handler(adapter: Path, paths: UserPaths, spec: Case) -> dict[str, Any]:
+def _hook_handler(adapter: Path, paths: UserPaths, spec: Case, profile: str) -> dict[str, Any]:
     arguments = [
         str(adapter),
         "--python",
@@ -96,7 +123,7 @@ def _hook_handler(adapter: Path, paths: UserPaths, spec: Case) -> dict[str, Any]
         str(paths.data),
         "--runtime",
         str(paths.runtime),
-        *(["--codex-control-profile", PROFILE] if spec.with_profile else []),
+        *(["--codex-control-profile", profile] if spec.with_profile else []),
         "hook",
         "codex",
     ]
@@ -140,12 +167,15 @@ def _prompt(spec: Case) -> str:
     return text
 
 
-def prepare(scratch: Path, case_name: str, adapter: Path) -> dict[str, Any]:
+def prepare(scratch: Path, case_name: str, adapter: Path, target: str = "probed") -> dict[str, Any]:
     scratch = scratch.absolute()
     if scratch == REPOSITORY or REPOSITORY in scratch.parents:
         raise ValueError("scratch must be outside the Watchdog repository")
     if scratch.exists() and (not scratch.is_dir() or any(scratch.iterdir())):
         raise ValueError("scratch directory must be new or empty")
+    pair = TARGETS[target]
+    if case_name not in pair.cases:
+        raise ValueError(f"case {case_name} is not available for the {target} target")
     spec = CASES[case_name]
     banner = adapter_version(adapter)
     work = scratch / "work"
@@ -166,7 +196,7 @@ def prepare(scratch: Path, case_name: str, adapter: Path) -> dict[str, Any]:
     config = load_config(paths.config)
     approved = {RULE_NAME: digest(rule_path)}
     save_config(paths.config, config.model_copy(update={"rules": Rules(approved=approved)}))
-    handler = _hook_handler(adapter, paths, spec)
+    handler = _hook_handler(adapter, paths, spec, pair.profile)
     hooks = {
         event: [{"matcher": "^Bash$", "hooks": [handler]}]
         for event in ("PreToolUse", "PermissionRequest")
@@ -178,6 +208,7 @@ def prepare(scratch: Path, case_name: str, adapter: Path) -> dict[str, Any]:
         json.dumps(
             {
                 "case": case_name,
+                "target": target,
                 "run_id": uuid4().hex,
                 "started_at": now(),
                 "hook_sha256": digest(hook),
@@ -188,7 +219,8 @@ def prepare(scratch: Path, case_name: str, adapter: Path) -> dict[str, Any]:
     )
     steps = [
         f"Run `serve --root {scratch}` in a terminal and leave it running.",
-        f"Open {work} in Codex desktop and record the app version from About.",
+        f"Open {work} in Codex desktop and record the app version from About "
+        f"(this target expects {pair.app_version}).",
         "Review and trust only this project's exact hook definition in the native hook UI.",
         "Start a fresh chat in this folder after trust and send the supplied prompt once.",
         "Wait for the turn to finish. Do not retry in this scratch folder.",
@@ -229,11 +261,16 @@ def confirmed_controls(events: list[Any], callback_ids: set[str], action: str | 
     return total
 
 
-def evaluate(case_name: str, facts: Facts) -> tuple[str, list[str]]:
+def evaluate(case_name: str, facts: Facts, target: str = "probed") -> tuple[str, list[str]]:
     """A cell is supported only with both the stored control and the provider effect."""
     spec = CASES[case_name]
-    if facts.app_version != APP_VERSION:
-        return "inconclusive", [f"app version differs from the probed {APP_VERSION}"]
+    pair = TARGETS[target]
+    if facts.app_version != pair.app_version:
+        return "inconclusive", [f"app version differs from the target {pair.app_version}"]
+    if facts.backend_version != pair.backend:
+        return "inconclusive", [
+            f"backend version {facts.backend_version or 'unknown'} is not the target {pair.backend}"
+        ]
     if facts.callbacks == 0:
         return "inconclusive", ["no matching native callback was spooled"]
     if spec.expect == "silent":
@@ -266,8 +303,30 @@ def _disable_hook(work: Path, expected: str, problems: list[str]) -> None:
         problems.append("Owned hook definition changed or could not be disabled; inspect it.")
 
 
-def _spooled_callbacks(paths: UserPaths, spec: Case) -> set[str]:
+def _backend_version(transcripts: set[str]) -> str | None:
+    """The backend version recorded in the session files; None unless exactly one is seen.
+
+    The transcript path comes from the hook payload, so it is untrusted data: only a
+    bounded prefix of an existing `.jsonl` file is read and nothing in it is executed.
+    """
+    seen: set[str] = set()
+    for name in transcripts:
+        path = Path(name)
+        if not path.is_absolute() or path.suffix != ".jsonl":
+            continue
+        try:
+            with path.open("rb") as stream:
+                head = stream.read(65536).decode("utf-8", errors="replace")
+        except OSError:
+            continue
+        if found := BACKEND_VERSION.search(head):
+            seen.add(found.group(1))
+    return seen.pop() if len(seen) == 1 else None
+
+
+def _spooled_callbacks(paths: UserPaths, spec: Case) -> tuple[set[str], set[str]]:
     found: set[str] = set()
+    transcripts: set[str] = set()
     for path in (paths.data / "spool").glob("*.json"):
         try:
             item = json.loads(path.read_text(encoding="utf-8"))
@@ -282,7 +341,9 @@ def _spooled_callbacks(paths: UserPaths, spec: Case) -> set[str]:
             and isinstance(item.get("event_id"), str)
         ):
             found.add(item["event_id"])
-    return found
+            if isinstance(hook.get("transcript_path"), str):
+                transcripts.add(hook["transcript_path"])
+    return found, transcripts
 
 
 def collect(scratch: Path, *, desktop_version: str, dialog_seen: bool | None) -> dict[str, Any]:
@@ -291,6 +352,8 @@ def collect(scratch: Path, *, desktop_version: str, dialog_seen: bool | None) ->
     scratch = scratch.absolute()
     manifest = json.loads((scratch / MANIFEST).read_text(encoding="utf-8"))
     spec = CASES[manifest["case"]]
+    target = manifest.get("target", "probed")
+    pair = TARGETS[target]
     paths = paths_at(scratch)
     try:
         with writer_lock(paths.data / LOCK):
@@ -300,7 +363,7 @@ def collect(scratch: Path, *, desktop_version: str, dialog_seen: bool | None) ->
     problems: list[str] = []
     work = scratch / "work"
     _disable_hook(work, manifest["hook_sha256"], problems)
-    callbacks = _spooled_callbacks(paths, spec)
+    callbacks, transcripts = _spooled_callbacks(paths, spec)
     config = load_config(paths.config)
     _drain_spool(paths, config)
     project = config.projects[0]
@@ -315,8 +378,9 @@ def collect(scratch: Path, *, desktop_version: str, dialog_seen: bool | None) ->
         sentinel=(work / SENTINEL).exists(),
         dialog_seen=dialog_seen,
         app_version=desktop_version,
+        backend_version=_backend_version(transcripts),
     )
-    verdict, reasons = evaluate(manifest["case"], facts)
+    verdict, reasons = evaluate(manifest["case"], facts, target)
     if problems:
         verdict = "inconclusive"
     return {
@@ -325,8 +389,10 @@ def collect(scratch: Path, *, desktop_version: str, dialog_seen: bool | None) ->
         "verdict": verdict,
         "reasons": reasons,
         "problems": problems,
-        "profile": PROFILE if spec.with_profile else None,
+        "target": target,
+        "profile": pair.profile if spec.with_profile else None,
         "app_version": desktop_version,
+        "backend_version": facts.backend_version,
         "adapter": manifest["adapter"],
         "observed": {
             "callbacks": facts.callbacks,
@@ -337,7 +403,7 @@ def collect(scratch: Path, *, desktop_version: str, dialog_seen: bool | None) ->
         "started_at": manifest["started_at"],
         "finished_at": now(),
         "limitations": [
-            "One Windows desktop app version; the backend version is carried by the profile name.",
+            "One Windows desktop app and backend pair; the backend is read from session files.",
             "Operator-driven; trust records, chat and scratch are retained for review.",
             "Scratch decision channel run in-process; no detached daemon cadence is measured.",
         ],
@@ -351,6 +417,7 @@ def main() -> int:
     prep.add_argument("--root", type=Path, required=True)
     prep.add_argument("--case", choices=sorted(CASES), required=True)
     prep.add_argument("--adapter", type=Path, required=True)
+    prep.add_argument("--target", choices=sorted(TARGETS), default="probed")
     run = commands.add_parser("serve")
     run.add_argument("--root", type=Path, required=True)
     coll = commands.add_parser("collect")
@@ -360,7 +427,7 @@ def main() -> int:
     coll.add_argument("--output", type=Path, required=True)
     args = parser.parse_args()
     if args.action == "prepare":
-        print(json.dumps(prepare(args.root, args.case, args.adapter), indent=2))
+        print(json.dumps(prepare(args.root, args.case, args.adapter, args.target), indent=2))
     elif args.action == "serve":
         serve(args.root)
     else:

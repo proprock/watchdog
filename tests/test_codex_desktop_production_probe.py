@@ -4,6 +4,7 @@ import importlib
 import json
 import subprocess
 import sys
+import time
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -174,8 +175,45 @@ def facts(**overrides):
         "sentinel": False,
         "dialog_seen": None,
         "app_version": probe.APP_VERSION,
+        "backend_version": probe.BACKEND,
     }
     return probe.Facts(**{**base, **overrides})
+
+
+def test_the_provisional_target_pins_its_own_versions_and_has_no_permit_case():
+    probed, provisional = probe.TARGETS["probed"], probe.TARGETS["provisional"]
+    assert provisional.profile.startswith("windows-desktop-26.1021.31345-")
+    assert provisional.profile != probed.profile
+    assert provisional.profile in CODEX_CELLS
+    assert "permission-permit" not in provisional.cases
+    assert set(provisional.cases) < set(probe.CASES)
+
+
+@pytest.mark.parametrize("case", ["bash-deny", "permission-deny", "no-profile-deny"])
+def test_the_provisional_target_embeds_its_profile(scratch, adapter, case):
+    info = probe.prepare(scratch, case, adapter, target="provisional")
+    command = json.dumps(hook_definition(info))
+    profile = probe.TARGETS["provisional"].profile
+    assert (profile in command) is probe.CASES[case].with_profile
+    assert probe.PROFILE not in command
+
+
+def test_the_provisional_target_refuses_the_permit_case(scratch, adapter):
+    with pytest.raises(ValueError, match="not available"):
+        probe.prepare(scratch, "permission-permit", adapter, target="provisional")
+
+
+def test_a_pair_other_than_the_target_is_never_confirmed():
+    provisional = probe.TARGETS["provisional"]
+    matching = facts(
+        controls=1, app_version=provisional.app_version, backend_version=provisional.backend
+    )
+    assert probe.evaluate("bash-deny", matching, target="provisional")[0] == "supported"
+    assert probe.evaluate("bash-deny", matching)[0] == "inconclusive"  # the probed pair differs
+    for stale in (None, probe.BACKEND):
+        wrong = facts(controls=1, backend_version=stale)
+        assert probe.evaluate("bash-deny", wrong, target="provisional")[0] == "inconclusive"
+    assert probe.evaluate("bash-deny", facts(controls=1, backend_version=None))[0] == "inconclusive"
 
 
 @pytest.mark.parametrize(
@@ -258,12 +296,18 @@ def test_native_adapter_decision_round_trips_through_the_scratch_store(
     work = Path(info["dir"])
     paths = probe.paths_at(scratch)
     command = f"Set-Content -Path {probe.SENTINEL} -Value WD151_SIDE_EFFECT"
+    transcript = scratch / "rollout.jsonl"
+    transcript.write_text(
+        json.dumps({"type": "session_meta", "payload": {"cli_version": probe.BACKEND}}) + "\n",
+        encoding="utf-8",
+    )
     payload = {
         "cwd": str(work),
         "session_id": "scratch-session",
         "hook_event_name": event,
         "tool_name": "Bash",
         "tool_input": {"command": command},
+        "transcript_path": str(transcript),
     }
     hook_args = [
         str(rust_adapter),
@@ -284,6 +328,11 @@ def test_native_adapter_decision_round_trips_through_the_scratch_store(
         result = subprocess.run(
             hook_args, input=json.dumps(payload).encode(), capture_output=True, timeout=30
         )
+        # The daemon records its control after answering; wait for the hook record and the
+        # control record before the server stops, so a loaded host cannot lose the latter.
+        deadline = time.monotonic() + 10
+        while len(list((paths.data / "spool").glob("*.json"))) < 2 and time.monotonic() < deadline:
+            time.sleep(0.05)
     output = json.loads(result.stdout)
     assert output != {}
     # The command was never run by this test, so the sentinel is genuinely absent.
@@ -294,5 +343,6 @@ def test_native_adapter_decision_round_trips_through_the_scratch_store(
     )
     assert record["observed"]["callbacks"] >= 1
     assert record["observed"]["controls"] == 1
+    assert record["backend_version"] == probe.BACKEND
     # Deny is supported (absent effect); permit lacks its side effect, so it is not "supported".
     assert record["verdict"] == ("supported" if action == "deny" else "unsupported")
