@@ -1,0 +1,25 @@
+{
+  "schema": "wd151-codex-desktop-production-v1",
+  "case": "no-profile-deny",
+  "verdict": "supported",
+  "reasons": [],
+  "problems": [],
+  "target": "provisional",
+  "profile": null,
+  "app_version": "26.1021.31345",
+  "backend_version": "0.164.0-alpha.11.1",
+  "adapter": "agent-watchdog-hook 0.1.5 (providers: codex, claude; decision schema 2)",
+  "observed": {
+    "callbacks": 1,
+    "controls": 0,
+    "sentinel": true,
+    "dialog_seen": null
+  },
+  "started_at": "2026-10-25T08:55:14.033929Z",
+  "finished_at": "2026-10-25T08:58:26.682107Z",
+  "limitations": [
+    "One Windows desktop app and backend pair; the backend is read from session files.",
+    "Operator-driven; trust records, chat and scratch are retained for review.",
+    "Scratch decision channel run in-process; no detached daemon cadence is measured."
+  ]
+}
