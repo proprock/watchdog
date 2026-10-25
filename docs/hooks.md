@@ -125,6 +125,14 @@ remain observation-only.
 | `windows-cli-exec-0.162.0-alpha.17.2` | `PreToolUse`/`Bash` context; `PreToolUse`/`apply_patch` deny or context; `SubagentStart` context; `Stop` block |
 | `windows-cli-interactive-0.162.0-alpha.17.2` | `PreToolUse`/`apply_patch` rewrite only; the evidence is an operator-approved scratch edit |
 | `windows-desktop-26.1016.62342-0.163.0-alpha.11.2` | `SessionStart` context; `PreToolUse`/`Bash` and `PreToolUse`/`apply_patch` deny or rewrite; `PermissionRequest`/`Bash` deny or permit; `PostToolUse`/`Bash` block; `Stop` and `SubagentStop` block |
+| `windows-desktop-26.1021.31345-0.164.0-alpha.11.1` (provisional) | The same cells as the profile above, limited to `context`, `deny` and `block`; never `rewrite` or `permit` |
+
+A provisional profile names an app/backend pair no provider probe has covered. It
+acts at once, because a `deny`, `block` or `context` that is not honoured only
+leaves the harness as if Watchdog were absent. It is demoted to log-only (finding
+gap `profile_demoted`, record `profile-demotions.json` in the data directory) the
+first time a call that the daemon denied under it is seen to finish. Delete that
+record only after a probe has confirmed the profile.
 
 The desktop profile names the exact app and backend pair that WD-153 probed
 and belongs only in a desktop installation's native hook command; the CLI

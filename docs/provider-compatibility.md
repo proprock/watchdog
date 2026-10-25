@@ -74,6 +74,7 @@ hook commands must not carry a CLI profile; desktop has its own exact profile.
 | `windows-cli-exec-0.162.0-alpha.17.2` | `PreToolUse` with tool `Bash`/context; `PreToolUse` with tool `apply_patch`/deny or context; `SubagentStart`/context; `Stop`/block |
 | `windows-cli-interactive-0.162.0-alpha.17.2` | `PreToolUse` with tool `apply_patch`/rewrite only, based on the operator-approved scratch-edit probe |
 | `windows-desktop-26.1016.62342-0.163.0-alpha.11.2` | `SessionStart`/context; `PreToolUse` with tool `Bash` or `apply_patch`/deny or rewrite; `PermissionRequest` with tool `Bash`/deny or permit; `PostToolUse` with tool `Bash`/block; `Stop`/block; `SubagentStop`/block, from the WD-153 desktop probes ([evidence](evidence/wd153.md)) |
+| `windows-desktop-26.1021.31345-0.164.0-alpha.11.1` (provisional, [WD-180](evidence/wd180.md)) | The cells of the profile above restricted to `context`, `deny` and `block`; no `rewrite` or `permit`. Not probed by WD-153; demoted to log-only when a denied call finishes |
 
 The desktop profile is a separate surface and never shares cells with the CLI
 profiles. Desktop `UserPromptSubmit`, `PreToolUse` and `PostToolUse` context,

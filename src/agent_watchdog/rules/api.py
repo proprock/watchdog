@@ -59,6 +59,21 @@ _WINDOWS = sys.platform == "win32"
 # Exact deployment profiles are explicitly selected by the installation command,
 # never inferred from hook payloads, PATH, or another surface's installed CLI.
 # A None tool means the event itself is scoped, rather than an arbitrary tool.
+_DESKTOP_CELLS: tuple[tuple[str, str | None, str], ...] = (
+    ("SessionStart", None, "context"),
+    ("PreToolUse", "Bash", "deny"),
+    ("PreToolUse", "Bash", "rewrite"),
+    ("PreToolUse", "apply_patch", "deny"),
+    ("PreToolUse", "apply_patch", "rewrite"),
+    ("PermissionRequest", "Bash", "deny"),
+    ("PermissionRequest", "Bash", "permit"),
+    ("PostToolUse", "Bash", "block"),
+    ("Stop", None, "block"),
+    ("SubagentStop", None, "block"),
+)
+PROVISIONAL_PROFILE = "windows-desktop-26.1021.31345-0.164.0-alpha.11.1"
+_LOW_RISK_ACTIONS = frozenset({"deny", "block", "context"})
+
 CODEX_CELLS: Mapping[str, tuple[tuple[str, str | None, str], ...]] = {
     "windows-cli-0.160.0": (
         ("SessionStart", None, "context"),
@@ -78,19 +93,14 @@ CODEX_CELLS: Mapping[str, tuple[tuple[str, str | None, str], ...]] = {
     "windows-cli-interactive-0.162.0-alpha.17.2": (("PreToolUse", "apply_patch", "rewrite"),),
     # Codex desktop is a separate surface; only the cells WD-153 confirmed on this exact
     # app/backend pair.
-    "windows-desktop-26.1016.62342-0.163.0-alpha.11.2": (
-        ("SessionStart", None, "context"),
-        ("PreToolUse", "Bash", "deny"),
-        ("PreToolUse", "Bash", "rewrite"),
-        ("PreToolUse", "apply_patch", "deny"),
-        ("PreToolUse", "apply_patch", "rewrite"),
-        ("PermissionRequest", "Bash", "deny"),
-        ("PermissionRequest", "Bash", "permit"),
-        ("PostToolUse", "Bash", "block"),
-        ("Stop", None, "block"),
-        ("SubagentStop", None, "block"),
-    ),
+    "windows-desktop-26.1016.62342-0.163.0-alpha.11.2": _DESKTOP_CELLS,
+    # A newer app/backend pair that no WD-153 probe has covered. Only the actions whose
+    # failure is silence (they cannot change a call or approve one) are carried over, and
+    # the profile is demoted to log-only if a denied call is seen to finish (`demotion`).
+    PROVISIONAL_PROFILE: tuple(cell for cell in _DESKTOP_CELLS if cell[2] in _LOW_RISK_ACTIONS),
 }
+
+PROVISIONAL_PROFILES: frozenset[str] = frozenset({PROVISIONAL_PROFILE})
 
 
 def subscription_tools(

@@ -222,7 +222,13 @@ def stats(paths: UserPaths, config: Config, *, since: datetime | None) -> list[d
                                 coverage["adapter_unrenderable"] += 1
                             elif finding["adapter_rendered"] is None:
                                 coverage["adapter_rendered_unknown"] += 1
-                            coverage["provider_effect_unknown"] += 1
+                            effect = finding["provider_effect"]
+                            if effect == "blocked":
+                                coverage["provider_effect"] += 1
+                            elif effect == "contradicted":
+                                coverage["provider_effect_contradicted"] += 1
+                            else:
+                                coverage["provider_effect_unknown"] += 1
                             if finding["capability_gap"]:
                                 coverage["capability_gaps"] += 1
                         verdict = recorded.get(
@@ -254,7 +260,8 @@ def stats(paths: UserPaths, config: Config, *, since: datetime | None) -> list[d
                 "adapter_rendered": coverage["adapter_rendered"],
                 "adapter_rendered_unknown": coverage["adapter_rendered_unknown"],
                 "adapter_unrenderable": coverage["adapter_unrenderable"],
-                "provider_effect": 0,
+                "provider_effect": coverage["provider_effect"],
+                "provider_effect_contradicted": coverage["provider_effect_contradicted"],
                 "provider_effect_unknown": coverage["provider_effect_unknown"],
                 "capability_gaps": coverage["capability_gaps"],
             }

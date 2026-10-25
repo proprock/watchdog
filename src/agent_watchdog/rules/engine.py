@@ -15,8 +15,16 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 from agent_watchdog.config import Config, Project, UserPaths
+from agent_watchdog.demotion import is_demoted
 from agent_watchdog.registry import Registry
-from agent_watchdog.rules.api import ALLOW, CODEX_CELLS, Context, Decision, renderable
+from agent_watchdog.rules.api import (
+    ALLOW,
+    CODEX_CELLS,
+    PROVISIONAL_PROFILES,
+    Context,
+    Decision,
+    renderable,
+)
 from agent_watchdog.rules.declarative import DeclarativeRule, evaluate
 from agent_watchdog.rules.python import PythonHost, PythonRule
 from agent_watchdog.rules.registry import RuleRegistry
@@ -240,6 +248,16 @@ def decide(
             tool=hook_input.get("tool_name"),
             codex_control_profile=codex_control_profile,
         )
+        # A provisional profile that was seen to fail is log-only until re-probed.
+        demoted = (
+            decision.action != "log"
+            and not gap
+            and provider == "codex"
+            and isinstance(codex_control_profile, str)
+            and codex_control_profile in PROVISIONAL_PROFILES
+            and is_demoted(paths, codex_control_profile)
+        )
+        gap = gap or demoted
         # Bash and patch rewrites have a string command contract. An arbitrary
         # replacement object is not evidence that the provider can apply it.
         original_input = hook_input.get("tool_input")
@@ -272,7 +290,9 @@ def decide(
                     action="log",
                     project_id=project.id,
                     requested_action=decision.action,
-                    capability_gap="unsupported_codex_cell"
+                    capability_gap="profile_demoted"
+                    if demoted
+                    else "unsupported_codex_cell"
                     if provider == "codex"
                     else "unsupported_cell",
                     codex_control_profile=codex_control_profile

@@ -533,6 +533,7 @@ def control_findings(events: Iterable[Envelope]) -> list[dict[str, Any]]:
         gap = recorded.get("capability_gap")
         if rendered is False and not gap:
             gap = "adapter_unrenderable"
+        effect = _denial_effect(event, action, answered, hooks, ordered)
         text = recorded.get("text") or recorded.get("reason")
         findings.append(
             {
@@ -550,11 +551,58 @@ def control_findings(events: Iterable[Envelope]) -> list[dict[str, Any]]:
                 "selected_at": recorded.get("selected_at"),
                 "response_sent_at": response_sent_at,
                 "adapter_rendered": rendered,
-                "provider_effect": None,
+                "provider_effect": effect,
                 "capability_gap": gap,
             }
         )
     return findings
+
+
+def _denial_effect(
+    control: Envelope,
+    action: str,
+    answered: object,
+    hooks: Mapping[str, Envelope],
+    ordered: list[Envelope],
+) -> Literal["blocked", "contradicted"] | None:
+    """What was observed after a delivered Codex ``deny``; None while unknown.
+
+    The call finishing after its denial contradicts the denial. The session moving on
+    without that call finishing confirms it. Silence, a call without an observed
+    identity or another action stays unknown: only a ``deny`` has an observable effect,
+    and a value the daemon recorded about itself is never read back as one.
+    """
+    if control.provider != "codex" or action != "deny" or not isinstance(answered, list):
+        return None
+    for event_id in answered:
+        hook = hooks.get(event_id) if isinstance(event_id, str) else None
+        if hook is None or (hook.provider, hook.session_id) != (
+            control.provider,
+            control.session_id,
+        ):
+            continue
+        namespace = hook.payload.get(hook.provider)
+        tool_use_id = namespace.get("tool_use_id") if isinstance(namespace, dict) else None
+        if not isinstance(tool_use_id, str) or not tool_use_id:
+            continue
+        later = [
+            item
+            for item in ordered
+            if item.source == "hook"
+            and item.event_id != hook.event_id
+            and (item.provider, item.session_id) == (hook.provider, hook.session_id)
+            and item.received_at > control.received_at
+        ]
+        for item in later:
+            seen = item.payload.get(item.provider)
+            if (
+                item.kind == "tool.finish"
+                and isinstance(seen, dict)
+                and seen.get("tool_use_id") == tool_use_id
+            ):
+                return "contradicted"
+        return "blocked" if later else None
+    return None
 
 
 def model_family_matches(alias: str, resolved_model: str) -> bool:

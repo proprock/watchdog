@@ -22,10 +22,12 @@ from pydantic import ValidationError
 from agent_watchdog import daemon_lifecycle, resources
 from agent_watchdog._proc import hidden_creationflags
 from agent_watchdog.config import Config, ConfigError, Limits, UserPaths, load_config, save_config
+from agent_watchdog.demotion import observe as observe_denial
+from agent_watchdog.demotion import remember_denial
 from agent_watchdog.diagnostics import Level, emit, error_code
 from agent_watchdog.events import Envelope
 from agent_watchdog.registry import Registry, RegistryError, Resolution
-from agent_watchdog.rules.api import Decision
+from agent_watchdog.rules.api import PROVISIONAL_PROFILES, Decision
 from agent_watchdog.rules.engine import decide, subscriptions
 from agent_watchdog.rules.python import PythonRuleTimeout
 from agent_watchdog.spool import SPOOL_BYTES, SPOOL_FILES, Spool
@@ -1109,6 +1111,16 @@ def _drain_spool(
                     _captured=captured_checkouts,
                 ) -> None:
                     payload, resolution = _lookup[id(event)]
+                    demoted = observe_denial(paths, event)
+                    if demoted is not None:
+                        _log(
+                            paths,
+                            config,
+                            "WARNING",
+                            event="control",
+                            decision="profile_demoted",
+                            detail=demoted,
+                        )
                     if payload is not None and channel is not None:
                         channel.observe(event.provider, payload, event.received_at)
                     if (
@@ -1264,6 +1276,19 @@ def _record_control(
         return
     session_id = hook_input.get("session_id")
     sent_at = None if decision.capability_gap else response_sent_at
+    tool_use_id = hook_input.get("tool_use_id")
+    if (
+        provider == "codex"
+        and decision.action == "deny"
+        and sent_at is not None
+        and decision.codex_control_profile is not None
+        and decision.codex_control_profile in PROVISIONAL_PROFILES
+        and isinstance(session_id, str)
+        and isinstance(tool_use_id, str)
+        and session_id
+        and tool_use_id
+    ):
+        remember_denial(session_id, tool_use_id, decision.codex_control_profile)
     control_id = uuid5(
         NAMESPACE_URL, f"watchdog|control|{event_id}|{decision.rule}|{decision.action}"
     )

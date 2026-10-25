@@ -1194,6 +1194,7 @@ RENDER_EVENTS = (
 )
 RENDER_ACTIONS = ("deny", "ask", "rewrite", "context", "block")
 DESKTOP_PROFILE = "windows-desktop-26.1016.62342-0.163.0-alpha.11.2"
+PROVISIONAL_PROFILE = "windows-desktop-26.1021.31345-0.164.0-alpha.11.1"
 
 
 @pytest.mark.parametrize("action", RENDER_ACTIONS)
@@ -1319,6 +1320,25 @@ def test_native_never_renders_a_decision_for_codex(rust_adapter, native_setup):
         (DESKTOP_PROFILE, "PostToolUse", "Bash", "block", None, None, "block"),
         (DESKTOP_PROFILE, "Stop", None, "block", None, None, "block"),
         (DESKTOP_PROFILE, "SubagentStop", None, "block", None, None, "block"),
+        # The provisional desktop profile renders only actions that cannot change or
+        # approve a call.
+        (PROVISIONAL_PROFILE, "SessionStart", None, "context", None, "ctx", "context"),
+        (PROVISIONAL_PROFILE, "PreToolUse", "Bash", "deny", None, None, "deny"),
+        (PROVISIONAL_PROFILE, "PreToolUse", "apply_patch", "deny", None, None, "deny"),
+        (PROVISIONAL_PROFILE, "PermissionRequest", "Bash", "deny", None, None, "permission-deny"),
+        (PROVISIONAL_PROFILE, "PostToolUse", "Bash", "block", None, None, "block"),
+        (PROVISIONAL_PROFILE, "Stop", None, "block", None, None, "block"),
+        (PROVISIONAL_PROFILE, "SubagentStop", None, "block", None, None, "block"),
+        (
+            PROVISIONAL_PROFILE,
+            "PreToolUse",
+            "Bash",
+            "rewrite",
+            {"command": "echo changed"},
+            None,
+            None,
+        ),
+        (PROVISIONAL_PROFILE, "PermissionRequest", "Bash", "permit", None, None, None),
         # Same event/action with an unsupported tool or profile must stay silent.
         (DESKTOP_PROFILE, "UserPromptSubmit", None, "context", None, "ctx", None),
         (DESKTOP_PROFILE, "PreToolUse", "Bash", "context", None, "ctx", None),
@@ -1524,6 +1544,13 @@ def test_native_codex_stop_guard_does_not_query_daemon_while_continuing(rust_ada
         (DESKTOP_PROFILE, "PostToolUse", "Bash", "block", "block"),
         (DESKTOP_PROFILE, "Stop", None, "block", "block"),
         (DESKTOP_PROFILE, "SubagentStop", None, "block", "block"),
+        (PROVISIONAL_PROFILE, "SessionStart", None, "context", "context"),
+        (PROVISIONAL_PROFILE, "PreToolUse", "Bash", "deny", "deny"),
+        (PROVISIONAL_PROFILE, "PreToolUse", "apply_patch", "deny", "deny"),
+        (PROVISIONAL_PROFILE, "PermissionRequest", "Bash", "deny", "permission-deny"),
+        (PROVISIONAL_PROFILE, "PostToolUse", "Bash", "block", "block"),
+        (PROVISIONAL_PROFILE, "Stop", None, "block", "block"),
+        (PROVISIONAL_PROFILE, "SubagentStop", None, "block", "block"),
     ],
 )
 @pytest.mark.parametrize("http_bridge", [False, True])

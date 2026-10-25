@@ -422,6 +422,11 @@ fn render(
 /// `CODEX_CELLS` in `agent_watchdog/rules/api.py`.
 const DESKTOP_PROFILE: &str = "windows-desktop-26.1016.62342-0.163.0-alpha.11.2";
 
+/// A newer desktop app/backend pair no probe has covered. It renders only the actions that
+/// cannot change or approve a call (context, deny, block); the daemon demotes it to
+/// log-only if a denied call is seen to finish.
+const PROVISIONAL_PROFILE: &str = "windows-desktop-26.1021.31345-0.164.0-alpha.11.1";
+
 fn render_codex(profile: &str, event: &str, input: &Value, decision: &Decision) -> Option<Value> {
     if !cfg!(windows) {
         return None;
@@ -434,7 +439,7 @@ fn render_codex(profile: &str, event: &str, input: &Value, decision: &Decision) 
             .unwrap_or_else(|| "Blocked by a Watchdog rule.".to_owned())
     };
     let output = match (profile, event, tool, decision.action.as_str()) {
-        (DESKTOP_PROFILE, "SessionStart", _, "context")
+        (DESKTOP_PROFILE | PROVISIONAL_PROFILE, "SessionStart", _, "context")
         | ("windows-cli-0.160.0", "SessionStart" | "UserPromptSubmit", _, "context")
         | ("windows-cli-0.160.0", "PostToolUse", Some("Bash"), "context")
         | ("windows-cli-exec-0.162.0-alpha.17.2", "PreToolUse", Some("Bash"), "context")
@@ -445,7 +450,12 @@ fn render_codex(profile: &str, event: &str, input: &Value, decision: &Decision) 
                 "additionalContext": decision.context.clone()?,
             }
         }),
-        (DESKTOP_PROFILE, "PreToolUse", Some("Bash" | "apply_patch"), "deny")
+        (
+            DESKTOP_PROFILE | PROVISIONAL_PROFILE,
+            "PreToolUse",
+            Some("Bash" | "apply_patch"),
+            "deny",
+        )
         | ("windows-cli-0.160.0", "PreToolUse", Some("Bash"), "deny")
         | ("windows-cli-exec-0.162.0-alpha.17.2", "PreToolUse", Some("apply_patch"), "deny") => {
             json!({
@@ -477,7 +487,7 @@ fn render_codex(profile: &str, event: &str, input: &Value, decision: &Decision) 
                 }
             })
         }
-        (DESKTOP_PROFILE, "Stop" | "SubagentStop", _, "block")
+        (DESKTOP_PROFILE | PROVISIONAL_PROFILE, "Stop" | "SubagentStop", _, "block")
         | ("windows-cli-0.160.0", "SubagentStop", _, "block")
         | ("windows-cli-exec-0.162.0-alpha.17.2", "Stop", _, "block")
             if !stop_continuing(event, input) =>
@@ -487,12 +497,14 @@ fn render_codex(profile: &str, event: &str, input: &Value, decision: &Decision) 
                 "reason": reason(),
             })
         }
-        (DESKTOP_PROFILE, "PermissionRequest", Some("Bash"), "deny") => json!({
-            "hookSpecificOutput": {
-                "hookEventName": event,
-                "decision": { "behavior": "deny", "message": reason() },
-            }
-        }),
+        (DESKTOP_PROFILE | PROVISIONAL_PROFILE, "PermissionRequest", Some("Bash"), "deny") => {
+            json!({
+                "hookSpecificOutput": {
+                    "hookEventName": event,
+                    "decision": { "behavior": "deny", "message": reason() },
+                }
+            })
+        }
         // The only place a decision approves anything: `permit` on the one probed
         // permission prompt. Every other `allow`-like value stays silence.
         (DESKTOP_PROFILE, "PermissionRequest", Some("Bash"), "permit") => json!({
@@ -501,7 +513,7 @@ fn render_codex(profile: &str, event: &str, input: &Value, decision: &Decision) 
                 "decision": { "behavior": "allow" },
             }
         }),
-        (DESKTOP_PROFILE, "PostToolUse", Some("Bash"), "block") => json!({
+        (DESKTOP_PROFILE | PROVISIONAL_PROFILE, "PostToolUse", Some("Bash"), "block") => json!({
             "decision": "block",
             "reason": reason(),
         }),
