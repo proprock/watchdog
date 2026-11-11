@@ -361,6 +361,23 @@ def test_native_concurrent_spool_commits_without_a_second_inbox_quota(rust_adapt
     assert not (root / "inbox").exists()
 
 
+def test_native_admission_lock_contention_records_busy(rust_adapter, native_setup):
+    from agent_watchdog.resources import losses
+
+    paths, project = native_setup
+    with writer_lock(paths.data / "admission.lock"):
+        result = invoke(rust_adapter, paths, {"cwd": str(project.root)})
+
+    assert result.returncode == 0 and result.stdout == "{}\n"
+    assert not spool_files(paths)
+    counts = losses(paths.data)
+    assert {key: counts[key] for key in ("busy", "invalid", "quota")} == {
+        "busy": 1,
+        "invalid": 0,
+        "quota": 0,
+    }
+
+
 def test_native_concurrent_shared_spool_admission_enforces_one_quota(rust_adapter, native_setup):
     from concurrent.futures import ThreadPoolExecutor
 
