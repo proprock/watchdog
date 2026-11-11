@@ -33,10 +33,15 @@ def usage(root: Path) -> int:
     return total
 
 
+def headroom(limits: Limits, used: int, free: int) -> int:
+    """Bytes still admissible; `project_bytes == 0` means no quota, only free disk counts."""
+    room = free if limits.project_bytes == 0 else min(limits.project_bytes - used, free)
+    return room - limits.reserve_bytes
+
+
 def available(root: Path, limits: Limits) -> int:
-    return (
-        min(limits.project_bytes - usage(root), shutil.disk_usage(root).free) - limits.reserve_bytes
-    )
+    used = usage(root) if limits.project_bytes else 0
+    return headroom(limits, used, shutil.disk_usage(root).free)
 
 
 def losses(root: Path) -> dict[str, int]:

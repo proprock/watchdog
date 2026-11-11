@@ -62,19 +62,19 @@ Watchdog observes one user's own coding sessions, whose prompts and outputs have
 
 The core is the only database writer. The CLI uses read-only connections; WD-011 labels, pins, and purges and WD-012 finding verdicts use bounded command request files with request IDs and acknowledgments. Lifecycle controls remain a single-slot desired-state file. These are command mechanisms, not additional event Inboxes, and WD-149 leaves them intact. Read-only reports and exports work while the core is stopped. Require a schema version and sequential migrations; reject unsupported newer schemas with a clear error and no overwrite.
 
-Project defaults are configurable in user TOML, with overrides by project UUID. The spool cap is daemon-wide. `payload_bytes <= project_bytes`; old `inbox_bytes` entries are accepted but ignored with a warning:
+Project defaults are configurable in user TOML, with overrides by project UUID. The spool cap is daemon-wide. `payload_bytes <= project_bytes` when the quota is on; old `inbox_bytes` entries are accepted but ignored with a warning:
 
 | Setting | Value |
 |---|---:|
-| Content / aggregates and labels | 30 / 180 days (`0` disables time expiry) |
-| Total project quota, including WAL/artifacts | 2 GiB |
+| Content / aggregates and labels | never expire (0 / 0 days; configurable) |
+| Total project quota, including WAL/artifacts | none (0; configurable) |
 | Shared event spool, outside project quota | 64 MiB / 4096 files |
 | Maximum persisted event payload | 1 MiB |
 | Process logs | 5 files of 10 MiB each |
 
-Retention is a disk-budget control, not a privacy control: the data is the user's own, kept locally. Setting a day count to `0` disables time-based expiry for that class; the project quota and degraded-state loss counters still bound growth.
+Retention is a disk-budget control, not a privacy control: the data is the user's own, kept locally. Data is kept by default: a day count of `0` never expires that class and `project_bytes = 0` disables the quota. With no quota a full disk refuses admission and reports degraded status; nothing stored is deleted.
 
-Delete expired content first, then old unpinned content, then old unpinned sessions. Pin protects against deletion, not quota accounting: if space cannot be reclaimed, stop accepting content/events and report degraded status with loss counters. Never silently delete pinned data. Reserve space for checkpoint/diagnostics; serialize queue publishers with the shared data-directory admission lock and Store writes with a short project lock. Account for auxiliary files; SQLite cleanup uses incremental vacuum/checkpoint support. Never delete existing vendor transcripts. See the implemented policy and operational limits in [storage](storage.md).
+With a positive quota: delete expired content first, then old unpinned content, then old unpinned sessions. Pin protects against deletion, not quota accounting: if space cannot be reclaimed, stop accepting content/events and report degraded status with loss counters. Never silently delete pinned data. Reserve space for checkpoint/diagnostics; serialize queue publishers with the shared data-directory admission lock and Store writes with a short project lock. Account for auxiliary files; SQLite cleanup uses incremental vacuum/checkpoint support. Never delete existing vendor transcripts. See the implemented policy and operational limits in [storage](storage.md).
 
 ## Normalized events
 

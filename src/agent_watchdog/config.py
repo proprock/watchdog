@@ -31,10 +31,11 @@ def same_path(left: Path, right: Path) -> bool:
 class Limits(StrictModel):
     capture_content: bool = True
     reserve_bytes: Positive = 1024**2
-    content_days: NonNegative = 30
-    metrics_days: NonNegative = 180
+    # Zero keeps data forever (days) and disables the quota (project_bytes).
+    content_days: NonNegative = 0
+    metrics_days: NonNegative = 0
     transcript_failure_minutes: Positive = 15
-    project_bytes: Positive = 2 * 1024**3
+    project_bytes: NonNegative = 0
     payload_bytes: Positive = 1024**2
     log_files: Positive = 5
     log_bytes: Positive = 10 * 1024**2
@@ -64,7 +65,7 @@ class Limits(StrictModel):
 
     @model_validator(mode="after")
     def ordered_quotas(self) -> Self:
-        if self.payload_bytes > self.project_bytes:
+        if self.project_bytes and self.payload_bytes > self.project_bytes:
             raise ValueError("Require payload_bytes <= project_bytes")
         return self
 
@@ -75,7 +76,7 @@ class Overrides(StrictModel):
     content_days: NonNegative | None = None
     metrics_days: NonNegative | None = None
     transcript_failure_minutes: Positive | None = None
-    project_bytes: Positive | None = None
+    project_bytes: NonNegative | None = None
     payload_bytes: Positive | None = None
     policy_intervene: bool | None = None
     insights_llm_enabled: bool | None = None

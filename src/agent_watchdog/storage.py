@@ -1608,12 +1608,8 @@ class Store:
                 elif phase == "artifacts":
                     progress.phase = "vacuum"
                 else:
-                    available = (
-                        min(
-                            self.limits.project_bytes - progress.usage,
-                            shutil.disk_usage(self.root).free,
-                        )
-                        - self.limits.reserve_bytes
+                    available = resources.headroom(
+                        self.limits, progress.usage, shutil.disk_usage(self.root).free
                     )
                     progress.usage = 0
                     if available >= needed:
@@ -1667,8 +1663,15 @@ class Store:
             progress.phase = progress.after_reclaim
             return None
         if phase == "space":
-            progress.phase = "account"
-            return None
+            if self.limits.project_bytes:
+                progress.phase = "account"
+                return None
+            # No quota: nothing to sum, so skip the directory walk. A full disk
+            # refuses admission; it never deletes stored data.
+            free = shutil.disk_usage(self.root).free
+            space = resources.headroom(self.limits, 0, free) >= needed
+            progress.__dict__.update(MaintenanceState().__dict__)
+            return MaintenanceResult(pending=False, space_available=space, exhausted=not space)
         raise StorageError(f"Unknown maintenance phase: {phase}")
 
     def _maintenance_retention(self, now: datetime) -> None:

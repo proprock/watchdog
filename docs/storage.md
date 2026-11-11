@@ -21,10 +21,10 @@ queued = publish(paths, event)
 | Setting | Default | Meaning |
 | --- | --- | --- |
 | `capture_content` | true | Capture selected native text fields; false keeps metadata only |
-| `content_days` | 30 | Expire provider payload and artifact references; `0` disables time expiry (quota still applies) |
-| `metrics_days` | 180 | Expire events and replay fingerprints; `0` disables time expiry (quota still applies) |
+| `content_days` | 0 | Expire provider payload and artifact references after this many days; `0` never expires |
+| `metrics_days` | 0 | Expire events and replay fingerprints after this many days; `0` never expires |
 | `transcript_failure_minutes` | 15 | Keep a project degraded after a recent transcript-reader failure; historical gaps remain diagnostic |
-| `project_bytes` | 2 GiB | Account for regular files under the project data directory |
+| `project_bytes` | 0 | Quota for regular files under the project data directory; `0` disables the quota (only free disk minus `reserve_bytes` limits growth) |
 | `payload_bytes` | 1 MiB | Bound raw hook input and the resolved project's canonical envelope |
 | `reserve_bytes` | 1 MiB | Withhold room for cleanup and diagnostics |
 | `log_files`, `log_bytes`, `log_level` | 5, 10 MiB, `INFO` | Global daemon diagnostic log retention and threshold |
@@ -36,7 +36,13 @@ each. This margin is not a preallocated reservation against other applications.
 Filesystem allocation overhead and unrelated writers are outside this cooperative
 quota. Impractically small budgets refuse initialization or new events.
 
-`payload_bytes` must not exceed `project_bytes`. Older `inbox_bytes` entries in
+With `project_bytes = 0` admission checks only free disk space and skips the
+directory walk. A full disk then refuses new events, counts the loss and reports
+the project degraded; it never deletes stored data. `doctor` lists each
+project's effective `content_days`, `metrics_days` and `quota` (`disabled` when
+the quota is off).
+
+When `project_bytes` is positive, `payload_bytes` must not exceed it. Older `inbox_bytes` entries in
 defaults or project overrides are accepted but ignored with a warning. They do
 not configure the unified spool, whose daemon-wide limits are 64 MiB and 4096
 files. The native adapter and Python publishers share `<data>/admission.lock`
@@ -341,10 +347,10 @@ The daemon starts periodic maintenance on first access and at most once per
 minute thereafter; unfinished phases resume on later ticks under the shared
 budget. Storage admission also requests cleanup under quota pressure.
 Retention is a disk-budget control over the user's own local data, not a privacy
-control. Retention uses received time. By default unpinned provider payload and
-artifact references expire after 30 days and events after 180 days;
-`content_days = 0` / `metrics_days = 0` disable time-based expiry, leaving the
-project quota and degraded-state loss counters as the only bound.
+control. Retention uses received time. By default nothing expires
+(`content_days = 0`, `metrics_days = 0`, `project_bytes = 0`); set positive day
+counts to expire unpinned provider payload and artifact references or events,
+and a positive `project_bytes` to enforce a quota with pressure cleanup.
 Payload is removed as a unit so unknown provider fields cannot retain text
 past the configured window. Core event identity, kind, times, and availability
 remain.

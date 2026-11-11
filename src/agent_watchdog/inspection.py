@@ -1086,6 +1086,7 @@ def doctor(
     last_events: dict[str, datetime] = {}
     for project in config.projects:
         root = paths.project_data(project.id)
+        limits = project.overrides.apply(config.defaults)
         state: dict = {"state": "unavailable"}
         try:
             if (root / "events.sqlite3").exists():
@@ -1104,11 +1105,7 @@ def doctor(
                             last_events[provider] = seen
             counters = resources.losses(root)
             used = resources.usage(root)
-            capacity = (
-                resources.available(root, project.overrides.apply(config.defaults))
-                if root.exists()
-                else None
-            )
+            capacity = resources.available(root, limits) if root.exists() else None
         except (OSError, ValueError, sqlite3.Error) as error:
             state = {"state": "error", "error": type(error).__name__}
             counters, used, capacity = None, None, None
@@ -1122,6 +1119,11 @@ def doctor(
                 "losses": counters,
                 "used_bytes": used,
                 "available_bytes": capacity,
+                "limits": {
+                    "content_days": limits.content_days,
+                    "metrics_days": limits.metrics_days,
+                    "quota": limits.project_bytes or "disabled",
+                },
             }
         )
     core = daemon.status(paths)

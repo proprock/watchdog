@@ -13,18 +13,19 @@ pipeline_telemetry = true
 capture_content = true
 # Keep this many bytes available for cleanup and diagnostic work per project.
 reserve_bytes = 1048576
-# Retain provider payloads and their artifact references for this many days; set
-# to 0 to disable time-based expiry and retain them until quota pressure.
-content_days = 30
+# Retain provider payloads and their artifact references for this many days;
+# 0 (the default) never expires them.
+content_days = 0
 # Retain events, metrics, labels, and replay fingerprints for this many days;
-# set to 0 to disable time-based expiry and retain them until quota pressure.
-metrics_days = 180
+# 0 (the default) never expires them.
+metrics_days = 0
 # Keep the daemon degraded for this many minutes after a hook references a
 # transcript source that cannot be enriched. Historical reader gaps stay stored
 # for diagnostics but do not hold the health status after this window.
 transcript_failure_minutes = 15
-# Maximum total size of regular files stored for one project (2 GiB).
-project_bytes = 2147483648
+# Maximum total size of regular files stored for one project; 0 (the default)
+# disables the quota, so only free disk space minus reserve_bytes limits growth.
+project_bytes = 0
 # Maximum size of one incoming event payload (1 MiB).
 payload_bytes = 1048576
 # Keep this many daemon diagnostic files, including the active watchdog.log.
@@ -49,7 +50,7 @@ policy_intervene = true
 insights_llm_enabled = true
 
 # The quota relationship must remain:
-# payload_bytes <= project_bytes
+# payload_bytes <= project_bytes (when project_bytes is not 0)
 # Old inbox_bytes entries are accepted but ignored, with a warning. Pending events
 # share one daemon-wide spool capped at 64 MiB and 4096 files.
 
