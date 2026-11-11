@@ -373,3 +373,22 @@ def test_persisted_envelope_cannot_generate_new_identity_on_replay(tmp_path, eve
     with Store(tmp_path, event.project_id) as store:
         assert inbox.drain(store).quarantined == 1
         assert store.events() == []
+
+
+def test_transcript_source_listing_omits_large_reader_state(tmp_path, event):
+    with Store(tmp_path, event.project_id) as store:
+        store.connection.execute(
+            "INSERT INTO transcript_sources (provider, session_id, path, last_seen, tail, counters) "
+            "VALUES (?, ?, ?, ?, ?, ?)",
+            (
+                "codex",
+                "session-1",
+                "transcript.jsonl",
+                "2026-10-06T00:00:00+00:00",
+                b"partial",
+                "{}",
+            ),
+        )
+        source = store.transcript_sources()[0]
+        assert "tail" not in source
+        assert "counters" not in source
