@@ -225,3 +225,15 @@ def test_invalid_backlog_evidence_does_not_crash_status(paths, backlog):
         report = daemon.status(paths)
     assert report["state"] == "degraded"
     assert "queue_or_configuration_unavailable" in report["reasons"]
+
+
+def test_status_reports_losses_for_all_forty_projects(paths, tmp_path, monkeypatch):
+    from uuid import uuid4
+
+    from agent_watchdog.config import Config, Project
+
+    projects = [Project(id=uuid4(), root=tmp_path / f"project-{i}") for i in range(40)]
+    monkeypatch.setattr(daemon, "load_config", lambda _: Config(projects=tuple(projects)))
+    report = daemon.status(paths)
+    assert all(str(project.id) in report["losses"] for project in projects)
+    assert report["health"]["storage"]["unavailable"] is False
