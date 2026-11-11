@@ -1,9 +1,10 @@
 import os
 import subprocess
+from pathlib import Path
 
 import pytest
 
-from agent_watchdog.config import Config, load_config, save_config
+from agent_watchdog.config import Config, Pricing, Rules, load_config, save_config
 from agent_watchdog.registry import Registry, RegistryError
 
 
@@ -163,6 +164,44 @@ def test_trusted_git_repository_is_auto_added_once(repository, tmp_path):
     assert linked is not None and not added
     assert linked.project_id == resolution.project_id
     assert linked.checkout_id != resolution.checkout_id
+
+
+def customized_config(**extra):
+    return Config(
+        pipeline_telemetry=False,
+        pricing=Pricing(tariffs=Path(os.path.abspath("tariffs.toml"))),
+        rules=Rules(disabled=["some_rule"], approved={"user_rule": "a" * 64}),
+        **extra,
+    )
+
+
+def assert_sections_kept(registry):
+    assert registry.config.pipeline_telemetry is False
+    assert registry.config.pricing == customized_config().pricing
+    assert registry.config.rules == customized_config().rules
+
+
+def test_registry_mutations_keep_every_configuration_section(tmp_path):
+    trusted = tmp_path / "repos"
+    plain = tmp_path / "plain"
+    moved = tmp_path / "moved"
+    for directory in (trusted, plain):
+        directory.mkdir()
+    registry = Registry(customized_config(auto_add_projects=True, trusted_projects_dir=trusted))
+
+    project = registry.add(plain)
+    assert_sections_kept(registry)
+    plain.rename(moved)
+    registry.relocate(project.id, moved)
+    assert_sections_kept(registry)
+    registry.remove(project.id)
+    assert_sections_kept(registry)
+    repository = trusted / "project"
+    repository.mkdir()
+    subprocess.run(["git", "-C", str(repository), "init"], check=True, capture_output=True)
+    _, added = registry.resolve_or_auto_add(repository)
+    assert added
+    assert_sections_kept(registry)
 
 
 def test_auto_add_rejects_non_git_and_outside_trusted_directory(repository, tmp_path):

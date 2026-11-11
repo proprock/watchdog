@@ -18,6 +18,7 @@ from agent_watchdog.config import (
     Config,
     Limits,
     Overrides,
+    Pricing,
     Project,
     Rules,
     UserPaths,
@@ -34,6 +35,7 @@ from agent_watchdog.daemon import (
     launch,
     mutate_registry,
     publish,
+    resolve_or_auto_register,
     start,
     status,
     stop,
@@ -386,6 +388,29 @@ def test_spool_trusted_git_project_is_auto_added_and_admitted(paths, tmp_path):
     project = persisted.projects[0]
     assert project.root == repository.resolve()
     assert [event.kind for event in stored_events(paths, project)] == ["turn.end"]
+
+
+def test_auto_registration_keeps_rules_and_pricing_on_disk(paths, tmp_path):
+    trusted = tmp_path / "repos"
+    repository = trusted / "new-project"
+    repository.mkdir(parents=True)
+    subprocess.run(["git", "-C", str(repository), "init"], check=True, capture_output=True)
+    config = Config(
+        auto_add_projects=True,
+        trusted_projects_dir=trusted,
+        pricing=Pricing(tariffs=tmp_path / "tariffs.toml"),
+        rules=Rules(disabled=["some_rule"], approved={"user_rule": "a" * 64}),
+    )
+    save_config(paths.config, config)
+
+    _, resolution = resolve_or_auto_register(paths, repository)
+
+    assert resolution is not None
+    text = paths.config.read_text(encoding="utf-8")
+    assert "[rules" in text and "[pricing]" in text
+    persisted = load_config(paths.config)
+    assert persisted.rules == config.rules
+    assert persisted.pricing == config.pricing
 
 
 def test_spool_drain_enforces_the_project_payload_limit(paths, tmp_path):
