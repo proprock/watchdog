@@ -153,12 +153,9 @@ class Registry:
     def _replace(self, projects: tuple[Project, ...]) -> None:
         # Validate before changing state, including duplicate and overlap checks.
         try:
-            updated = Config(
-                defaults=self.config.defaults,
-                projects=projects,
-                auto_add_projects=self.config.auto_add_projects,
-                trusted_projects_dir=self.config.trusted_projects_dir,
-            )
+            # Rebuild from every field so a section added to Config is kept automatically.
+            fields = {name: getattr(self.config, name) for name in Config.model_fields}
+            updated = Config.model_validate({**fields, "projects": projects})
         except ValueError as error:
             raise RegistryError("Project registration conflicts with the registry") from error
         self.config = updated

@@ -22,22 +22,6 @@ Owner decisions of 2026-11-11 that every Split task follows:
 
 Line numbers in these tasks refer to commit `0d5e984`. Paths under `insights/` exist after WD-184. The source checkout of the insights program is the sibling repository aliased `project-b` in `LIVE.md`; never write its real name, its old command name or its old home directory into committed text.
 
-- [ ] **WD-208 - Registry mutations must keep every configuration section.** P0. No dependencies.
-  - **Why.** `Registry._replace` (`src/agent_watchdog/registry.py:153-164`) rebuilds `Config` from four fields: `defaults`, `projects`, `auto_add_projects`, `trusted_projects_dir`. `pipeline_telemetry`, `pricing` and `rules` (with `rules.disabled` and the approved hashes) fall back to their defaults, and `save_config` writes that to disk. This happens on `project add`, `project remove`, `project relocate` and on daemon auto-registration (`daemon.resolve_or_auto_register`, `daemon.py:620-632`). WD-186 would turn it into a continuous wipe.
-  - **Fixed decisions.**
-    - Build the new configuration from all fields of the current one with only `projects` replaced, and validate it through `Config.model_validate`, so that a field added to `Config` later is kept without touching this method. Do not use `model_copy(update=...)` alone: it skips validation, and the duplicate and overlap checks in `Config.unique_projects` must still run.
-    - No other behaviour changes.
-  - **Steps.**
-    1. Red test in `tests/test_registry.py`: a `Config` with a non-default `rules` section (one disabled rule, one approved hash), `pricing.tariffs` set and `pipeline_telemetry = False`; call `add`, `remove`, `relocate` and `resolve_or_auto_add`; assert the three sections are unchanged after each.
-    2. Red test at the file level (next to the auto-add test at `tests/test_daemon.py:374`): after an auto-registration the configuration file on disk still holds the `[rules]` and `[pricing]` sections.
-    3. Fix `_replace`.
-    4. Back up the live configuration, then update the live instance by the `LIVE.md` procedure.
-  - **Out of scope.** Recovering sections the live configuration may already have lost: report to the user whether the live file has `[rules.approved]` and `[pricing]`, do not reconstruct them.
-  - **Acceptance:**
-    - both tests fail before the fix and pass after it;
-    - `uv run pytest tests/test_registry.py tests/test_daemon.py tests/test_contracts.py` passes, then the full suite;
-    - the report states what the live configuration contained before and after the update.
-
 - [ ] **WD-209 - Green lint and one Ruff rule set for the whole repository.** P0. No dependencies.
   - **Why.** At `0d5e984` `uv run ruff check .` reports 18 `E501` and `uv run ruff format --check .` reports one file, all in `scripts/kaboost_audit_tdd.py`. That file is managed by kaBoost (its first line is a `kaboost:begin ... sha=` marker), so reformatting it makes it diverge from its source. The insights package uses a stricter rule set (`SIM`, `PTH`); owner decision 5 requires one rule set. A local `uv build` also packs untracked `AUDIT-*.md` files into the sdist.
   - **Fixed decisions.**
