@@ -30,7 +30,7 @@ def test_expiry_preserves_pins_and_replay_identity(tmp_path):
         event(project, 200, "old"),
         event(project, 200, "pinned"),
     )
-    with Store(tmp_path, project) as store:
+    with Store(tmp_path, project, limits=Limits(content_days=30, metrics_days=180)) as store:
         for item in (recent, old, pinned):
             store.put(item, artifacts={"stdout": b"text"})
         store.pin("pinned")
@@ -101,7 +101,7 @@ def test_concurrent_publish_obeys_spool_quota(tmp_path):
 
 def test_cleanup_reclaims_database_and_only_owned_files(tmp_path):
     project = uuid4()
-    with Store(tmp_path, project) as store:
+    with Store(tmp_path, project, limits=Limits(content_days=30, metrics_days=180)) as store:
         for _ in range(20):
             store.put(event(project, 200))
         store.connection.execute("PRAGMA wal_checkpoint(TRUNCATE)")

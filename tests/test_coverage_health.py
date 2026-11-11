@@ -88,6 +88,16 @@ def test_doctor_fails_on_a_recent_schema_mismatch(tmp_path, monkeypatch):
     assert "adapter_schema_mismatch" in {item["code"] for item in report["warnings"]}
 
 
+def test_doctor_reports_effective_retention_and_disabled_quota(tmp_path, monkeypatch):
+    paths, _ = setup(tmp_path, monkeypatch)
+    report = inspection.doctor(paths, now=datetime.now(UTC), transcript_roots={})
+    assert report["projects"][0]["limits"] == {
+        "content_days": 0,
+        "metrics_days": 0,
+        "quota": "disabled",
+    }
+
+
 def test_doctor_ignores_a_mismatch_older_than_the_window(tmp_path, monkeypatch):
     paths, _ = setup(tmp_path, monkeypatch)
     queue = Spool(paths.data)

@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import cast
 from uuid import uuid4
 
+from agent_watchdog.config import Limits
 from agent_watchdog.events import Envelope
 from agent_watchdog.storage import Store
 from agent_watchdog.transcripts import FAILURE_CODES, enrich
@@ -576,7 +577,8 @@ def test_bad_usage_value_records_a_durable_gap(tmp_path):
 def test_unreadable_transcript_isolates_and_is_retired_by_retention(tmp_path):
     project = uuid4()
     missing = tmp_path / "missing.jsonl"
-    with Store(tmp_path / "data", project) as store:
+    limits = Limits(content_days=30, metrics_days=180)
+    with Store(tmp_path / "data", project, limits=limits) as store:
         store.put(hook(project, SESSION, missing))
         assert enrich(store).accepted == 0
         assert store.put(

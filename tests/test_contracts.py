@@ -22,10 +22,10 @@ from agent_watchdog.events import Envelope
 
 def test_missing_config_uses_defaults_without_creating_files(tmp_path):
     config = load_config(tmp_path / "config.toml")
-    assert config.defaults.content_days == 30
-    assert config.defaults.metrics_days == 180
+    assert config.defaults.content_days == 0
+    assert config.defaults.metrics_days == 0
     assert config.defaults.transcript_failure_minutes == 15
-    assert config.defaults.project_bytes == 2 * 1024**3
+    assert config.defaults.project_bytes == 0
     assert config.projects == ()
     assert config.auto_add_projects is False
     assert config.trusted_projects_dir is None
@@ -125,7 +125,7 @@ def test_project_overrides_round_trip_and_do_not_change_other_projects(tmp_path)
     restored = load_config(path)
     assert restored == config
     assert first.overrides.apply(restored.defaults).content_days == 7
-    assert second.overrides.apply(restored.defaults).content_days == 30
+    assert second.overrides.apply(restored.defaults).content_days == 0
     assert second.overrides.apply(restored.defaults).metrics_days == 90
     legacy = tmp_path / "legacy-inbox.toml"
     legacy.write_text("[defaults]\ninbox_bytes = 123\n")

@@ -5,10 +5,20 @@ import time
 from datetime import UTC, datetime, timedelta
 from uuid import uuid4
 
-from agent_watchdog import storage
+import pytest
+
+from agent_watchdog import resources, storage
 from agent_watchdog.config import Limits
 from agent_watchdog.events import Envelope
-from agent_watchdog.storage import MaintenanceBudget, MaintenancePending, MaintenanceState, Store
+from agent_watchdog.storage import (
+    MaintenanceBudget,
+    MaintenancePending,
+    MaintenanceState,
+    QuotaExceeded,
+    Store,
+)
+
+EXPIRING = Limits(content_days=30, metrics_days=180)
 
 
 def event(project, days=0, session="session"):
@@ -31,7 +41,7 @@ def test_only_unstripped_cutoff_content_is_parsed(tmp_path, monkeypatch):
         event(project, 200),
         event(project, 200, "pinned"),
     )
-    with Store(tmp_path, project) as store:
+    with Store(tmp_path, project, limits=EXPIRING) as store:
         for item in (recent, content, metrics, pinned):
             store.put(item)
         store.pin("pinned")
@@ -62,7 +72,7 @@ def test_sql_cutoff_compares_instants_across_timezone_offsets(tmp_path):
     recent = event(project).model_copy(
         update={"received_at": datetime.fromisoformat("2026-09-16T23:00:00-02:00")}
     )
-    with Store(tmp_path, project) as store:
+    with Store(tmp_path, project, limits=EXPIRING) as store:
         store.put(expired)
         store.put(recent)
         store.maintain(now=now)
@@ -73,7 +83,7 @@ def test_sql_cutoff_compares_instants_across_timezone_offsets(tmp_path):
 
 def test_expired_content_is_committed_in_bounded_groups(tmp_path):
     project = uuid4()
-    with Store(tmp_path, project) as store:
+    with Store(tmp_path, project, limits=EXPIRING) as store:
         expired = [event(project, 40) for _ in range(70)]
         with store.batch():
             for item in expired:
@@ -90,7 +100,7 @@ def test_expired_content_is_committed_in_bounded_groups(tmp_path):
 def test_expired_deadline_does_no_work_and_resumes_across_store_opens(tmp_path, monkeypatch):
     project = uuid4()
     progress = MaintenanceState()
-    with Store(tmp_path, project, maintenance_state=progress) as store:
+    with Store(tmp_path, project, limits=EXPIRING, maintenance_state=progress) as store:
         store.put(event(project, 40))
         parsed = []
         original = storage.persisted_envelope
@@ -103,7 +113,7 @@ def test_expired_deadline_does_no_work_and_resumes_across_store_opens(tmp_path, 
         result = store.maintain(deadline=time.monotonic() - 1)
         assert result.pending and not result.exhausted
         assert parsed == []
-    with Store(tmp_path, project, maintenance_state=progress) as store:
+    with Store(tmp_path, project, limits=EXPIRING, maintenance_state=progress) as store:
         assert not store.maintain().pending
         assert len(parsed) == 1
 
@@ -111,7 +121,7 @@ def test_expired_deadline_does_no_work_and_resumes_across_store_opens(tmp_path, 
 def test_interrupted_content_scan_finishes_without_parsing_twice(tmp_path, monkeypatch):
     project = uuid4()
     progress = MaintenanceState()
-    with Store(tmp_path, project, maintenance_state=progress) as store:
+    with Store(tmp_path, project, limits=EXPIRING, maintenance_state=progress) as store:
         for _ in range(70):
             store.put(event(project, 40))
         clock = [0.0]
@@ -132,7 +142,7 @@ def test_interrupted_content_scan_finishes_without_parsing_twice(tmp_path, monke
             "SELECT COUNT(*) FROM events WHERE "
             "json_extract(envelope, '$.availability.content')='unavailable'"
         ).fetchone()[0] == len(parsed)
-    with Store(tmp_path, project, maintenance_state=progress) as store:
+    with Store(tmp_path, project, limits=EXPIRING, maintenance_state=progress) as store:
         for _ in range(100):
             result = store.maintain(deadline=clock[0] + 1.0)
             if not result.pending:
@@ -156,6 +166,37 @@ def test_quota_cleanup_deadline_is_transient(tmp_path, monkeypatch):
             raise AssertionError("Quota cleanup must defer when its tick has expired")
 
 
+def test_defaults_keep_data_without_expiry_or_quota():
+    limits = Limits()
+    assert (limits.content_days, limits.metrics_days, limits.project_bytes) == (0, 0, 0)
+    assert Limits(project_bytes=0, payload_bytes=5).payload_bytes == 5
+
+
+def test_available_without_quota_is_free_space_minus_reserve(tmp_path, monkeypatch):
+    disk = storage.shutil.disk_usage(tmp_path)
+    monkeypatch.setattr(resources.shutil, "disk_usage", lambda _: disk._replace(free=500_000))
+
+    def walk(_):
+        raise AssertionError("no directory walk without a quota")
+
+    monkeypatch.setattr(resources, "usage", walk)
+    assert resources.available(tmp_path, Limits(reserve_bytes=1000)) == 499_000
+
+
+def test_disk_pressure_without_quota_refuses_admission_and_deletes_nothing(tmp_path, monkeypatch):
+    project = uuid4()
+    old = event(project, 400)
+    with Store(tmp_path, project) as store:
+        store.put(old)
+        disk = storage.shutil.disk_usage(tmp_path)
+        monkeypatch.setattr(resources.shutil, "disk_usage", lambda _: disk._replace(free=0))
+        result = store.maintain()
+        assert not result.pending and result.exhausted and not result.space_available
+        with pytest.raises(QuotaExceeded):
+            store.put(event(project))
+        assert store.events() == [old]
+
+
 def test_pinned_quota_exhaustion_is_final(tmp_path):
     project = uuid4()
     with Store(tmp_path, project) as store:
@@ -169,7 +210,7 @@ def test_pinned_quota_exhaustion_is_final(tmp_path):
 
 def test_shared_budget_charges_cleanup_time_only_and_never_forces_a_chunk(tmp_path, monkeypatch):
     project = uuid4()
-    with Store(tmp_path, project) as store:
+    with Store(tmp_path, project, limits=EXPIRING) as store:
         for _ in range(3):
             store.put(event(project, 40))
         clock, parsed = [0.0], []
@@ -195,7 +236,7 @@ def test_shared_budget_charges_cleanup_time_only_and_never_forces_a_chunk(tmp_pa
 def test_files_and_accounting_resume_without_unbounded_available_scan(tmp_path, monkeypatch):
     project = uuid4()
     progress = MaintenanceState()
-    with Store(tmp_path, project, maintenance_state=progress) as store:
+    with Store(tmp_path, project, limits=EXPIRING, maintenance_state=progress) as store:
         directory = tmp_path / "artifacts"
         directory.mkdir(exist_ok=True)
         for index in range(80):
@@ -242,7 +283,7 @@ def test_pressure_strips_oldest_unpinned_content_and_stops_when_space_returns(
 ):
     project = uuid4()
     recent, old, pinned = event(project), event(project, 100), event(project, 200, "pinned")
-    with Store(tmp_path, project, limits=Limits(content_days=0, metrics_days=0)) as store:
+    with Store(tmp_path, project, limits=Limits(project_bytes=2 * 1024**3)) as store:
         for item in (recent, old, pinned):
             store.put(item)
         store.pin("pinned")

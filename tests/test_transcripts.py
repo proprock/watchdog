@@ -8,6 +8,7 @@ from uuid import uuid4
 import pytest
 
 import agent_watchdog.transcripts as transcripts
+from agent_watchdog.config import Limits
 from agent_watchdog.events import Envelope
 from agent_watchdog.storage import StorageError, Store
 from agent_watchdog.transcripts import FAILURE_CODES, enrich, failure_code
@@ -182,7 +183,8 @@ def test_unreadable_source_does_not_block_following_hook_or_source_retention(tmp
     project = uuid4()
     session = "session-1"
     missing = tmp_path / "missing.jsonl"
-    with Store(tmp_path / "data", project) as store:
+    limits = Limits(content_days=30, metrics_days=180)
+    with Store(tmp_path / "data", project, limits=limits) as store:
         store.put(hook(project, session, missing))
         assert enrich(store).accepted == 0
         # An enrichment failure is isolated from normal event admission.
