@@ -18,7 +18,7 @@ from agent_watchdog.state import SessionState, apply, initial, key_of
 
 FIXTURE = Path(__file__).parent / "fixtures" / "hooks" / "claude.json"
 START = datetime(2026, 10, 7, 12, 0, tzinfo=UTC)
-RESOLUTION = Resolution(uuid4(), uuid4(), Path("."))
+RESOLUTION = Resolution(uuid4(), uuid4(), Path())
 PATHS = UserPaths(Path("c"), Path("d"), Path("r"))
 # The default-off rule is part of what ships, so every replay switches it on.
 CONFIG = Config(rules=Rules(enabled=["stop_without_verification"]))

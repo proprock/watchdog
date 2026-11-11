@@ -5,6 +5,7 @@ does not stop a thread; its slot remains occupied until it actually exits.
 """
 
 import ast
+import contextlib
 import hashlib
 import json
 import queue
@@ -73,10 +74,9 @@ class PythonRuleTimeout(TimeoutError):
 
 def _report(on_error: ErrorHandler | None, name: str, error: Exception) -> None:
     if on_error is not None:
-        try:
+        # A diagnostic must not close the channel.
+        with contextlib.suppress(Exception):
             on_error(name, error)
-        except Exception:  # noqa: BLE001 - a diagnostic must not close the channel
-            pass
 
 
 def _decision(result: object, rule: PythonRule) -> Decision:

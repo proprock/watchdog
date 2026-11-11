@@ -12,7 +12,7 @@ from agent_watchdog.state import SessionState, apply, fold, initial, trailing_re
 
 FIXTURE = Path(__file__).parent / "fixtures" / "hooks" / "claude.json"
 START = datetime(2026, 10, 1, 12, 0, tzinfo=UTC)
-RESOLUTION = Resolution(uuid4(), uuid4(), Path("."))
+RESOLUTION = Resolution(uuid4(), uuid4(), Path())
 
 
 def _at(seconds: int) -> str:

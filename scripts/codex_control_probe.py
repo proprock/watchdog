@@ -663,7 +663,7 @@ def main():
         parser.error(
             "--production-adapter requires an absolute binary and noninteractive patch-deny case"
         )
-    command_line(args.codex, case, Path("."), interactive=args.interactive)
+    command_line(args.codex, case, Path(), interactive=args.interactive)
     record = run_case(args, case)
     # Exclusive creation prevents silently replacing an earlier attempt.
     with args.output.open("x", encoding="utf-8", newline="\n") as stream:

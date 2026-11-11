@@ -116,11 +116,10 @@ def test_interrupted_reader_window_repairs_attribution_on_open(tmp_path):
     usage = event(project, "usage", 5)
     with Store(tmp_path, project) as store:
         store.put(usage)
-        with pytest.raises(RuntimeError, match="interrupted"):
-            with store.defer_codex_state():
-                store.put(context(project, 1, model="gpt-a", reasoning_effort="high"))
-                assert values(store, usage)[0] is None
-                raise RuntimeError("interrupted")
+        with pytest.raises(RuntimeError, match="interrupted"), store.defer_codex_state():
+            store.put(context(project, 1, model="gpt-a", reasoning_effort="high"))
+            assert values(store, usage)[0] is None
+            raise RuntimeError("interrupted")
     with Store(tmp_path, project) as store:
         assert values(store, usage) == ("gpt-a", "inherited", "high", "inherited")
         assert store.connection.execute("SELECT * FROM codex_attribution_dirty").fetchall() == []
@@ -141,9 +140,11 @@ def test_failed_reprojection_keeps_atomic_repair_marker(tmp_path, monkeypatch):
         store.put(usage)
         with monkeypatch.context() as patch:
             patch.setattr(codex_attribution, "refresh", fail)
-            with pytest.raises(RuntimeError, match="failed refresh"):
-                with store.defer_codex_state():
-                    store.put(context(project, 1, model="gpt-a"))
+            with (
+                pytest.raises(RuntimeError, match="failed refresh"),
+                store.defer_codex_state(),
+            ):
+                store.put(context(project, 1, model="gpt-a"))
         assert values(store, usage)[0] is None
         assert store.connection.execute("SELECT * FROM codex_attribution_dirty").fetchall()
     with Store(tmp_path, project) as store:

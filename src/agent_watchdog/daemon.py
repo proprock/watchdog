@@ -12,7 +12,7 @@ import sys
 import threading
 import time
 from collections.abc import Callable, Iterator, Mapping
-from contextlib import ExitStack, closing, contextmanager, nullcontext
+from contextlib import ExitStack, closing, contextmanager, nullcontext, suppress
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from uuid import NAMESPACE_URL, UUID, uuid4, uuid5
@@ -561,10 +561,8 @@ def write_spool_limits(paths: UserPaths, config: Config) -> None:
 
 def launch(paths: UserPaths) -> None:
     atomic_write(paths.runtime / "status.json", b"{}")
-    try:
+    with suppress(ConfigError, OSError):
         write_spool_limits(paths, load_config(paths.config))
-    except (ConfigError, OSError):
-        pass
     command = [
         sys.executable,
         "-m",
@@ -849,10 +847,8 @@ def _verdict_fields(request: Mapping[str, object]) -> tuple[str, str, str, str, 
 
 
 def _discard(path: Path) -> None:
-    try:
+    with suppress(OSError):
         path.unlink()
-    except OSError:
-        pass
 
 
 def _drain_spool(
@@ -1679,10 +1675,8 @@ def _policy_server(
         server.shutdown()
         server.server_close()
         thread.join(timeout=2)
-        try:
+        with suppress(OSError):
             socket_path.unlink(missing_ok=True)
-        except OSError:
-            pass
         yield _Channel(paths)
         return
     try:
@@ -1709,10 +1703,8 @@ def _policy_server(
                     )
             yield _Channel(paths, document, stats, server)
     finally:
-        try:
+        with suppress(OSError):
             socket_path.unlink(missing_ok=True)
-        except OSError:
-            pass
         server.shutdown()
         server.server_close()
         thread.join(timeout=2)

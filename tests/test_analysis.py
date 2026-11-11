@@ -1,6 +1,7 @@
 import os
 import subprocess
 from datetime import UTC, datetime, timedelta
+from pathlib import Path
 from uuid import uuid4
 
 import pytest
@@ -985,7 +986,7 @@ def test_checkout_fingerprint_is_unknown_when_an_untracked_file_cannot_be_read(
     def unreadable(*args, **kwargs):
         raise PermissionError("locked by another process")
 
-    monkeypatch.setattr("agent_watchdog.analysis.open", unreadable, raising=False)
+    monkeypatch.setattr(Path, "open", unreadable)
 
     result = unknown(git_diff_fingerprint(checkout))
     assert result.reason == "untracked_unreadable"

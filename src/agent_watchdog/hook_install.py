@@ -149,9 +149,14 @@ def change(
             adapter_artifact, paths.data / "native-adapters", install=apply
         )
     preview_artifact = adapter_artifact is not None and not apply
-    if adapter_executable is not None and not preview_artifact:
-        if not install or not adapter_executable.is_absolute() or not adapter_executable.is_file():
-            raise ValueError("Choose an existing absolute adapter executable for installation")
+    if (
+        adapter_executable is not None
+        and not preview_artifact
+        and (
+            not install or not adapter_executable.is_absolute() or not adapter_executable.is_file()
+        )
+    ):
+        raise ValueError("Choose an existing absolute adapter executable for installation")
     if not apply:
         return _change(
             target,

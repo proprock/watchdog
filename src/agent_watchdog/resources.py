@@ -5,7 +5,7 @@ import shutil
 import struct
 import time
 from collections.abc import Iterator
-from contextlib import ExitStack, contextmanager
+from contextlib import ExitStack, contextmanager, suppress
 from pathlib import Path
 
 from agent_watchdog.config import Limits
@@ -28,10 +28,8 @@ def usage(root: Path) -> int:
         for name in files:
             path = base / name
             if not path.is_symlink():
-                try:
+                with suppress(FileNotFoundError):
                     total += path.stat().st_size
-                except FileNotFoundError:
-                    pass
     return total
 
 

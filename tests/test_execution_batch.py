@@ -48,11 +48,10 @@ def test_reader_window_replays_once_per_affected_identity(tmp_path, monkeypatch)
 def test_interrupted_window_is_repaired_on_open_with_current_version(tmp_path):
     events = [edit(0), event(1, call="run", tool_input={"cmd": "pytest"}, response=terminal())]
     with Store(tmp_path, PROJECT) as store:
-        with pytest.raises(RuntimeError, match="interrupted"):
-            with store.defer_codex_state():
-                for item in events:
-                    store.put(item)
-                raise RuntimeError("interrupted reader")
+        with pytest.raises(RuntimeError, match="interrupted"), store.defer_codex_state():
+            for item in events:
+                store.put(item)
+            raise RuntimeError("interrupted reader")
         assert dirty(store) == [("session", "")]
         assert store.session_states() == {}
     with Store(tmp_path, PROJECT) as reopened:
@@ -73,9 +72,8 @@ def test_failed_flush_rolls_back_state_and_preserves_recovery_marker(tmp_path, m
             raise RuntimeError("failed replay")
 
         monkeypatch.setattr(store, "_write_state", failed)
-        with pytest.raises(RuntimeError, match="failed replay"):
-            with store.defer_codex_state():
-                store.put(second)
+        with pytest.raises(RuntimeError, match="failed replay"), store.defer_codex_state():
+            store.put(second)
         assert dirty(store) == [("session", "")]
         assert store.session_states()[KEY] == before
         assert store.touched[KEY] == before
@@ -109,9 +107,11 @@ def test_failed_raw_commit_cannot_leave_a_dirty_ghost(tmp_path, monkeypatch):
             raise RuntimeError("failed raw transaction")
 
         monkeypatch.setattr(store, "_apply_state", failed)
-        with pytest.raises(RuntimeError, match="failed raw transaction"):
-            with store.defer_codex_state():
-                store.put(edit(0))
+        with (
+            pytest.raises(RuntimeError, match="failed raw transaction"),
+            store.defer_codex_state(),
+        ):
+            store.put(edit(0))
         assert dirty(store) == []
         assert store.connection.execute("SELECT COUNT(*) FROM events").fetchone()[0] == 0
         assert store.connection.execute("SELECT COUNT(*) FROM receipts").fetchone()[0] == 0
@@ -122,11 +122,10 @@ def test_claude_state_remains_immediate_during_codex_window(tmp_path):
     item = edit(0).model_copy(
         update={"provider": "claude", "payload": {"claude": {"tool_name": "Edit"}}}
     )
-    with Store(tmp_path, PROJECT) as store:
-        with store.defer_codex_state():
-            store.put(item)
-            assert store.session_states()[("claude", "session", "")].calls == 1
-            assert dirty(store) == []
+    with Store(tmp_path, PROJECT) as store, store.defer_codex_state():
+        store.put(item)
+        assert store.session_states()[("claude", "session", "")].calls == 1
+        assert dirty(store) == []
 
 
 def test_purged_session_does_not_leave_dirty_keys_or_reappear(tmp_path):

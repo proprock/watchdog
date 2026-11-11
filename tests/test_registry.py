@@ -169,7 +169,7 @@ def test_trusted_git_repository_is_auto_added_once(repository, tmp_path):
 def customized_config(**extra):
     return Config(
         pipeline_telemetry=False,
-        pricing=Pricing(tariffs=Path(os.path.abspath("tariffs.toml"))),
+        pricing=Pricing(tariffs=Path.cwd().anchor / Path("tariffs.toml")),
         rules=Rules(disabled=["some_rule"], approved={"user_rule": "a" * 64}),
         **extra,
     )

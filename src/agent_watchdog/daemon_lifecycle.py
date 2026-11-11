@@ -1,5 +1,6 @@
 """Bounded durable evidence of starts that did not publish their first heartbeat."""
 
+import contextlib
 import json
 import math
 from pathlib import Path
@@ -69,10 +70,8 @@ def record_ready(data: Path) -> None:
     except _EVIDENCE_ERRORS:
         # A published heartbeat establishes a fresh healthy baseline even after corruption.
         last = None
-    try:
+    with contextlib.suppress(*_EVIDENCE_ERRORS):
         _write(data, [], last)
-    except _EVIDENCE_ERRORS:
-        pass
 
 
 def startup_evidence(data: Path, *, now: float) -> dict[str, int | float | None]:

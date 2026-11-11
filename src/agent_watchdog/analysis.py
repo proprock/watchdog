@@ -680,13 +680,13 @@ def _untracked_record(
     path = checkout / os.fsdecode(name)
     info = path.lstat()
     if stat.S_ISLNK(info.st_mode):  # hash the link itself; never follow it
-        target = hashlib.sha256(os.fsencode(os.readlink(path))).hexdigest()
+        target = hashlib.sha256(os.fsencode(path.readlink())).hexdigest()
         return name + b"\0link\0" + target.encode(), 0
     if not stat.S_ISREG(info.st_mode):  # a FIFO or device would block on open
         return name + b"\0other\0", 0
     digest = hashlib.sha256()
     size = 0
-    with open(path, "rb") as handle:
+    with path.open("rb") as handle:
         while chunk := handle.read(_READ_CHUNK):
             size += len(chunk)
             if size > budget:

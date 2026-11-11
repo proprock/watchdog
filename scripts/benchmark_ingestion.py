@@ -37,9 +37,11 @@ def _project_id(source_db: Path) -> UUID:
 
 def _backup(source: Path, destination: Path) -> None:
     destination.parent.mkdir(parents=True, exist_ok=True)
-    with closing(sqlite3.connect(f"file:{source.as_posix()}?mode=ro", uri=True)) as original:
-        with closing(sqlite3.connect(destination)) as copy:
-            original.backup(copy)
+    with (
+        closing(sqlite3.connect(f"file:{source.as_posix()}?mode=ro", uri=True)) as original,
+        closing(sqlite3.connect(destination)) as copy,
+    ):
+        original.backup(copy)
 
 
 def _record(checkout: Path, index: int) -> dict:

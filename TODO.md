@@ -22,22 +22,6 @@ Owner decisions of 2026-11-11 that every Split task follows:
 
 Line numbers in these tasks refer to commit `0d5e984`. Paths under `insights/` exist after WD-184. The source checkout of the insights program is the sibling repository aliased `project-b` in `LIVE.md`; never write its real name, its old command name or its old home directory into committed text.
 
-- [ ] **WD-209 - Green lint and one Ruff rule set for the whole repository.** P0. No dependencies.
-  - **Why.** At `0d5e984` `uv run ruff check .` reports 18 `E501` and `uv run ruff format --check .` reports one file, all in `scripts/kaboost_audit_tdd.py`. That file is managed by kaBoost (its first line is a `kaboost:begin ... sha=` marker), so reformatting it makes it diverge from its source. The insights package uses a stricter rule set (`SIM`, `PTH`); owner decision 5 requires one rule set. A local `uv build` also packs untracked `AUDIT-*.md` files into the sdist.
-  - **Fixed decisions.**
-    - `[tool.ruff] extend-exclude = ["scripts/kaboost_audit_tdd.py"]` with a comment that kaBoost manages the file. Do not edit the file.
-    - `[tool.ruff.lint] select = ["E", "F", "I", "UP", "B", "SIM", "PTH"]`. Fix the 41 findings in `src`, `tests` and `scripts` (14 `SIM105`, 13 `SIM117`, 4 `PTH201`, 3 `SIM102`, 3 `PTH100`, 1 each of `PTH123`, `SIM108`, `PTH115`, `PTH105`).
-    - Every fix preserves behaviour. Do not replace `os.path.abspath` with `Path.resolve()` (it follows symlinks) or `Path.absolute()` (it keeps `..`); keep the call and add `# noqa: PTH100` with that reason. Use the same pattern for any other `PTH` finding where the `pathlib` form differs on Windows.
-    - Add `/AUDIT-*.md` to `.gitignore` (`TENETS.md` already defines these as local files); hatchling then leaves them out of the sdist.
-  - **Steps.**
-    1. Commit 1 (`chore`): the exclude and the `.gitignore` line.
-    2. Commit 2 (`style`): the rule set and the 41 fixes; run `uv run ruff check . --fix` first, review its diff, then fix the rest by hand.
-  - **Out of scope.** Any refactoring beyond what a finding requires.
-  - **Acceptance:**
-    - `uv run ruff check .` and `uv run ruff format --check .` pass;
-    - `uv run pytest` and `uv run ty check` pass;
-    - after `uv build`, the sdist lists no `AUDIT-` file.
-
 - [ ] **WD-183 - Keep data by default: no expiry and no quota.** P0. No dependencies.
   - **Why.** Owner decision 4. Today content expires after `content_days` (default 30), events after `metrics_days` (default 180), and `project_bytes` (default 2 GiB) cannot be switched off because it is `Positive` (`config.py:37`, `:78`).
   - **Fixed decisions.**

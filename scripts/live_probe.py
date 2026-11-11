@@ -9,6 +9,7 @@ command-line interface; both spend provider quota and need a standalone console.
 from __future__ import annotations
 
 import argparse
+import contextlib
 import json
 import os
 import platform
@@ -1116,7 +1117,7 @@ def run_codex_control(args: argparse.Namespace) -> list[dict[str, object]]:
     names = sorted(CODEX_CASES) if args.all else args.case
     args.debug_log = None
     for name in names:
-        command_line(args.codex, CODEX_CASES[name], Path("."), interactive=args.interactive)
+        command_line(args.codex, CODEX_CASES[name], Path(), interactive=args.interactive)
     return [run_case(args, CODEX_CASES[name]) for name in names]
 
 
@@ -2733,14 +2734,10 @@ def handle_adapter_routed(directory: Path, adapter_argv: Sequence[str]) -> int:
     record.update(output=output, exit_status=status)
     if event == "Stop" and not output:
         record["files"] = _scratch_files(directory)
-        try:
+        with contextlib.suppress(OSError):
             case_file.write_text(IDLE, encoding="utf-8")  # a finished turn disarms the cell
-        except OSError:
-            pass
-    try:
+    with contextlib.suppress(OSError):
         _append_log(control / "probe.ndjson", record)
-    except OSError:
-        pass
     sys.stdout.buffer.write(stdout if stdout.strip() else b"{}\n")
     sys.stdout.buffer.flush()
     sys.stderr.buffer.write(stderr)
@@ -2898,10 +2895,8 @@ def collect_desktop_adapter(directory: Path, *, clean: bool) -> dict[str, object
         gathered.append((case, ClaudeEvidence(records=mine, stream=stream, files=files), version))
     pid_file = control / "daemon.pid"
     if pid_file.is_file():
-        try:
+        with contextlib.suppress(ValueError):
             _stop_pid(int(pid_file.read_text(encoding="utf-8")))
-        except ValueError:
-            pass
     removed = {"scratch": False}
     if clean:
         shutil.rmtree(directory, ignore_errors=True)
@@ -2937,10 +2932,8 @@ def _stop_pid(pid: int) -> None:
             creationflags=hidden_creationflags(),
         )
     else:
-        try:
+        with contextlib.suppress(OSError):
             os.kill(pid, 15)
-        except OSError:
-            pass
 
 
 def main() -> int:

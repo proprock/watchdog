@@ -221,11 +221,15 @@ class Config(Versioned):
                 )
                 if project.id == other.id or same_path(project.root, other.root) or same_common:
                     raise ValueError("Duplicate project identity")
-                if project.git_common_dir is None and other.git_common_dir is None:
-                    if project.root.is_relative_to(other.root) or other.root.is_relative_to(
-                        project.root
-                    ):
-                        raise ValueError("Overlapping non-Git project roots")
+                if (
+                    project.git_common_dir is None
+                    and other.git_common_dir is None
+                    and (
+                        project.root.is_relative_to(other.root)
+                        or other.root.is_relative_to(project.root)
+                    )
+                ):
+                    raise ValueError("Overlapping non-Git project roots")
         return self
 
 

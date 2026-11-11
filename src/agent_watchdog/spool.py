@@ -1,5 +1,6 @@
 """The bounded durable input queue shared by all event publishers."""
 
+import contextlib
 import json
 import stat
 import time
@@ -177,10 +178,9 @@ class Spool:
             "seen": tally,
             "last_at": datetime.now(UTC).isoformat(),
         }
-        try:
+        # Diagnostics must not stop the drain; the invalid counter still records the loss.
+        with contextlib.suppress(OSError):
             atomic_write(self.root / MISMATCH_FILE, json.dumps(document).encode())
-        except OSError:
-            pass  # Diagnostics must not stop the drain; the invalid counter still records the loss.
 
     def schema_mismatch(self) -> dict | None:
         """Return the cumulative record-schema mismatch report, or None if never observed."""

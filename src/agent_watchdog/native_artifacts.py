@@ -120,7 +120,7 @@ def install_artifact(
     try:
         if os.name != "nt":
             temporary.chmod(0o755)
-        os.replace(temporary, target_path)
+        temporary.replace(target_path)
     except OSError:
         temporary.unlink(missing_ok=True)
         raise

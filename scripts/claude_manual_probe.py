@@ -171,7 +171,8 @@ def _is_reparse(path: Path) -> bool:
 
 def _safe_target(directory: Path) -> Path:
     expanded = directory.expanduser()
-    absolute = Path(os.path.abspath(expanded))
+    # abspath normalizes without following symlinks; resolve() would follow them.
+    absolute = Path(os.path.abspath(expanded))  # noqa: PTH100
     current = Path(absolute.anchor)
     for part in absolute.parts[1:]:
         current /= part
@@ -446,9 +447,13 @@ def _selected_session(records: Sequence[dict[str, object]]) -> str | None:
     for row in records:
         payload = row.get("input")
         session = payload.get("session_id") if isinstance(payload, dict) else None
-        if row.get("event") == "UserPromptSubmit" and isinstance(session, str) and session:
-            if session not in sessions:
-                sessions.append(session)
+        if (
+            row.get("event") == "UserPromptSubmit"
+            and isinstance(session, str)
+            and session
+            and session not in sessions
+        ):
+            sessions.append(session)
     if len(sessions) > 1:
         raise ValueError(
             "multiple Claude sessions used this scratch case; prepare a fresh directory"

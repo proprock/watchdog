@@ -904,10 +904,7 @@ def _process_source(store: "Store", source: dict[str, object]) -> EnrichmentResu
         return EnrichmentResult()
     content = tail + raw
     lines = content.splitlines(keepends=True)
-    if lines and not lines[-1].endswith((b"\n", b"\r")):
-        tail = lines.pop()
-    else:
-        tail = b""
+    tail = lines.pop() if lines and not lines[-1].endswith((b"\n", b"\r")) else b""
     resume = offset + len(raw)
     if oversized:
         # Resume past the skipped line, or at its start until it is complete.

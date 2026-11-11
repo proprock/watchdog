@@ -4,7 +4,7 @@ import json
 import socket
 import threading
 from collections.abc import Callable, Iterator
-from contextlib import contextmanager
+from contextlib import contextmanager, suppress
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
@@ -57,10 +57,8 @@ def benchmark_http_server(
         scratch_discovery.write_text(json.dumps(published), encoding="utf-8")
         yield server
     finally:
-        try:
+        with suppress(OSError):
             scratch_discovery.unlink(missing_ok=True)
-        except OSError:
-            pass
         server.shutdown()
         server.server_close()
         thread.join(timeout=2)

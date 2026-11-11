@@ -41,7 +41,10 @@ def _stage(state: str, action: str | None = None, /, **evidence: object) -> dict
 
 
 def _same_path(left: str, right: object) -> bool:
-    return os.path.normcase(os.path.abspath(left)) == os.path.normcase(os.path.abspath(str(right)))
+    # abspath normalizes without following symlinks; resolve() would follow them.
+    return os.path.normcase(os.path.abspath(left)) == os.path.normcase(  # noqa: PTH100
+        os.path.abspath(str(right))  # noqa: PTH100
+    )
 
 
 def _hook_failure(reason: str, action: str, **evidence: object) -> tuple[dict, None]:

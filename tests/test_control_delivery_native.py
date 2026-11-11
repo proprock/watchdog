@@ -1,3 +1,4 @@
+import contextlib
 import json
 import socket
 import subprocess
@@ -83,10 +84,9 @@ class FakePolicy:
             if self.delay:
                 time.sleep(self.delay)
             if self.response is not None:
-                try:
+                # The timed-out adapter has already failed open.
+                with contextlib.suppress(OSError):
                     conn.sendall(self.response)
-                except OSError:
-                    pass  # The timed-out adapter has already failed open.
 
     def close(self):
         self.listener.close()

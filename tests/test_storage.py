@@ -21,9 +21,8 @@ def test_initial_lock_byte_contention_is_reported_as_busy(tmp_path, monkeypatch)
             raise PermissionError("Another owner locked the newly initialized byte")
 
     monkeypatch.setattr(Path, "open", lambda *args, **kwargs: ContendedFile())
-    with pytest.raises(WriterBusy):
-        with writer_lock(tmp_path / "writer.lock"):
-            pytest.fail("Contended lock was acquired")
+    with pytest.raises(WriterBusy), writer_lock(tmp_path / "writer.lock"):
+        pytest.fail("Contended lock was acquired")
 
 
 def test_concurrent_creation_race_at_open_is_reported_as_busy(tmp_path, monkeypatch):
@@ -31,9 +30,8 @@ def test_concurrent_creation_race_at_open_is_reported_as_busy(tmp_path, monkeypa
         raise PermissionError("Another contender is creating the same lock file")
 
     monkeypatch.setattr(Path, "open", raise_sharing_violation)
-    with pytest.raises(WriterBusy):
-        with writer_lock(tmp_path / "writer.lock"):
-            pytest.fail("Contended lock was acquired")
+    with pytest.raises(WriterBusy), writer_lock(tmp_path / "writer.lock"):
+        pytest.fail("Contended lock was acquired")
 
 
 @pytest.fixture
@@ -167,13 +165,14 @@ def test_process_crash_replays_without_duplicates(tmp_path, event, phase, expect
 
 
 def test_only_one_writer_and_wrong_project_cannot_reopen(tmp_path, event):
-    with Store(tmp_path, event.project_id):
-        with pytest.raises(WriterBusy):
-            with Store(tmp_path, event.project_id):
-                pytest.fail("Second writer acquired the store")
-    with pytest.raises(StorageError):
-        with Store(tmp_path, uuid4()):
-            pytest.fail("Wrong project opened store")
+    with (
+        Store(tmp_path, event.project_id),
+        pytest.raises(WriterBusy),
+        Store(tmp_path, event.project_id),
+    ):
+        pytest.fail("Second writer acquired the store")
+    with pytest.raises(StorageError), Store(tmp_path, uuid4()):
+        pytest.fail("Wrong project opened store")
     with Store(tmp_path, event.project_id) as store:
         assert store.events() == []
 
@@ -186,9 +185,8 @@ def test_newer_database_is_not_changed(tmp_path, event, version):
         db.execute("INSERT INTO future VALUES ('preserve')")
         db.execute(f"PRAGMA user_version={version}")
     original = path.read_bytes()
-    with pytest.raises(StorageError):
-        with Store(tmp_path, event.project_id):
-            pytest.fail("Newer schema opened")
+    with pytest.raises(StorageError), Store(tmp_path, event.project_id):
+        pytest.fail("Newer schema opened")
     assert path.read_bytes() == original
     assert not path.with_name(path.name + "-wal").exists()
 
@@ -198,9 +196,8 @@ def test_unversioned_unrelated_database_is_not_adopted(tmp_path, event):
     with sqlite3.connect(path) as db:
         db.execute("CREATE TABLE unrelated(data TEXT)")
     original = path.read_bytes()
-    with pytest.raises(StorageError):
-        with Store(tmp_path, event.project_id):
-            pytest.fail("Unrelated schema adopted")
+    with pytest.raises(StorageError), Store(tmp_path, event.project_id):
+        pytest.fail("Unrelated schema adopted")
     assert path.read_bytes() == original
 
 

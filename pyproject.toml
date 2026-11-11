@@ -37,7 +37,7 @@ line-length = 100
 extend-exclude = ["scripts/kaboost_audit_tdd.py"]
 
 [tool.ruff.lint]
-select = ["E", "F", "I", "UP", "B"]
+select = ["E", "F", "I", "UP", "B", "SIM", "PTH"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
