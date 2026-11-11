@@ -237,3 +237,30 @@ def test_status_reports_losses_for_all_forty_projects(paths, tmp_path, monkeypat
     report = daemon.status(paths)
     assert all(str(project.id) in report["losses"] for project in projects)
     assert report["health"]["storage"]["unavailable"] is False
+
+
+def test_idle_project_visits_back_off_to_one_per_minute(paths, tmp_path, monkeypatch):
+    root = tmp_path / "project"
+    root.mkdir()
+    daemon.mutate_registry(paths, lambda registry: registry.add(root))
+    clock = [0.0]
+    visits = []
+    real_store = daemon.Store
+
+    def tracked_store(*args, **kwargs):
+        visits.append(clock[0])
+        return real_store(*args, **kwargs)
+
+    def sleep(delay):
+        clock[0] += delay
+        if clock[0] >= 200:
+            daemon.set_desired(paths, paused=True)
+
+    monkeypatch.setattr(daemon, "Store", tracked_store)
+    monkeypatch.setattr(daemon.time, "monotonic", lambda: clock[0])
+    monkeypatch.setattr(daemon.time, "sleep", sleep)
+    monkeypatch.setattr(daemon, "_drain_spool", lambda *args, **kwargs: False)
+    assert daemon.run(paths) == 0
+    late = [visit for visit in visits if visit >= 120]
+    assert len(late) >= 1
+    assert all(b - a >= 60 for a, b in zip(late, late[1:]))
