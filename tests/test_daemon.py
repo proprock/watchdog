@@ -1329,6 +1329,7 @@ def test_crash_releases_lock_and_hook_recovers(paths):
     )
     try:
         wait_for(lambda: status(paths)["state"] == "running")
+        wait_for(lambda: status(paths)["health"]["startup"].get("starts_without_heartbeat") == 0)
         instance = status(paths)["instance_id"]
         (paths.config.parent / "crash").touch()
         assert process.wait(timeout=10) == 91

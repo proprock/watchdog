@@ -40,6 +40,19 @@ def test_startup_death_has_a_reason_in_one_status_call(paths, monkeypatch, attem
     assert report["health"]["startup"]["starts_without_heartbeat"] == attempts
 
 
+def test_crash_after_heartbeat_before_ready_keeps_startup_failure(paths):
+    now = datetime.now(UTC).timestamp()
+    daemon.daemon_lifecycle.record_start(paths.data, now=now)
+    heartbeat(paths, now)
+
+    report = daemon.status(paths)
+
+    assert report["state"] == "degraded"
+    assert report["alive"] is False
+    assert "startup_failed" in report["reasons"]
+    assert report["health"]["startup"]["starts_without_heartbeat"] == 1
+
+
 def test_recent_spool_schema_mismatch_degrades_status_with_a_reason(paths):
     from agent_watchdog.spool import Spool
     from agent_watchdog.storage import DrainResult
