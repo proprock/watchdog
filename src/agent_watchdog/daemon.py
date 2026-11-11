@@ -363,7 +363,7 @@ def status(paths: UserPaths) -> dict:
     try:
         loss_report = {"adapter": resources.losses(paths.data)}
         config = load_config(paths.config)
-        for project in config.projects[:32]:
+        for project in config.projects:
             loss_report[str(project.id)] = resources.losses(paths.project_data(project.id))
         queues = _queue_status(paths, config)
         stalled = _stalled_queues(queues, report.get("backlog", {}), now=now)
@@ -470,24 +470,32 @@ def _storage_health(
     paths: UserPaths, config: Config, queues: dict, *, now: float
 ) -> tuple[dict[str, object], bool]:
     newest = None
-    unavailable = len(config.projects) > 32
-    for project in config.projects[:32]:
+    unavailable_projects: list[str] = []
+    overall_deadline = time.monotonic() + 1.0
+    for project in config.projects:
+        remaining = overall_deadline - time.monotonic()
+        if remaining <= 0:
+            unavailable_projects.append(str(project.id))
+            continue
         database = paths.project_data(project.id) / "events.sqlite3"
         if not database.exists():
             continue
         try:
             with closing(
-                sqlite3.connect(database.as_uri() + "?mode=ro", uri=True, timeout=0.1)
+                sqlite3.connect(
+                    database.as_uri() + "?mode=ro", uri=True, timeout=min(0.1, remaining)
+                )
             ) as db:
                 # Bound a MAX scan even on a large store lacking a timestamp index.
-                deadline = time.monotonic() + 0.1
+                deadline = min(time.monotonic() + 0.1, overall_deadline)
                 db.set_progress_handler(lambda end=deadline: int(time.monotonic() > end), 1000)
                 row = db.execute("SELECT MAX(received_at) FROM events").fetchone()[0]
                 if row:
                     stamp = datetime.fromisoformat(row).timestamp()
                     newest = max(newest, stamp) if newest is not None else stamp
         except (OSError, sqlite3.Error, ValueError):
-            unavailable = True
+            unavailable_projects.append(str(project.id))
+    unavailable = bool(unavailable_projects)
     spool = queues["spool"]
     latest = spool["newest_record_at"]
     oldest = spool["oldest_record_at"]
@@ -498,6 +506,7 @@ def _storage_health(
         "spool_timestamp_source": "filesystem_mtime",
         "lag_seconds": lag,
         "unavailable": unavailable,
+        "unavailable_projects": unavailable_projects,
     }
     lagging = (
         not unavailable
