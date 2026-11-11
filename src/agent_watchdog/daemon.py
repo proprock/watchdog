@@ -876,6 +876,7 @@ def _drain_spool(
     maintenance_budget: MaintenanceBudget | None = None,
     stats: DrainResult | None = None,
     spool: Spool | None = None,
+    wake_projects: set[UUID] | None = None,
 ) -> bool:
     """Resolve one queue window and commit bounded batches before acknowledging files."""
     from agent_watchdog.hooks import EVENTS, build_envelope, warn_unknown_fields
@@ -900,6 +901,7 @@ def _drain_spool(
                 maintenance_budget=maintenance_budget,
                 stats=stats,
                 spool=spool,
+                wake_projects=wake_projects,
             )
     assert stores is not None
     logged_unknown_checkouts = (
@@ -1115,6 +1117,8 @@ def _drain_spool(
                     _store=store,
                     _captured=captured_checkouts,
                 ) -> None:
+                    if wake_projects is not None:
+                        wake_projects.add(_project_id)
                     payload, resolution = _lookup[id(event)]
                     demoted = observe_denial(paths, event)
                     if demoted is not None:
@@ -1831,6 +1835,10 @@ def _poll(
     logged_findings_failures: set[tuple[str, str]] = set()
     instance_id = str(uuid4())
     delay = 0.25
+    next_visit: dict[UUID, float] = {}
+    visit_intervals: dict[UUID, float] = {}
+    project_errors: set[str] = set()
+    project_failures: dict[str, list[str]] = {}
     maintenance: dict[str, float] = {}
     maintenance_states: dict[UUID, MaintenanceState] = {}
     maintenance_cursor = 0
@@ -1897,6 +1905,14 @@ def _poll(
                         unfinished = spool_queue.maintain(maintenance_budget)
                         spool_maintenance_at = 0 if unfinished else time.monotonic() + 60
                     continue
+                project_key = str(project.id)
+                if time.monotonic() < next_visit.get(project.id, 0):
+                    if project_key in project_errors and len(errors) < 32:
+                        errors.append(project_key)
+                    if project_key in project_failures:
+                        transcript_failures[project_key] = project_failures[project_key]
+                    continue
+                project_active = False
                 try:
                     root = paths.project_data(project.id)
                     limits = project.overrides.apply(config.defaults)
@@ -1925,6 +1941,7 @@ def _poll(
                                 active_failure_since=datetime.now(UTC)
                                 - timedelta(minutes=limits.transcript_failure_minutes),
                             )
+                            project_active |= bool(enrichment)
                             activity |= bool(enrichment)
                             if enrichment.active_failures:
                                 transcript_failures[str(project.id)] = list(
@@ -1973,6 +1990,7 @@ def _poll(
                         refreshed, failures = sessions.refresh(
                             str(project.id), store, now=time.monotonic()
                         )
+                        project_active |= bool(refreshed)
                         activity |= bool(refreshed)
                         _record_findings_failures(
                             paths, config, project.id, failures, logged_findings_failures
@@ -1992,6 +2010,22 @@ def _poll(
                         detail=str(error),
                         project_id=project.id,
                     )
+                if project_key in errors:
+                    project_errors.add(project_key)
+                else:
+                    project_errors.discard(project_key)
+                if project_key in transcript_failures:
+                    project_failures[project_key] = transcript_failures[project_key]
+                else:
+                    project_failures.pop(project_key, None)
+                if project_active:
+                    visit_intervals[project.id] = 1.0
+                    next_visit[project.id] = time.monotonic()
+                else:
+                    interval = min(60.0, visit_intervals.get(project.id, 0.5) * 2)
+                    visit_intervals[project.id] = interval
+                    next_visit[project.id] = time.monotonic() + interval
+            wake_projects: set[UUID] = set()
             if _drain_spool(
                 paths,
                 config,
@@ -2003,9 +2037,13 @@ def _poll(
                 maintenance_states=maintenance_states,
                 maintenance_budget=maintenance_budget,
                 spool=spool_queue,
+                wake_projects=wake_projects,
             ):
                 activity = True
                 progressed.add("spool")
+            for project_id in wake_projects:
+                next_visit[project_id] = time.monotonic()
+                visit_intervals[project_id] = 1.0
         except ConfigError as error:
             errors.append("configuration")
             _log(
