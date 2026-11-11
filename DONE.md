@@ -2,6 +2,8 @@
 
 Historical records only: one line per task. The full text of every entry, including its verification, is in [done-archive.md](docs/evidence/done-archive.md). Active work belongs in [TODO.md](TODO.md). Preserve task IDs when moving entries here.
 
+- [x] **WD-136a/b/c - Local web UI in Watchdog: closed without implementation (2026-11-11).** Superseded by the owner's decision to merge the insights program into this repository as `watchdog-insights` (`wdi`), whose web interface replaces a second UI. Nothing was built. The acceptance of the viewer and of report generation on an explicit button moved to WD-199, and the acceptance of applying selected recommendations to WD-202, both open in [TODO.md](TODO.md); the original task text is in `TODO.md` at commit `0d5e984`.
+
 - [x] **WD-182 - Adopt TDD red/green commits from kaBoost (2026-11-08).** `kaboost_init.py apply --ids tdd-commits` added the managed rule block to `AGENTS.md` and `scripts/kaboost_audit_tdd.py`; red commits name the task at the end (`test: ... (WD-NNN)`). This commit is the boundary for kaBoost's real-use evidence (KB-025).
 
 - [x] **WD-180 - Provisional Codex desktop profile with deny effect confirmation and demotion (2026-10-25).** A provisional profile for desktop `26.1021.31345`/`0.164.0-alpha.11.1` carries only `context`, `deny` and `block`; `deny` effect is derived from observed events and a denied call that finishes demotes the profile to log-only; offline only, no provider confirmation; evidence in [wd180.md](docs/evidence/wd180.md).

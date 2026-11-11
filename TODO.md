@@ -2,9 +2,468 @@
 
 Priority review: 2026-10-08, implementation baseline `23fce5f`. P1 is the next tranche for reliable Codex coverage and decision-channel correctness; P2 follows its stated prerequisites, and P3 is optional. Scope includes stock Codex CLI/local desktop coding and Claude Code, plus an explicitly selected Codex analysis backend; ordinary chats remain excluded. Design sources remain ROADMAP.md and docs/architecture.md; its "Current versus superseded decisions" table says which text governs.
 
+**Collection/insights split (owner decisions, 2026-11-11).** The Split P0 tranche below runs before the control track. WD-208, WD-209, WD-183 and WD-210 have no dependencies and can start at once; the main chain is WD-184 -> WD-185 -> WD-187 -> WD-188, and WD-186 joins before WD-188. The control track (WD-151, WD-166, WD-178, WD-181, WD-179) continues independently. Until WD-184 records the decisions in the design documents, these statements are superseded: `README.md` on collection for selected repositories only, on the absence of an eval runner and on the retention periods; `docs/architecture.md` on never scanning provider directories and on enrichment persisting no transcript content; `docs/storage.md` on vendor transcript directories and on diff text never being stored; `ROADMAP.md` on no eval runner. The analysis behind the split is in the local, uncommitted `AUDIT-20261111.agents.md`.
+
 Open-work order: start the surface/version gate in WD-151 using the [WD-163 probe results](docs/evidence/wd163.md); implement already confirmed Codex CLI cells without waiting for desktop, while each unresolved cell waits for its own clean probe. WD-166 can proceed independently. WD-155 and WD-168 establish trustworthy channel/state evidence before broader live measurements. Then complete WD-167 and the provider-specific portions of WD-159. WD-161 is complete with a [no-change decision](docs/evidence/wd161.md). WD-153 gates desktop control only. WD-143 is implemented ([evidence](docs/evidence/wd143.md)). WD-144/WD-145/WD-147 specification reviews are resolved by the 2026-10-18 decisions below; their implementation, dependencies and task-specific acceptance remain open. Historical M3 cohort selections remain unchanged: this review approves no live rule or action. Diagnostic judge calls do not authorize intervention or promotion, and local-adapter tests or an assistant's reading of findings are not live acceptance or user verdicts.
 
-WD-135 remains independent, awaiting real hook traffic. WD-149/WD-152/WD-157 must coordinate maintenance, migration and quota contracts with WD-162. Optional UI stays WD-136a -> WD-136b -> WD-136c after M-Control and demonstrated daily need. Deferred M5 stays WD-019 -> WD-026; WD-026 also waits on upstream. WD-015 remains closed: the 2026-10-08 official-documentation and installed Codex 0.160.0 offline-schema recheck found no new generic attach contract for arbitrary running CLI/desktop sessions, so no replacement App Server task is opened. The [WD-103 audit](docs/software-factory-audit.md) remains historical evidence. This file contains open work only; move completed entries to [DONE.md](DONE.md) with their IDs and verification evidence. The accepted Claude fan-out gap remains in [verification.md](docs/verification.md#wd-022b-live-verification-trustreload-capability-gaps-process-lifecycle).
+WD-135 remains independent, awaiting real hook traffic. WD-149/WD-152/WD-157 must coordinate maintenance, migration and quota contracts with WD-162. WD-136a/b/c are closed as superseded by the insights web interface; their acceptance moved to WD-199 and WD-202 (see [DONE.md](DONE.md)). Deferred M5 stays WD-019 -> WD-026; WD-026 also waits on upstream. WD-015 remains closed: the 2026-10-08 official-documentation and installed Codex 0.160.0 offline-schema recheck found no new generic attach contract for arbitrary running CLI/desktop sessions, so no replacement App Server task is opened. The [WD-103 audit](docs/software-factory-audit.md) remains historical evidence. This file contains open work only; move completed entries to [DONE.md](DONE.md) with their IDs and verification evidence. The accepted Claude fan-out gap remains in [verification.md](docs/verification.md#wd-022b-live-verification-trustreload-capability-gaps-process-lifecycle).
+
+## Split P0 - Fix what is broken, stop data loss, merge the projects
+
+Owner decisions of 2026-11-11 that every Split task follows:
+
+1. Collection covers every agent session that runs inside a Git checkout on this machine. Any Git checkout is registered automatically. A session outside Git, or one whose directory cannot be resolved, is ignored with a visible warning and a count.
+2. Watchdog collects; the insights program analyses. Insights reads Watchdog stores through a versioned read contract and keeps its own derived database.
+3. Watchdog stores raw transcript lines unchanged and independent of the harness version. Parsing for analytics stays in the insights parsers.
+4. Storage is lossless, compressed with zstd in blocks, kept without expiry and without a quota by default. Both limits stay configurable.
+5. One repository, two packages: `agent-watchdog` at the root and `watchdog-insights` (command and Python package `wdi`) under `insights/`. One lock file, one toolchain (Ruff, ty, pytest).
+6. The project is in development with one installed instance. No upgrade code goes into a package; the instance is converted by a one-off script.
+7. A duplicate is removed only after parity: the task lists the capabilities of both implementations and a test shows none is lost.
+
+Line numbers in these tasks refer to commit `0d5e984`. Paths under `insights/` exist after WD-184. The source checkout of the insights program is the sibling repository aliased `project-b` in `LIVE.md`; never write its real name, its old command name or its old home directory into committed text.
+
+- [ ] **WD-208 - Registry mutations must keep every configuration section.** P0. No dependencies.
+  - **Why.** `Registry._replace` (`src/agent_watchdog/registry.py:153-164`) rebuilds `Config` from four fields: `defaults`, `projects`, `auto_add_projects`, `trusted_projects_dir`. `pipeline_telemetry`, `pricing` and `rules` (with `rules.disabled` and the approved hashes) fall back to their defaults, and `save_config` writes that to disk. This happens on `project add`, `project remove`, `project relocate` and on daemon auto-registration (`daemon.resolve_or_auto_register`, `daemon.py:620-632`). WD-186 would turn it into a continuous wipe.
+  - **Fixed decisions.**
+    - Build the new configuration from all fields of the current one with only `projects` replaced, and validate it through `Config.model_validate`, so that a field added to `Config` later is kept without touching this method. Do not use `model_copy(update=...)` alone: it skips validation, and the duplicate and overlap checks in `Config.unique_projects` must still run.
+    - No other behaviour changes.
+  - **Steps.**
+    1. Red test in `tests/test_registry.py`: a `Config` with a non-default `rules` section (one disabled rule, one approved hash), `pricing.tariffs` set and `pipeline_telemetry = False`; call `add`, `remove`, `relocate` and `resolve_or_auto_add`; assert the three sections are unchanged after each.
+    2. Red test at the file level (next to the auto-add test at `tests/test_daemon.py:374`): after an auto-registration the configuration file on disk still holds the `[rules]` and `[pricing]` sections.
+    3. Fix `_replace`.
+    4. Back up the live configuration, then update the live instance by the `LIVE.md` procedure.
+  - **Out of scope.** Recovering sections the live configuration may already have lost: report to the user whether the live file has `[rules.approved]` and `[pricing]`, do not reconstruct them.
+  - **Acceptance:**
+    - both tests fail before the fix and pass after it;
+    - `uv run pytest tests/test_registry.py tests/test_daemon.py tests/test_contracts.py` passes, then the full suite;
+    - the report states what the live configuration contained before and after the update.
+
+- [ ] **WD-209 - Green lint and one Ruff rule set for the whole repository.** P0. No dependencies.
+  - **Why.** At `0d5e984` `uv run ruff check .` reports 18 `E501` and `uv run ruff format --check .` reports one file, all in `scripts/kaboost_audit_tdd.py`. That file is managed by kaBoost (its first line is a `kaboost:begin ... sha=` marker), so reformatting it makes it diverge from its source. The insights package uses a stricter rule set (`SIM`, `PTH`); owner decision 5 requires one rule set. A local `uv build` also packs untracked `AUDIT-*.md` files into the sdist.
+  - **Fixed decisions.**
+    - `[tool.ruff] extend-exclude = ["scripts/kaboost_audit_tdd.py"]` with a comment that kaBoost manages the file. Do not edit the file.
+    - `[tool.ruff.lint] select = ["E", "F", "I", "UP", "B", "SIM", "PTH"]`. Fix the 41 findings in `src`, `tests` and `scripts` (14 `SIM105`, 13 `SIM117`, 4 `PTH201`, 3 `SIM102`, 3 `PTH100`, 1 each of `PTH123`, `SIM108`, `PTH115`, `PTH105`).
+    - Every fix preserves behaviour. Do not replace `os.path.abspath` with `Path.resolve()` (it follows symlinks) or `Path.absolute()` (it keeps `..`); keep the call and add `# noqa: PTH100` with that reason. Use the same pattern for any other `PTH` finding where the `pathlib` form differs on Windows.
+    - Add `/AUDIT-*.md` to `.gitignore` (`TENETS.md` already defines these as local files); hatchling then leaves them out of the sdist.
+  - **Steps.**
+    1. Commit 1 (`chore`): the exclude and the `.gitignore` line.
+    2. Commit 2 (`style`): the rule set and the 41 fixes; run `uv run ruff check . --fix` first, review its diff, then fix the rest by hand.
+  - **Out of scope.** Any refactoring beyond what a finding requires.
+  - **Acceptance:**
+    - `uv run ruff check .` and `uv run ruff format --check .` pass;
+    - `uv run pytest` and `uv run ty check` pass;
+    - after `uv build`, the sdist lists no `AUDIT-` file.
+
+- [ ] **WD-183 - Keep data by default: no expiry and no quota.** P0. No dependencies.
+  - **Why.** Owner decision 4. Today content expires after `content_days` (default 30), events after `metrics_days` (default 180), and `project_bytes` (default 2 GiB) cannot be switched off because it is `Positive` (`config.py:37`, `:78`).
+  - **Fixed decisions.**
+    - Defaults: `content_days = 0`, `metrics_days = 0`, `project_bytes = 0`. Zero means "never expire" for the day limits (already so) and "no quota" for `project_bytes` (new).
+    - `project_bytes` becomes `NonNegative` in `Limits` and in the override model. The validator at `config.py:67` becomes `if self.project_bytes and self.payload_bytes > self.project_bytes`.
+    - `resources.available` (`resources.py:38-41`): when `project_bytes == 0`, return `shutil.disk_usage(root).free - limits.reserve_bytes` and skip the `usage(root)` directory walk. The `account` phase at `storage.py:1611-1617` repeats the formula: make it call `resources.available`.
+    - With `project_bytes == 0` the pressure phases (`pressure_content`, `session_select`, `session_delete`; `storage.py:1506-1549`, `:1728-1746`) do not run. A full disk makes admission fail: the loss is counted with the existing reason and the project is reported degraded (`daemon.py:1979`), but nothing stored is deleted. With a positive quota the behaviour is unchanged.
+    - `doctor` shows `quota: disabled` instead of a byte figure when the quota is off.
+  - **Steps.**
+    1. Tests first: default limits; quota 0 gives `free - reserve` (fake `shutil.disk_usage`); no deletion under simulated disk pressure with quota 0; a positive quota behaves as before. Update the tests that pin the old defaults or quota behaviour: `tests/test_retention.py:51-75,126,245-260`, `tests/test_maintenance.py:145,159-164,245`, `tests/test_ingestion_batch.py:113,121`, `tests/test_unified_spool.py:75`, `tests/test_storage_v8.py:146,177`, `tests/test_contracts.py:25-28,46-49,71-78,120-129`.
+    2. Code changes above.
+    3. Documentation in the same commit: `config.example.toml:16-21,27,51-52`, `docs/storage.md:24-29,39,346`, `docs/contracts.md:30-31,34,43-46,55`, `docs/architecture.md:65`, `docs/cli.md:277,442`, and the retention sentence in `README.md`.
+    4. Live instance: install the new wheel first (the old code rejects `project_bytes = 0`), then set `content_days = 0`, `metrics_days = 0`, `project_bytes = 0` in the live configuration, which sets all three explicitly today.
+  - **Out of scope.** The capture store (WD-187). Compression of hook content (WD-157).
+  - **Acceptance:**
+    - the new and updated tests pass, then the full suite;
+    - `docs/evidence/wd183.md` holds the `doctor` output of the live instance after the change, showing the three effective limits.
+
+- [ ] **WD-184 - Import the insights program as the second package `watchdog-insights` (`wdi`).** P0. Depends on WD-209.
+  - **Why.** Owner decisions 5 and 6. The two programs share data formats, tests and a release cycle; one repository removes the drift between them.
+  - **Fixed decisions.**
+    - Source: the `project-b` checkout at its current `HEAD`. Record the commit hash in `docs/evidence/wd184.md`, not the repository name. Do not import history. Do not modify the source checkout.
+    - Layout: `insights/pyproject.toml`, `insights/src/wdi/`, `insights/tests/`, `insights/docs/`, `insights/scripts/`, `insights/README.md`, `insights/CHANGELOG.md`, `insights/GOTCHAS.md`, `insights/AGENTS.md`.
+    - **Copy:** the package directory under `src/` (renamed to `wdi`), `tests/`, `README.md`, `CHANGELOG.md`, `GOTCHAS.md`, `docs/agent-efficiency-review.md`, `docs/context-analysis.md`, `docs/context-efficiency-audit.md`, `scripts/weekly-review.ps1`, `scripts/weekly-review.sh`.
+    - **Do not copy:** `AGENTS.md` and `CLAUDE.md` (replaced by the new `insights/AGENTS.md`); `AI_ENGINEERING_COACH.md` and `AUDIT_LLM_ANALYTICS.md` (a pasted external review and a stale audit); the three session-format documents under `docs/` whose names end in `session-metadata.md` or `session-metadata-diffs.md` (not in English, see WD-207); `.codebase-memory/`, `.serena/`, `.claude/`, `.gitattributes`, `uv.lock`, `scripts/kaboost_audit_tdd.py` (identical to the root copy); every untracked file and directory.
+    - **Fix while copying:** the private project name at `docs/context-efficiency-audit.md:52` becomes its alias from `LIVE.md`; the absolute paths in `scripts/weekly-review.ps1:5` and `scripts/weekly-review.sh:6` become `<repo>` placeholders; merge the ignore patterns of the source `.gitignore` (`*.sqlite*`, `reports/`, `build/`, `*.egg-info/`, `.env`) into the root `.gitignore`.
+    - **Rename:** distribution `watchdog-insights`; Python package and command `wdi` (`[project.scripts] wdi = "wdi.cli:main"`, `packages = ["src/wdi"]`); every import, `resources.files(...)` call (`db/connection.py:24`), help text, template string, README line and MCP server name that carries the old package or command name. Home directory `~/.wdi/` with `config.yaml` and `wdi.sqlite` (defaults in `insights/src/wdi/config.py`). No fallback to the old home directory and no automatic copy from it: WD-193 imports the old data.
+    - **Workspace:** root `pyproject.toml` gets `[tool.uv.workspace] members = ["insights"]` and `[tool.hatch.build.targets.sdist] exclude = ["/insights"]`. `insights/pyproject.toml` adds `"agent-watchdog"` to `dependencies` with `[tool.uv.sources] agent-watchdog = { workspace = true }`. Regenerate the root `uv.lock` with `uv lock`.
+    - **Toolchain:** remove `[tool.pyright]`, the `pyright` dependency, and the `[tool.ruff]` sections from `insights/pyproject.toml`; the root Ruff configuration (WD-209) then covers `insights/`. `uv run ty check` at the root must cover `insights/src` and `insights/tests`; at the source `HEAD` ty reports four `invalid-argument-type` diagnostics (`cli.py:713`, `:793`, `:794`, `llm/service.py:145`): fix them in code, or with a narrow `# ty: ignore[invalid-argument-type]` and a reason where the fix would change behaviour.
+    - **Import direction in lint:** add `TID251` to the Ruff rule set with a banned-API entry for `wdi` ("agent_watchdog must not import wdi") and a per-file ignore of `TID251` for `insights/**`.
+    - **Tests:** two suites, never one pytest session (both have `tests/test_cli.py` and `tests/test_pricing.py`). Root: `uv run pytest`, unchanged. Insights: `uv run --directory insights pytest`, with its own `[tool.pytest.ini_options]`.
+    - **CI** (`.github/workflows/ci.yml`): `uv sync --locked --all-packages`; keep the existing `uv run pytest` step unchanged; add `uv run --directory insights pytest`, `uv build --all-packages` and `uv run wdi --help`.
+    - **Decision record:** a new section "Collection and insights split (2026-11-11)" in `docs/architecture.md` with owner decisions 1-7 and a list of the statements they supersede: `README.md` ("Collection is enabled for selected repositories", "There is no eval runner", the retention periods), `docs/architecture.md:35` and `:85`, `docs/storage.md:364-365`, `ROADMAP.md:45` and `:128`. Add a milestone "M-Split" to `ROADMAP.md` listing WD-183 to WD-210. Change only the record here; behaviour documentation changes with the task that changes the behaviour.
+    - **Stub:** `docs/read-contract.md` with the heading and one line: "Public `agent_watchdog` modules for `wdi`: none yet." WD-189 fills it.
+    - **`TENETS.md` edits (authorized by the owner on 2026-11-11):**
+      - E2, appended to the bullet that starts "Keep this a small local utility": "The repository holds two programs: `agent-watchdog` (collection and control) and `watchdog-insights` (`wdi`, analytics, under `insights/`). The dependency is one-way: no `agent_watchdog` module, the daemon or the hook adapter imports `wdi`; `wdi` imports only the `agent_watchdog` modules listed in `docs/read-contract.md`."
+      - E3, inserted after the first sentence of the invariant that starts "Automatic model calls are allowed only from the daemon": "`wdi` calls a model only on an explicit user action (a command or a button) or from a schedule the user installed themselves with a stated call limit per run; `wdi` never installs a schedule. An experiment run is an ordinary observed agent session started by an explicit `wdi` command with a declared budget."
+      - E4, the "Checks" bullet: the command list becomes "`uv run pytest`, `uv run --directory insights pytest`, `uv run ruff check .`, `uv run ruff format --check .`, `uv run ty check`, and `uv build --all-packages`", followed by "The two test suites never run in one pytest session." Add to the "Local pytest" bullet: "For a change under `insights/`, run `uv run --directory insights pytest`."
+      - E8, a new bullet in "Workflow": "While a single installed instance exists, a new persistent structure gets no upgrade code inside a package. Change the schema definition in place, convert the installed instance with a one-off script under `scripts/` or `insights/scripts/`, and record the run in the task's evidence file. The existing upgrade steps in `Store._initialize` stay as they are."
+    - **`insights/AGENTS.md` (E7):** new, in English. First line: "Strictly follow the repository `TENETS.md` and the root `AGENTS.md`; this file adds package rules." Carry over, translated where needed, these sections of the source `AGENTS.md`: Architecture, SQLite rules, FastAPI rules, Jinja2 rules, HTMX rules, Charts, Testing, Code style, Security and privacy, Static assets, Done criteria, and a pointer to `insights/GOTCHAS.md`. Drop the rest. Replace the schema rule (source lines 108-112) with: "No migration framework while in development. Edit `src/wdi/db/migrations/0001_init.sql` in place. Derived tables are rebuilt with `wdi import --full`. Primary tables are carried over by a helper script under `insights/scripts/`, run against the installed database and recorded in the task's evidence file. Never tell the user to delete a database that holds primary rows without running that script." WD-193 marks which tables are primary.
+    - One commit: `feat(insights): import watchdog-insights as a workspace package (WD-184)`.
+  - **Out of scope.** Any behaviour change in `wdi`; the Python floor (WD-185); the isolated runner (WD-197); reading Watchdog stores (WD-192); translating the three format documents (WD-207).
+  - **Acceptance, from a clean clone:**
+    - `uv sync --locked --all-packages` succeeds;
+    - `uv run pytest` passes; `uv run --directory insights pytest` passes with the same number of tests as in the source checkout before the copy (record both counts);
+    - `uv run ruff check .`, `uv run ruff format --check .` and `uv run ty check` pass;
+    - `uv build --all-packages` produces two wheels; the root sdist contains no `insights/` path;
+    - `uv run wdi --help` works;
+    - the forbidden-name check from `LIVE.md` passes over the whole repository;
+    - `rg -n '\p{Cyrillic}' insights --glob '!insights/tests/**'` prints nothing (the two ingest test modules keep their synthetic non-ASCII fixture strings as test data);
+    - `git -C <source checkout> status --short` is the same before and after.
+
+- [ ] **WD-185 - Python 3.14 as the minimum for both packages.** P0. Depends on WD-184.
+  - **Why.** Owner decision: zstd from the standard library (`compression.zstd`, Python 3.14) is the only codec, with no third-party dependency.
+  - **Fixed decisions.**
+    - `requires-python = ">=3.14"` in both `pyproject.toml` files; Ruff `target-version = "py314"`.
+    - CI: the lint job and the full test matrix (Ubuntu, macOS, Windows) run on 3.14 (`ci.yml:18`, `:36-39`); `release-native.yml:31` and `:73` move to 3.14.
+    - No 3.15 job: `pydantic-core` has no `cp315` wheels in the lock. Add 3.15 later, when `uv lock` resolves them.
+    - E1 in `TENETS.md`: "Python 3.12+" becomes "Python 3.14+".
+  - **Steps.**
+    1. Change the pins, run `uv lock`, then `uv run ruff check . --fix` for the `UP` rules the new target enables; review that diff.
+    2. Update every "3.12" in documentation (`rg -n '3\.12' --glob '!uv.lock'`).
+    3. Live instance: its interpreter is Python 3.12 and its package was installed with `--no-deps --reinstall`. Rebuild the live environment on 3.14 with dependencies. This replaces the interpreter of the live instance: write the exact commands into the report and get the user's go-ahead before running them.
+  - **Out of scope.** Using zstd anywhere (WD-187).
+  - **Acceptance:**
+    - every check in `TENETS.md` passes on 3.14;
+    - `uv run python -c "import compression.zstd"` succeeds in the project environment;
+    - `docs/evidence/wd185.md` holds the live `doctor` output with the interpreter version after the rebuild.
+
+- [ ] **WD-210 - Daemon tick cost must not grow with idle projects and finished transcript sources.** P0. No dependencies.
+  - **Why.** Every tick (0.25 s active, up to 2 s idle) the loop at `daemon.py:1889-1993` opens a `Store` for every project, which runs the whole `_initialize`; runs `enrich`, which loads every `transcript_sources` row including the `tail` BLOB (`storage.py:1072-1094`, `transcripts.py:1205-1257`); and calls `resources.available`, which walks the project directory. Status covers only the first 32 projects (`daemon.py:366`, `:473-474`). The live instance has 9 projects and 929 source rows. With WD-183 the rows never expire and WD-186 registers every Git checkout.
+  - **Fixed decisions.**
+    - Each project gets a next-visit time in the loop. A visit that found activity (enrichment accepted a record, a session refreshed, or the drain wrote to the store) sets it to "now". An idle visit doubles the interval from 1 s up to 60 s. The spool drain resets it to "now" for the project it wrote to. A project is skipped until its time comes; the drain still opens its store on demand.
+    - `Store.transcript_sources` stops returning `tail` and `counters`; `_process_source` (`transcripts.py:830-947`) loads them for one source only after it has decided to read the file.
+    - Remove the 32-project caps in the loss report (`daemon.py:366`) and in `_storage_health` (`daemon.py:473-474`). `_storage_health` keeps its 0.1 s bound per project and stops when 1 s in total has passed, reporting `unavailable` for the projects it did not reach instead of for all.
+    - No new thread, queue or process.
+  - **Steps.**
+    1. Tests first, with a fake clock: an idle project is visited at most once per 60 s after the back-off; a hook record for an idle project is stored on the next tick; enrichment of a growing transcript continues without delay; status reports all of 40 synthetic projects.
+    2. Implement the gate, then the lazy `tail` load, then the status change.
+    3. Measure one tick of the live daemon with all projects idle before and after (`pipeline_telemetry` or a temporary timer) and record both numbers.
+  - **Out of scope.** The wider scheduling audit of WD-152. The capture pass and the scan (WD-187, WD-188), which add their own budgets.
+  - **Acceptance:**
+    - the new tests pass, then the full suite;
+    - `docs/evidence/wd210.md` holds the before and after tick cost of the live instance and one observed hour without missed ingestion.
+
+- [ ] **WD-186 - Collect from every Git checkout: automatic registration, exclusions, and a visible count of ignored sessions.** P0. Depends on WD-208, WD-210.
+  - **Why.** Owner decision 1. Today a record from an unregistered directory is discarded at `DEBUG` with no counter (`daemon.py:985-996`), and automatic registration works only below `trusted_projects_dir` (`registry.py:129-151`, `config.py:210-213`).
+  - **Fixed decisions.**
+    - `Config.auto_add_projects` defaults to `True`. `trusted_projects_dir` becomes an optional narrowing: when set, only checkouts below it are registered automatically; when unset, any Git checkout qualifies. Remove the validation error "Auto-add requires an existing trusted projects directory".
+    - New `Config.collect_exclude: tuple[str, ...] = ()`: glob patterns matched against the checkout root (case-normalized, forward slashes). A match prevents automatic registration only; `project add` still works.
+    - Built-in exclusion: a checkout whose root equals or is an ancestor of the Watchdog data directory, the runtime directory, the configuration directory or `tempfile.gettempdir()` is never registered automatically. Registering it would put the analysis scratch directory inside a registered root, and every analysis call would return `isolation_unavailable` (`cli.py:439`, `:458`; `insights/llm.py:213-215`).
+    - A record is **ignored**, not stored, when its directory is not inside a Git checkout (`not_git`), is excluded (`excluded`), or cannot be resolved (`unresolvable_cwd`). Explicitly registered non-Git projects keep working as today.
+    - Every ignored record is counted in `<data>/ignored.json`: a map from directory to `reason`, `first_at`, `last_at`, `records`; at most 500 directories, the least recently seen dropped first; written with `files.atomic_write` at most once per 60 s. The daemon logs one `WARNING` per directory and reason per run (`event=spool decision=ignored`), with the path only under `log_detail`. `doctor` reports the totals and the five most recent directories. No change to `losses.bin` or the native adapter: an ignored record is a decision, not a loss.
+    - A busy control lock or a configuration error during automatic registration defers the record to the next tick. Today it is a `ValueError` and the record is quarantined as invalid (`daemon.py:248-259`, `:1066-1078`).
+    - An automatically registered project gets `config.defaults`; no rule becomes active that the defaults do not already enable.
+  - **Steps.**
+    1. Tests first: any Git checkout is registered; `trusted_projects_dir` narrows; a glob excludes; the built-in exclusion; a non-Git directory is ignored, counted and warned about once; the deferral on a busy lock; `doctor` output. Update the tests that assert the old behaviour: `tests/test_registry.py:144,168`, `tests/test_contracts.py:100`, `tests/test_daemon.py:374`, `tests/test_codex_hooks.py:112`, `tests/test_rust_adapter.py:399`.
+    2. `registry.resolve_or_auto_add`, the validator, the drain branch at `daemon.py:948-996`, the development hook path at `hooks.py:345-347`, `doctor`.
+    3. Documentation: `config.example.toml`, `docs/contracts.md`, `docs/architecture.md:35`, the collection sentence in `README.md`.
+    4. Live instance: update, and report which projects were registered during the first day.
+  - **Out of scope.** Scanning session files (WD-188). A store for sessions outside Git: the owner decided to ignore them.
+  - **Acceptance:**
+    - the tests pass, then the full suite;
+    - on the live instance a session in a previously unregistered Git checkout is stored without any command, and `doctor` shows a non-Git session as ignored with its count.
+
+- [ ] **WD-187 - Capture raw transcripts into `capture.sqlite3`.** P0. Depends on WD-185.
+  - **Why.** Owner decisions 3 and 4. Today Watchdog takes only token counts from transcripts, and Codex tool calls only for the three versions in `CODEX_TOOL_VERSIONS` (`transcripts.py:37`). Assistant text, reasoning, instructions and limits are not stored anywhere, and the provider deletes its files.
+  - **Fixed decisions.**
+    - A second SQLite file per project, `<project data>/capture.sqlite3`, written only by the daemon. `events.sqlite3` stays at schema 9 and is not touched: no change to `Store._initialize`, `SESSION_TABLES` or the version tuples.
+    - New modules: `src/agent_watchdog/capture_store.py` (the file, its schema, read and write functions) and `src/agent_watchdog/capture.py` (the daemon pass). Neither imports `daemon` or `inspection`.
+    - Pragmas: `journal_mode=WAL`, `synchronous=NORMAL` (a lost transaction is re-read from the source file), `foreign_keys=ON`, `secure_delete=ON`.
+    - `SCHEMA_VERSION = 1` in `PRAGMA user_version`. Opening: an empty file is created with the schema; an equal version is used; any other version raises `StorageError` that states the found and expected versions and points to the conversion script named in `docs/storage.md`. There is no upgrade path in the package (the development rule in `TENETS.md`).
+    - Schema, timestamps as ISO-8601 UTC text:
+      - `streams(stream_pk INTEGER PRIMARY KEY, provider TEXT NOT NULL, session_id TEXT NOT NULL, stream_id TEXT NOT NULL, generation INTEGER NOT NULL, hook_session_id TEXT, source_path TEXT NOT NULL, source_kind TEXT NOT NULL, cwd TEXT, head_len INTEGER NOT NULL, head_digest TEXT NOT NULL, byte_offset INTEGER NOT NULL, record_count INTEGER NOT NULL, raw_bytes INTEGER NOT NULL, skipped_lines INTEGER NOT NULL DEFAULT 0, skipped_bytes INTEGER NOT NULL DEFAULT 0, first_seen TEXT NOT NULL, last_growth TEXT NOT NULL, last_read TEXT NOT NULL, state TEXT NOT NULL, last_error TEXT, UNIQUE(provider, session_id, stream_id, generation))`; `source_kind` is `hook` or `scan`; `state` is `open` or `missing`.
+      - `chunks(stream_pk INTEGER NOT NULL REFERENCES streams, chunk_seq INTEGER NOT NULL, first_record INTEGER NOT NULL, record_count INTEGER NOT NULL, raw_bytes INTEGER NOT NULL, codec TEXT NOT NULL, data BLOB NOT NULL, PRIMARY KEY(stream_pk, chunk_seq))`.
+      - `tail(stream_pk INTEGER NOT NULL REFERENCES streams, record_seq INTEGER NOT NULL, line BLOB NOT NULL, PRIMARY KEY(stream_pk, record_seq))`.
+      - `side_files(provider TEXT NOT NULL, session_id TEXT NOT NULL, rel_path TEXT NOT NULL, digest TEXT NOT NULL, raw_bytes INTEGER NOT NULL, codec TEXT NOT NULL, data BLOB NOT NULL, captured_at TEXT NOT NULL, PRIMARY KEY(provider, session_id, rel_path, digest))`.
+    - A record is one line without its final `\n`; nothing else is stripped or re-encoded. A final line without `\n` waits for its newline. A line longer than `MAX_LINE_BYTES` (`transcripts.py:47`) is not stored: `skipped_lines` and `skipped_bytes` grow and capture continues after its newline.
+    - Stream identity comes from the file name and layout, never from who found the file:
+      - Claude main: `<dir>/<session>.jsonl` gives `(session, "main")`;
+      - Claude subagent: `<dir>/<session>/subagents/agent-<hex>.jsonl` gives `(session, <hex>)`;
+      - Codex: `rollout-<timestamp>-<uuid>.jsonl` or the same name with `.zst` gives `(<uuid>, "main")`. The existing `_THREAD_ID` (`transcripts.py:70`, `:259`) matches `Path.stem` and fails on `.jsonl.zst`: write a new pattern on the full name;
+      - any other name is not captured and is counted as `unrecognized_name` in the pass result.
+    - `hook_session_id` is the session of the hook event that named the file (a Codex subagent rollout is named by its parent's session); it is used by `purge` only.
+    - Generations: `head_digest` is the SHA-256 of the first `head_len = min(4096, size)` bytes of the decompressed source. On a visit, digest the first `head_len` bytes again. Equal: continue at `byte_offset`, and if `head_len < 4096` and the file grew, store the digest of the longer head. Different, or the source is shorter than `byte_offset`: start generation `+1` at offset 0. Earlier generations are never deleted.
+    - When the plain path is gone, look for the same path with `.zst` appended and continue from it at `byte_offset` of the decompressed stream (read with `compression.zstd.open` and discard the prefix). Neither exists: set `state = "missing"` and keep everything captured.
+    - Which files a pass visits: the paths in `transcript_sources` of `events.sqlite3` whose `last_seen` is within the last hour (hooks update it), plus, for each such Claude main file, its sibling session directory: `subagents/agent-*.jsonl` as streams, and every other regular file below it (`*.json`, `tool-results/*`) as a side file. A side file is stored whole, zstd-compressed, keyed by its path relative to the session directory and its content digest; a changed file adds a row.
+    - Sealing: when the tail of a stream holds at least `CHUNK_TARGET_BYTES = 4 MiB`, the oldest records up to that size become one `chunks` row (their lines joined with `\n` after each, compressed with zstd) and leave `tail` in the same transaction. A stream with no growth for 24 hours has its remaining tail sealed into a final shorter chunk. A stream that grows again simply gets a new tail.
+    - Budget: the pass runs after the enrichment block (before `daemon.py:1971`) with its own limit of 0.1 s per tick, round-robin over streams; the cursor lives in `streams`, so the next tick continues. Reuse `_signature`, `_read_window` and `_line_end` from `transcripts.py`. Check free space with the same admission function `Store._put` uses; a refusal ends the pass for that project and reports it degraded.
+    - A project with `capture_content = false` gets no raw capture.
+    - `purge` (`storage.py:1333-1384`) also deletes the capture rows where `session_id` or `hook_session_id` matches.
+    - `doctor` adds per project: streams, open and missing counts, raw bytes, stored bytes, skipped lines, last errors.
+    - zstd level: add `scripts/measure_zstd.py`, an explicit offline script that reads session files from a `--root` the user passes and prints, for levels 3, 6, 9, 12, 15 and 19 and block sizes 1, 4 and 16 MiB, the size ratio and the compression and decompression speed. Run it on at least 64 MiB of local sessions. `ZSTD_LEVEL` is the highest level whose median time to compress one 4 MiB block is at most 150 ms on the development host; if none qualifies, 3. The block size stays 4 MiB. Record the table (numbers only) in `docs/evidence/wd187.md`.
+    - E5, a new invariant in `TENETS.md`: "Captured raw records are stored unchanged. A reader or parser change never deletes or rewrites them; derived projections are rebuilt from the raw records. No default setting expires or evicts stored data; only an explicit user setting or the `purge` command removes it."
+  - **Steps.**
+    1. `capture_store.py` with tests: create, reopen, version mismatch, append, seal, read back.
+    2. `capture.py` with tests on synthetic JSONL in temporary directories: the identity table; incremental capture; an unfinished last line; sealing at a small injected target; the idle seal; a byte-exact round trip (joined lines equal the source bytes); truncation and a changed head start a new generation and keep the old one; the plain-to-`.zst` transition continues the same generation; a missing file; a skipped oversized line; `capture_content = false`; subagent streams and side files, including a changed side file; the time budget with an injected clock; `events.sqlite3` still reports `user_version` 9.
+    3. Daemon wiring, `purge`, `doctor`.
+    4. The measurement, then set `ZSTD_LEVEL`.
+    5. `docs/storage.md`: a section "Raw capture store" with the schema and the rules above; mark `docs/storage.md:364-365` and `docs/architecture.md:85` as superseded.
+    6. Update the live instance.
+  - **Out of scope.** Files no hook names (WD-188). Any parsing of record content beyond finding `cwd` (left `NULL` here; WD-188 fills it). The read API (WD-189).
+  - **Acceptance:**
+    - the tests pass, then the full suite;
+    - on the live instance, after one real session of each provider, `doctor` shows its streams and the stored bytes, and a script-level check confirms the captured lines equal the provider file byte for byte;
+    - `docs/evidence/wd187.md` holds the measurement table, the chosen level and that check.
+
+- [ ] **WD-188 - Scan the provider directories and backfill history.** P0. Depends on WD-186, WD-187.
+  - **Why.** Hooks name only the files of sessions that ran while Watchdog was installed and healthy. The provider directories hold more: older sessions, sessions from periods when hooks were broken (WD-174), and Codex rollouts that Codex itself compressed to `.jsonl.zst` (783 files on the development host against 13 plain ones). The provider deletes old files, so every day without a backfill loses history.
+  - **Fixed decisions.**
+    - New configuration table `[scan]`: `enabled` (code default `false`), `claude_roots`, `codex_roots`, `interval_seconds = 300`. Empty roots mean the provider defaults: `~/.claude/projects`; `~/.codex/sessions` and `~/.codex/archived_sessions`. `config.example.toml` and the live configuration set `enabled = true`; `doctor` warns when it is off. The code default stays off so that no test daemon ever reads the real home directory.
+    - Patterns: Claude `<root>/<slug>/<session>.jsonl`, `<root>/<slug>/<session>/subagents/agent-*.jsonl` and side files below `<root>/<slug>/<session>/`; Codex `<root>/**/rollout-*.jsonl` and `rollout-*.jsonl.zst`. Identity and capture go through the WD-187 functions with `source_kind = "scan"`; a stream first seen by a hook keeps `hook`.
+    - Routing a file to a project: read its `cwd` from the head of the file (Claude: the first record with a string `cwd` within the first 64 KiB; Codex: `payload.cwd` of the first `session_meta` record), store it in `streams.cwd`, and resolve it exactly as the spool drain does after WD-186, including automatic registration. If the directory no longer exists, resolve its nearest existing ancestor instead. No `cwd`, not Git, excluded or unresolvable: the file is ignored and counted in `ignored.json` with reason `no_cwd`, `not_git`, `excluded` or `unresolvable_cwd`.
+    - Scan state lives in `<data>/scan.sqlite3`, one table `files(provider TEXT, path TEXT PRIMARY KEY, size INTEGER, mtime_ns INTEGER, project_id TEXT, decision TEXT, checked_at TEXT)`. A file whose size and modification time are unchanged and whose stream is fully captured is skipped from this table alone, without opening it.
+    - Scheduling: the scan is its own slot in the daemon loop with its own timer. A cycle walks the roots with `os.scandir`, keeps its position in memory between ticks, and spends at most 50 ms per tick on walking; capturing uses the WD-187 budget. The first cycles are the backfill; there is no separate backfill command.
+    - `doctor` adds per provider: files on disk, fully captured, partly captured, ignored by reason, unrecognized names, the time of the last finished cycle, and the modification time of the oldest file still on disk.
+  - **Steps.**
+    1. Tests with synthetic roots in temporary directories and `[scan]` roots pointing at them: both providers, a `.jsonl.zst` rollout, an archived rollout, a subagent file, a side file, a vanished `cwd` resolved through its ancestor, each ignore reason, the unchanged-file skip, the walking budget, and that a stream seen by both hook and scan exists once.
+    2. Implementation, `doctor`, documentation (`docs/storage.md`, `config.example.toml`; mark `docs/architecture.md:35` as superseded).
+    3. Live instance: enable the scan, let the backfill finish, record the coverage.
+  - **Out of scope.** Sessions of other machines (WD-205). Parsing for analytics.
+  - **Acceptance:**
+    - the tests pass, then the full suite;
+    - `docs/evidence/wd188.md` holds the live `doctor` coverage after the backfill: every recognized file is either fully captured or ignored with a reason.
+
+## Split P1 - Read contract and insights on Watchdog data
+
+- [ ] **WD-189 - Read contract v1 for Watchdog stores.** P1. Depends on WD-187.
+  - **Why.** Owner decision 2. `wdi` must read stores without importing the daemon or depending on private functions, and must tell stores of different machines apart.
+  - **Fixed decisions.**
+    - Machine identity: `<data>/machine_id`, a UUID4 written once at the first daemon start and never regenerated.
+    - Manifest `<project data>/store.json`, rewritten atomically by the daemon whenever its content would change: `contract` (1), `machine_id`, `hostname`, `os`, `project_id`, `root`, `git_common_dir` (or `null`), `name` (the project alias), `events_schema`, `capture_schema`, `written_at`.
+    - New module `src/agent_watchdog/readapi.py`. It imports only the standard library, `agent_watchdog.config` and the constants of `agent_watchdog.capture_store`; never `daemon` or `inspection`. Functions:
+      - `default_data_dir() -> Path`;
+      - `stores(data_dir) -> list[StoreInfo]` from the manifests; a directory without a manifest is skipped; a manifest with a newer `contract` is returned with `supported = False`;
+      - `open_events(info)` and `open_capture(info)`: read-only connections (`mode=ro`, `query_only`), version checked against the manifest;
+      - `streams(info) -> Iterator[StreamInfo]` (the latest generation of each stream, with `record_count`, `raw_bytes`, `cwd`, `generation`);
+      - `lines(info, stream_pk, start_record=0) -> Iterator[bytes]`: sealed chunks, then the tail;
+      - `side_files(info, provider, session_id)` and `side_file_bytes(info, ...)`.
+    - No long snapshots: each chunk or page is fetched in its own short read, so the writer's WAL checkpoint (`storage.py:1658-1667`) is never held back for the length of an import.
+    - Move the read-only open helper into `readapi` and make `inspection.database` (`inspection.py:269-281`) call it, not the other way round: `inspection` imports `daemon` at module level.
+    - `docs/read-contract.md`: the files of a store, the contractual tables and columns of `capture.sqlite3`, the manifest fields, the public modules (`agent_watchdog.readapi` at runtime; `agent_watchdog.capture_store` for building stores in tests only), and the evolution rule: adding a table or a nullable column does not change `contract`; removing, renaming or retyping does, together with `readapi.CONTRACT_VERSION`; a reader refuses a store with a newer contract.
+  - **Steps.**
+    1. Tests: the manifest is written and rewritten; `machine_id` is stable across restarts; `stores` skips and flags; `lines` returns sealed and tail records in order and byte-exact; a store with a newer contract is refused; a writer checkpoint succeeds while a reader iterates.
+    2. Implementation and the document.
+    3. Add `capture_store.write_manifest` for tests of both packages that build a synthetic store through the real writer.
+  - **Out of scope.** Reading hook events and facts (WD-195), environment and outcome (WD-196).
+  - **Acceptance:** the tests pass, then both suites; `docs/read-contract.md` describes everything `readapi` exposes and nothing else.
+
+- [ ] **WD-190 - Session environment snapshot.** P1. Depends on WD-187.
+  - **Why.** An A/B comparison needs the conditions of each run: where it ran, on which commit, under which instructions, settings and Watchdog rules. Today the hook path drops `cwd` (`native/src/main.rs:664-677`, `hooks.py:342`), the checkout fingerprint never reads `HEAD` (`analysis.py:702-745`), and the active rule set is not recorded per session.
+  - **Fixed decisions.**
+    - Stored in `capture.sqlite3`; `SCHEMA_VERSION` becomes 2; the live stores are converted by a one-off script `scripts/capture_schema_v2.py`.
+    - Tables: `blobs(digest TEXT PRIMARY KEY, raw_bytes INTEGER NOT NULL, codec TEXT NOT NULL, data BLOB NOT NULL)` and `session_env(provider TEXT NOT NULL, session_id TEXT NOT NULL, captured_at TEXT NOT NULL, cwd TEXT, checkout_id TEXT, head TEXT, branch TEXT, harness TEXT NOT NULL, files TEXT NOT NULL, watchdog TEXT NOT NULL, PRIMARY KEY(provider, session_id, captured_at))`. `harness`, `files` and `watchdog` are JSON.
+    - When: at every `SessionStart` event and at the first event of a session that has no `session_env` row. A snapshot equal to the newest row of the session is not stored again.
+    - `cwd` comes from the spool record (`daemon.py:939` has it): carry it through the `pending` tuple (`daemon.py:1065`) into `committed()` (`daemon.py:1106-1149`). No native change.
+    - Git: `HEAD` commit and branch through `analysis._git_output` (`analysis.py:651-671`) with its existing timeout; unknown stays `null`.
+    - `harness`: the hook metadata fields `model`, `permission_mode`, `source` and `surface` when present.
+    - `files`: a list of `{path, role, digest, error}`. Captured files: for Claude `CLAUDE.md`, `CLAUDE.local.md`, `.claude/CLAUDE.md`, `AGENTS.md`, `.claude/settings.json`, `.claude/settings.local.json`, `.mcp.json` under the checkout root, and `~/.claude/CLAUDE.md`, `~/.claude/settings.json`; for Codex `AGENTS.md` under the checkout root and `~/.codex/AGENTS.md`, `~/.codex/config.toml`, `~/.codex/hooks.json`. In instruction files, follow lines of the form `@<relative path>` up to three levels, only to files inside the checkout root or the provider's home directory. At most 64 files and 1 MiB each per snapshot; a larger or unreadable file is listed with `error` and no digest.
+    - Secrets: before hashing and storing a settings or configuration file, replace every value under an `env` table and every value whose key matches `(?i)token|secret|password|api[_-]?key|authorization` with `"<redacted>"`. Reuse `agent_watchdog.privacy` where it fits. Instruction files are stored as they are.
+    - `watchdog`: the rule entries from `engine_for(paths).registry.entries(config)` as `{name, source, status, digest}` (`rules/registry.py:32-46`, `:208-245`), the global and project kill-switch states, and the effective limits of the project.
+    - Budget: 0.5 s in total after the diff snapshot step (`daemon.py:1126-1140`); on the deadline store what was collected and list the rest with `error = "deadline"`.
+    - `capture_content = false`: store `cwd`, `head`, `branch`, `harness`, `watchdog` and the digests, but no blobs.
+  - **Steps.** Tests first (each field, the import following and its bounds, redaction, deduplication, the deadline, `capture_content = false`), then the code, the conversion script, `docs/storage.md`, `docs/read-contract.md` (new tables are additive), the live update with the script run recorded.
+  - **Out of scope.** Showing the data (WD-196). Per-run policy (WD-204).
+  - **Acceptance:** the tests pass, then the full suite; `docs/evidence/wd190.md` shows one live session's snapshot with file digests and the rule set, and no secret value in any stored blob.
+
+- [ ] **WD-191 - Repository outcome snapshots.** P1. Depends on WD-190.
+  - **Why.** The result of a run is what changed in the repository. The current diff fingerprint (`storage.py:1137-1174`) reads the diff, hashes it and discards it, and it cannot see commits: two runs that both committed their work look identical and clean.
+  - **Fixed decisions.**
+    - Stored in `capture.sqlite3`; `SCHEMA_VERSION` becomes 3; one-off script `scripts/capture_schema_v3.py`.
+    - Table `checkout_states(checkout_id TEXT NOT NULL, observed_at TEXT NOT NULL, provider TEXT NOT NULL, session_id TEXT NOT NULL, trigger TEXT NOT NULL, base_head TEXT, head TEXT, branch TEXT, files_changed INTEGER, insertions INTEGER, deletions INTEGER, untracked INTEGER, diff_digest TEXT, error TEXT, PRIMARY KEY(checkout_id, session_id, observed_at))`.
+    - `base_head` is the `head` of the session's first `session_env` row.
+    - Triggers: `Stop` and `SessionEnd` events, at most once per 30 s per checkout unless `HEAD` changed.
+    - Numbers come from `git diff --numstat <base_head>` (committed, staged and unstaged changes since the session began) and the untracked count from the existing fingerprint code. The text of `git diff <base_head>` is stored in `blobs`, bounded by `MAX_DIFF_BYTES` (`analysis.py:53-56`); a larger diff stores the numbers and `error = "diff_too_large"`.
+    - `capture_content = false`: numbers only.
+    - The existing `diff_snapshots` table and the `diff_oscillation` signal are unchanged.
+    - Update the statements that diff text is never stored (`docs/storage.md:364-365`, the docstring at `storage.py:1158`): it is stored in `capture.sqlite3` when `capture_content` is true.
+  - **Steps.** Tests with temporary Git repositories (no change; an uncommitted change; a commit; several commits; the size bound; debounce; `capture_content = false`; unknown base), then the code, the script, the documents, the live update.
+  - **Out of scope.** Running tests or any verification command in the repository (WD-203).
+  - **Acceptance:** the tests pass, then the full suite; `docs/evidence/wd191.md` shows a live session that committed its work with a non-zero outcome.
+
+- [ ] **WD-193 - Insights database under `~/.wdi/`, a schema rule without migrations, and a one-off import of the old database.** P1. Depends on WD-184.
+  - **Why.** Owner decision 6. The old database cannot be rebuilt: 772 of its 1,580 sessions point at files that no longer exist, and it holds 60 paid analyses. The source rule "delete the database and re-import" would destroy both.
+  - **Fixed decisions.**
+    - The schema stays one file, `insights/src/wdi/db/migrations/0001_init.sql`, edited in place. Replace the numbered-file loop in `apply_migrations` (`insights/src/wdi/db/connection.py:33-45`) with a constant `SCHEMA_REVISION`: an empty database gets the schema and `PRAGMA user_version = SCHEMA_REVISION` in one transaction; an equal revision is used; any other revision raises an error that names `insights/scripts/rebuild_db.py`. Every change of the schema file increments `SCHEMA_REVISION`.
+    - One function opens the database and applies this check; the CLI, the web dependencies (`web/dependencies.py:38`) and the MCP server (`mcp/server.py:24`) all use it.
+    - Table kinds, marked by a comment above each `CREATE TABLE` and listed in `insights/AGENTS.md`: **primary** are `llm_analyses`, `coach_reports` and every row of the session tables with `origin = 'legacy'`; everything else is **derived**.
+    - New column `sessions.origin TEXT NOT NULL DEFAULT 'file'` with values `file`, `watchdog`, `legacy`.
+    - `insights/scripts/rebuild_db.py`: creates a new database from the current schema, copies the primary tables and the `legacy` sessions with their dependent rows (matching columns by name), keeps the old file as `wdi.sqlite.bak-<timestamp>`, and tells the user to run `wdi import --full`.
+    - `insights/scripts/import_legacy_db.py --from <old database>`: run after a full import; copies every session that is absent from the new database, with its messages, tool calls, context events and subagent runs, as `origin = 'legacy'`; copies all `llm_analyses` and `coach_reports`. Imports never delete or replace a `legacy` session.
+    - The old home directory and its database are never written to.
+  - **Steps.** Tests (the revision check and its error; one open path; `rebuild_db.py` keeps primary rows and legacy sessions on a synthetic database; `import_legacy_db.py` on a synthetic old database, run twice without duplicates; an import does not touch legacy sessions), then the code, the table marks, `insights/AGENTS.md`, and the live run: `wdi import --full`, then `import_legacy_db.py`, with the row counts recorded.
+  - **Out of scope.** Reading Watchdog stores (WD-192).
+  - **Acceptance:** the tests pass; `docs/evidence/wd193.md` holds the counts of sessions by `origin` and of analyses after the live run, and the checksum of the old database before and after, unchanged.
+
+- [ ] **WD-192 - `wdi` imports transcript lines from Watchdog stores.** P1. Depends on WD-188, WD-189, WD-193.
+  - **Why.** Owner decision 2. Today the importer reads provider files, which are deleted after weeks and are invisible when compressed.
+  - **Fixed decisions.**
+    - Settings: `watchdog.data_dirs`, a list of data directories, default `[readapi.default_data_dir()]`. `wdi doctor` lists each directory, the stores found and the unsupported ones.
+    - In `insights/src/wdi/ingest/runner.py`, split `import_stream_file` into a source object with `key`, `size`, `version` and `read_lines()`, and one `import_stream` that works on it. The file source keeps today's behaviour and its tests pass unmodified. The parsers (`ParseFn`) do not change.
+    - The Watchdog source: `key = wd://<machine_id>/<project_id>/<provider>/<session_id>/<stream_id>`, stored in the existing `import_state` columns as `path = key`, `file_size = raw_bytes`, `file_mtime = generation`, `byte_offset = record_count`; a comment documents the mapping. Only the latest generation of a stream is imported.
+    - Stream mapping: Claude `main` is the main stream and a subagent stream keeps its hex id, as the file importer does; every Codex thread is its own session.
+    - `machine_id`, `hostname` and `os` come from the manifest. The project is resolved from the parsed `cwd` as today, falling back to the manifest `root`.
+    - `sessions.origin = 'watchdog'` and `sessions.source_path = key`.
+    - Precedence: a session with `origin = 'watchdog'` is skipped by the file importer; a session first imported from a file and later found in a store is re-imported from the store and its file `import_state` row is removed; a `legacy` session is never touched.
+    - `wdi import` runs the Watchdog import first, then the file import. The file import stays enabled. `wdi doctor` reports per provider how many sessions exist only as files; `insights/README.md` says to turn the file sources off once that number has been zero for a week.
+  - **Steps.** Tests on synthetic stores built with `capture_store`: parity (the same lines through a file and through a store give identical rows apart from `origin` and `source_path`); growth replays the stream; a new generation replaces the rows; several streams; a store without a manifest and one with a newer contract are skipped with a warning; the three precedence rules. Then the code and the `doctor` section.
+  - **Out of scope.** Full text on demand (WD-194). Hook facts (WD-195).
+  - **Acceptance:** the tests pass; `docs/evidence/wd192.md` holds the live `wdi doctor` output with sessions by `origin` and the file-only counts.
+
+- [ ] **WD-194 - Full text is read through `readapi`.** P1. Depends on WD-192.
+  - **Why.** The database keeps previews of 300 and 500 characters. The tool-call detail view and the analyzer context read the full text from `sessions.source_path` and silently fall back to the preview when that is not a file (`llm/context.py:28-39`, `web/routes/sessions.py:184-189`, `llm/transcript.py:42-71`, `:191-205`).
+  - **Fixed decisions.**
+    - One function in `insights/src/wdi/llm/transcript.py` returns the lines of a stream for a `source_path`: a `wd://` key through `readapi.lines`, anything else as a file when it exists, otherwise "unavailable". The three call sites use it. `iter_segments` accepts an iterable of lines.
+    - "Unavailable" is shown as such in the page and passed as such to analyzers, never replaced by a preview without saying so.
+    - Externalised tool results: find the reference format in a real local transcript, record it in `insights/GOTCHAS.md`, and make the detail view return the content of the referenced side file through `readapi.side_file_bytes`. Cover it with a synthetic fixture.
+  - **Steps.** Tests for the three call sites with a synthetic store, with a file, and with neither; then the code.
+  - **Out of scope.** Storing full text in the insights database.
+  - **Acceptance:** the tests pass; on the live instance the detail view of a tool call from a session whose provider file is gone shows the full input and output.
+
+- [ ] **WD-197 - Isolated Claude runs for analysis in `wdi`.** P1. Depends on WD-184.
+  - **Why.** The Claude backend in `wdi` (`insights/src/wdi/llm/backend.py:103-148`) runs `claude -p --output-format json --model M` in the inherited directory with the user's settings, hooks and MCP servers. Each analysis becomes an ordinary observed session, and the result depends on the user's configuration. Watchdog already has an isolated runner (`src/agent_watchdog/insights/llm.py:29-90`, `:197-246`).
+  - **Parity table (owner decision 7); the result keeps every row.**
+
+    | Capability | `wdi` backend | Watchdog runner |
+    |---|---|---|
+    | `complete(prompt, model) -> str`, raises `LLMError` | yes | no (`Request` to `Result`, never raises) |
+    | Free-text answer | yes | no (a JSON schema is required) |
+    | Long prompt through stdin (Windows command-line limit) | yes | verify |
+    | Default timeout 180 s | yes | caller-set |
+    | Four parallel workers in `wdi analyze` | yes | preflight spawns `--version` and `--help` per call |
+    | No user settings, hooks, MCP, tools or session file; scratch directory | no | yes |
+    | Refusal when isolation cannot be established | no | yes |
+
+  - **Fixed decisions.**
+    - Keep the `wdi` interface and the class name `ClaudeCliBackend` (tests patch it at `insights/tests/test_web.py:231`, `:563`, `:586`, `:615-616`, `:643`). Inside, it calls the Watchdog runner.
+    - In `agent_watchdog/insights/llm.py`: make `Request.schema` optional (no `--json-schema` flag; `Result.output` is `{"text": <answer>}`); cache the preflight result per executable path and modification time for the life of the process.
+    - The adapter maps a non-empty `Result.reason` to `LLMError` with that reason and returns the text otherwise. The forbidden roots are the `root` values of all store manifests from `readapi.stores`.
+    - The Codex backend of `wdi` (`backend.py:23-100`) is not changed: it already passes `--ephemeral --ignore-user-config --sandbox read-only`. `insights/README.md` states that its isolation is weaker than the Claude path and that Watchdog's own Codex backend remains unavailable (WD-166).
+    - Add `agent_watchdog.insights.llm` to the public modules in `docs/read-contract.md`.
+  - **Steps.** Tests with a synthetic executable: the isolation flags are present; a 200 KiB prompt works on Windows; an isolation failure becomes `LLMError`; four concurrent calls run one preflight; the existing `wdi` tests pass unmodified. Then the code.
+  - **Out of scope.** JSON schemas for the `wdi` analyzers. Any Codex change.
+  - **Acceptance:** both suites pass; one separately authorized live `wdi analyze` run creates no session file and no hook record, shown in `docs/evidence/wd197.md`.
+
+## Split P2 - Analytics, comparison and applying recommendations
+
+- [ ] **WD-195 - Hook facts in `wdi`, and token reconciliation.** P2. Depends on WD-192.
+  - **Why.** Transcripts do not contain what hooks see: how long the user was asked for permission, tool durations measured by the harness, the control actions Watchdog delivered. The two programs also count tokens under different conventions for subagents, so the same session shows different totals.
+  - **Fixed decisions.**
+    - `readapi` gains paged readers for `events` (by `rowid`) and `event_facts`; `docs/read-contract.md` lists the contractual columns of both, taken from `facts.FACT_COLUMNS` (`src/agent_watchdog/facts.py`) and the `events` table. Write that list before the code.
+    - `wdi` table `hook_facts` (derived): the `event_facts` columns plus `machine_id` and `project_id`, imported incrementally with an `import_state` cursor `wd-facts://<machine_id>/<project_id>`.
+    - Session metrics computed from it: total permission wait, tool duration by tool, counts of control actions by action and rule.
+    - Reconciliation in `wdi doctor`: for each session present in both sources, compare input, cached-input, cache-write and output tokens of the main stream with Watchdog usage rows that have no `agent_id`, and subagent totals with rows that have one. Report the sessions that differ by more than 1% and the totals of both sides. Do not change either convention in this task.
+  - **Steps.** Tests on a synthetic store; the code; one live reconciliation recorded.
+  - **Out of scope.** Fixing the differences the reconciliation finds: record each as a new task.
+  - **Acceptance:** the tests pass; `docs/evidence/wd195.md` holds the live reconciliation table and the list of new tasks it produced.
+
+- [ ] **WD-196 - Environment and repository outcome in `wdi`.** P2. Depends on WD-190, WD-191, WD-192.
+  - **Fixed decisions.**
+    - `readapi` gains readers for `session_env`, `checkout_states` and `blobs`.
+    - `wdi` tables `session_env` and `checkout_states` (derived); blobs are fetched on demand, not copied.
+    - Session page: an "Environment" panel (directory, commit, branch, model, each instruction and settings file with a marker when its digest differs from the previous session of the same project, the Watchdog rule set) and an "Outcome" panel (files changed, insertions, deletions, whether `HEAD` moved, a diff view).
+    - Session list filters: branch, "changed the repository", "instructions changed since the previous session".
+  - **Steps.** Tests for the import, the panels in their normal, empty and unavailable states, and the filters; then the code.
+  - **Acceptance:** both suites pass; the panels render for a live session.
+
+- [ ] **WD-198 - One pricing implementation; `usage`, `overview` and `export` move to `wdi`.** P2. Depends on WD-195.
+  - **Why.** Both programs estimate cost and summarise usage, with different features.
+  - **Parity table for pricing (owner decision 7); the result has every row.**
+
+    | Capability | Watchdog `pricing.py` | `wdi` `metrics/pricing.py` |
+    |---|---|---|
+    | Tariff sections with an effective date, so history is re-priced | yes | no |
+    | `Decimal` arithmetic and an explicit "unpriced" reason | yes | no |
+    | Codex input minus cached input (`pricing.py:118-127`) | yes | no |
+    | Model matched by its longest key prefix | no | yes |
+    | Built-in default price table | no | yes |
+    | Separate 5-minute cache-write rate with fallback | no | yes |
+
+  - **Fixed decisions.**
+    - The single implementation lives in `insights/src/wdi/metrics/pricing.py`: the tariff file format and arithmetic of Watchdog, plus prefix matching, plus an optional `cache_write_5m` rate that falls back to `cache_write`, plus a default tariff file shipped as package data and generated from the current `DEFAULT_PRICING` table (`insights/src/wdi/config.py:15-55`). A user tariff file named in the `wdi` settings replaces the default entirely.
+    - A parity test prices a fixed token vector for every model key of the old default table and gets the old result.
+    - `wdi usage`, `wdi overview` and `wdi export` replace the Watchdog commands. Before any deletion, write a field-by-field table in `docs/evidence/wd198.md`: every output field of `inspection.usage`, `inspection.overview` and `inspection.export_sessions` (documented in `docs/cli.md`), mapped to its source in `wdi` or marked "dropped" with a reason. Findings shown by `overview` are control data: `wdi overview` reads them through a new `readapi` reader. **Stop and get the user's confirmation of the dropped fields before removing anything.**
+    - Then remove from Watchdog: the `overview`, `usage` and `export` commands (`cli.py:184`, `:206`, `:334`, `:500-521`, `:568-574`), `inspection.usage`, `inspection.overview`, `inspection.export_sessions`, `facts_query.py`, `pricing.py`, `Config.pricing` (`config.py:143-156`, `:191`) and `scripts/benchmark_overview.py`. Remove `[pricing]` from the live configuration in the same live update, because the new code rejects the unknown section. Tests of removed code are deleted; tests of kept behaviour move to `insights/tests`.
+    - `summary`, `report`, `telemetry`, `doctor`, `analyze errors`, labels, verdicts and rules stay in Watchdog.
+  - **Out of scope.** The insights modes (WD-199).
+  - **Acceptance:** both suites pass; for one live week `wdi usage` and the last Watchdog `usage` output agree on tokens and cost, or each difference is explained in the evidence file; the user's confirmation is quoted there.
+
+- [ ] **WD-199 - Move eight insights modes to `wdi`.** P2. Depends on WD-197, WD-198. Carries the acceptance of the closed WD-136a and WD-136b.
+  - **Why.** Owner decision 2: analysis belongs to `wdi`. The modes `errors`, `context`, `tokens`, `workflow`, `subagents`, `permissions`, `sessions` and `digest` are analysis; the `session` mode is the manual form of the judge and stays, because the daemon judge (WD-145) will reuse its pipeline.
+  - **Fixed decisions.**
+    - Stay in `agent_watchdog/insights/`: `__init__` (`run`, the response pipeline), `session`, `timeline`, `window`, `bundle`, `contract`, `budget`, `llm`, `render`. First move `command_class` out of `tokens.py:88` into `timeline.py`, because `session.py:13` imports it.
+    - Move to `insights/src/wdi/modes/`: `errors`, `context`, `tokens`, `workflow`, `subagents`, `attribution`, `permissions`, `sessions`, `digest`, `scope`, and `run_all`. They keep reading stores through the Watchdog modules they use today.
+    - Rename the private response function in `agent_watchdog/insights/__init__.py` to a public name and list in `docs/read-contract.md` every `agent_watchdog` module the moved code imports: `insights` (the response pipeline), `insights.timeline`, `insights.window`, `insights.bundle`, `insights.contract`, `insights.budget`, `insights.llm`, `insights.render`, `inspection`, `analysis`, `config`, `events`, `execution`, `privacy`, `storage.StorageError`.
+    - Watchdog keeps `agent-watchdog insights session`; the other modes and `--all-projects` are removed from its CLI (`cli.py:233-292`, `:434-470`). `scripts/calibrate.py` keeps working.
+    - `wdi insights <mode>` on the command line, and in the web interface one button per mode: pressed by the user, never automatic; the expected cost and duration are shown first; the run is a background job with a status; it uses the isolated runner; the finished report is stored in a primary table `mode_reports` and listed in a viewer. No model call without that press.
+    - The tests of the moved modes move to `insights/tests`; they may import `agent_watchdog.storage.Store` to seed data.
+  - **Out of scope.** Merging the mode framework with the `wdi` analyzers. Rule candidates (WD-144).
+  - **Acceptance:** both suites pass with the same total number of mode tests as before the move; `agent-watchdog insights session` works; one separately authorized live `wdi insights errors` run appears in the viewer.
+
+- [ ] **WD-200 - Compare two windows or two sets of sessions.** P2. Depends on WD-195.
+  - **Why.** The loop "measure, change, measure" needs a before-and-after view; neither program has one.
+  - **Fixed decisions.**
+    - A selection is a filter: project, provider, model, date range, label, or explicit session ids. A comparison takes selections A and B.
+    - Fixed metric set per session: user turns, wall time, input, cached-input, cache-write and output tokens, estimated cost, peak context size, compactions, tool calls, tool errors, total permission wait, subagent runs, files changed, insertions, deletions, whether `HEAD` moved, outcome label.
+    - Output per metric: count, median, mean and 90th percentile for A and for B, and the difference of medians. A selection with fewer than five sessions is marked "too few sessions". Unknown values are excluded and counted, never treated as zero.
+    - `wdi compare --a <filter> --b <filter>` and a web page with the same table. No model call.
+  - **Acceptance:** tests for each metric, unknown handling and the small-sample mark; the page renders its normal, empty and invalid states.
+
+- [ ] **WD-201 - Experiments, stage 1: manual grouping and comparison.** P2. Depends on WD-196, WD-200.
+  - **Why.** The owner wants to give the same task and inputs to another model, or to the same model under other rules, tools or Watchdog restrictions, and compare time, tokens, turns, context growth and the result in the repository.
+  - **Fixed decisions.**
+    - Primary tables in `wdi`: `experiments(id, name, task_text, project_id, base_commit, verify_command, notes, created_at)`, `variants(id, experiment_id, name, description)`, `runs(id, variant_id, session_id, machine_id, status, verdict, notes, started_at)`. `verdict` is `pass`, `fail`, `partial` or empty, set by the user.
+    - The user starts sessions by hand and attaches each to a variant: `wdi experiment attach <experiment> <variant> <session>` and the same action on the session page.
+    - The experiment page shows the WD-200 metrics per variant, and a conditions table built from `session_env` that lists only the fields that differ between variants: model, each instruction or settings file digest, the Watchdog rule set, kill switches, branch and base commit. A run whose base commit differs from the experiment's is flagged.
+    - Sessions attached to a run are excluded from the default dashboards and from the noise filter (`insights/src/wdi/metrics/filters.py:45`); a filter includes them.
+  - **Out of scope.** Starting sessions (WD-203).
+  - **Acceptance:** tests for the tables, attach and detach, the differing-conditions table and the dashboard exclusion; both suites pass.
+
+- [ ] **WD-202 - Apply selected recommendations.** P2. Depends on WD-199, WD-200. Carries the acceptance of the closed WD-136c.
+  - **Why.** Owner goal: insights applies the fixes its research proposes. No code for this exists in either program.
+  - **Fixed decisions.**
+    - Write a design section in `docs/architecture.md` before any code: this is the first write from a user interface into provider or user configuration.
+    - Targets are a closed list: a project or user `CLAUDE.md`, `AGENTS.md`, the permissions of a `settings.json`, and Watchdog rule candidates, which are written as files for `agent-watchdog rules propose --from` (WD-144) and never enabled by `wdi`.
+    - Only a recommendation that carries `scope`, `target_file` and `project` (the mode reports do, see `docs/cli.md`) can be applied.
+    - The page shows a checkbox per recommendation, unselected by default, and one Apply button for the selected ones; a diff preview and an explicit confirmation precede every write; each write makes a backup and is atomic.
+    - Primary table `applied_changes(id, report_id, recommendation, target_file, before_digest, after_digest, backup_path, applied_at)`: an applied recommendation is not proposed again, and its time is drawn as a marker on the time charts, so that WD-200 can compare before and after.
+    - Model text is data and is never executed. The server listens on loopback only, requires a per-instance token, and checks `Host` and `Origin`.
+    - Tests never write to real provider configuration.
+  - **Acceptance:** tests for each target type, the preview, the backup, the registry and each security check; one separately authorized live application recorded in `docs/evidence/wd202.md`.
+
+- [ ] **WD-207 - Translate and import the three session-format references.** P2. Depends on WD-184.
+  - **Why.** The `project-b` checkout documents the Claude Code and Codex session formats and their differences in three files under `docs/`; they are not in English and so were not imported. They are the reference for the parsers.
+  - **Fixed decisions.** Translate faithfully into `insights/docs/` under the same file names; do not correct or extend the content; replace the project-directory example at line 16 of the Claude document with a synthetic one. Add links from `insights/README.md`.
+  - **Acceptance:** the Cyrillic check of WD-184 still prints nothing; the forbidden-name check from `LIVE.md` passes.
+
+## Split P3 - Experiment runner and extensions
+
+- [ ] **WD-203 - Experiments, stage 2: a runner for headless runs.** P3. Depends on WD-201.
+  - **Fixed decisions.**
+    - `wdi experiment run <experiment> --variant <name> [--repeat N]` creates one Git worktree of the experiment's repository at `base_commit` under `~/.wdi/runs/<run id>/`, starts the agent headless in it, waits, runs `verify_command` there with a timeout, and records the exit code and the session id in `runs`.
+    - A variant gains run conditions: provider, model, effort, files to overlay in the worktree (instructions, settings) and extra command-line arguments.
+    - Claude runs with a pre-assigned session id (`--session-id`, as `scripts/hook_stream_timing.py:80-81` does); Codex reports its id in its output.
+    - The session is an ordinary observed one: hooks are active and Watchdog captures it. Runner sessions are never classified as noise.
+    - The command prints the planned number of runs, a time limit per run and a cost ceiling, and starts only with `--yes`. It stops when a limit is reached.
+    - Worktrees stay until `wdi experiment clean`.
+    - E6, added to the "Worktree policy" in `TENETS.md`: "This policy governs development of this repository. Worktrees that `wdi experiment run` creates in a target repository are product behaviour."
+  - **Acceptance:** tests with a synthetic agent executable for the worktree, the conditions overlay, the verification result, each limit and the cleanup; one separately authorized live experiment with two variants recorded in `docs/evidence/wd203.md`.
+
+- [ ] **WD-204 - A Watchdog policy variant per run.** P3. Depends on WD-190, WD-203.
+  - **Why.** One of the conditions to compare is the set of Watchdog restrictions. Today rules and kill switches are global or per project, and a worktree shares its project.
+  - **Fixed decisions.** Write the design in `docs/architecture.md` first. The override is keyed by `checkout_id`, set through the daemon control channel (as labels are), stored in the Watchdog configuration, and limited to disabling rules and setting the kill switch for that checkout; it can never enable a rule or raise an action. Nothing inside the repository can set it. `session_env.watchdog` records the effective result.
+  - **Acceptance:** offline tests that an override narrows and never widens, survives a daemon restart, and appears in the snapshot.
+
+- [ ] **WD-205 - Several machines.** P3. Depends on WD-192.
+  - **Fixed decisions.**
+    - `agent-watchdog export-store --to <dir>` writes consistent copies of each project's `events.sqlite3`, `capture.sqlite3` and `store.json` through the SQLite backup API. The user moves that directory between machines by their own means.
+    - `wdi` reads any number of `watchdog.data_dirs`; sessions are keyed by the manifest `machine_id`; it never writes to a store.
+    - Parity table before removal (owner decision 7): the snapshot export and merge commands of `wdi` (`insights/src/wdi/sync/snapshot.py`, which carries 26 session columns) against reading exported stores. Remove the snapshot commands only after the table shows nothing is lost and the user confirms.
+  - **Acceptance:** tests with two synthetic data directories from different machine ids; the parity table and the confirmation in `docs/evidence/wd205.md`.
+
+- [ ] **WD-206 - Store an oversized hook event without its content.** P3. No dependencies.
+  - **Why.** A hook input above `payload_bytes` is dropped whole: the adapter reads `payload_bytes + 1` bytes, counts a loss and returns before parsing (`native/src/main.rs:604-616`); the Python path and the daemon do the same (`hooks.py:301-314`, `:360-373`, `daemon.py:1050-1064`, `storage.py:628-629`). The event disappears from the timeline.
+  - **Fixed decisions.**
+    - Adapter: on an oversized input, extract `session_id`, `hook_event_name`, `tool_name` and `tool_use_id` from the bytes already read with a small scanner for top-level string fields, and write a spool record marked `oversized` with those fields, the working directory and the observed size. Fields it cannot find stay absent.
+    - Daemon: at `daemon.py:1050-1064`, apply the transform already used for `capture_content = false` (`daemon.py:1041-1049`) and measure again before rejecting; store an `oversized` record as an event without content.
+    - The loss counter still counts the dropped content.
+    - This needs a native release; follow the native checks in `TENETS.md`.
+  - **Acceptance:** Rust and pytest tests with inputs just below and above the limit for both providers; the event appears in `sessions show` with a marker that its content was not stored.
 
 ## P1 - Codex coverage and decision/state correctness
 
@@ -22,7 +481,7 @@ WD-135 remains independent, awaiting real hook traffic. WD-149/WD-152/WD-157 mus
 
 
 
-- [ ] **WD-178 - Harness version-drift signal.** P1. Found during the WD-151 desktop run (2026-10-25): the control profile is fixed at install time, so a silent harness update keeps delivering controls under a profile that was probed on an older version, with no signal. Observed: the app moved from `26.1016.62342` (backend `0.163.0-alpha.11.2`) to `26.1021.31345` (backend `0.164.0-alpha.11.1`) while the installed profile string stayed the old one. Deliver a visible signal when the running version differs from the profile's probed version: read the backend version from the session metadata that `transcript_path` names (bounded read, data only, never executed), compare it with the profile, and surface a `harness_version_drift` finding plus a `status`/`doctor` warning and a clear notice, so an operator sees "mechanics may have changed" before trusting a cell. Acceptance: offline tests for match, drift, unreadable and missing metadata (unknown is not a match); no new control action and no provider call; kill switches and fail-open unchanged.
+- [ ] **WD-178 - Harness version-drift signal.** P1. Found during the WD-151 desktop run (2026-10-25): the control profile is fixed at install time, so a silent harness update keeps delivering controls under a profile that was probed on an older version, with no signal. Observed: the app moved from `26.1016.62342` (backend `0.163.0-alpha.11.2`) to `26.1021.31345` (backend `0.164.0-alpha.11.1`) while the installed profile string stayed the old one. Deliver a visible signal when the running version differs from the profile's probed version: read the backend version from the session metadata that `transcript_path` names (bounded read, data only, never executed), compare it with the profile, and surface a `harness_version_drift` finding plus a `status`/`doctor` warning and a clear notice, so an operator sees "mechanics may have changed" before trusting a cell. Acceptance: offline tests for match, drift, unreadable and missing metadata (unknown is not a match); no new control action and no provider call; kill switches and fail-open unchanged. **2026-11-11:** after WD-187 the backend version is in the raw records of the captured stream; read it from `capture.sqlite3` under the same bounded, data-only rule instead of opening the provider file again.
 - [ ] **WD-181 - Version-independent control trust (design).** P1. Probing every harness release by hand does not scale and must never be asked of the end user (observed 2026-10-25: the Codex desktop app and backend changed five days after the WD-153 probes). Replace "exact version, manually confirmed" with trust by risk, verified in operation. **Principles:** (1) `deny`, `block` and `context` fail into silence, so they may run on any version of a known surface under monitoring and demote themselves on contradiction (WD-180 is the first step); (2) `rewrite` and `permit` change or approve a call and stay disabled until a maintainer-side probe or canary has confirmed them for that version; (3) the running version is detected at run time (backend `cli_version` from the session file named by `transcript_path`) instead of being fixed by a profile string in the installed hook, so a harness update needs no reinstall or release; (4) a visible signal, not a procedure, tells the user when control was reduced; (5) a user is never asked to run a probe. **Subtasks:** (a) runtime profile resolution: the hook passes only the surface family and the daemon picks the exact or provisional profile from the observed version, unknown never inherits `rewrite`/`permit` (needs a documented decision on how the family is chosen and a native-adapter change); (b) extend effect confirmation beyond `deny` (`block`: the session continues; `context`: only where observable), since demotion needs an observable contradiction; (c) [WD-178](TODO.md) signal; (d) [WD-179](TODO.md) canary run by the maintainer or CI per new version, publishing results as data; (e) status/doctor line for reduced control; (f) a TENETS.md revision of the exact-profile invariant, which needs the user's direct authorization of that rule change. **Acceptance:** an offline test matrix shows a new unprobed version gets only the low-risk actions and demotes on contradiction, an unknown version never gets `rewrite`/`permit`, and no step requires user action; live acceptance only through explicit, user-confirmed runs.
 - [ ] **WD-179 - Scripted canary probe for control cells through `codex exec`.** P1. The backend (`cli_version`) is shared by CLI and desktop, so a scripted `codex exec` canary can give a version-scoped regression verdict in minutes where desktop probes are manual. Run the WD-151 four-case matrix per backend version, record the verdict in `docs/evidence/`, and report which cells remain desktop-only. First verify that the canary reproduces the desktop behavior recorded in WD-153 for the same backend; until then it never confirms a desktop cell. Explicit live gate and recorded provenance, outside the default suite and CI.
 
@@ -33,6 +492,7 @@ WD-135 remains independent, awaiting real hook traffic. WD-149/WD-152/WD-157 mus
   **Probes before layer 3:** (a) whether `SessionStart` fires after an automatic and a manual compaction, per provider and surface, and whether injected context survives into the next request; (b) whether Claude `PreCompact` `additionalContext` (already rendered) changes the compaction summary. Record them in `probe-result-record-v1`. Unsupported cells keep layer 3 off for that provider.
   **Retained-data baseline (live stores read 2026-10-20; Claude data ends 2026-10-08):** Claude had 1 compaction in 90 agents; the median request context was 213k, p90 532k; 44% of Claude input tokens were in requests above 400k. Codex had 25 compactions in 131 agents; median 115k, p90 195k. A replay that resets the context to 40k at threshold T (no rework modelled, so an upper bound) leaves Claude input at 57% of actual for T=300k and 43% for T=200k, and Codex at 89% for T=200k.
   **Layer 1 applied on the user-local machine (2026-10-20):** Claude `autoCompactWindow = 300000` in the user settings (a documented setting, preferred over the undocumented environment variable); Codex `model_auto_compact_token_limit = 180000`; a "Compact instructions" section in the user-level Claude and Codex instruction files. **Measurement:** compare windows of at least one week before and after 2026-10-20 on cache-read tokens per session and per request, compactions per agent, strict re-reads and failure runs within N requests after a compaction, and user interruptions. Exclude Watchdog's own probe and headless sessions, and note that Claude sessions from 2026-10-18 to 2026-10-20 are missing (WD-174).
+  **2026-11-11.** `model_context_window` is present in the raw Codex records captured by WD-187, so `wdi` can report occupancy for history without this task. The daemon-side occupancy for rules still needs the reader change described above.
 
 - [ ] **WD-167 - Calibrate Codex behavior on a frozen provider-specific cohort.** P2; depends on WD-164 and evaluated rule bodies, with WD-165 for model/subagent-specific findings. Freeze the observation window and rule version/body before user verdicts; include Codex sessions with and without findings, shell failures, waiting/polling, background commands, edits, interruptions and subagents. Reuse the existing calibration pipeline rather than transferring Claude WD-122 precision or assistant assessments. Acceptance: reproducible cohort/evidence references, provider/surface/version and outcome-attribution coverage; user-recorded TP/FP/uncertain verdicts, precision with denominators and false-negative review of no-finding sessions; evaluation of WD-161 beyond the six old v2 findings. Feed version/body/provider-scoped evidence to WD-147/WD-159; unsupported or unobserved control remains unqualified, and no automatic promotion follows.
   **2026-10-20; frozen cohort prepared, review pending.** [Evidence](docs/evidence/wd167.md) records 40 Codex sessions, 32 session-scoped findings and 28 no-finding sessions, with rule/source hashes and outcome/version coverage. Seven fresh repeat verdicts give 4 TP / 3 FP (57.14% on 4/7 decided), with no delivery qualification established; WD-161 is complete through its no-change path. Remaining human review, explicit surface attribution, background-execution and interruption coverage are outstanding; older labels do not transfer.
@@ -47,6 +507,7 @@ WD-135 remains independent, awaiting real hook traffic. WD-149/WD-152/WD-157 mus
 
 - [ ] **WD-144 - Rule synthesis by the model: full rule bodies as candidates.** Depends on WD-142, WD-143. Extend `RuleCandidate` with `body`, `events`, `proposed_action`, `test_session_ids`, a separate implementation format (`toml|python`), and the existing deterministic/statistical signal classification. The model proposes the classification; the user explicitly confirms it at `rules approve`. Neither format implies a classification. Ship `rules/SPEC.md` into the system prompt; validate bodies (TOML model or `compile()` only, never import) and save valid ones to `rules/proposed/` with a provenance sidecar under action `log`; `insights --propose-rules`, `rules propose --from`. The accepted workflow is `rules approve` -> replay with `rules test` -> separate `rules enable`. A newly generated candidate stays inactive after approval and replay; approval authorizes the exact code for execution, not activation. Unchanged bytes need no second approval before enablement; changed bytes invalidate approval and cannot run. Acceptance: generation and validation never execute proposed Python; replay refuses unapproved or changed code, uses WD-143's approved-byte execution and cooperative timeout contract, and cannot apply replay decisions to live sessions; approval and replay alone never activate a candidate; format and classification are independent, approval records the user-confirmed classification and a model-supplied deterministic label never bypasses review or promotion gates; invalid bodies are flagged `invalid_body`; one separately authorized real `insights errors` run records the count of valid candidates in `docs/verification.md`.
   **P2; review resolved by user on 2026-10-18; implementation pending.** One code approval covers replay and later live execution of unchanged bytes; enablement is a separate explicit operation. No one-shot pre-approval exception or separate replay/live approval scopes are introduced. The user selected model-proposed, human-confirmed deterministic/statistical classification, stored separately from implementation format. This label does not automatically enable a rule or increase its intervention strength; WD-147's promotion review remains separate. Share the selected analysis backend from WD-166; an unavailable backend or isolation is a reported failure, never implicit provider fallback. See the [architecture decision](docs/architecture.md#wd-144-candidate-approval-and-replay-decision-2026-10-18) and [review record](docs/evidence/wd144-review.md). These design decisions do not authorize a live call or approve any rule body.
+  **2026-11-11.** After WD-199 the modes that produce candidates run in `wdi`: `insights --propose-rules` becomes a `wdi insights` option that writes candidate files, and `rules propose --from` stays the only way a candidate enters Watchdog. Validation, approval, replay and enablement stay in `agent_watchdog`.
 
 - [ ] **WD-145 - Automatic semantic judge from the daemon with budget and kill switch.** Depends on WD-140, WD-141. After explicit project opt-in, configured diagnostic triggers (`stop_after_failures`, `long_turn_no_progress`, `subagent_empty_result`) may request analysis without prior calibration of the originating signal. Defaults: disabled; timeout 120 seconds; 5 calls per project per day; per-session cooldown 600 seconds; result validity 1800 seconds; log/status delivery only. Context requires separate explicit configuration and an approved enabled delivery rule on a confirmed provider/surface/version/event capability; unsupported delivery stays log/status without substituting block. Analysis never runs inside the hook deadline, and analysis permission does not grant intervention or promotion rights. Expose all comparable preferences in validated config with defaults/project overrides and effective `judge status`: triggers/thresholds, backend/model/effort, timeout, budget/accounting/day boundary, cooldown, delivery, result lifetime/scope and pause behavior. Preserve approval, capability, kill-switch and fail-open invariants.
   **Budget and lifecycle:** reserve durably before launching analysis; started or uncertain attempts consume a slot, including provider errors, timeout and cancellation. Refund only when analysis CLI launch demonstrably did not occur. A configurable stricter mode may charge every reservation. Persist deduplication and cooldown state; restart, duplicate triggers and day rollover must not recreate calls or reset spent budget. Pause/disable defaults to cancelling owned provider processes/descendants and recording `cancelled`; finish-within-timeout is configurable but log/status only. Cleanup owned processes before scratch/authentication material. Results may remain pending across turns and, after the source session ends, enter a new session of the same project within configured validity; never cross projects. Retain source and target identity, recheck evidence relevance, current config, rule approval/enablement, kill switches and target capabilities before delivery, and track delivery attempts durably to avoid repeat sends. TTL starts at result completion; configurable validity/scope takes precedence over an implicit turn/session-end cutoff. Keep structured results and `suggested_*` suggestions separate from human verdicts and actual delivered actions.
@@ -67,8 +528,12 @@ WD-135 remains independent, awaiting real hook traffic. WD-149/WD-152/WD-157 mus
 
   **P2; partial implementation.** Keep copied-store and live-instance evidence distinct. Coordinate profiling with WD-162 recomputation so fast `overview` cannot report stale rule-version results; the live-instance update remains separately authorized.
 
-- [ ] **WD-157 - Compress retained provider content without losing queryable event metadata.** Store the selected `payload.<provider>.content` subtree in a codec-tagged compressed companion record, while the `events` row keeps the canonical non-content envelope and the fields needed by SQL selection. Rehydrate the envelope only for explicit readers (`show`, report/analysis, export, calibration, and insights); the hook and normal daemon admission path must not need a decompression round trip. Retention deletes the companion content directly, preserving the existing unavailable-content semantics. Keep the canonical pre-compression bytes as the receipt/fingerprint input, retain unknown provider metadata, and use a versioned, crash-safe migration for existing stores. Acceptance: fixture round trips cover string, object, array, and encoded provider results; report, show, and export results are equivalent before and after migration; provider/session/checkout reads remain SQL-queryable without decompression; corrupt or unavailable compressed content fails closed as unavailable content rather than breaking a report; quota/WAL/retention accounting includes companion records; a representative-store benchmark records physical savings and deferred-reader decode cost.
-  **P2; missing implementation.** Coordinate schema/migration ordering with WD-162 and the direct-store/maintenance work in WD-149/WD-152. Cover crash-resumable migration and partial content availability without invalidating receipt identity or treating an unfinished analysis/content batch as current.
+  **2026-11-11.** WD-210 delivers the per-project idle gate and the lazy source load ahead of this audit. Add to the inventory the raw capture pass (WD-187), the provider-directory scan (WD-188) and the environment and outcome snapshots (WD-190, WD-191), each with its budget and cadence.
+
+- [ ] **WD-157 - Compress retained provider content without losing queryable event metadata.** P2. Depends on WD-185, WD-187. Codec: zstd from the standard library (`compression.zstd`), as in the capture store. Store the selected `payload.<provider>.content` subtree in a codec-tagged compressed companion record, while the `events` row keeps the canonical non-content envelope and the fields needed by SQL selection. Rehydrate the envelope only for explicit readers (`show`, report/analysis, export, calibration, and insights); the hook and normal daemon admission path must not need a decompression round trip. Retention deletes the companion content directly, preserving the existing unavailable-content semantics. Keep the canonical pre-compression bytes as the receipt/fingerprint input, retain unknown provider metadata, and convert existing stores with a resumable one-off script under `scripts/` (the development rule in `TENETS.md`), not with upgrade code in the package. Acceptance: fixture round trips cover string, object, array, and encoded provider results; report and show results (and export, while WD-198 has not removed it) are equivalent before and after the conversion; provider/session/checkout reads remain SQL-queryable without decompression; corrupt or unavailable compressed content fails closed as unavailable content rather than breaking a report; quota/WAL/retention accounting includes companion records; a representative-store benchmark records physical savings and deferred-reader decode cost.
+  **P2; missing implementation.** Coordinate ordering with WD-162 and the direct-store/maintenance work in WD-149/WD-152. The conversion script must be resumable and must keep partial content available without invalidating receipt identity or treating an unfinished analysis/content batch as current.
+
+  **2026-11-11.** Raw transcripts in `capture.sqlite3` (WD-187) do not replace hook content: rules and reports read the hook copy. This task therefore stands, narrowed to the content of the `events` table.
 
 ## Independent - Checkout fingerprint evidence
 
@@ -80,14 +545,6 @@ WD-135 remains independent, awaiting real hook traffic. WD-149/WD-152/WD-157 mus
     - offline tests for each reason, the once-per-episode logging, and no path in the log without `log_detail`;
     - if fields are added, a config test for defaults, validation, and that the daemon passes them through;
     - the unknown rate on the registered live checkouts, measured from the log, recorded in [verification.md](docs/verification.md).
-
-## P3 - Optional extensions (deprioritised)
-
-- [ ] **WD-136a - Local web UI: read-only viewer.** Build only after M-Control, and only if the `overview` JSON proves insufficient in daily use. Acceptance: a separate, on-demand process (`agent-watchdog ui`), never part of the core daemon; loopback-only and read-only; shows `inspection.overview` and saved `insights` reports; no merged database, plugin layer, or new write path. Motivation: `overview` took 9.3 s warm on the live store (2026-10-01); WD-138 cut it to about 5.1 s in process, 6.4 s through the CLI, by removing double parsing and `json_extract` scans ([verification.md](docs/verification.md#wd-138-overview-speed-and-hook-latency)). What remains is validating and analyzing every retained event, so a long-lived UI process can still keep results warm, for example by serving the last result with an "as of" time while refreshing in the background (specify the mechanism at implementation time, under the constraints above; a cache must stay in memory, never on disk). With `overview` at this speed the UI is mostly convenience, and the ticket stays open with that note rather than close. Decide where the UI reads saved reports from (`insights --output` writes a file the user names today).
-
-- [ ] **WD-136b - Local web UI: generate an insights report on an explicit button.** Depends on WD-136a. Acceptance: one button per insights mode, pressed by the user, never automatic; shows the expected cost and duration first (a `digest` run took about 217 s and 0.73 USD list price); runs as a background job with status, through the same isolated `claude -p` path as the CLI; the finished report is saved and appears in the viewer. The LLM-opt-in invariant holds: no call without that press.
-
-- [ ] **WD-136c - Local web UI: apply selected recommendations.** Depends on WD-136b; needs its own design decision in `docs/architecture.md` before code, since it is the first Watchdog write into provider or user configuration from a UI. Each recommendation carries `scope`, `target_file`, and `project` ([cli.md](docs/cli.md)), so the write targets are a closed allowlist: project or user `CLAUDE.md`, `AGENTS.md`, `settings.json` permissions, and Watchdog `log`-only rule candidates. Acceptance: a checkbox per recommendation, unselected by default, and one Apply button at the bottom for the selected ones; a diff preview and explicit confirmation before any write; backup, atomic write, and a record of what was applied so it is not proposed again; model text is data and is never executed; loopback, per-instance token, and `Host`/`Origin` checks against CSRF and DNS rebinding. Tests never write to real provider configuration.
 
 ## M5 - Deferred cross-platform validation
 
