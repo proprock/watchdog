@@ -263,4 +263,72 @@ def test_idle_project_visits_back_off_to_one_per_minute(paths, tmp_path, monkeyp
     assert daemon.run(paths) == 0
     late = [visit for visit in visits if visit >= 120]
     assert len(late) >= 1
-    assert all(b - a >= 60 for a, b in zip(late, late[1:]))
+    assert all(b - a >= 60 for a, b in zip(late, late[1:], strict=False))
+
+
+def test_storage_health_marks_projects_not_reached_before_deadline(paths, tmp_path, monkeypatch):
+    from uuid import uuid4
+
+    from agent_watchdog.config import Config, Project
+
+    projects = tuple(Project(id=uuid4(), root=tmp_path / f"p-{i}") for i in range(3))
+    clock = iter((0.0, 0.1, 1.1, 1.2))
+    monkeypatch.setattr(daemon.time, "monotonic", lambda: next(clock))
+    queues = {"spool": {"newest_record_at": None, "oldest_record_at": None}}
+    health, _ = daemon._storage_health(paths, Config(projects=projects), queues, now=0)
+    assert health["unavailable_projects"] == [str(projects[1].id), str(projects[2].id)]
+    assert health["unavailable"] is True
+
+
+def test_active_enrichment_is_visited_on_the_next_tick(paths, tmp_path, monkeypatch):
+    from agent_watchdog import transcripts
+
+    root = tmp_path / "project"
+    root.mkdir()
+    daemon.mutate_registry(paths, lambda registry: registry.add(root))
+    clock = [0.0]
+    visits = []
+
+    def enrich(store, **kwargs):
+        visits.append(clock[0])
+        return transcripts.EnrichmentResult(accepted=1)
+
+    def sleep(delay):
+        clock[0] += delay
+        if len(visits) == 3:
+            daemon.set_desired(paths, paused=True)
+
+    monkeypatch.setattr(transcripts, "enrich", enrich)
+    monkeypatch.setattr(daemon.time, "monotonic", lambda: clock[0])
+    monkeypatch.setattr(daemon.time, "sleep", sleep)
+    monkeypatch.setattr(daemon, "_drain_spool", lambda *args, **kwargs: False)
+    assert daemon.run(paths) == 0
+    assert visits == [0.0, 0.25, 0.5]
+
+
+def test_pending_maintenance_resumes_without_idle_backoff(paths, tmp_path, monkeypatch):
+    from agent_watchdog.storage import MaintenanceResult
+
+    root = tmp_path / "project"
+    root.mkdir()
+    daemon.mutate_registry(paths, lambda registry: registry.add(root))
+    clock = [0.0]
+    visits = []
+    real_store = daemon.Store
+
+    class PendingStore(real_store):
+        def maintain(self, *args, **kwargs):
+            visits.append(clock[0])
+            return MaintenanceResult(pending=len(visits) < 3)
+
+    def sleep(delay):
+        clock[0] += delay
+        if clock[0] >= 2:
+            daemon.set_desired(paths, paused=True)
+
+    monkeypatch.setattr(daemon, "Store", PendingStore)
+    monkeypatch.setattr(daemon.time, "monotonic", lambda: clock[0])
+    monkeypatch.setattr(daemon.time, "sleep", sleep)
+    monkeypatch.setattr(daemon, "_drain_spool", lambda *args, **kwargs: False)
+    assert daemon.run(paths) == 0
+    assert len(visits) >= 3

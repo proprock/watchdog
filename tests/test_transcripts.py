@@ -658,3 +658,37 @@ def test_source_listing_failure_returns_only_an_allowlisted_code():
 def test_daemon_enrichment_exception_codes_are_fixed(error, expected):
     assert failure_code(error) == expected
     assert expected in FAILURE_CODES
+
+
+def test_poll_keeps_reading_a_transcript_with_no_usage_in_early_windows(tmp_path, monkeypatch):
+    from agent_watchdog import daemon
+    from agent_watchdog.config import UserPaths, load_config
+
+    root = tmp_path / "project"
+    root.mkdir()
+    paths = UserPaths(tmp_path / "config.toml", tmp_path / "data", tmp_path / "runtime")
+    daemon.mutate_registry(paths, lambda registry: registry.add(root))
+    project = load_config(paths.config).projects[0]
+    transcript = tmp_path / "rollout.jsonl"
+    write_rollout(
+        transcript,
+        "session-1",
+        [{"type": "event_msg", "payload": {"text": "a" * 30}}] * 12
+        + [usage("session-1", "response-1", total=10, output=4)],
+    )
+    with Store(paths.project_data(project.id), project.id) as store:
+        store.put(hook(project.id, "session-1", transcript))
+    clock = [0.0]
+
+    def sleep(delay):
+        clock[0] += delay
+        if clock[0] >= 5:
+            daemon.set_desired(paths, paused=True)
+
+    monkeypatch.setattr(transcripts, "READ_BYTES", 128)
+    monkeypatch.setattr(daemon.time, "monotonic", lambda: clock[0])
+    monkeypatch.setattr(daemon.time, "sleep", sleep)
+    monkeypatch.setattr(daemon, "_drain_spool", lambda *args, **kwargs: False)
+    assert daemon.run(paths) == 0
+    with Store(paths.project_data(project.id), project.id) as store:
+        assert any(event.native_event_id == "response-1" for event in store.events())

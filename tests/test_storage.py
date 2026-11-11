@@ -378,7 +378,8 @@ def test_persisted_envelope_cannot_generate_new_identity_on_replay(tmp_path, eve
 def test_transcript_source_listing_omits_large_reader_state(tmp_path, event):
     with Store(tmp_path, event.project_id) as store:
         store.connection.execute(
-            "INSERT INTO transcript_sources (provider, session_id, path, last_seen, tail, counters) "
+            "INSERT INTO transcript_sources "
+            "(provider, session_id, path, last_seen, tail, counters) "
             "VALUES (?, ?, ?, ?, ?, ?)",
             (
                 "codex",

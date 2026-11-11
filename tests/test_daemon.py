@@ -1824,3 +1824,41 @@ def test_real_adapter_daemon_roundtrip_reports_rendering_without_provider_effect
     assert row["adapter_rendered_unknown"] == 0
     assert row["provider_effect"] == 0
     assert row["provider_effect_unknown"] == 1
+
+
+def test_spool_write_wakes_an_idle_project_for_the_next_tick(paths, tmp_path, monkeypatch):
+    from agent_watchdog import daemon
+
+    root = tmp_path / "project"
+    root.mkdir()
+    mutate_registry(paths, lambda registry: registry.add(root))
+    project = load_config(paths.config).projects[0]
+    clock = [0.0]
+    visits = []
+    real_store = daemon.Store
+    record = spool_record(root, hook_event_name="UserPromptSubmit", session_id="s1")
+    published = [False]
+    ingested_at = []
+
+    def tracked_store(*args, **kwargs):
+        visits.append(clock[0])
+        return real_store(*args, **kwargs)
+
+    def sleep(delay):
+        clock[0] += delay
+        if clock[0] >= 130 and not published[0]:
+            write_spool_record(paths, record)
+            published[0] = True
+        elif published[0] and not ingested_at:
+            with real_store(paths.project_data(project.id), project.id) as store:
+                if any(str(event.event_id) == record["event_id"] for event in store.events()):
+                    ingested_at.append(clock[0])
+        elif ingested_at:
+            daemon.set_desired(paths, paused=True)
+
+    monkeypatch.setattr(daemon, "Store", tracked_store)
+    monkeypatch.setattr(daemon.time, "monotonic", lambda: clock[0])
+    monkeypatch.setattr(daemon.time, "sleep", sleep)
+    assert daemon.run(paths) == 0
+    assert ingested_at
+    assert any(ingested_at[0] <= visit <= ingested_at[0] + 2 for visit in visits)
