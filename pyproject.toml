@@ -33,6 +33,8 @@ packages = ["src/agent_watchdog"]
 [tool.ruff]
 target-version = "py312"
 line-length = 100
+# kaBoost manages this file; reformatting it would diverge from its source.
+extend-exclude = ["scripts/kaboost_audit_tdd.py"]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B"]
