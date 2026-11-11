@@ -2,6 +2,8 @@
 
 Historical records only: one line per task. The full text of every entry, including its verification, is in [done-archive.md](docs/evidence/done-archive.md). Active work belongs in [TODO.md](TODO.md). Preserve task IDs when moving entries here.
 
+- [x] **WD-210 - Bound idle daemon tick cost (2026-11-11).** Per-project idle backoff, lazy transcript state and complete bounded health reporting; live instance updated and observed for one hour. Full suite: 2,061 passed, 1 skipped. [Evidence](docs/evidence/wd210.md).
+
 - [x] **WD-183 - Keep data by default: no expiry and no quota (2026-11-11).** Default retention and project quota are disabled; live limits and both provider hook paths verified. [Evidence](docs/evidence/wd183.md).
 
 - [x] **WD-136a/b/c - Local web UI in Watchdog: closed without implementation (2026-11-11).** Superseded by the owner's decision to merge the insights program into this repository as `watchdog-insights` (`wdi`), whose web interface replaces a second UI. Nothing was built. The acceptance of the viewer and of report generation on an explicit button moved to WD-199, and the acceptance of applying selected recommendations to WD-202, both open in [TODO.md](TODO.md); the original task text is in `TODO.md` at commit `0d5e984`.

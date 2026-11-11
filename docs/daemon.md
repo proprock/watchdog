@@ -147,7 +147,7 @@ The JSON `reasons` list explains degradation (WD-173):
 | `storage_lag` | Spool work has waited at least 60 seconds and the newest spool file is at least 60 seconds newer than the newest stored event, or no event has been stored. |
 | `project_or_configuration_error` | The heartbeat reports project or configuration errors; `errors` and `transcript_failures` retain the details. |
 | `startup_evidence_unavailable` | Durable startup evidence cannot be read or validated. |
-| `storage_unavailable` | A store cannot be read within the query budget, or more than 32 projects prevent a complete storage comparison. |
+| `storage_unavailable` | A store cannot be read within its query budget, or the overall storage comparison deadline leaves projects unchecked. |
 | `queue_or_configuration_unavailable` | Queue/configuration inspection failed, or persisted backlog evidence is invalid. |
 
 `health.startup` includes the count, 60-second window and last start time.
@@ -165,12 +165,12 @@ A smaller queue or a successful drain resets its timer independently of traffic
 in other queues. Empty queues never count as stalled. A single status call can
 use this existing poll history without waiting or requiring previous status calls.
 
-`health.storage` compares the newest stored `received_at` across the first 32
+`health.storage` compares the newest stored `received_at` across registered
 projects with spool file modification times, explicitly labeled
 `spool_timestamp_source: filesystem_mtime`; these are filesystem observations, not
 parsed provider timestamps. New traffic after an idle period gets a 60-second
 grace period. SQLite reads use read-only connections, a 100 ms lock timeout and a
-100 ms scan budget per project. An unreadable or incomplete comparison is
+100 ms scan budget per project, within a one-second total deadline. `unavailable_projects` names stores that could not be inspected. An unreadable or incomplete comparison is
 `unavailable`, never an empty store or confirmed lag. An idle daemon with empty
 queues and a current heartbeat stays `running` regardless of its last event's age.
 
@@ -182,6 +182,8 @@ two seconds when idle. Raw hooks are resolved and prepared envelopes validated,
 then committed directly through one Store per project per tick. Writers are
 reused across that tick's bounded batches; the default batch size of 100 was
 selected by the [WD-149 measurement](evidence/wd149.md). Queue files are removed only after commit.
+Idle project visits back off exponentially from one second to 60 seconds; a committed spool record wakes its project for the next tick. Transcript progress, session refresh and pending maintenance keep the project active, while prior project failures remain visible between visits. Source listings omit reader tail and counter blobs; those are loaded only when a source needs processing.
+
 One cooperative 200 ms maintenance allowance is shared across project writers;
 round-robin scheduling and phase/cursor state preserve progress across Store
 opens. Pending maintenance or temporary quota pressure defers queued work without
