@@ -139,6 +139,7 @@ class TranscriptSource:
 @dataclass(frozen=True)
 class EnrichmentResult:
     accepted: int = 0
+    progressed: bool = False
     failures: tuple[TranscriptFailureCode, ...] = ()
     active_failures: tuple[TranscriptFailureCode, ...] = ()
     # New usage-bearing lines were read but none were stored, and no failure was
@@ -957,6 +958,7 @@ def _process_source(store: "Store", source: dict[str, object]) -> EnrichmentResu
     )
     return EnrichmentResult(
         accepted=consumed.accepted,
+        progressed=resume > offset,
         failures=tuple(failures),
         active_failures=tuple(failures),
         inert=consumed.usage_seen > 0 and consumed.accepted == 0 and consumed.error is None,
@@ -1231,6 +1233,7 @@ def enrich(store: "Store", *, active_failure_since: datetime | None = None) -> E
         )
 
     accepted = 0
+    progressed = False
     inert = False
     failures: list[TranscriptFailureCode] = []
     active_failures: list[TranscriptFailureCode] = []
@@ -1257,6 +1260,7 @@ def enrich(store: "Store", *, active_failure_since: datetime | None = None) -> E
         except (OSError, KeyError, TypeError, ValueError):
             result = _unexpected_source_failure(store, source)
         accepted += result.accepted
+        progressed = progressed or result.progressed
         inert = inert or result.inert
         for code in result.failures:
             if code not in failures:
@@ -1267,6 +1271,7 @@ def enrich(store: "Store", *, active_failure_since: datetime | None = None) -> E
                     active_failures.append(code)
     return EnrichmentResult(
         accepted=accepted,
+        progressed=progressed,
         inert=inert and accepted == 0,
         failures=tuple(failures),
         active_failures=tuple(active_failures),

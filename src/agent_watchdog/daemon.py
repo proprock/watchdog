@@ -1928,6 +1928,8 @@ def _poll(
                         maintained = time.monotonic() >= maintenance.get(str(project.id), 0)
                         if maintained:
                             maintained_result = store.maintain()
+                            project_active |= maintained_result.pending
+                            activity |= maintained_result.pending
                             maintenance[str(project.id)] = (
                                 0 if maintained_result.pending else time.monotonic() + 60
                             )
@@ -1941,8 +1943,8 @@ def _poll(
                                 active_failure_since=datetime.now(UTC)
                                 - timedelta(minutes=limits.transcript_failure_minutes),
                             )
-                            project_active |= bool(enrichment)
-                            activity |= bool(enrichment)
+                            project_active |= bool(enrichment) or enrichment.progressed
+                            activity |= bool(enrichment) or enrichment.progressed
                             if enrichment.active_failures:
                                 transcript_failures[str(project.id)] = list(
                                     enrichment.active_failures
