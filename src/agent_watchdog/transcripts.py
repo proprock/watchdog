@@ -761,6 +761,8 @@ def _update_failure(
     size: int | None = None,
     mtime: int | None = None,
 ) -> bool:
+    if "tail_size" in source:
+        source["tail"], source["counters"] = store.transcript_source_state(source)
     changed = source["last_error"] != code or source["error_signature"] != signature
     if not changed:
         return False
@@ -846,6 +848,23 @@ def _process_source(store: "Store", source: dict[str, object]) -> EnrichmentResu
         failures = (error.code,) if changed else ()
         return EnrichmentResult(failures=failures, active_failures=(error.code,))
 
+    if (
+        "tail_size" in source
+        and not source["tail_size"]
+        and not source["last_error"]
+        and source["reader"] is not None
+        and source["device"] == device
+        and source["inode"] == inode
+        and source["size"] == size
+        and source["mtime"] == mtime
+        and source["offset"] == size
+        and (
+            source["provider"] != "codex" or ATTRIBUTION_READER in str(source["reader"]).split("|")
+        )
+    ):
+        return EnrichmentResult()
+    if "tail_size" in source:
+        source["tail"], source["counters"] = store.transcript_source_state(source)
     signature = f"{device}:{inode}:{size}:{mtime}"
     if (
         source["last_error"]

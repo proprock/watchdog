@@ -1072,7 +1072,7 @@ class Store:
     def transcript_sources(self) -> list[dict[str, object]]:
         rows = self.connection.execute(
             "SELECT provider, session_id, path, last_seen, reader, device, inode, size, mtime, "
-            "offset, tail, counters, last_error, error_signature FROM transcript_sources "
+            "offset, length(tail), last_error, error_signature FROM transcript_sources "
             "ORDER BY last_seen, provider, session_id, path"
         ).fetchall()
         names = (
@@ -1086,12 +1086,21 @@ class Store:
             "size",
             "mtime",
             "offset",
-            "tail",
-            "counters",
+            "tail_size",
             "last_error",
             "error_signature",
         )
         return [dict(zip(names, row, strict=True)) for row in rows]
+
+    def transcript_source_state(self, source: Mapping[str, object]) -> tuple[object, object]:
+        row = self.connection.execute(
+            "SELECT tail, counters FROM transcript_sources "
+            "WHERE provider=? AND session_id=? AND path=?",
+            (source["provider"], source["session_id"], source["path"]),
+        ).fetchone()
+        if row is None:
+            raise StorageError("Transcript source no longer exists")
+        return row[0], row[1]
 
     def update_transcript_source(
         self,
