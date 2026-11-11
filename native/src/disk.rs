@@ -8,6 +8,17 @@ use std::thread::sleep;
 use std::time::{Duration, Instant};
 use uuid::Uuid;
 
+#[derive(Debug)]
+pub struct LockContended;
+
+impl std::fmt::Display for LockContended {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str("lock contention timeout")
+    }
+}
+
+impl std::error::Error for LockContended {}
+
 pub fn lock(path: &Path, timeout: Duration) -> Result<File> {
     let deadline = Instant::now() + timeout;
     loop {
@@ -21,7 +32,14 @@ pub fn lock(path: &Path, timeout: Duration) -> Result<File> {
             if file.metadata()?.len() == 0 {
                 file.write_all(&[0])?;
             }
-            FileExt::try_lock_exclusive(&file)?;
+            if let Err(error) = FileExt::try_lock_exclusive(&file) {
+                if error.raw_os_error().is_some()
+                    && error.raw_os_error() == fs2::lock_contended_error().raw_os_error()
+                {
+                    return Err(Box::new(LockContended));
+                }
+                return Err(error.into());
+            }
             Ok(file)
         })();
         match attempt {

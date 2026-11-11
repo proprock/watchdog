@@ -15,6 +15,7 @@ type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;
 const QUOTA: usize = 0;
 const PAYLOAD: usize = 1;
 const IO: usize = 3;
+const BUSY: usize = 4;
 
 struct Paths {
     config: PathBuf,
@@ -681,10 +682,17 @@ fn observe(
         return Err("linked spool directory".into());
     }
     std::fs::create_dir_all(&paths.data)?;
-    let admission = disk::lock(
+    let admission = match disk::lock(
         &paths.data.join("admission.lock"),
         Duration::from_millis(100),
-    )?;
+    ) {
+        Ok(guard) => guard,
+        Err(error) if error.is::<disk::LockContended>() => {
+            disk::loss(&paths.data, BUSY);
+            return Ok(stdout);
+        }
+        Err(error) => return Err(error),
+    };
     let (files, used) = disk::spool_footprint(&spool)?;
     let mut delivery = json!({});
     let delivery_object = delivery.as_object_mut().ok_or("invalid delivery")?;
@@ -709,10 +717,12 @@ fn observe(
     if files.saturating_add(1) > limits.spool_files
         || used.saturating_add(bytes.len() as u64) > limits.spool_bytes
     {
+        drop(admission);
         disk::loss(&paths.data, QUOTA);
         return Ok(stdout);
     }
     if disk::atomic(&spool.join(format!("{}.json", Uuid::new_v4())), &bytes).is_err() {
+        drop(admission);
         disk::loss(&paths.data, IO);
         return Ok(stdout);
     }
