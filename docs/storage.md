@@ -376,13 +376,12 @@ outside the scope of cleanup.
 
 ## Raw capture store
 
-The daemon writes `<project data>/capture.sqlite3` for projects with
-`capture_content = true`. The separate `events.sqlite3` stays at schema 9.
+The daemon writes `<project data>/capture.sqlite3` for session environment
+snapshots and, with `capture_content = true`, for raw provider content.
 Capture uses SQLite WAL, `synchronous=NORMAL`, foreign keys and `secure_delete`.
-The `user_version` is 1. The daemon initializes an empty store. A version mismatch
-reports the found and expected versions. A future schema change will supply the
-one-off `scripts/convert_capture_store.py` before deployment. Version 1 is the
-first capture schema and requires no conversion.
+The `user_version` is 2. The daemon initializes an empty store and reports the
+found and expected versions on a mismatch. The one-off
+`scripts/capture_schema_v2.py` converts existing v1 stores.
 
 | Table | Key and contents |
 | --- | --- |
@@ -390,6 +389,8 @@ first capture schema and requires no conversion.
 | `chunks` | Stream and chunk sequence identify a zstd block of complete records. Each row stores its first record number, record count, raw byte count, codec, and compressed bytes. |
 | `tail` | Stream and record sequence identify an unsealed record without its final LF. |
 | `side_files` | Provider, session, relative path and SHA-256 identify a captured version of a Claude session file. Each row stores its byte count, codec, compressed bytes, and capture time. |
+| `session_env` | Provider, session and capture time identify an environment observation. Each row stores the hook working directory, checkout ID, Git commit and branch, JSON for harness metadata, files and effective Watchdog policy, and the initial patch digest or error when applicable. |
+| `blobs` | SHA-256 of the uncompressed bytes identifies an instruction file, a redacted settings or configuration file, or an initial patch. Each row stores the raw byte count, codec (`zstd`), and compressed bytes. |
 
 The daemon reads paths named by a hook in the last hour and paths discovered by
 the [provider directory scan](#provider-directory-scan). For a Claude main
@@ -421,6 +422,51 @@ marks the project degraded. Raw capture has no automatic expiry or eviction.
 `purge` removes the selected provider session's capture records, including
 streams named by its hooks. `doctor` reports per-project stream states, captured
 raw bytes, stored payload bytes, skipped lines, and the latest stream errors.
+
+## Session environment snapshots (WD-190)
+
+The daemon observes the environment on the first hook event it processes for a
+session and on each later `SessionStart`. It skips an observation whose
+environment matches the newest saved observation for that provider and session.
+The working directory comes from the hook spool. Unavailable Git commit and
+branch values are stored as `null`. Harness metadata includes `model`,
+`permission_mode`, `source`, and `surface` when supplied by the hook. Watchdog
+metadata includes rule names, sources, statuses and digests, global and project
+kill switches, and the project's effective limits.
+
+The `files` list records `path`, `role`, `digest`, and `error` for each observed
+file. Discovery starts at the following paths.
+
+| Provider | Checkout root | Provider home |
+| --- | --- | --- |
+| Claude | `CLAUDE.md`, `CLAUDE.local.md`, `.claude/CLAUDE.md`, `AGENTS.md`, `.claude/settings.json`, `.claude/settings.local.json`, `.mcp.json` | `~/.claude/CLAUDE.md`, `~/.claude/settings.json` |
+| Codex | `AGENTS.md` | `~/.codex/AGENTS.md`, `~/.codex/config.toml`, `~/.codex/hooks.json` |
+
+The daemon uses `CLAUDE_CONFIG_DIR` or `CODEX_HOME` for the respective provider
+home when that variable is set in its environment.
+
+Instruction and settings files are captured byte for byte, including any
+credential values in the files. A line of the form
+`@<relative path>` can include another instruction file within the checkout or
+provider home, up to three levels deep. Each observation is limited to 64 files
+of at most 1 MiB each. Oversized and unreadable files receive an error in place
+of a digest. The environment collection has a
+0.5-second collection budget after checkout fingerprinting. Git commands use
+the remaining time as their timeout. The daemon checks the budget between file
+operations and before rule discovery, then persists the partial results and
+marks skipped work as `deadline`.
+
+The first observed event captures the tracked working-copy patch against the
+initial `HEAD`, including staged and unstaged changes. The patch limit is
+16 MiB. Untracked files are excluded from the patch. `initial_diff_error` records an
+unavailable initial patch, for example when `HEAD` is unknown or the patch
+exceeds the limit. Later environment observations leave the initial patch with
+the first row. Checkout fingerprints in `diff_snapshots` track checkout-wide
+changes for `diff_oscillation` independently of these per-session patches.
+With `capture_content = false`, the snapshot still records metadata and digests
+and stores zero blobs. If disk headroom fits the metadata but limits content,
+omitted blobs keep their digests and have a `quota` error. A failed snapshot
+write is logged and a later hook can still provide the first available snapshot.
 
 ## Provider directory scan
 

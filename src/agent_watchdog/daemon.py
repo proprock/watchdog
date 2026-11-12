@@ -22,7 +22,7 @@ from pydantic import ValidationError
 from agent_watchdog import daemon_lifecycle, resources
 from agent_watchdog._proc import hidden_creationflags
 from agent_watchdog.capture import TICK_BUDGET, CaptureCursor, capture
-from agent_watchdog.capture_store import write_manifest
+from agent_watchdog.capture_store import CAPTURE_FILENAME, CaptureStore, write_manifest
 from agent_watchdog.config import (
     Config,
     ConfigError,
@@ -900,6 +900,7 @@ def _drain_spool(
 ) -> bool:
     """Resolve one queue window and commit bounded batches before acknowledging files."""
     from agent_watchdog.hooks import EVENTS, build_envelope, warn_unknown_fields
+    from agent_watchdog.session_environment import capture_session_environment
     from agent_watchdog.storage import MaintenancePending, persisted_envelope
 
     if min(limit, batch_size) <= 0:
@@ -962,6 +963,7 @@ def _drain_spool(
         try:
             payload = None
             resolution = None
+            cwd = None
             if record["record_type"] == "envelope":
                 event = persisted_envelope(json.dumps(record["envelope"]))
                 project = next(
@@ -1095,7 +1097,7 @@ def _drain_spool(
                 _discard(path)
                 activity = True
                 continue
-            pending.setdefault(project.id, []).append((path, event, payload, resolution))
+            pending.setdefault(project.id, []).append((path, event, payload, resolution, cwd))
         except (ValidationError, RejectedEvent, ValueError, KeyError, TypeError) as error:
             _log(
                 paths,
@@ -1129,10 +1131,12 @@ def _drain_spool(
             store.maintenance_budget = maintenance_budget
             if maintenance_states is not None:
                 maintenance_states[project_id] = store.maintenance_state
+            capture_store = CaptureStore(paths.project_data(project_id) / CAPTURE_FILENAME)
             for start in range(0, len(items), batch_size):
                 chunk = items[start : start + batch_size]
                 lookup = {
-                    id(event): (payload, resolution) for _, event, payload, resolution in items
+                    id(event): (payload, resolution, cwd)
+                    for _, event, payload, resolution, cwd in items
                 }
 
                 def absorb(_store=store, _project_id=project_id) -> None:
@@ -1145,10 +1149,12 @@ def _drain_spool(
                     _project_id=project_id,
                     _store=store,
                     _captured=captured_checkouts,
+                    _capture_store=capture_store,
+                    _limits=limits,
                 ) -> None:
                     if wake_projects is not None:
                         wake_projects.add(_project_id)
-                    payload, resolution = _lookup[id(event)]
+                    payload, resolution, cwd = _lookup[id(event)]
                     demoted = observe_denial(paths, event)
                     if demoted is not None:
                         _log(
@@ -1176,6 +1182,34 @@ def _drain_spool(
                             logged_unknown_checkouts,
                             store=_store,
                         )
+                    if payload is not None:
+                        try:
+                            capture_session_environment(
+                                _capture_store,
+                                event,
+                                payload=payload,
+                                cwd=cwd,
+                                checkout=resolution.root if resolution is not None else None,
+                                paths=paths,
+                                config=config,
+                                limits=_limits,
+                            )
+                        except (
+                            OSError,
+                            sqlite3.Error,
+                            StorageError,
+                            ValueError,
+                            RuntimeError,
+                        ) as error:
+                            _log(
+                                paths,
+                                config,
+                                "WARNING",
+                                event="session_environment",
+                                decision="unavailable",
+                                project_id=_project_id,
+                                error_type=error_code(error),
+                            )
                     _log(
                         paths,
                         config,
@@ -1191,7 +1225,7 @@ def _drain_spool(
                         return activity
                 queue.commit(
                     store,
-                    [(path, event) for path, event, _, _ in chunk],
+                    [(path, event) for path, event, _, _, _ in chunk],
                     result,
                     on_commit=committed,
                     after_commit=absorb,
@@ -1218,14 +1252,14 @@ def _drain_spool(
             )
         except QuotaExceeded:
             if store is None:
-                for path, _, _, _ in items:
+                for path, _, _, _, _ in items:
                     resources.count_loss(paths.project_data(project_id), "quota")
                     _discard(path)
                 activity = True
                 continue
             # A later input may be an already committed replay and need no space.
             # Revisit remaining records separately rather than dropping a whole window.
-            for path, remaining_event, _, _ in items:
+            for path, remaining_event, _, _, _ in items:
                 if not path.exists():
                     continue
                 try:

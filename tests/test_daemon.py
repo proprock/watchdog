@@ -2121,9 +2121,10 @@ def test_daemon_captures_a_hook_named_transcript(paths, tmp_path):
         if not raw.path.is_file():
             return False
         with raw.connect(write=False) as db:
-            return db.execute(
+            row = db.execute(
                 "SELECT 1 FROM streams WHERE session_id = ? AND raw_bytes = 5", (session,)
-            ).fetchone() is not None
+            ).fetchone()
+            return row is not None
 
     wait_for(transcript_ready)
     with raw.connect(write=False) as db:

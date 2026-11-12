@@ -42,8 +42,8 @@ verifies the project ID recorded in the database. The event tables are outside
 this contract. A database that has never been created raises `FileNotFoundError`
 on explicit open. SQLite may use the accompanying `-wal` and `-shm` files.
 
-The capture database is created when capture needs it. Its v1 tables have the
-following columns. Integer sequence positions and record offsets are zero-based.
+The capture database is created when capture needs it. Integer sequence
+positions and record offsets are zero-based.
 
 | Table | Columns |
 | --- | --- |
@@ -51,12 +51,27 @@ following columns. Integer sequence positions and record offsets are zero-based.
 | `chunks` | `stream_pk`, `chunk_seq`, `first_record`, `record_count`, `raw_bytes`, `codec`, `data` |
 | `tail` | `stream_pk`, `record_seq`, `line` |
 | `side_files` | `provider`, `session_id`, `rel_path`, `digest`, `raw_bytes`, `codec`, `data`, `captured_at` |
+| `session_env` (capture schema 2+) | `provider`, `session_id`, `captured_at`, `cwd`, `checkout_id`, `head`, `branch`, `harness`, `files`, `watchdog`, `initial_diff_digest`, `initial_diff_error` |
+| `blobs` (capture schema 2+) | `digest`, `raw_bytes`, `codec`, `data` |
 
 `streams.stream_pk` identifies a stored generation until it is purged. Refresh
 the stream list after a purge, since SQLite can reuse its keys. Sealed `chunks` contain
 zstd-compressed records delimited by LF. `tail.line` contains one record as a
 BLOB without its LF delimiter. `side_files.data` contains the compressed bytes
 of one file version identified by provider, session ID, relative path, and digest.
+
+Capture schema 2 adds `session_env` and `blobs` under read contract 1. Use
+`info.capture_schema` to determine whether the tables are available through
+`open_capture(info)`. Each `session_env` row is keyed by `(provider, session_id,
+captured_at)`. Its `harness`, `files`, and `watchdog` columns contain JSON.
+`blobs.digest` is the SHA-256 of the uncompressed bytes, `raw_bytes` is their
+length, and `data` is encoded with the named `codec` (`zstd`). Instruction and
+settings blobs contain the original file bytes. File digests and
+`initial_diff_digest` can exist without a matching blob when
+`capture_content = false` or the store has insufficient disk headroom for the
+blob. Only the first session observation carries the
+initial patch result. See [Session environment snapshots](storage.md#session-environment-snapshots-wd-190)
+for collection details.
 
 ## Capture readers
 

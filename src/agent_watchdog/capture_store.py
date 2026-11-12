@@ -4,25 +4,55 @@ import json
 import socket
 import sqlite3
 import sys
-from collections.abc import Iterator
+from collections.abc import Iterator, Mapping
 from compression import zstd
-from contextlib import closing, contextmanager
+from contextlib import ExitStack, closing, contextmanager
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from io import BytesIO
 from pathlib import Path
 from typing import TypedDict
 from uuid import UUID
 
-from agent_watchdog.config import Project, project_aliases
+from agent_watchdog import resources
+from agent_watchdog.config import Limits, Project, project_aliases
 from agent_watchdog.files import atomic_write, open_shared_read
-from agent_watchdog.storage import EVENTS_SCHEMA_VERSION, StorageError
+from agent_watchdog.storage import EVENTS_SCHEMA_VERSION, QuotaExceeded, StorageError
 
 CAPTURE_FILENAME = "capture.sqlite3"
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 STORE_CONTRACT_VERSION = 1
 STORE_MANIFEST_FILENAME = "store.json"
 CHUNK_TARGET_BYTES = 4 * 1024**2
 ZSTD_LEVEL = 12
+
+CAPTURE_ENV_SCHEMA = (
+    """
+    CREATE TABLE blobs (
+        digest TEXT PRIMARY KEY,
+        raw_bytes INTEGER NOT NULL,
+        codec TEXT NOT NULL,
+        data BLOB NOT NULL
+    )
+    """,
+    """
+    CREATE TABLE session_env (
+        provider TEXT NOT NULL,
+        session_id TEXT NOT NULL,
+        captured_at TEXT NOT NULL,
+        cwd TEXT,
+        checkout_id TEXT,
+        head TEXT,
+        branch TEXT,
+        harness TEXT NOT NULL,
+        files TEXT NOT NULL,
+        watchdog TEXT NOT NULL,
+        initial_diff_digest TEXT,
+        initial_diff_error TEXT,
+        PRIMARY KEY (provider, session_id, captured_at)
+    )
+    """,
+)
 
 _SCHEMA = (
     """
@@ -84,6 +114,7 @@ _SCHEMA = (
         PRIMARY KEY (provider, session_id, rel_path, digest)
     )
     """,
+    *CAPTURE_ENV_SCHEMA,
 )
 
 
@@ -95,6 +126,22 @@ class CaptureStats(TypedDict):
     stored_bytes: int
     skipped_lines: int
     last_errors: list[str]
+
+
+@dataclass(frozen=True, slots=True)
+class SessionEnvironment:
+    provider: str
+    session_id: str
+    captured_at: str
+    cwd: str | None
+    checkout_id: str | None
+    head: str | None
+    branch: str | None
+    harness: Mapping[str, object]
+    files: list[dict[str, str | None]]
+    watchdog: Mapping[str, object]
+    initial_diff_digest: str | None = None
+    initial_diff_error: str | None = None
 
 
 def write_manifest(
@@ -158,8 +205,95 @@ class CaptureStore:
                 db.execute("BEGIN IMMEDIATE" if write else "BEGIN")
                 yield db
 
+    def has_session_env(self, provider: str, session_id: str) -> bool:
+        if not self.path.is_file():
+            return False
+        with self.connect(write=False) as db:
+            return (
+                db.execute(
+                    "SELECT 1 FROM session_env WHERE provider = ? AND session_id = ? LIMIT 1",
+                    (provider, session_id),
+                ).fetchone()
+                is not None
+            )
+
+    def record_session_env(
+        self,
+        snapshot: SessionEnvironment,
+        blobs: Mapping[str, bytes],
+        *,
+        capture_content: bool,
+        limits: Limits | None = None,
+    ) -> bool:
+        """Persist one changed environment and any new content in one transaction."""
+        key = (snapshot.provider, snapshot.session_id)
+        fields = (
+            snapshot.cwd,
+            snapshot.checkout_id,
+            snapshot.head,
+            snapshot.branch,
+            json.dumps(dict(snapshot.harness), sort_keys=True),
+            json.dumps(snapshot.files, sort_keys=True),
+            json.dumps(dict(snapshot.watchdog), sort_keys=True),
+        )
+        root = self.path.parent
+        with resources.admission(root), ExitStack() as stack:
+            # Allow for SQLite pages and the write-ahead log, as transcript capture does.
+            metadata_bytes = sum(len(value.encode()) for value in (*key, *fields) if value)
+            remaining = resources.available(root, limits or Limits()) - (
+                64 * 1024 + 4 * metadata_bytes
+            )
+            if remaining < 0:
+                raise QuotaExceeded("Session environment exceeds capture headroom")
+            db = stack.enter_context(self.connect())
+            previous = db.execute(
+                "SELECT cwd, checkout_id, head, branch, harness, files, watchdog "
+                "FROM session_env WHERE provider = ? AND session_id = ? "
+                "ORDER BY captured_at DESC LIMIT 1",
+                key,
+            ).fetchone()
+            if previous is not None and tuple(previous) == fields:
+                return False
+            initial_digest = snapshot.initial_diff_digest if previous is None else None
+            initial_error = snapshot.initial_diff_error if previous is None else None
+            omitted: set[str] = set()
+            if capture_content:
+                digests = {item["digest"] for item in snapshot.files}
+                digests.add(initial_digest)
+                for digest, raw in blobs.items():
+                    if (
+                        digest not in digests
+                        or db.execute("SELECT 1 FROM blobs WHERE digest = ?", (digest,)).fetchone()
+                        is not None
+                    ):
+                        continue
+                    data = zstd.compress(raw, level=1)
+                    needed = 8192 + 4 * len(data)
+                    if needed > remaining:
+                        omitted.add(digest)
+                        continue
+                    db.execute(
+                        "INSERT INTO blobs VALUES (?, ?, 'zstd', ?)", (digest, len(raw), data)
+                    )
+                    remaining -= needed
+            if omitted:
+                files = [
+                    item | {"error": "quota"} if item["digest"] in omitted else item
+                    for item in snapshot.files
+                ]
+                fields = (*fields[:5], json.dumps(files, sort_keys=True), fields[6])
+                if initial_digest in omitted:
+                    initial_error = "quota"
+                if previous is not None and tuple(previous) == fields:
+                    return False
+            db.execute(
+                "INSERT INTO session_env VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                (*key, snapshot.captured_at, *fields, initial_digest, initial_error),
+            )
+            return True
+
     def purge(self, provider: str, session_id: str) -> int:
-        """Delete a provider session's streams, records, and side files."""
+        """Delete a provider session and its unshared capture content."""
         try:
             self.path.stat()
         except FileNotFoundError:
@@ -174,6 +308,29 @@ class CaptureStore:
                 "DELETE FROM side_files WHERE provider = ? AND session_id = ?",
                 (provider, session_id),
             )
+            removed = db.execute(
+                "DELETE FROM session_env WHERE provider = ? AND session_id = ? "
+                "RETURNING initial_diff_digest, files",
+                (provider, session_id),
+            ).fetchall()
+            digests = {row[0] for row in removed if row[0] is not None}
+            digests.update(
+                item["digest"] for row in removed for item in json.loads(row[1]) if item["digest"]
+            )
+            if digests:
+                db.execute(
+                    """
+                    DELETE FROM blobs WHERE digest IN (SELECT value FROM json_each(?))
+                    AND NOT EXISTS (
+                        SELECT 1 FROM session_env AS env
+                        WHERE env.initial_diff_digest = blobs.digest OR EXISTS (
+                            SELECT 1 FROM json_each(env.files) AS file
+                            WHERE file.value ->> 'digest' = blobs.digest
+                        )
+                    )
+                    """,
+                    (json.dumps(sorted(digests)),),
+                )
             return db.total_changes
 
     def stats(self) -> CaptureStats:
@@ -197,11 +354,13 @@ class CaptureStore:
                        count(*) FILTER (WHERE state = 'open') AS open,
                        count(*) FILTER (WHERE state = 'missing') AS missing,
                        coalesce(sum(raw_bytes), 0)
-                         + (SELECT coalesce(sum(raw_bytes), 0) FROM side_files) AS raw_bytes,
+                         + (SELECT coalesce(sum(raw_bytes), 0) FROM side_files)
+                         + (SELECT coalesce(sum(raw_bytes), 0) FROM blobs) AS raw_bytes,
                        coalesce(sum(skipped_lines), 0) AS skipped_lines,
                        (SELECT coalesce(sum(length(data)), 0) FROM chunks)
                          + (SELECT coalesce(sum(length(line)), 0) FROM tail)
-                         + (SELECT coalesce(sum(length(data)), 0) FROM side_files) AS stored_bytes
+                         + (SELECT coalesce(sum(length(data)), 0) FROM side_files)
+                         + (SELECT coalesce(sum(length(data)), 0) FROM blobs) AS stored_bytes
                 FROM streams
                 """
             ).fetchone()
@@ -241,7 +400,7 @@ def _initialize(db: sqlite3.Connection, *, create: bool) -> None:
                 return
     raise StorageError(
         f"Capture store version {version}, expected {SCHEMA_VERSION}. "
-        "See docs/storage.md for version conversion (scripts/convert_capture_store.py)."
+        "See docs/storage.md for version conversion (scripts/capture_schema_v2.py)."
     )
 
 
