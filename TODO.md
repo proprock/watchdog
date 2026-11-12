@@ -22,8 +22,6 @@ Owner decisions of 2026-11-11 that every Split task follows:
 
 Line numbers in these tasks refer to commit `0d5e984`. Paths under `insights/` exist after WD-184. The source checkout of the insights program is the sibling repository aliased `project-b` in `LIVE.md`; never write its real name, its old command name or its old home directory into committed text.
 
-- [ ] **WD-212 - Investigate concurrent daemon control replacement on Windows.** The WD-184 clean-clone full suite failed `test_concurrent_start_pause_and_explicit_resume` with WinError 5 replacing `control.json` after the existing retry window; the isolated test passed. Determine the cause and correct the failure without weakening bounded error handling. See [WD-184 evidence](docs/evidence/wd184.md).
-
 - [ ] **WD-213 - Investigate daemon status after crash.** The WD-184 clean-clone full suite failed `test_crash_releases_lock_and_hook_recovers`: after the daemon process exited, status returned `degraded` instead of `unavailable`. Saved evidence confirms a crash between heartbeat publication and completion of startup evidence cleanup. The test now waits for completed startup; a separate test covers the intermediate crash, and four focused cases pass. Full-suite verification remains open. See [WD-184 evidence](docs/evidence/wd184.md).
 
 - [ ] **WD-186 - Collect from every Git checkout: automatic registration, exclusions, and a visible count of ignored sessions.** P0. Depends on WD-208, WD-210.
