@@ -165,7 +165,7 @@ def test_doctor_does_not_warn_for_an_idle_provider(tmp_path, monkeypatch):
     roots = {"claude": tmp_path / "claude"}
     transcript(roots["claude"] / "project", "a.jsonl", NOW - timedelta(days=9))
     report = inspection.doctor(paths, now=NOW, transcript_roots=roots)
-    assert report["warnings"] == []
+    assert {item["code"] for item in report["warnings"]} == {"scan_disabled"}
     assert report["coverage"]["claude"]["transcript_activity"] is False
 
 
@@ -173,7 +173,7 @@ def test_a_missing_transcript_root_is_unknown_not_a_warning(tmp_path, monkeypatc
     paths, _ = setup(tmp_path, monkeypatch)
     roots = {"claude": tmp_path / "absent"}
     report = inspection.doctor(paths, now=NOW, transcript_roots=roots)
-    assert report["warnings"] == []
+    assert {item["code"] for item in report["warnings"]} == {"scan_disabled"}
     assert report["coverage"]["claude"]["transcript_activity"] is None
 
 

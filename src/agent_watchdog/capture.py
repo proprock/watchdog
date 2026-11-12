@@ -7,7 +7,7 @@ import sqlite3
 import time
 from collections.abc import Callable, Iterator
 from compression import zstd
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import BinaryIO, cast
@@ -20,6 +20,7 @@ from agent_watchdog.capture_store import (
     CaptureStore,
     seal_tail,
 )
+from agent_watchdog.config import Limits
 from agent_watchdog.storage import QuotaExceeded, Store
 from agent_watchdog.transcripts import MAX_LINE_BYTES, _line_end, _read_window, _signature
 
@@ -42,7 +43,9 @@ class Source:
     session: str
     stream: str
     path: Path
-    hook_session: str
+    hook_session: str | None
+    kind: str = "hook"
+    cwd: str | None = None
 
     @property
     def key(self) -> tuple[str, str, str]:
@@ -121,6 +124,9 @@ def _sources(
 
 
 def _open_source(path: Path) -> tuple[BinaryIO, int]:
+    if path.suffix == ".zst":
+        _, _, _, modified = _signature(path)
+        return cast(BinaryIO, zstd.open(path, "rb")), modified
     try:
         _, _, _, modified = _signature(path)
     except FileNotFoundError:
@@ -146,14 +152,16 @@ def _reserve(available: int, raw_bytes: int = 0) -> int:
 def _new_stream(db: sqlite3.Connection, source: Source, generation: int, stamp: str) -> sqlite3.Row:
     row = db.execute(
         "INSERT INTO streams (provider, session_id, stream_id, generation, hook_session_id, "
-        "source_path, source_kind, head_len, head_digest, byte_offset, record_count, raw_bytes, "
-        "first_seen, last_growth, last_read, state) "
-        "VALUES (?, ?, ?, ?, ?, ?, 'hook', 0, ?, 0, 0, 0, ?, ?, ?, 'open') RETURNING *",
+        "source_path, source_kind, cwd, head_len, head_digest, byte_offset, record_count, "
+        "raw_bytes, first_seen, last_growth, last_read, state) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, ?, 0, 0, 0, ?, ?, ?, 'open') RETURNING *",
         (
             *source.key,
             generation,
             source.hook_session,
             str(source.path),
+            source.kind,
+            source.cwd,
             _digest(b""),
             stamp,
             stamp,
@@ -193,13 +201,24 @@ def _latest(db: sqlite3.Connection, source: Source) -> sqlite3.Row | None:
     ).fetchone()
 
 
+def _source_row(db: sqlite3.Connection, source: Source) -> sqlite3.Row | None:
+    # Divergent files can share a stream identity. Resume the matching path.
+    return db.execute(
+        "SELECT * FROM streams WHERE provider=? AND session_id=? AND stream_id=? "
+        "ORDER BY (source_path=?) DESC, generation DESC LIMIT 1",
+        (*source.key, str(source.path)),
+    ).fetchone()
+
+
 def _visit(
     db: sqlite3.Connection,
     source: Source,
     row: sqlite3.Row | None,
     stamp: str,
     available: int,
-) -> tuple[bool, int]:
+    *,
+    check_eof: bool = False,
+) -> tuple[bool, int, bool]:
     try:
         stream, modified = _open_source(source.path)
         with stream:
@@ -211,6 +230,7 @@ def _visit(
                 replaced = not stream.read(1)
             offset = 0 if row is None or replaced else row["byte_offset"]
             lines, end, skipped_lines, skipped_bytes = _records(stream, offset)
+            complete = check_eof and stream.tell() == end and not stream.read(1)
     except FileNotFoundError:
         available = _reserve(available)
         if row is None:
@@ -219,7 +239,7 @@ def _visit(
             "UPDATE streams SET state='missing', last_read=?, last_error=NULL WHERE stream_pk=?",
             (stamp, row["stream_pk"]),
         )
-        return False, available
+        return False, available, False
 
     raw_bytes = end - offset - skipped_bytes
     try:
@@ -233,8 +253,17 @@ def _visit(
                 "UPDATE streams SET last_read=? WHERE stream_pk=?", (stamp, row["stream_pk"])
             )
         raise
-    if row is None or replaced:
-        row = _new_stream(db, source, 0 if row is None else row["generation"] + 1, stamp)
+    if row is None:
+        row = _new_stream(db, source, 0, stamp)
+    elif replaced:
+        latest = _latest(db, source)
+        assert latest is not None
+        source = replace(
+            source,
+            kind=latest["source_kind"],
+            hook_session=source.hook_session or row["hook_session_id"],
+        )
+        row = _new_stream(db, source, latest["generation"] + 1, stamp)
     pk = row["stream_pk"]
     db.executemany(
         "INSERT INTO tail (stream_pk, record_seq, line) VALUES (?, ?, ?)",
@@ -246,12 +275,15 @@ def _visit(
         or modified > int(datetime.fromisoformat(row["last_growth"]).timestamp() * 1e9)
     )
     db.execute(
-        "UPDATE streams SET source_path=?, head_len=?, head_digest=?, byte_offset=?, "
+        "UPDATE streams SET source_path=?, cwd=coalesce(cwd, ?), "
+        "hook_session_id=coalesce(hook_session_id, ?), head_len=?, head_digest=?, byte_offset=?, "
         "record_count=record_count+?, raw_bytes=raw_bytes+?, skipped_lines=skipped_lines+?, "
         "skipped_bytes=skipped_bytes+?, last_growth=?, last_read=?, state='open', last_error=NULL "
         "WHERE stream_pk=?",
         (
             str(source.path),
+            source.cwd,
+            source.hook_session,
             len(head),
             _digest(head),
             end,
@@ -264,7 +296,7 @@ def _visit(
             pk,
         ),
     )
-    return end != offset, available
+    return end != offset, available, complete
 
 
 def _save_side_file(
@@ -274,7 +306,7 @@ def _save_side_file(
     directory: Path,
     stamp: str,
     available: int,
-) -> tuple[bool, int]:
+) -> tuple[bool, int, bool]:
     signature = _signature(path)
     size = signature[2]
     with path.open("rb") as stream:
@@ -286,18 +318,40 @@ def _save_side_file(
             "AND rel_path=? AND digest=?",
             key,
         ).fetchone():
-            return False, available
+            return False, available, True
         remaining = _reserve(available, size)
         stream.seek(0)
         data = stream.read(size + 1)
     if len(data) != size or _digest(data) != digest or _signature(path) != signature:
-        return False, available
+        return False, available, False
     db.execute(
         "INSERT INTO side_files (provider, session_id, rel_path, digest, raw_bytes, codec, data, "
         "captured_at) VALUES (?, ?, ?, ?, ?, 'zstd', ?, ?)",
         (*key, size, zstd.compress(data, level=ZSTD_LEVEL), stamp),
     )
-    return True, remaining
+    return True, remaining, True
+
+
+def capture_file(
+    root: Path, limits: Limits, source: Source, *, side_directory: Path | None = None
+) -> tuple[bool, bool]:
+    """Capture one source window and report progress and EOF for the scan cache."""
+    if not limits.capture_content:
+        return False, False
+    stamp = datetime.now(UTC).isoformat()
+    with resources.admission(root):
+        available = resources.available(root, limits)
+        _reserve(available)
+        with CaptureStore(root / CAPTURE_FILENAME).connect() as db:
+            if side_directory is None:
+                progressed, _, complete = _visit(
+                    db, source, _source_row(db, source), stamp, available, check_eof=True
+                )
+            else:
+                progressed, _, complete = _save_side_file(
+                    db, source, source.path, side_directory, stamp, available
+                )
+    return progressed, complete
 
 
 def capture(
@@ -357,7 +411,7 @@ def _capture_round(
     cursor.background_first = not background_first
     if background_first:
         available = _background(db, sources, result, now, expired, available, target_bytes, cursor)
-    rows = [(source, _latest(db, source)) for source in sources.values()]
+    rows = [(source, _source_row(db, source)) for source in sources.values()]
     for source, row in sorted(rows, key=lambda item: item[1]["last_read"] if item[1] else ""):
         if expired():
             result.pending = True
@@ -376,7 +430,7 @@ def _visit_source(
     available: int,
 ) -> int:
     try:
-        progressed, available = _visit(db, source, row, stamp, available)
+        progressed, available, _ = _visit(db, source, row, stamp, available)
         result.progressed |= progressed
     except QuotaExceeded:
         raise
@@ -451,11 +505,11 @@ def _background(
             child = Source("claude", source.session, match[1].lower(), path, source.hook_session)
             if child.key not in sources:
                 available = _visit_source(
-                    db, child, _latest(db, child), result, now.isoformat(), available
+                    db, child, _source_row(db, child), result, now.isoformat(), available
                 )
             continue
         try:
-            progressed, available = _save_side_file(
+            progressed, available, _ = _save_side_file(
                 db, source, path, directory, now.isoformat(), available
             )
             result.progressed |= progressed

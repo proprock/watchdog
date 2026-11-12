@@ -1,4 +1,4 @@
-# Copy this file to the user configuration path to start with the built-in defaults.
+# Copy this file to the user configuration path for the example settings.
 # Registered project paths are intentionally omitted because they are machine-specific.
 
 schema_version = 1
@@ -15,6 +15,14 @@ collect_exclude = []
 # collect_exclude = ["C:/path/to/scratch/*"]
 # Record adapter and spool timing/occupancy metadata for delivery diagnostics.
 pipeline_telemetry = true
+
+[scan]
+# Discover and backfill local provider history. The built-in default is false.
+enabled = true
+# Empty arrays use ~/.claude/projects and ~/.codex/{sessions,archived_sessions}.
+claude_roots = []
+codex_roots = []
+interval_seconds = 300
 
 [defaults]
 # Capture selected raw prompt, tool, and assistant text. Set false to

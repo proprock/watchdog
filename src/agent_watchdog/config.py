@@ -184,6 +184,21 @@ class Rules(StrictModel):
         return self
 
 
+class Scan(StrictModel):
+    enabled: bool = False
+    claude_roots: tuple[Path, ...] = ()
+    codex_roots: tuple[Path, ...] = ()
+    interval_seconds: Positive = 300
+
+    @field_validator("claude_roots", "codex_roots")
+    @classmethod
+    def absolute_roots(cls, roots: tuple[Path, ...]) -> tuple[Path, ...]:
+        expanded = tuple(root.expanduser() for root in roots)
+        if any(not root.is_absolute() for root in expanded):
+            raise ValueError("Scan roots must be absolute paths")
+        return expanded
+
+
 class Config(Versioned):
     defaults: Limits = Field(default_factory=Limits)
     projects: tuple[Project, ...] = ()
@@ -192,6 +207,7 @@ class Config(Versioned):
     pipeline_telemetry: bool = True
     pricing: Pricing = Field(default_factory=Pricing)
     rules: Rules = Field(default_factory=Rules)
+    scan: Scan = Field(default_factory=Scan)
     trusted_projects_dir: Path | None = None
 
     @field_validator("trusted_projects_dir")

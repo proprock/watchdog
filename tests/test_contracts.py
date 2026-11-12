@@ -13,6 +13,7 @@ from agent_watchdog.config import (
     Overrides,
     Project,
     Rules,
+    Scan,
     load_config,
     save_config,
     user_paths,
@@ -92,10 +93,10 @@ def test_transcript_failure_window_supports_project_overrides(tmp_path):
     )
 
 
-def test_repository_config_example_matches_default_configuration():
+def test_repository_config_example_uses_defaults_and_enables_provider_scan():
     path = Path(__file__).resolve().parents[1] / "config.example.toml"
     assert path.is_file()
-    assert load_config(path) == Config()
+    assert load_config(path) == Config(scan=Scan(enabled=True))
 
 
 def test_auto_add_configuration_expands_home_and_round_trips_exclusions(tmp_path):

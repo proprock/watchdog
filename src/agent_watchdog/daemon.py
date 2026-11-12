@@ -32,6 +32,7 @@ from agent_watchdog.registry import Registry, RegistryError, Resolution
 from agent_watchdog.rules.api import PROVISIONAL_PROFILES, Decision
 from agent_watchdog.rules.engine import decide, subscriptions
 from agent_watchdog.rules.python import PythonRuleTimeout
+from agent_watchdog.scan import Scanner
 from agent_watchdog.spool import SPOOL_BYTES, SPOOL_FILES, Spool
 from agent_watchdog.state import SessionState, StateKey
 from agent_watchdog.storage import (
@@ -1877,6 +1878,7 @@ def _poll(
     spool_maintenance_at = 0.0
     spool_queue = Spool(paths.data)
     ignored = IgnoredRecords(paths.data)
+    scanner = Scanner(paths)
     logged_enrichment_failures: set[tuple[str, str]] = set()
     logged_inert_enrichment: set[str] = set()
     logged_unknown_checkouts: set[tuple[UUID, str]] = set()
@@ -1906,6 +1908,7 @@ def _poll(
         maintenance_budget = MaintenanceBudget(remaining=0.2)
         try:
             config = _config_cache.load(paths.config)
+            scan_reserve = TICK_BUDGET / 2 if scanner.due(config.scan, time.monotonic()) else 0.0
             try:
                 mtime = paths.config.stat().st_mtime
             except OSError:
@@ -2022,13 +2025,13 @@ def _poll(
                                 and len(errors) < 32
                             ):
                                 errors.append(str(project.id))
-                        if limits.capture_content and capture_budget > 0:
+                        if limits.capture_content and capture_budget > scan_reserve:
                             capture_started = time.monotonic()
                             try:
                                 captured = capture(
                                     store,
                                     clock=time.monotonic,
-                                    budget_seconds=capture_budget,
+                                    budget_seconds=capture_budget - scan_reserve,
                                     cursor=capture_cursors.setdefault(project.id, CaptureCursor()),
                                 )
                             finally:
@@ -2106,6 +2109,10 @@ def _poll(
             for project_id in wake_projects:
                 next_visit[project_id] = time.monotonic()
                 visit_intervals[project_id] = 1.0
+            if scanner.tick(
+                config, resolve_or_auto_register, ignored, capture_budget=capture_budget
+            ):
+                activity = True
         except ConfigError as error:
             errors.append("configuration")
             _log(

@@ -4,9 +4,9 @@ WD-004 provides the SQLite writer; WD-149 unifies event delivery in one durable
 spool. WD-007 adds retention, export redaction,
 cooperative quotas, pins, and persistent loss diagnostics. No new dependency or
 service is required. Stored project data lives in its UUID directory, outside
-the source checkout; pending deliveries share `<data>/spool`. Vendor transcripts
-are never cleanup targets; the
-Codex reader opens only exact paths recorded from hooks.
+the source checkout. Pending deliveries share `<data>/spool`. Provider transcripts
+are read-only inputs for [raw capture](#raw-capture-store) and the optional
+[provider directory scan](#provider-directory-scan).
 
 ```python
 from agent_watchdog.daemon import publish
@@ -152,10 +152,10 @@ ingest behavior it replaces.
 Hooks capture native `prompt`, `tool_input`, `tool_response`, and
 `last_assistant_message` fields when present. Capture defaults to true for
 registered projects; set `capture_content = false` globally or per project to
-omit text. Codex `transcript_path` is retained as operational reader metadata
-even when text capture is disabled, but enrichment stores only validated numeric
-usage records and never transcript text or raw lines. Other top-level provider
-fields are retained as raw metadata even when their schema is not yet known;
+omit text and opt out of [raw transcript capture](#raw-capture-store). Codex
+`transcript_path` remains operational reader metadata when text capture is
+disabled, and enrichment can still store validated numeric usage records. Other
+top-level provider fields are retained as raw metadata even when their schema is not yet known;
 this makes future model, reasoning, context, token, timing, retry, permission,
 error, and lifecycle telemetry recoverable without inventing a value. New field
 names are recorded in `unknown_fields` and a bounded diagnostic WARNING; nested
@@ -391,7 +391,8 @@ first capture schema and requires no conversion.
 | `tail` | Stream and record sequence identify an unsealed record without its final LF. |
 | `side_files` | Provider, session, relative path and SHA-256 identify a captured version of a Claude session file. Each row stores its byte count, codec, compressed bytes, and capture time. |
 
-The daemon reads paths named by a hook in the last hour. For a Claude main
+The daemon reads paths named by a hook in the last hour and paths discovered by
+the [provider directory scan](#provider-directory-scan). For a Claude main
 transcript it also reads its session directory. Direct `subagents/agent-<hex>.jsonl`
 files become subagent streams and the other regular files become side files.
 Claude names identify the session and, where present, the subagent. A Codex
@@ -420,6 +421,48 @@ marks the project degraded. Raw capture has no automatic expiry or eviction.
 `purge` removes the selected provider session's capture records, including
 streams named by its hooks. `doctor` reports per-project stream states, captured
 raw bytes, stored payload bytes, skipped lines, and the latest stream errors.
+
+## Provider directory scan
+
+The daemon incrementally walks the roots configured in `[scan]`. The built-in
+default for `enabled` is `false`. The example configuration enables scanning,
+and `doctor` warns when scanning is off. Empty `claude_roots` use
+`~/.claude/projects`. Empty `codex_roots` use `~/.codex/sessions` and
+`~/.codex/archived_sessions`. `interval_seconds` defaults to `300`. The daemon
+keeps its directory-walk position between ticks and checks a 50 ms walking
+budget each tick. Hook and scan capture share the existing raw-capture budget.
+While a scan is due, half of the budget is reserved for it. The first
+scan cycles backfill the available history automatically.
+
+For Claude, the scanner recognizes `<root>/<slug>/<session>.jsonl`, subagent
+transcripts matching `<root>/<slug>/<session>/subagents/agent-*.jsonl`, and side
+files below `<root>/<slug>/<session>/`. For Codex, it discovers `rollout-*.jsonl`
+and `rollout-*.jsonl.zst` at any depth under the roots. The scan uses the same
+stream identity and capture as hooks. A stream first discovered by the scan has
+`source_kind = "scan"`. A stream first seen through a hook keeps `hook`.
+
+The scanner reads the first string `cwd` within the first 64 KiB of a Claude
+transcript or `payload.cwd` from the first Codex `session_meta` record within
+the raw capture line-size limit of 32 MiB. It stores
+the original value in `streams.cwd` and uses the spool's Git project routing,
+including automatic registration for eligible checkouts. If the directory has
+vanished, routing starts from its nearest existing ancestor. Ignored files are
+counted in `<data>/ignored.json` under `no_cwd`, `not_git`, `excluded`, or
+`unresolvable_cwd`. Setting `capture_content = false` globally or for the
+resolved project opts that project out of raw capture and records
+`capture_disabled`.
+
+The `files` table in `<data>/scan.sqlite3` caches the provider, path, size,
+nanosecond modification time, project ID, decision, and time checked. If a fully
+captured file still has the same size and modification time, the scanner skips
+it without reopening it.
+
+`doctor` reads the last completed cycle's coverage by provider from
+`<data>/scan-status.json`. It includes
+the number of files on disk, fully and partly captured files, files ignored by
+reason, unrecognized names, unreadable directories, when the cycle finished, and the modification time
+of the oldest file still on disk. Recognized files awaiting data or a retry may
+appear as partly captured.
 
 ## Loss diagnostics and degraded state
 

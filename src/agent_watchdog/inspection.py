@@ -1078,6 +1078,7 @@ def doctor(
     transcript_roots: dict[str, Path] | None = None,
 ) -> dict:
     from agent_watchdog.ignored import report as ignored_report
+    from agent_watchdog.scan import report as scan_report
     from agent_watchdog.spool import Spool
 
     now = now or datetime.now(UTC)
@@ -1141,6 +1142,34 @@ def doctor(
     healthy &= core["state"] != "degraded"
     mismatch = Spool(paths.data).schema_mismatch()
     warnings: list[dict] = []
+    if not config.scan.enabled:
+        warnings.append(
+            {
+                "code": "scan_disabled",
+                "message": "Set scan.enabled in config.toml to backfill provider history.",
+            }
+        )
+    try:
+        scan = scan_report(paths.data, enabled=config.scan.enabled)
+    except OSError, ValueError:
+        scan = None
+        healthy = False
+        warnings.append(
+            {
+                "code": "scan_status_unreadable",
+                "message": "Could not read scan-status.json in the Watchdog data directory.",
+            }
+        )
+    if config.scan.enabled and scan is not None:
+        for provider, stats in scan["providers"].items():
+            if stats.get("unreadable_directories", 0):
+                warnings.append(
+                    {
+                        "code": "scan_directory_unreadable",
+                        "provider": provider,
+                        "message": "Check read access to the configured provider directories.",
+                    }
+                )
     try:
         ignored = ignored_report(paths.data)
     except OSError:
@@ -1178,6 +1207,7 @@ def doctor(
         "ok": healthy,
         "adapter": {"schema_mismatch": mismatch},
         "ignored": ignored,
+        "scan": scan,
         "coverage": coverage,
         "warnings": warnings + coverage_warnings,
         "projects": projects,
