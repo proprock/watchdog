@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import Any, Literal, TypedDict, cast
 
 from agent_watchdog import daemon, resources
+from agent_watchdog.capture_store import CAPTURE_FILENAME, CaptureStore
 from agent_watchdog.config import (
     Project,
     UserPaths,
@@ -1109,6 +1110,14 @@ def doctor(
         except (OSError, ValueError, sqlite3.Error) as error:
             state = {"state": "error", "error": type(error).__name__}
             counters, used, capacity = None, None, None
+        try:
+            capture: dict = dict(CaptureStore(root / CAPTURE_FILENAME).stats())
+        except (OSError, StorageError, sqlite3.Error) as error:
+            capture = {
+                "state": "error",
+                "error": str(error) if isinstance(error, StorageError) else type(error).__name__,
+            }
+            healthy = False
         exists = project.root.is_dir()
         healthy &= state["state"] != "error" and exists and (capacity is None or capacity >= 65536)
         projects.append(
@@ -1116,6 +1125,7 @@ def doctor(
                 "project": aliases[project.id],
                 "root_exists": exists,
                 "database": state,
+                "capture": capture,
                 "losses": counters,
                 "used_bytes": used,
                 "available_bytes": capacity,

@@ -42,6 +42,8 @@ def captured(store):
 def run(store, **kwargs):
     from agent_watchdog.capture import capture
 
+    if "clock" not in kwargs:
+        kwargs.setdefault("budget_seconds", 10)
     return capture(store, now=kwargs.pop("now", NOW), **kwargs)
 
 

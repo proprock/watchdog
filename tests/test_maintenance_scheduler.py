@@ -7,14 +7,14 @@ from uuid import uuid4
 import pytest
 
 from agent_watchdog import daemon, resources, transcripts
-from agent_watchdog.config import Config, Project, UserPaths
+from agent_watchdog.config import Config, Limits, Project, UserPaths
 from agent_watchdog.storage import MaintenanceBudget, MaintenanceResult, MaintenanceState
 
 
 def test_projects_take_turns_before_ingestion_can_consume_cleanup_budget(tmp_path, monkeypatch):
     paths = UserPaths(tmp_path / "config.toml", tmp_path / "data", tmp_path / "runtime")
     projects = tuple(Project(id=uuid4(), root=tmp_path / str(index)) for index in range(2))
-    config = Config(projects=projects)
+    config = Config(projects=projects, defaults=Limits(capture_content=False))
     units, drains, closed = [], [], []
     tick = 0
 

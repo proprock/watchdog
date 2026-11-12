@@ -1341,6 +1341,9 @@ class Store:
 
     def purge_provider_session(self, provider: str, session_id: str) -> int:
         """Delete only Watchdog-owned rows for one selected provider session."""
+        from agent_watchdog.capture import stream_identity
+        from agent_watchdog.capture_store import CAPTURE_FILENAME, CaptureStore
+
         if provider not in {"codex", "claude"} or not session_id.strip():
             raise StorageError("A supported provider and session identity are required")
         with resources.admission(self.root), self._transaction() as db:
@@ -1352,7 +1355,8 @@ class Store:
                     (session_id, provider),
                 )
             ]
-            if not event_ids:
+            deleted_capture = CaptureStore(self.root / CAPTURE_FILENAME).purge(provider, session_id)
+            if not event_ids and not deleted_capture:
                 raise StorageError("Unknown session in the selected provider")
             for event_id in event_ids:
                 self._delete(event_id)
@@ -1377,6 +1381,17 @@ class Store:
                 "DELETE FROM transcript_sources WHERE provider=? AND session_id=?",
                 (provider, session_id),
             )
+            if provider == "codex" and deleted_capture:
+                # A parent hook can name a rollout whose filename identifies a child.
+                paths = db.execute("SELECT path FROM transcript_sources WHERE provider='codex'")
+                db.executemany(
+                    "DELETE FROM transcript_sources WHERE provider='codex' AND path=?",
+                    [
+                        (name,)
+                        for (name,) in paths
+                        if stream_identity(provider, Path(name)) == (session_id, "main")
+                    ],
+                )
             if provider == "claude":
                 # Also drop "<parent>#<agent_id>" subagent reader rows.
                 db.execute(

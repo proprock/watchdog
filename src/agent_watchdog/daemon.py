@@ -21,6 +21,7 @@ from pydantic import ValidationError
 
 from agent_watchdog import daemon_lifecycle, resources
 from agent_watchdog._proc import hidden_creationflags
+from agent_watchdog.capture import TICK_BUDGET, CaptureCursor, capture
 from agent_watchdog.config import Config, ConfigError, Limits, UserPaths, load_config, save_config
 from agent_watchdog.demotion import observe as observe_denial
 from agent_watchdog.demotion import remember_denial
@@ -1837,6 +1838,7 @@ def _poll(
     project_failures: dict[str, list[str]] = {}
     maintenance: dict[str, float] = {}
     maintenance_states: dict[UUID, MaintenanceState] = {}
+    capture_cursors: dict[UUID, CaptureCursor] = {}
     maintenance_cursor = 0
     spool_maintenance_at = 0.0
     spool_queue = Spool(paths.data)
@@ -1862,6 +1864,7 @@ def _poll(
             continue
         errors = []
         transcript_failures: dict[str, list[str]] = {}
+        capture_budget = TICK_BUDGET
         activity = False
         tick_owner = ExitStack()
         stores: dict[UUID, Store] = {}
@@ -1984,6 +1987,31 @@ def _poll(
                                 and len(errors) < 32
                             ):
                                 errors.append(str(project.id))
+                        if limits.capture_content and capture_budget > 0:
+                            capture_started = time.monotonic()
+                            try:
+                                captured = capture(
+                                    store,
+                                    clock=time.monotonic,
+                                    budget_seconds=capture_budget,
+                                    cursor=capture_cursors.setdefault(project.id, CaptureCursor()),
+                                )
+                            finally:
+                                capture_budget -= time.monotonic() - capture_started
+                            project_active |= captured.progressed or captured.pending
+                            activity |= captured.progressed or captured.pending
+                            if captured.degraded:
+                                if project_key not in project_errors:
+                                    _log(
+                                        paths,
+                                        config,
+                                        "WARNING",
+                                        event="capture",
+                                        decision="degraded",
+                                        project_id=project.id,
+                                    )
+                                if project_key not in errors and len(errors) < 32:
+                                    errors.append(project_key)
                         sessions.absorb(str(project.id), store.touched)
                         refreshed, failures = sessions.refresh(
                             str(project.id), store, now=time.monotonic()
