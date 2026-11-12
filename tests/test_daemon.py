@@ -1370,6 +1370,25 @@ def test_concurrent_start_pause_and_explicit_resume(paths):
     assert status(paths)["instance_id"] != instance
 
 
+@pytest.mark.skipif(os.name != "nt", reason="Windows file sharing")
+def test_pause_replaces_control_while_a_shared_reader_is_open(paths):
+    import _winapi
+    import msvcrt
+
+    from agent_watchdog.daemon import desired, set_desired
+
+    original = set_desired(paths, paused=False)
+    control = paths.data / "control.json"
+    # Match the native adapter's read/write/delete sharing mode.
+    handle = _winapi.CreateFile(
+        str(control), _winapi.GENERIC_READ, 7, 0, _winapi.OPEN_EXISTING, 0, 0
+    )
+    with os.fdopen(msvcrt.open_osfhandle(handle, os.O_RDONLY), "rb") as reader:
+        paused = stop(paths)
+        assert json.load(reader)["request_id"] == original
+        assert desired(paths) == {"schema_version": 1, "paused": True, "request_id": paused}
+
+
 def test_registry_mutations_do_not_lose_updates(paths, tmp_path):
     roots = [tmp_path / str(index) for index in range(4)]
     for root in roots:
