@@ -2,6 +2,10 @@
 
 Historical records only: one line per task. The full text of every entry, including its verification, is in [done-archive.md](docs/evidence/done-archive.md). Active work belongs in [TODO.md](TODO.md). Preserve task IDs when moving entries here.
 
+- [x] **WD-191 - Repository outcome snapshots (2026-11-12).** Schema 3 was deployed to 15 stores. A live Stop recorded both commits and one insertion. [Evidence](docs/evidence/wd191.md).
+
+- [x] **WD-190 - Session environment snapshot (2026-11-12).** A live snapshot preserved the initial patch, rule set, and byte-exact settings. [Evidence](docs/evidence/wd190.md).
+
 - [x] **WD-216 - Preserve registered project aliases (2026-11-12).** Removal and relocation preserve saved aliases. The explicit rename command changes a project's alias, and migration retained all 15 aliases in the installed registry. [Evidence](docs/evidence/wd216.md).
 
 - [x] **WD-189 - Read contract v1 for Watchdog stores (2026-11-12).** The installed daemon published manifests for 15 stores, and the read API opened both databases in every store. The root and insights suites passed. [Evidence](docs/evidence/wd189.md).
