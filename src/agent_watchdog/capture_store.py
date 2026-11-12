@@ -8,10 +8,10 @@ from collections.abc import Iterator, Mapping
 from compression import zstd
 from contextlib import ExitStack, closing, contextmanager
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from io import BytesIO
 from pathlib import Path
-from typing import TypedDict
+from typing import NamedTuple, TypedDict
 from uuid import UUID
 
 from agent_watchdog import resources
@@ -20,7 +20,7 @@ from agent_watchdog.files import atomic_write, open_shared_read
 from agent_watchdog.storage import EVENTS_SCHEMA_VERSION, QuotaExceeded, StorageError
 
 CAPTURE_FILENAME = "capture.sqlite3"
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 3
 STORE_CONTRACT_VERSION = 1
 STORE_MANIFEST_FILENAME = "store.json"
 CHUNK_TARGET_BYTES = 4 * 1024**2
@@ -52,6 +52,33 @@ CAPTURE_ENV_SCHEMA = (
         PRIMARY KEY (provider, session_id, captured_at)
     )
     """,
+)
+
+CAPTURE_V3_SCHEMA = (
+    "ALTER TABLE session_env ADD COLUMN initial_files_changed INTEGER",
+    "ALTER TABLE session_env ADD COLUMN initial_insertions INTEGER",
+    "ALTER TABLE session_env ADD COLUMN initial_deletions INTEGER",
+    "ALTER TABLE session_env ADD COLUMN initial_untracked INTEGER",
+    """
+    CREATE TABLE checkout_states (
+        checkout_id TEXT NOT NULL,
+        observed_at TEXT NOT NULL,
+        provider TEXT NOT NULL,
+        session_id TEXT NOT NULL,
+        trigger TEXT NOT NULL,
+        base_head TEXT,
+        head TEXT,
+        branch TEXT,
+        files_changed INTEGER,
+        insertions INTEGER,
+        deletions INTEGER,
+        untracked INTEGER,
+        diff_digest TEXT,
+        error TEXT,
+        PRIMARY KEY (checkout_id, session_id, observed_at)
+    )
+    """,
+    "CREATE INDEX checkout_states_observed ON checkout_states (checkout_id, observed_at)",
 )
 
 _SCHEMA = (
@@ -115,6 +142,7 @@ _SCHEMA = (
     )
     """,
     *CAPTURE_ENV_SCHEMA,
+    *CAPTURE_V3_SCHEMA,
 )
 
 
@@ -126,6 +154,28 @@ class CaptureStats(TypedDict):
     stored_bytes: int
     skipped_lines: int
     last_errors: list[str]
+
+
+class CheckoutStats(NamedTuple):
+    files_changed: int | None = None
+    insertions: int | None = None
+    deletions: int | None = None
+    untracked: int | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class CheckoutOutcome:
+    checkout_id: str
+    observed_at: datetime
+    provider: str
+    session_id: str
+    trigger: str
+    base_head: str | None
+    head: str | None
+    branch: str | None
+    stats: CheckoutStats
+    diff_digest: str | None
+    error: str | None
 
 
 @dataclass(frozen=True, slots=True)
@@ -142,6 +192,31 @@ class SessionEnvironment:
     watchdog: Mapping[str, object]
     initial_diff_digest: str | None = None
     initial_diff_error: str | None = None
+    initial_stats: CheckoutStats = CheckoutStats()
+
+
+def _checkout_due(
+    db: sqlite3.Connection, checkout_id: str, now: datetime, head: str | None
+) -> bool:
+    previous = db.execute(
+        "SELECT head FROM checkout_states WHERE checkout_id = ? AND observed_at > ? "
+        "ORDER BY observed_at DESC LIMIT 1",
+        (checkout_id, (now - timedelta(seconds=30)).isoformat()),
+    ).fetchone()
+    return previous is None or (
+        head is not None and previous["head"] is not None and head != previous["head"]
+    )
+
+
+def _store_blob(db: sqlite3.Connection, digest: str, raw: bytes, remaining: int) -> int | None:
+    if db.execute("SELECT 1 FROM blobs WHERE digest = ?", (digest,)).fetchone() is not None:
+        return remaining
+    data = zstd.compress(raw, level=1)
+    needed = 8192 + 4 * len(data)
+    if needed > remaining:
+        return None
+    db.execute("INSERT INTO blobs VALUES (?, ?, 'zstd', ?)", (digest, len(raw), data))
+    return remaining - needed
 
 
 def write_manifest(
@@ -256,26 +331,19 @@ class CaptureStore:
                 return False
             initial_digest = snapshot.initial_diff_digest if previous is None else None
             initial_error = snapshot.initial_diff_error if previous is None else None
+            initial_stats = snapshot.initial_stats if previous is None else CheckoutStats()
             omitted: set[str] = set()
             if capture_content:
                 digests = {item["digest"] for item in snapshot.files}
                 digests.add(initial_digest)
                 for digest, raw in blobs.items():
-                    if (
-                        digest not in digests
-                        or db.execute("SELECT 1 FROM blobs WHERE digest = ?", (digest,)).fetchone()
-                        is not None
-                    ):
+                    if digest not in digests:
                         continue
-                    data = zstd.compress(raw, level=1)
-                    needed = 8192 + 4 * len(data)
-                    if needed > remaining:
+                    left = _store_blob(db, digest, raw, remaining)
+                    if left is None:
                         omitted.add(digest)
                         continue
-                    db.execute(
-                        "INSERT INTO blobs VALUES (?, ?, 'zstd', ?)", (digest, len(raw), data)
-                    )
-                    remaining -= needed
+                    remaining = left
             if omitted:
                 files = [
                     item | {"error": "quota"} if item["digest"] in omitted else item
@@ -287,10 +355,65 @@ class CaptureStore:
                 if previous is not None and tuple(previous) == fields:
                     return False
             db.execute(
-                "INSERT INTO session_env VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                (*key, snapshot.captured_at, *fields, initial_digest, initial_error),
+                "INSERT INTO session_env VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                (
+                    *key,
+                    snapshot.captured_at,
+                    *fields,
+                    initial_digest,
+                    initial_error,
+                    *initial_stats,
+                ),
             )
             return True
+
+    def checkout_outcome_base(
+        self, checkout_id: str, provider: str, session_id: str, now: datetime, head: str | None
+    ) -> tuple[bool, str | None]:
+        """Read the debounce state and the session's first observed commit."""
+        if not self.path.is_file():
+            return True, None
+        with self.connect(write=False) as db:
+            if not _checkout_due(db, checkout_id, now, head):
+                return False, None
+            first = db.execute(
+                "SELECT checkout_id, head FROM session_env WHERE provider = ? AND session_id = ? "
+                "ORDER BY captured_at LIMIT 1",
+                (provider, session_id),
+            ).fetchone()
+            return True, first["head"] if first is not None and first[
+                "checkout_id"
+            ] == checkout_id else None
+
+    def record_checkout_outcome(
+        self, snapshot: CheckoutOutcome, blobs: Mapping[str, bytes], *, limits: Limits
+    ) -> None:
+        root = self.path.parent
+        with resources.admission(root), self.connect() as db:
+            if not _checkout_due(db, snapshot.checkout_id, snapshot.observed_at, snapshot.head):
+                return
+            remaining = resources.available(root, limits) - 64 * 1024
+            if remaining < 0:
+                raise QuotaExceeded("Checkout outcome exceeds capture headroom")
+            digest, error = snapshot.diff_digest, snapshot.error
+            if digest is not None and _store_blob(db, digest, blobs[digest], remaining) is None:
+                digest, error = None, "quota"
+            db.execute(
+                "INSERT INTO checkout_states VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                (
+                    snapshot.checkout_id,
+                    snapshot.observed_at.isoformat(),
+                    snapshot.provider,
+                    snapshot.session_id,
+                    snapshot.trigger,
+                    snapshot.base_head,
+                    snapshot.head,
+                    snapshot.branch,
+                    *snapshot.stats,
+                    digest,
+                    error,
+                ),
+            )
 
     def purge(self, provider: str, session_id: str) -> int:
         """Delete a provider session and its unshared capture content."""
@@ -317,6 +440,15 @@ class CaptureStore:
             digests.update(
                 item["digest"] for row in removed for item in json.loads(row[1]) if item["digest"]
             )
+            digests.update(
+                row[0]
+                for row in db.execute(
+                    "DELETE FROM checkout_states WHERE provider = ? AND session_id = ? "
+                    "RETURNING diff_digest",
+                    (provider, session_id),
+                )
+                if row[0] is not None
+            )
             if digests:
                 db.execute(
                     """
@@ -327,6 +459,10 @@ class CaptureStore:
                             SELECT 1 FROM json_each(env.files) AS file
                             WHERE file.value ->> 'digest' = blobs.digest
                         )
+                    )
+                    AND NOT EXISTS (
+                        SELECT 1 FROM checkout_states AS outcome
+                        WHERE outcome.diff_digest = blobs.digest
                     )
                     """,
                     (json.dumps(sorted(digests)),),
@@ -400,7 +536,7 @@ def _initialize(db: sqlite3.Connection, *, create: bool) -> None:
                 return
     raise StorageError(
         f"Capture store version {version}, expected {SCHEMA_VERSION}. "
-        "See docs/storage.md for version conversion (scripts/capture_schema_v2.py)."
+        "See docs/storage.md for version conversion (scripts/capture_schema_v3.py)."
     )
 
 

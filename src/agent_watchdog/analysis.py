@@ -699,6 +699,11 @@ def _untracked_record(
     return name + b"\0file\0" + digest.hexdigest().encode(), size
 
 
+def _untracked_names(checkout: Path, deadline: float) -> list[bytes]:
+    listing = _git_output(checkout, ["ls-files", "--others", "--exclude-standard", "-z"], deadline)
+    return [name for name in listing.split(b"\0") if name]
+
+
 def git_diff_fingerprint(checkout: Path) -> tuple[str, int] | CheckoutUnknown:
     """Hash the checkout state as ``(digest, bytes hashed)``; failures stay unknown.
 
@@ -714,15 +719,12 @@ def git_diff_fingerprint(checkout: Path) -> tuple[str, int] | CheckoutUnknown:
     try:
         unstaged = _git_output(checkout, [*diff, "--"], deadline)
         staged = _git_output(checkout, [*diff, "--cached", "--"], deadline)
-        listing = _git_output(
-            checkout, ["ls-files", "--others", "--exclude-standard", "-z"], deadline
-        )
+        names = sorted(_untracked_names(checkout, deadline))
         if max(len(unstaged), len(staged)) > MAX_DIFF_BYTES:
             raise _Unknown(
                 "diff_too_large",
                 f"unstaged {len(unstaged)} and staged {len(staged)} bytes exceed {MAX_DIFF_BYTES}",
             )
-        names = sorted(name for name in listing.split(b"\0") if name)
         if len(names) > MAX_UNTRACKED_FILES:
             raise _Unknown(
                 "too_many_untracked", f"{len(names)} untracked files exceed {MAX_UNTRACKED_FILES}"

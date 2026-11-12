@@ -58,7 +58,7 @@ def test_create_and_reopen_capture_store(tmp_path: Path) -> None:
     path = tmp_path / CAPTURE_FILENAME
     assert path.name == "capture.sqlite3"
     with CaptureStore(path).connect() as db:
-        assert db.execute("PRAGMA user_version").fetchone()[0] == 2
+        assert db.execute("PRAGMA user_version").fetchone()[0] == 3
         assert db.execute("PRAGMA journal_mode").fetchone()[0] == "wal"
         assert db.execute("PRAGMA synchronous").fetchone()[0] == 1
         assert db.execute("PRAGMA foreign_keys").fetchone()[0] == 1
@@ -71,7 +71,7 @@ def test_create_and_reopen_capture_store(tmp_path: Path) -> None:
         assert row["session_id"] == "session"
 
 
-@pytest.mark.parametrize("version", [0, 1, 7])
+@pytest.mark.parametrize("version", [0, 1, 2, 7])
 def test_reject_unsupported_capture_schema(tmp_path: Path, version: int) -> None:
     from agent_watchdog.capture_store import CaptureStore
 
@@ -83,7 +83,7 @@ def test_reject_unsupported_capture_schema(tmp_path: Path, version: int) -> None
     db.close()
 
     with (
-        pytest.raises(StorageError, match=rf"version {version}.*expected 2.*docs/storage.md"),
+        pytest.raises(StorageError, match=rf"version {version}.*expected 3.*docs/storage.md"),
         CaptureStore(path).connect(),
     ):
         pytest.fail("Opening an unsupported capture schema must fail")

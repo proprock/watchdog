@@ -900,7 +900,10 @@ def _drain_spool(
 ) -> bool:
     """Resolve one queue window and commit bounded batches before acknowledging files."""
     from agent_watchdog.hooks import EVENTS, build_envelope, warn_unknown_fields
-    from agent_watchdog.session_environment import capture_session_environment
+    from agent_watchdog.session_environment import (
+        capture_checkout_outcome,
+        capture_session_environment,
+    )
     from agent_watchdog.storage import MaintenancePending, persisted_envelope
 
     if min(limit, batch_size) <= 0:
@@ -1183,13 +1186,14 @@ def _drain_spool(
                             store=_store,
                         )
                     if payload is not None:
+                        checkout = resolution.root if resolution is not None else None
                         try:
                             capture_session_environment(
                                 _capture_store,
                                 event,
                                 payload=payload,
                                 cwd=cwd,
-                                checkout=resolution.root if resolution is not None else None,
+                                checkout=checkout,
                                 paths=paths,
                                 config=config,
                                 limits=_limits,
@@ -1206,6 +1210,30 @@ def _drain_spool(
                                 config,
                                 "WARNING",
                                 event="session_environment",
+                                decision="unavailable",
+                                project_id=_project_id,
+                                error_type=error_code(error),
+                            )
+                        try:
+                            capture_checkout_outcome(
+                                _capture_store,
+                                event,
+                                trigger=payload.get("hook_event_name"),
+                                checkout=checkout,
+                                limits=_limits,
+                            )
+                        except (
+                            OSError,
+                            sqlite3.Error,
+                            StorageError,
+                            ValueError,
+                            RuntimeError,
+                        ) as error:
+                            _log(
+                                paths,
+                                config,
+                                "WARNING",
+                                event="checkout_outcome",
                                 decision="unavailable",
                                 project_id=_project_id,
                                 error_type=error_code(error),

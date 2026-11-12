@@ -108,6 +108,7 @@ def test_session_environment_captures_initial_working_copy(
 
     from agent_watchdog.capture_store import CaptureStore
 
+    monkeypatch.setattr("agent_watchdog.session_environment.SNAPSHOT_SECONDS", 30.0)
     codex_home = tmp_path / "codex-home"
     codex_home.mkdir()
     monkeypatch.setenv("CODEX_HOME", str(codex_home))
@@ -183,6 +184,8 @@ def test_session_environment_captures_initial_working_copy(
 def outcome_checkout(paths, tmp_path, monkeypatch):
     from agent_watchdog.capture_store import CaptureStore
 
+    monkeypatch.setattr("agent_watchdog.session_environment.SNAPSHOT_SECONDS", 30.0)
+    monkeypatch.setattr("agent_watchdog.session_environment.CHECKOUT_DEADLINE_SECONDS", 30.0)
     root = tmp_path / "repo"
     root.mkdir()
     monkeypatch.setenv("CODEX_HOME", str(tmp_path / "empty-home"))
@@ -282,6 +285,41 @@ def test_checkout_outcome_debounces_per_checkout_and_observes_new_head(outcome_c
         assert second["trigger"] == "SessionEnd"
         assert first["head"] != second["head"]
         assert first["base_head"] == second["base_head"]
+
+
+def test_checkout_outcome_debounces_recovered_head(outcome_checkout, monkeypatch):
+    from agent_watchdog import session_environment
+
+    _, git, observe, store = outcome_checkout
+    git("commit", "--allow-empty", "-qm", "base")
+    observe("SessionStart")
+    with monkeypatch.context() as unavailable:
+        unavailable.setattr(session_environment, "_git_ref", lambda *_: None)
+        observe("Stop")
+    observe("SessionEnd")
+    with store.connect(write=False) as db:
+        (row,) = db.execute("SELECT head FROM checkout_states").fetchall()
+        assert row["head"] is None
+
+
+def test_checkout_outcome_survives_environment_failure(outcome_checkout, monkeypatch):
+    root, git, observe, store = outcome_checkout
+    file = root / "file.txt"
+    file.write_text("base\n", encoding="utf-8")
+    git("add", "file.txt")
+    git("commit", "-qm", "base")
+    file.write_text("working copy\n", encoding="utf-8")
+
+    def fail(*args, **kwargs):
+        raise OSError("environment read failed")
+
+    monkeypatch.setattr("agent_watchdog.session_environment.capture_session_environment", fail)
+    observe("Stop")
+    with store.connect(write=False) as db:
+        (row,) = db.execute("SELECT base_head, head, diff_digest FROM checkout_states").fetchall()
+        assert row["base_head"] is None
+        assert row["head"] == git("rev-parse", "HEAD").decode().strip()
+        assert row["diff_digest"] is not None
 
 
 def test_purge_keeps_patch_shared_with_checkout_outcome(outcome_checkout):
@@ -1704,7 +1742,7 @@ def test_daemon_writes_and_refreshes_store_manifest(paths, tmp_path):
         "git_common_dir": None,
         "name": "original",
         "events_schema": 9,
-        "capture_schema": 2,
+        "capture_schema": 3,
         "written_at": first["written_at"],
     }
     assert datetime.fromisoformat(first["written_at"]).utcoffset() == timedelta(0)

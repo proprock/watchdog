@@ -376,12 +376,14 @@ outside the scope of cleanup.
 
 ## Raw capture store
 
-The daemon writes `<project data>/capture.sqlite3` for session environment
-snapshots and, with `capture_content = true`, for raw provider content.
+The daemon writes `<project data>/capture.sqlite3` for session environment and
+checkout outcome snapshots and, with `capture_content = true`, for raw provider content.
 Capture uses SQLite WAL, `synchronous=NORMAL`, foreign keys and `secure_delete`.
-The `user_version` is 2. The daemon initializes an empty store and reports the
-found and expected versions on a mismatch. The one-off
-`scripts/capture_schema_v2.py` converts existing v1 stores.
+The `user_version` is 3. The daemon initializes an empty store and reports the
+found and expected versions on a mismatch. To convert existing v1 or v2
+stores, stop Watchdog and other store users, back up the stores and manifests,
+then run `uv run python scripts/capture_schema_v3.py PATH/TO/capture.sqlite3 [...]`.
+The script preserves captured rows and blobs and updates each existing manifest.
 
 | Table | Key and contents |
 | --- | --- |
@@ -389,8 +391,9 @@ found and expected versions on a mismatch. The one-off
 | `chunks` | Stream and chunk sequence identify a zstd block of complete records. Each row stores its first record number, record count, raw byte count, codec, and compressed bytes. |
 | `tail` | Stream and record sequence identify an unsealed record without its final LF. |
 | `side_files` | Provider, session, relative path and SHA-256 identify a captured version of a Claude session file. Each row stores its byte count, codec, compressed bytes, and capture time. |
-| `session_env` | Provider, session and capture time identify an environment observation. Each row stores the hook working directory, checkout ID, Git commit and branch, JSON for harness metadata, files and effective Watchdog policy, and the initial patch digest or error when applicable. |
-| `blobs` | SHA-256 of the uncompressed bytes identifies an instruction file, a redacted settings or configuration file, or an initial patch. Each row stores the raw byte count, codec (`zstd`), and compressed bytes. |
+| `session_env` | Provider, session and capture time identify an environment observation. Each row stores the hook working directory, checkout ID, Git commit and branch, JSON for harness metadata, files and effective Watchdog policy, and the initial patch digest, error and statistics when applicable. |
+| `checkout_states` | Checkout, session and observation time identify an outcome. The row stores the provider, hook trigger, initial and observed commits, branch, change statistics, and the outcome patch digest or error. |
+| `blobs` | SHA-256 of the uncompressed bytes identifies an instruction file, a settings or configuration file, or a working-copy patch. Each row stores the raw byte count, codec (`zstd`), and compressed bytes. |
 
 The daemon reads paths named by a hook in the last hour and paths discovered by
 the [provider directory scan](#provider-directory-scan). For a Claude main
@@ -458,15 +461,40 @@ marks skipped work as `deadline`.
 
 The first observed event captures the tracked working-copy patch against the
 initial `HEAD`, including staged and unstaged changes. The patch limit is
-16 MiB. Untracked files are excluded from the patch. `initial_diff_error` records an
-unavailable initial patch, for example when `HEAD` is unknown or the patch
-exceeds the limit. Later environment observations leave the initial patch with
-the first row. Checkout fingerprints in `diff_snapshots` track checkout-wide
-changes for `diff_oscillation` independently of these per-session patches.
+16 MiB. `initial_diff_error` records an unavailable initial patch, for example
+when `HEAD` is unknown or the patch exceeds the limit. The first row also
+records the initial change statistics. Existing v2 rows retain null statistics
+after conversion.
 With `capture_content = false`, the snapshot still records metadata and digests
 and stores zero blobs. If disk headroom fits the metadata but limits content,
 omitted blobs keep their digests and have a `quota` error. A failed snapshot
 write is logged and a later hook can still provide the first available snapshot.
+
+## Repository outcome snapshots (WD-191)
+
+The daemon observes a resolved checkout on `Stop` and `SessionEnd`, with a
+1.5-second Git collection budget. It records at most one observation every
+30 seconds per checkout unless it observes a different `HEAD`. `base_head`
+comes from the first environment observation for that session when it was
+captured in the same checkout. Concurrent edits in the checkout can appear
+in either snapshot.
+
+Tracked statistics come from `git diff --numstat <base_head>`. Binary
+changes count as changed files, with no line counts contributed. Unknown
+base commits leave the tracked statistics null. Both observations count
+untracked, non-ignored paths separately.
+
+The outcome patch comes from `git diff <head>` and covers staged and
+unstaged tracked changes. A clean checkout has no patch blob, including
+after commits. While both commits remain available in Git, recover the
+committed changes with `git diff <base_head> <head>`. Patches larger than
+16 MiB record `diff_too_large` and retain the collected statistics. With
+`capture_content = false`, the outcome stores metadata and statistics
+without a patch digest or blob. A session purge preserves blobs referenced
+by other environment observations or checkout outcomes.
+
+Checkout fingerprints in `diff_snapshots` continue to track checkout-wide
+changes for `diff_oscillation` independently of these per-session patches.
 
 ## Provider directory scan
 

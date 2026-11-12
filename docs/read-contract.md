@@ -52,6 +52,8 @@ positions and record offsets are zero-based.
 | `tail` | `stream_pk`, `record_seq`, `line` |
 | `side_files` | `provider`, `session_id`, `rel_path`, `digest`, `raw_bytes`, `codec`, `data`, `captured_at` |
 | `session_env` (capture schema 2+) | `provider`, `session_id`, `captured_at`, `cwd`, `checkout_id`, `head`, `branch`, `harness`, `files`, `watchdog`, `initial_diff_digest`, `initial_diff_error` |
+| `session_env` (additional columns in schema 3+) | `initial_files_changed`, `initial_insertions`, `initial_deletions`, `initial_untracked` |
+| `checkout_states` (capture schema 3+) | `checkout_id`, `observed_at`, `provider`, `session_id`, `trigger`, `base_head`, `head`, `branch`, `files_changed`, `insertions`, `deletions`, `untracked`, `diff_digest`, `error` |
 | `blobs` (capture schema 2+) | `digest`, `raw_bytes`, `codec`, `data` |
 
 `streams.stream_pk` identifies a stored generation until it is purged. Refresh
@@ -72,6 +74,13 @@ settings blobs contain the original file bytes. File digests and
 blob. Only the first session observation carries the
 initial patch result. See [Session environment snapshots](storage.md#session-environment-snapshots-wd-190)
 for collection details.
+
+Capture schema 3 adds the initial statistics and `checkout_states` under
+read contract 1. The outcome key is `(checkout_id, session_id, observed_at)`.
+A null statistic indicates unavailable data. A non-null outcome `diff_digest`
+references a blob for the working-copy patch against the observed `head`.
+Git can recover the committed changes between `base_head` and `head` while
+both objects are available. See [Repository outcome snapshots](storage.md#repository-outcome-snapshots-wd-191).
 
 ## Capture readers
 

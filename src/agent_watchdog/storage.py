@@ -1166,7 +1166,11 @@ class Store:
         *,
         observed_at: datetime,
     ) -> None:
-        """Persist only a debounced content hash, never Git diff text."""
+        """Persist a fingerprint for oscillation detection.
+
+        Capture storage holds the initial and outcome working-copy patches
+        and the commit hashes needed to recover the committed diff from Git.
+        """
         if len(fingerprint) != 64 or any(char not in "0123456789abcdef" for char in fingerprint):
             raise StorageError("Invalid Git diff fingerprint")
         if byte_count < 0:

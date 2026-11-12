@@ -10,8 +10,19 @@ from collections.abc import Mapping
 from datetime import UTC, datetime
 from pathlib import Path
 
-from agent_watchdog.analysis import MAX_DIFF_BYTES, _git_output, _Unknown
-from agent_watchdog.capture_store import CaptureStore, SessionEnvironment
+from agent_watchdog.analysis import (
+    CHECKOUT_DEADLINE_SECONDS,
+    MAX_DIFF_BYTES,
+    _git_output,
+    _Unknown,
+    _untracked_names,
+)
+from agent_watchdog.capture_store import (
+    CaptureStore,
+    CheckoutOutcome,
+    CheckoutStats,
+    SessionEnvironment,
+)
 from agent_watchdog.config import Config, Limits, UserPaths
 from agent_watchdog.events import Envelope
 from agent_watchdog.files import open_shared_read
@@ -158,6 +169,94 @@ def _initial_diff(
     return (_add_blob(blobs, raw) if raw else None), None
 
 
+def _checkout_stats(
+    checkout: Path | None, base_head: str | None, deadline: float
+) -> tuple[CheckoutStats, str | None]:
+    if checkout is None:
+        return CheckoutStats(), None
+    tracked = CheckoutStats()
+    error = None
+    if base_head is not None:
+        try:
+            numstat = _git_output(
+                checkout,
+                ["diff", "--numstat", "-z", "--no-ext-diff", "--no-textconv", base_head, "--"],
+                deadline,
+            )
+        except _Unknown as unavailable:
+            error = unavailable.unknown.reason
+        else:
+            # With -z, a rename is a record with an empty path followed by two
+            # NUL-terminated names. Skip both names without interpreting their bytes.
+            records = iter(numstat.split(b"\0"))
+            files = insertions = deletions = 0
+            for record in records:
+                if not record:
+                    break
+                added, removed, name = record.split(b"\t", 2)
+                files += 1
+                insertions += 0 if added == b"-" else int(added)
+                deletions += 0 if removed == b"-" else int(removed)
+                if not name:
+                    next(records)
+                    next(records)
+            tracked = CheckoutStats(files, insertions, deletions)
+    try:
+        untracked = len(_untracked_names(checkout, deadline))
+    except _Unknown as unavailable:
+        return tracked, error or unavailable.unknown.reason
+    return CheckoutStats(
+        tracked.files_changed, tracked.insertions, tracked.deletions, untracked
+    ), error
+
+
+def capture_checkout_outcome(
+    store: CaptureStore, event: Envelope, *, trigger: object, checkout: Path | None, limits: Limits
+) -> None:
+    if (
+        trigger not in ("Stop", "SessionEnd")
+        or not isinstance(trigger, str)
+        or event.session_id is None
+        or event.checkout_id is None
+        or checkout is None
+    ):
+        return
+    observed_at = datetime.now(UTC)
+    deadline = time.monotonic() + CHECKOUT_DEADLINE_SECONDS
+    checkout_id = str(event.checkout_id)
+    head = _git_ref(checkout, ["rev-parse", "--verify", "HEAD"], deadline)
+    due, base_head = store.checkout_outcome_base(
+        checkout_id, event.provider, event.session_id, observed_at, head
+    )
+    if not due:
+        return
+    branch = _git_ref(checkout, ["symbolic-ref", "--quiet", "--short", "HEAD"], deadline)
+    stats, stats_error = _checkout_stats(checkout, base_head, deadline)
+    blobs: dict[str, bytes] = {}
+    digest, diff_error = (
+        _initial_diff(checkout, head, deadline, blobs)
+        if limits.capture_content or head is None
+        else (None, None)
+    )
+    store.record_checkout_outcome(
+        CheckoutOutcome(
+            checkout_id,
+            observed_at,
+            event.provider,
+            event.session_id,
+            trigger,
+            base_head,
+            head,
+            branch,
+            stats,
+            digest,
+            diff_error or stats_error,
+        ),
+        blobs,
+        limits=limits,
+    )
+
+
 def capture_session_environment(
     store: CaptureStore,
     event: Envelope,
@@ -181,6 +280,9 @@ def capture_session_environment(
     if checkout is not None:
         head = _git_ref(checkout, ["rev-parse", "--verify", "HEAD"], deadline)
         branch = _git_ref(checkout, ["symbolic-ref", "--quiet", "--short", "HEAD"], deadline)
+    initial_stats, stats_error = (
+        _checkout_stats(checkout, head, deadline) if first else (CheckoutStats(), None)
+    )
     diff_digest, diff_error = (
         _initial_diff(checkout, head, deadline, blobs) if first else (None, None)
     )
@@ -227,6 +329,7 @@ def capture_session_environment(
         files,
         watchdog,
         diff_digest,
-        diff_error,
+        diff_error or stats_error,
+        initial_stats,
     )
     store.record_session_env(snapshot, blobs, capture_content=limits.capture_content, limits=limits)
