@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Any
 
 import pytest
-from wdi.db.connection import apply_migrations, connect
+from wdi.db.connection import connect
 from wdi.db.repository import Repository
 from wdi.ingest.claude_code import import_claude_source
 from wdi.ingest.projects import ProjectResolver
@@ -19,7 +19,6 @@ SID = "11111111-1111-4111-8111-111111111111"
 @pytest.fixture
 def conn(tmp_path: Path) -> Iterator[sqlite3.Connection]:
     connection = connect(tmp_path / "wdi.sqlite")
-    apply_migrations(connection)
     yield connection
     connection.close()
 

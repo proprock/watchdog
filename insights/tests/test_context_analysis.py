@@ -13,7 +13,7 @@ from wdi.context_analysis import (
     build_context_report,
     reconstruct_snapshots,
 )
-from wdi.db.connection import apply_migrations, connect
+from wdi.db.connection import connect
 from wdi.db.repository import Repository
 from wdi.ingest.context import ContextTracker, command_kind
 from wdi.llm.context_advisor import build_context
@@ -22,7 +22,6 @@ from wdi.llm.context_advisor import build_context
 @pytest.fixture
 def conn(tmp_path: Path) -> Iterator[sqlite3.Connection]:
     connection = connect(tmp_path / "wdi.sqlite")
-    apply_migrations(connection)
     Repository(connection).ensure_machine("m1")
     yield connection
     connection.close()

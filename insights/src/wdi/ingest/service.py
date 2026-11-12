@@ -7,7 +7,7 @@ import sys
 from collections.abc import Callable
 
 from wdi.config import Settings
-from wdi.db.connection import apply_migrations, connect
+from wdi.db.connection import connect
 from wdi.db.repository import Repository
 from wdi.ingest.claude_code import import_claude_source
 from wdi.ingest.codex import import_codex_source
@@ -24,7 +24,6 @@ def run_import(
     """Import all enabled sources; returns per-source stats keyed by agent name."""
     conn = connect(settings.db_path)
     try:
-        apply_migrations(conn)
         repo = Repository(conn)
         repo.ensure_machine(
             settings.machine_id, hostname=socket.gethostname(), os_name=sys.platform

@@ -10,7 +10,7 @@ from pathlib import Path
 import pytest
 from fastapi.testclient import TestClient
 from wdi.config import Settings
-from wdi.db.connection import apply_migrations, connect
+from wdi.db.connection import connect
 from wdi.db.repository import Repository
 from wdi.web import create_app
 
@@ -64,7 +64,6 @@ def settings(db_path: Path) -> Settings:
 @pytest.fixture
 def seeded(db_path: Path) -> Iterator[None]:
     conn = connect(db_path)
-    apply_migrations(conn)
     _seed(conn)
     conn.close()
     yield
@@ -73,7 +72,6 @@ def seeded(db_path: Path) -> Iterator[None]:
 @pytest.fixture
 def empty_db(db_path: Path) -> Iterator[None]:
     conn = connect(db_path)
-    apply_migrations(conn)
     conn.close()
     yield
 
@@ -477,7 +475,6 @@ def test_static_assets_served(client: TestClient, seeded: None) -> None:
 
 def test_noise_sessions_hidden_and_toggle(client: TestClient, db_path: Path) -> None:
     conn = connect(db_path)
-    apply_migrations(conn)
     _seed(conn)
     conn.execute(
         """
@@ -761,7 +758,6 @@ def test_claude_session_without_curve_hides_chart(client: TestClient, seeded: No
 
 def test_codex_only_dashboard_hides_claude_cards(client: TestClient, db_path: Path) -> None:
     conn = connect(db_path)
-    apply_migrations(conn)
     _seed_codex_session(conn)
     conn.close()
 

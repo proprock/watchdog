@@ -9,7 +9,7 @@ from pathlib import Path
 import pytest
 from mcp.server.fastmcp import FastMCP
 from wdi.config import Settings
-from wdi.db.connection import apply_migrations, connect
+from wdi.db.connection import connect
 from wdi.db.repository import Repository
 from wdi.mcp import create_mcp_server
 
@@ -80,7 +80,6 @@ def settings(db_path: Path) -> Settings:
 @pytest.fixture
 def seeded(db_path: Path) -> Iterator[None]:
     conn = connect(db_path)
-    apply_migrations(conn)
     _seed(conn)
     conn.close()
     yield
@@ -89,7 +88,6 @@ def seeded(db_path: Path) -> Iterator[None]:
 @pytest.fixture
 def empty_db(db_path: Path) -> Iterator[None]:
     conn = connect(db_path)
-    apply_migrations(conn)
     conn.close()
     yield
 

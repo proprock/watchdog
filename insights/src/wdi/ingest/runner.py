@@ -26,6 +26,9 @@ def import_stream_file(
     parse_fn: ParseFn,
 ) -> ImportStats | None:
     """Import pending lines of one transcript file; None when already up to date."""
+    if repo.is_legacy_session(session_id):
+        return None
+
     stats = ImportStats(files_seen=1)
     stat = path.stat()
     state = repo.get_import_state(machine_id, str(path))
@@ -37,6 +40,11 @@ def import_stream_file(
     # the changed stream keeps identity reconciliation identical to a fresh import.
     replay = chunk_info.start_offset > 0
     lines, new_offset = read_complete_lines(path, 0 if replay else chunk_info.start_offset)
+    # Claim a new session before touching its streams. A legacy transfer that
+    # commits during the scan wins the insert and leaves its streams untouched.
+    is_new_session = bool(lines) and repo.ensure_session(session_id, machine_id, agent)
+    if not is_new_session and repo.is_legacy_session(session_id):
+        return None
     if (
         chunk_info.full_reparse
         or replay
@@ -53,7 +61,6 @@ def import_stream_file(
         )
         return stats
 
-    is_new_session = repo.ensure_session(session_id, machine_id, agent)
     chunk = parse_fn(lines, 0, 0, 0, 0, 0, None)
 
     repo.insert_messages(session_id, machine_id, stream_id, chunk.messages)

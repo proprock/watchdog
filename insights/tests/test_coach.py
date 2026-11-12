@@ -8,7 +8,7 @@ from collections.abc import Iterator
 from pathlib import Path
 
 import pytest
-from wdi.db.connection import apply_migrations, connect
+from wdi.db.connection import connect
 from wdi.db.repository import Repository
 from wdi.llm import coach
 from wdi.llm.backend import LLMError
@@ -45,7 +45,6 @@ class FailingBackend:
 @pytest.fixture
 def conn(tmp_path: Path) -> Iterator[sqlite3.Connection]:
     connection = connect(tmp_path / "wdi.sqlite")
-    apply_migrations(connection)
     repo = Repository(connection)
     repo.ensure_machine(MACHINE)
     connection.execute(

@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Any
 
 import pytest
-from wdi.db.connection import apply_migrations, connect
+from wdi.db.connection import connect
 from wdi.db.repository import Repository
 from wdi.ingest.codex import import_codex_source
 from wdi.ingest.projects import ProjectResolver
@@ -21,7 +21,6 @@ CHILD_SID = "019eccab-43fb-7de1-b7cc-1d7e513f802f"
 @pytest.fixture
 def conn(tmp_path: Path) -> Iterator[sqlite3.Connection]:
     connection = connect(tmp_path / "wdi.sqlite")
-    apply_migrations(connection)
     yield connection
     connection.close()
 
@@ -286,10 +285,6 @@ def test_codex_import_leaves_legacy_session_untouched(
 ) -> None:
     root = tmp_path / "codex"
     write_rollout(root, rollout_lines())
-    # Allow this regression test to exercise the old importer before the schema update.
-    columns = {row["name"] for row in conn.execute("PRAGMA table_info(sessions)")}
-    if "origin" not in columns:
-        conn.execute("ALTER TABLE sessions ADD COLUMN origin TEXT")
     repo.ensure_session(SID, MACHINE, "codex")
     conn.execute(
         "UPDATE sessions SET origin = 'legacy', title = 'archived' WHERE session_id = ?", (SID,)
@@ -297,6 +292,13 @@ def test_codex_import_leaves_legacy_session_untouched(
     conn.execute(
         "INSERT INTO messages (session_id, machine_id, idx, role, content_preview) "
         "VALUES (?, ?, 0, 'user', 'original message')",
+        (SID, MACHINE),
+    )
+    repo.ensure_session("child", MACHINE, "codex")
+    repo.set_session_fields("child", {"parent_session_id": SID})
+    conn.execute(
+        "INSERT INTO subagent_runs (agent_run_id, session_id, machine_id, prompt) "
+        "VALUES ('child', ?, ?, 'archived prompt')",
         (SID, MACHINE),
     )
     conn.commit()
@@ -311,6 +313,36 @@ def test_codex_import_leaves_legacy_session_untouched(
     assert [row[0] for row in conn.execute("SELECT content_preview FROM messages")] == [
         "original message"
     ]
+    assert conn.execute("SELECT prompt FROM subagent_runs").fetchone()[0] == "archived prompt"
+
+
+def test_codex_import_preserves_legacy_session_added_while_reading(
+    tmp_path: Path,
+    repo: Repository,
+    resolver: ProjectResolver,
+    conn: sqlite3.Connection,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from wdi.ingest import runner
+
+    root = tmp_path / "codex"
+    write_rollout(root, rollout_lines())
+    read_complete_lines = runner.read_complete_lines
+
+    def read_after_archiving(path: Path, offset: int) -> tuple[list[bytes], int]:
+        with conn:
+            conn.execute(
+                """INSERT INTO sessions (session_id, machine_id, agent, origin, title)
+                   VALUES (?, ?, 'codex', 'legacy', 'archived during scan')""",
+                (SID, MACHINE),
+            )
+        return read_complete_lines(path, offset)
+
+    monkeypatch.setattr(runner, "read_complete_lines", read_after_archiving)
+
+    assert import_codex_source(repo, resolver, root, MACHINE).files_imported == 0
+    assert conn.execute("SELECT title FROM sessions").fetchone()[0] == "archived during scan"
+    assert conn.execute("SELECT count(*) FROM messages").fetchone()[0] == 0
 
 
 def test_codex_tool_calls_correlated(

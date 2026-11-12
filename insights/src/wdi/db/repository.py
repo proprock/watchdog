@@ -158,6 +158,14 @@ class Repository:
         }
     )
 
+    def is_legacy_session(self, session_id: str) -> bool:
+        return (
+            self.conn.execute(
+                "SELECT 1 FROM sessions WHERE session_id = ? AND origin = 'legacy'", (session_id,)
+            ).fetchone()
+            is not None
+        )
+
     def ensure_session(self, session_id: str, machine_id: str, agent: str) -> bool:
         """Insert the session shell if missing; returns True when newly created."""
         with self.conn:
@@ -191,6 +199,10 @@ class Repository:
         self, session_id: str, stream_id: str, *, drop_subagent_runs: bool = False
     ) -> None:
         with self.conn:
+            if not self.conn.in_transaction:
+                self.conn.execute("BEGIN IMMEDIATE")
+            if self.is_legacy_session(session_id):
+                return
             self.conn.execute(
                 "DELETE FROM messages WHERE session_id = ? AND stream_id = ?",
                 (session_id, stream_id),
@@ -453,7 +465,13 @@ class Repository:
                      total_duration_ms, total_tokens, total_tool_use_count, read_count,
                      search_count, bash_count, edit_file_count, lines_added, lines_removed,
                      extra)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
+                WHERE NOT EXISTS (
+                    SELECT 1 FROM sessions
+                    WHERE origin = 'legacy' AND session_id IN (
+                        ?, (SELECT session_id FROM subagent_runs WHERE agent_run_id = ?)
+                    )
+                )
                 """,
                 (
                     rec.agent_run_id,
@@ -472,6 +490,8 @@ class Repository:
                     rec.lines_added,
                     rec.lines_removed,
                     json.dumps(rec.extra, ensure_ascii=False) if rec.extra else None,
+                    session_id,
+                    rec.agent_run_id,
                 ),
             )
 
@@ -490,6 +510,11 @@ class Repository:
                    input_tokens, output_tokens, cache_read_tokens, tool_call_count
             FROM sessions
             WHERE agent = 'codex' AND machine_id = ? AND parent_session_id IS NOT NULL
+              AND origin != 'legacy'
+              AND NOT EXISTS (
+                  SELECT 1 FROM sessions parent
+                  WHERE parent.session_id = sessions.parent_session_id AND parent.origin = 'legacy'
+              )
             """,
             (machine_id,),
         ).fetchall()

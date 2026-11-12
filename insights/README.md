@@ -56,8 +56,6 @@ configuration. Optional Claude and Codex buttons are the only actions that invok
 an external model; their payload contains aggregate counts, categories, and
 ratios, with no raw text, commands, paths, or session identifiers.
 
-The development schema is edited in place. Preserve primary rows when converting an
-existing database using a task-specific helper script before rebuilding derived data.
 See [Context structure analysis](docs/context-analysis.md) for reconstruction
 semantics, evidence thresholds, privacy boundaries, and the import benchmark.
 
@@ -68,6 +66,33 @@ steps separately when you need to edit the config before the first import:
 uv run wdi config init     # create ~/.wdi/config.yaml
 uv run wdi import          # import Claude Code and Codex sessions
 ```
+
+## Database maintenance
+
+The default database is `~/.wdi/wdi.sqlite`. If WDI reports a schema revision
+mismatch, close all Insights clients. From the `insights/` directory, run:
+
+```bash
+uv run python scripts/rebuild_db.py
+uv run wdi import --full
+```
+
+The rebuild retains paid analyses and coach reports, legacy sessions and their
+transcript rows, and the parent sessions required by analyses. It keeps a
+timestamped SQLite backup next to the rebuilt database.
+
+To bring data over from the legacy Insights database, finish a full import into
+the new database first. Then close the legacy application and run:
+
+```bash
+uv run python scripts/import_legacy_db.py --from /path/to/old.sqlite
+```
+
+This adds missing sessions as `legacy` and copies paid analyses and coach
+reports. Repeating the command skips records already copied. If a paid record
+shares a key with a different destination record, the import reports the
+conflict and rolls back. Provider imports preserve legacy sessions and their
+transcript rows.
 
 ## Model pricing
 

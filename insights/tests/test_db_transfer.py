@@ -6,6 +6,7 @@ import sys
 from contextlib import closing
 from pathlib import Path
 
+import pytest
 from wdi.db.connection import connect
 
 _INSIGHTS = Path(__file__).resolve().parents[1]
@@ -248,3 +249,49 @@ def test_rebuild_database_keeps_paid_data_and_unrecoverable_transcripts(tmp_path
         )
         assert conn.execute("SELECT * FROM import_state").fetchall() == []
         assert conn.execute("PRAGMA foreign_key_check").fetchall() == []
+
+
+@pytest.mark.parametrize("conflicting_table", ["llm_analyses", "coach_reports"])
+def test_legacy_import_rejects_conflicting_paid_records(
+    tmp_path: Path, conflicting_table: str
+) -> None:
+    source = tmp_path / "old.sqlite"
+    destination = tmp_path / "wdi.sqlite"
+    with closing(_create_database(source, old_schema=True)) as conn, conn:
+        _add_machine(conn, "machine")
+        conn.execute("INSERT INTO projects VALUES (1, 'project')")
+        _add_session(conn, "shared", "machine", 1, "source session")
+        _add_session(conn, "legacy", "machine", 1, "unrecoverable session")
+        if conflicting_table == "llm_analyses":
+            _add_analysis(conn, "shared", "machine", "source analysis")
+        else:
+            _add_coach(conn, "filter", "source coach")
+    with closing(_create_database(destination)) as conn, conn:
+        _add_machine(conn, "machine")
+        conn.execute("INSERT INTO projects VALUES (1, 'project')")
+        _add_session(conn, "shared", "machine", 1, "destination session")
+        _add_analysis(conn, "shared", "machine", "destination analysis")
+        _add_coach(conn, "filter", "destination coach")
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            str(_INSIGHTS / "scripts" / "import_legacy_db.py"),
+            "--db",
+            str(destination),
+            "--from",
+            str(source),
+        ],
+        capture_output=True,
+        text=True,
+        timeout=30,
+    )
+
+    assert result.returncode == 1
+    assert f"Conflicting records in {conflicting_table}" in result.stderr
+    with closing(connect(destination)) as conn:
+        assert [row[0] for row in conn.execute("SELECT session_id FROM sessions")] == ["shared"]
+        assert conn.execute("SELECT result FROM llm_analyses").fetchone()[0] == (
+            "destination analysis"
+        )
+        assert conn.execute("SELECT result FROM coach_reports").fetchone()[0] == "destination coach"

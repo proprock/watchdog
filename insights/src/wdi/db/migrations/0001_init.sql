@@ -1,6 +1,7 @@
 -- Normalized schema for Claude Code and Codex sessions.
 -- Agent-specific fields stay NULL for the other agent; raw extras go to `extra` JSON.
 
+-- Derived. Required by preserved sessions.
 CREATE TABLE machines (
     machine_id TEXT PRIMARY KEY,
     hostname   TEXT,
@@ -8,11 +9,13 @@ CREATE TABLE machines (
     created_at TEXT NOT NULL
 );
 
+-- Derived. Required by preserved sessions.
 CREATE TABLE projects (
     project_id     INTEGER PRIMARY KEY,
     canonical_name TEXT NOT NULL UNIQUE
 );
 
+-- Derived. Associated paths are transferred with imported legacy projects.
 CREATE TABLE project_paths (
     project_id INTEGER NOT NULL REFERENCES projects (project_id) ON DELETE CASCADE,
     machine_id TEXT NOT NULL REFERENCES machines (machine_id),
@@ -20,11 +23,13 @@ CREATE TABLE project_paths (
     UNIQUE (machine_id, path)
 );
 
+-- Primary for legacy sessions. Otherwise derived.
 CREATE TABLE sessions (
     session_id            TEXT PRIMARY KEY,
     machine_id            TEXT NOT NULL REFERENCES machines (machine_id),
     project_id            INTEGER REFERENCES projects (project_id),
     agent                 TEXT NOT NULL CHECK (agent IN ('claude', 'codex')),
+    origin                TEXT NOT NULL DEFAULT 'file' CHECK (origin IN ('file', 'watchdog', 'legacy')),
     source_path           TEXT,
     cwd                   TEXT,
     git_branch            TEXT,
@@ -84,6 +89,7 @@ CREATE INDEX idx_sessions_agent ON sessions (agent);
 CREATE INDEX idx_sessions_parent ON sessions (parent_session_id);
 
 -- stream_id = 'main' for the session transcript, agent_run_id for subagent traces.
+-- Primary for legacy sessions. Otherwise derived.
 CREATE TABLE messages (
     session_id            TEXT NOT NULL REFERENCES sessions (session_id) ON DELETE CASCADE,
     machine_id            TEXT NOT NULL,
@@ -104,6 +110,7 @@ CREATE TABLE messages (
     PRIMARY KEY (session_id, stream_id, idx)
 );
 
+-- Primary for legacy sessions. Otherwise derived.
 CREATE TABLE tool_calls (
     session_id     TEXT NOT NULL REFERENCES sessions (session_id) ON DELETE CASCADE,
     machine_id     TEXT NOT NULL,
@@ -137,6 +144,7 @@ CREATE INDEX idx_tool_calls_call_id ON tool_calls (session_id, call_id);
 
 -- Privacy-preserving structural record of the observable model context.
 -- Text, paths and complete commands are represented only by sizes and hashes.
+-- Primary for legacy sessions. Otherwise derived.
 CREATE TABLE context_events (
     session_id            TEXT NOT NULL REFERENCES sessions (session_id) ON DELETE CASCADE,
     machine_id            TEXT NOT NULL,
@@ -177,6 +185,7 @@ CREATE INDEX idx_context_events_tool_identity
 CREATE INDEX idx_context_events_type
     ON context_events (event_type);
 
+-- Primary for legacy sessions. Otherwise derived.
 CREATE TABLE subagent_runs (
     agent_run_id         TEXT PRIMARY KEY,
     session_id           TEXT NOT NULL REFERENCES sessions (session_id) ON DELETE CASCADE,
@@ -198,6 +207,7 @@ CREATE TABLE subagent_runs (
 
 CREATE INDEX idx_subagent_session ON subagent_runs (session_id);
 
+-- Derived.
 CREATE TABLE import_state (
     machine_id       TEXT NOT NULL,
     source_path      TEXT NOT NULL,
@@ -208,6 +218,7 @@ CREATE TABLE import_state (
     PRIMARY KEY (machine_id, source_path)
 );
 
+-- Primary.
 CREATE TABLE llm_analyses (
     analysis_id    INTEGER PRIMARY KEY,
     session_id     TEXT NOT NULL REFERENCES sessions (session_id) ON DELETE CASCADE,
@@ -222,6 +233,7 @@ CREATE TABLE llm_analyses (
 );
 
 -- Cached dashboard-level coaching advice, keyed by the filter it was built for.
+-- Primary.
 CREATE TABLE coach_reports (
     coach_id       INTEGER PRIMARY KEY,
     filter_hash    TEXT NOT NULL,

@@ -1,4 +1,4 @@
-"""Tests for SQLite connection factory and migration runner."""
+"""Tests for the checked SQLite connection factory."""
 
 import sqlite3
 from collections.abc import Iterator
@@ -6,7 +6,7 @@ from contextlib import closing
 from pathlib import Path
 
 import pytest
-from wdi.db.connection import apply_migrations, connect
+from wdi.db.connection import SCHEMA_REVISION, connect
 
 
 @pytest.fixture
@@ -24,7 +24,7 @@ def test_connect_enables_foreign_keys_and_wal(conn: sqlite3.Connection) -> None:
 def test_connect_initializes_current_schema(tmp_path: Path) -> None:
     path = tmp_path / "initialized.sqlite"
     with closing(connect(path)) as conn:
-        assert conn.execute("PRAGMA user_version").fetchone()[0] == 2
+        assert conn.execute("PRAGMA user_version").fetchone()[0] == SCHEMA_REVISION
         conn.execute("INSERT INTO machines (machine_id, created_at) VALUES ('m', 'now')")
         conn.execute(
             "INSERT INTO sessions (session_id, machine_id, agent) VALUES ('s', 'm', 'codex')"
@@ -34,7 +34,7 @@ def test_connect_initializes_current_schema(tmp_path: Path) -> None:
         assert conn.execute("SELECT origin FROM sessions").fetchone()[0] == "file"
 
 
-@pytest.mark.parametrize("revision", [0, 1, 3])
+@pytest.mark.parametrize("revision", [0, SCHEMA_REVISION - 1, SCHEMA_REVISION + 1])
 def test_connect_rejects_other_schemas_without_changing_them(tmp_path: Path, revision: int) -> None:
     path = tmp_path / "other.sqlite"
     with closing(sqlite3.connect(path)) as conn:
@@ -48,10 +48,7 @@ def test_connect_rejects_other_schemas_without_changing_them(tmp_path: Path, rev
     assert path.read_bytes() == before
 
 
-def test_apply_migrations_from_zero_creates_schema(conn: sqlite3.Connection) -> None:
-    applied = apply_migrations(conn)
-
-    assert applied >= 1
+def test_new_database_has_the_insights_tables(conn: sqlite3.Connection) -> None:
     tables = {
         row[0]
         for row in conn.execute("SELECT name FROM sqlite_master WHERE type = 'table'").fetchall()
@@ -63,6 +60,7 @@ def test_apply_migrations_from_zero_creates_schema(conn: sqlite3.Connection) -> 
         "sessions",
         "messages",
         "tool_calls",
+        "context_events",
         "subagent_runs",
         "import_state",
         "llm_analyses",
@@ -82,18 +80,7 @@ def test_apply_migrations_from_zero_creates_schema(conn: sqlite3.Connection) -> 
     assert "stop_reason" in message_cols
 
 
-def test_apply_migrations_is_idempotent(conn: sqlite3.Connection) -> None:
-    apply_migrations(conn)
-    version = conn.execute("PRAGMA user_version").fetchone()[0]
-
-    applied_again = apply_migrations(conn)
-
-    assert applied_again == 0
-    assert conn.execute("PRAGMA user_version").fetchone()[0] == version
-
-
 def test_foreign_keys_are_enforced(conn: sqlite3.Connection) -> None:
-    apply_migrations(conn)
 
     with pytest.raises(sqlite3.IntegrityError):
         conn.execute(
@@ -102,7 +89,6 @@ def test_foreign_keys_are_enforced(conn: sqlite3.Connection) -> None:
 
 
 def test_sessions_agent_check_constraint(conn: sqlite3.Connection) -> None:
-    apply_migrations(conn)
     conn.execute(
         "INSERT INTO machines (machine_id, created_at) VALUES ('m1', '2026-01-01T00:00:00+00:00')"
     )

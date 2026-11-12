@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 from wdi.config import ModelPricing
-from wdi.db.connection import apply_migrations, connect
+from wdi.db.connection import connect
 from wdi.db.repository import Repository
 from wdi.llm.analyzers import ANALYZERS, _parse_response
 from wdi.llm.backend import LLMError
@@ -35,7 +35,6 @@ class FailingBackend:
 @pytest.fixture
 def conn(tmp_path: Path) -> Iterator[sqlite3.Connection]:
     connection = connect(tmp_path / "wdi.sqlite")
-    apply_migrations(connection)
     yield connection
     connection.close()
 

@@ -1,15 +1,16 @@
 """Tests for snapshot export/import merge."""
 
+from contextlib import closing
 from pathlib import Path
 
-from wdi.db.connection import apply_migrations, connect
+import pytest
+from wdi.db.connection import connect
 from wdi.db.repository import Repository
 from wdi.sync.snapshot import export_snapshot, import_snapshots
 
 
 def _make_db(path: Path, machine_id: str, *, project: str, session_id: str) -> None:
     conn = connect(path)
-    apply_migrations(conn)
     repo = Repository(conn)
     repo.ensure_machine(machine_id, hostname=f"host-{machine_id}")
     pid = repo.get_or_create_project(project)
@@ -122,6 +123,40 @@ def test_import_is_idempotent(tmp_path: Path) -> None:
         assert conn.execute("SELECT COUNT(*) FROM llm_analyses").fetchone()[0] == 2
     finally:
         conn.close()
+
+
+@pytest.mark.parametrize("origin", ["legacy", "watchdog"])
+def test_snapshot_import_preserves_session_origin(tmp_path: Path, origin: str) -> None:
+    source = tmp_path / "source.sqlite"
+    destination = tmp_path / "destination.sqlite"
+    _make_db(source, "machineB", project="demo", session_id="archived")
+    with closing(connect(source)) as conn, conn:
+        conn.execute("UPDATE sessions SET origin = ?", (origin,))
+
+    sync = tmp_path / "sync"
+    export_snapshot(source, sync, "machineB")
+    assert import_snapshots(destination, sync, "machineA").sessions == 1
+    with closing(connect(destination)) as conn:
+        assert conn.execute("SELECT origin FROM sessions").fetchone()[0] == origin
+        assert conn.execute("SELECT content_preview FROM messages").fetchone()[0] == "hello"
+
+
+def test_snapshot_import_leaves_existing_legacy_streams_untouched(tmp_path: Path) -> None:
+    source = tmp_path / "source.sqlite"
+    destination = tmp_path / "destination.sqlite"
+    _make_db(source, "machineB", project="demo", session_id="archived")
+    _make_db(destination, "machineA", project="demo", session_id="archived")
+    with closing(connect(destination)) as conn, conn:
+        conn.execute("UPDATE sessions SET origin = 'legacy'")
+        conn.execute("UPDATE messages SET idx = 1, content_preview = 'preserved'")
+
+    sync = tmp_path / "sync"
+    export_snapshot(source, sync, "machineB")
+    assert import_snapshots(destination, sync, "machineA").snapshots == 1
+    with closing(connect(destination)) as conn:
+        assert [row[0] for row in conn.execute("SELECT content_preview FROM messages")] == [
+            "preserved"
+        ]
 
 
 def test_import_skips_own_snapshot(tmp_path: Path) -> None:

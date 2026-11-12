@@ -58,6 +58,7 @@ Line numbers in these tasks refer to commit `0d5e984`. Paths under `insights/` e
   - **Steps.** Tests (the revision check and its error; one open path; `rebuild_db.py` keeps primary rows and legacy sessions on a synthetic database; `import_legacy_db.py` on a synthetic old database, run twice without duplicates; an import does not touch legacy sessions), then the code, the table marks, `insights/AGENTS.md`, and the live run: `wdi import --full`, then `import_legacy_db.py`, with the row counts recorded.
   - **Out of scope.** Reading Watchdog stores (WD-192).
   - **Acceptance:** the tests pass; `docs/evidence/wd193.md` holds the counts of sessions by `origin` and of analyses after the live run, and the checksum of the old database before and after, unchanged.
+  - **Status on 2026-11-12.** Implementation, the Insights suite, and the live transfer are verified. The SQLite rules update in `insights/AGENTS.md` awaits explicit authorization. See [WD-193 evidence](docs/evidence/wd193.md).
 
 - [ ] **WD-192 - `wdi` imports transcript lines from Watchdog stores.** P1. Depends on WD-188, WD-189, WD-193.
   - **Why.** Owner decision 2. Today the importer reads provider files, which are deleted after weeks and are invisible when compressed.
@@ -290,6 +291,8 @@ Line numbers in these tasks refer to commit `0d5e984`. Paths under `insights/` e
   **P2; review resolved by user on 2026-10-18; implementation pending.** Reuse WD-144's independent format/classification and human confirmation contract. See the [architecture decision](docs/architecture.md#wd-147-calibration-and-promotion-review-2026-10-18) and [review record](docs/evidence/wd147-review.md). Implementation/dependency completion and acceptance remain open. This review does not approve, enable or promote any actual rule, authorize a live model call or change TENETS.md.
 
 ## P2 - Pipeline, scheduling and performance
+
+- [ ] **WD-217 - Investigate two Windows parallel-suite failures.** The WD-193 root-suite rerun observed capture schema revision 0 in `test_daemon_captures_a_hook_named_transcript` and exceeded the one-second test limit in `test_native_gives_up_on_a_silent_daemon_after_the_published_budget`. Both passed when rerun sequentially. Reproduce under the default suite and identify the cause of each failure before changing production code or test limits. See [WD-193 evidence](docs/evidence/wd193.md).
 
 - [ ] **WD-215 - Investigate transient `storage_unavailable` during daemon status checks.** An installed `daemon status` call outside the sandbox reported three unavailable project stores under concurrent test load. A read-only diagnostic reproduced `SQLITE_INTERRUPT` for `MAX(received_at)` at the health query's 100 ms limit on one store. Status later returned `running` before the WD-189 deployment. Verify the cause for the affected stores and cover any fix with a representative status check. See [WD-189 evidence](docs/evidence/wd189.md).
 

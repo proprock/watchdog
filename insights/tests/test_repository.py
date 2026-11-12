@@ -5,7 +5,7 @@ from collections.abc import Iterator
 from pathlib import Path
 
 import pytest
-from wdi.db.connection import apply_migrations, connect
+from wdi.db.connection import connect
 from wdi.db.repository import Repository
 from wdi.ingest.models import ToolCallRec, ToolResultRec
 
@@ -13,7 +13,6 @@ from wdi.ingest.models import ToolCallRec, ToolResultRec
 @pytest.fixture
 def repo(tmp_path: Path) -> Iterator[Repository]:
     conn = connect(tmp_path / "test.sqlite")
-    apply_migrations(conn)
     yield Repository(conn)
     conn.close()
 
@@ -189,7 +188,7 @@ def test_recompute_preserves_claude_web_search_requests(repo: Repository) -> Non
 
 
 def test_repository_rejects_unmigrated_db(tmp_path: Path) -> None:
-    conn = connect(tmp_path / "raw.sqlite")
+    conn = sqlite3.connect(tmp_path / "raw.sqlite")
     try:
         repo = Repository(conn)
         with pytest.raises(sqlite3.OperationalError):

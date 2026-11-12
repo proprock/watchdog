@@ -12,7 +12,7 @@ import sqlite3
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from wdi.db.connection import apply_migrations, connect
+from wdi.db.connection import connect
 
 # Content tables whose primary key is already globally unique: a plain
 # INSERT OR IGNORE ... SELECT * dedupes correctly across machines.
@@ -21,7 +21,6 @@ _PASSTHROUGH_TABLES = (
     "tool_calls",
     "context_events",
     "subagent_runs",
-    "project_paths",
 )
 
 _SESSION_COLUMNS = (
@@ -75,6 +74,10 @@ def _inserted(conn: sqlite3.Connection) -> int:
 def _merge_one(conn: sqlite3.Connection, snapshot: Path, stats: MergeStats) -> None:
     conn.execute("ATTACH DATABASE ? AS src", (str(snapshot),))
     try:
+        has_origin = conn.execute(
+            "SELECT 1 FROM pragma_table_info('sessions', 'src') WHERE name = 'origin'"
+        ).fetchone()
+        origin = "s.origin" if has_origin else "'file'"
         with conn:
             conn.execute("INSERT OR IGNORE INTO machines SELECT * FROM src.machines")
             stats.machines += _inserted(conn)
@@ -83,10 +86,14 @@ def _merge_one(conn: sqlite3.Connection, snapshot: Path, stats: MergeStats) -> N
                 "SELECT canonical_name FROM src.projects"
             )
             stats.projects += _inserted(conn)
+            conn.execute(
+                """CREATE TEMP TABLE snapshot_existing_legacy AS
+                   SELECT session_id FROM main.sessions WHERE origin = 'legacy'"""
+            )
             # Translate foreign project_id -> local project_id by canonical_name.
             conn.execute(
                 f"""
-                INSERT OR IGNORE INTO sessions ({_SESSION_COLUMNS})
+                INSERT OR IGNORE INTO sessions ({_SESSION_COLUMNS}, origin)
                 SELECT s.session_id, s.machine_id,
                     (SELECT lp.project_id FROM projects lp
                      JOIN src.projects sp ON sp.canonical_name = lp.canonical_name
@@ -95,16 +102,22 @@ def _merge_one(conn: sqlite3.Connection, snapshot: Path, stats: MergeStats) -> N
                     s.title, s.model, s.started_at, s.ended_at, s.duration_ms, s.user_msg_count,
                     s.assistant_msg_count, s.tool_call_count, s.input_tokens, s.output_tokens,
                     s.cache_read_tokens, s.cache_creation_tokens, s.reasoning_tokens,
-                    s.context_window, s.compaction_count, s.api_error_count, s.extra
+                    s.context_window, s.compaction_count, s.api_error_count, s.extra, {origin}
                 FROM src.sessions s
                 """  # noqa: S608 - fixed column list, no user input
             )
             stats.sessions += _inserted(conn)
+            copy_stream_rows = """INSERT OR IGNORE INTO main.{table}
+                                  SELECT * FROM src.{table}
+                                  WHERE session_id NOT IN (
+                                      SELECT session_id FROM snapshot_existing_legacy
+                                  )"""
             for table in _PASSTHROUGH_TABLES:
-                conn.execute(
-                    f"INSERT OR IGNORE INTO {table} SELECT * FROM src.{table}"  # noqa: S608
-                )
+                conn.execute(copy_stream_rows.format(table=table))
                 setattr(stats, table, getattr(stats, table) + _inserted(conn))
+            conn.execute("DROP TABLE snapshot_existing_legacy")
+            conn.execute("INSERT OR IGNORE INTO project_paths SELECT * FROM src.project_paths")
+            stats.project_paths += _inserted(conn)
             conn.execute(
                 f"INSERT OR IGNORE INTO llm_analyses ({_ANALYSIS_COLUMNS}) "  # noqa: S608
                 f"SELECT {_ANALYSIS_COLUMNS} FROM src.llm_analyses"
@@ -119,7 +132,6 @@ def import_snapshots(db_path: Path, in_dir: Path, self_machine_id: str) -> Merge
     stats = MergeStats()
     conn = connect(db_path)
     try:
-        apply_migrations(conn)
         own = f"wdi-{self_machine_id}.sqlite"
         for snapshot in sorted(in_dir.glob("wdi-*.sqlite")):
             if snapshot.name == own:

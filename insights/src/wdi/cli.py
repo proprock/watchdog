@@ -5,7 +5,7 @@ from __future__ import annotations
 import io
 import sys
 from pathlib import Path
-from typing import TYPE_CHECKING, Annotated
+from typing import TYPE_CHECKING, Annotated, Never
 
 import typer
 from rich.console import Console
@@ -91,6 +91,7 @@ def _render_import_results(results: dict[str, ImportStats]) -> None:
 def _run_import_with_progress(settings: Settings, *, full: bool) -> dict[str, ImportStats]:
     from rich.progress import Progress, TaskID
 
+    from wdi.db.connection import SchemaRevisionError
     from wdi.ingest.models import ImportProgress
     from wdi.ingest.service import run_import
 
@@ -117,7 +118,10 @@ def _run_import_with_progress(settings: Settings, *, full: bool) -> dict[str, Im
             if event.files_done > previous_done:
                 progress.advance(overall, event.files_done - previous_done)
 
-        return run_import(settings, full=full, on_progress=_cb)
+        try:
+            return run_import(settings, full=full, on_progress=_cb)
+        except SchemaRevisionError as exc:
+            _exit_schema_error(exc)
 
 
 def _progress_columns():  # noqa: ANN202 - rich column tuple, kept local to CLI rendering
@@ -203,12 +207,18 @@ IncludeNoiseOpt = Annotated[
 ]
 
 
-def _open_db(settings: Settings):  # noqa: ANN202 - sqlite3.Connection, kept local
-    from wdi.db.connection import apply_migrations, connect
+def _exit_schema_error(exc: RuntimeError) -> Never:
+    err_console.print(f"Error: {exc}", markup=False)
+    raise typer.Exit(code=1) from exc
 
-    conn = connect(settings.db_path)
-    apply_migrations(conn)
-    return conn
+
+def _open_db(settings: Settings):  # noqa: ANN202 - sqlite3.Connection, kept local
+    from wdi.db.connection import SchemaRevisionError, connect
+
+    try:
+        return connect(settings.db_path)
+    except SchemaRevisionError as exc:
+        _exit_schema_error(exc)
 
 
 def _make_filter(
