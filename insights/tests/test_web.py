@@ -93,6 +93,10 @@ def test_dashboard_full_page(client: TestClient, seeded: None) -> None:
     assert "demo" in res.text  # project aggregate row
 
 
+def test_dashboard_initializes_new_database(client: TestClient) -> None:
+    assert client.get("/").status_code == 200
+
+
 def test_dashboard_empty_state(client: TestClient, empty_db: None) -> None:
     res = client.get("/")
 

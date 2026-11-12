@@ -281,6 +281,38 @@ def test_import_codex_session(
     assert project["canonical_name"] == "demo-app"
 
 
+def test_codex_import_leaves_legacy_session_untouched(
+    tmp_path: Path, repo: Repository, resolver: ProjectResolver, conn: sqlite3.Connection
+) -> None:
+    root = tmp_path / "codex"
+    write_rollout(root, rollout_lines())
+    # Allow this regression test to exercise the old importer before the schema update.
+    columns = {row["name"] for row in conn.execute("PRAGMA table_info(sessions)")}
+    if "origin" not in columns:
+        conn.execute("ALTER TABLE sessions ADD COLUMN origin TEXT")
+    repo.ensure_session(SID, MACHINE, "codex")
+    conn.execute(
+        "UPDATE sessions SET origin = 'legacy', title = 'archived' WHERE session_id = ?", (SID,)
+    )
+    conn.execute(
+        "INSERT INTO messages (session_id, machine_id, idx, role, content_preview) "
+        "VALUES (?, ?, 0, 'user', 'original message')",
+        (SID, MACHINE),
+    )
+    conn.commit()
+
+    stats = import_codex_source(repo, resolver, root, MACHINE)
+
+    assert stats.files_imported == 0
+    assert (
+        conn.execute("SELECT title FROM sessions WHERE session_id = ?", (SID,)).fetchone()[0]
+        == "archived"
+    )
+    assert [row[0] for row in conn.execute("SELECT content_preview FROM messages")] == [
+        "original message"
+    ]
+
+
 def test_codex_tool_calls_correlated(
     tmp_path: Path, repo: Repository, resolver: ProjectResolver, conn: sqlite3.Connection
 ) -> None:

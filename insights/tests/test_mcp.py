@@ -106,6 +106,10 @@ def test_registers_exactly_the_four_named_tools(settings: Settings) -> None:
     assert names == TOOL_NAMES
 
 
+def test_recent_sessions_initializes_new_database(settings: Settings) -> None:
+    assert _tool(create_mcp_server(settings), "get_recent_sessions")() == []
+
+
 def test_recent_sessions(settings: Settings, seeded: None) -> None:
     rows = _tool(create_mcp_server(settings), "get_recent_sessions")()
     assert [r["session_id"] for r in rows] == ["s1"]

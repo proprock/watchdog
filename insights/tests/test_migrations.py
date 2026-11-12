@@ -2,6 +2,7 @@
 
 import sqlite3
 from collections.abc import Iterator
+from contextlib import closing
 from pathlib import Path
 
 import pytest
@@ -18,6 +19,33 @@ def conn(tmp_path: Path) -> Iterator[sqlite3.Connection]:
 def test_connect_enables_foreign_keys_and_wal(conn: sqlite3.Connection) -> None:
     assert conn.execute("PRAGMA foreign_keys").fetchone()[0] == 1
     assert conn.execute("PRAGMA journal_mode").fetchone()[0] == "wal"
+
+
+def test_connect_initializes_current_schema(tmp_path: Path) -> None:
+    path = tmp_path / "initialized.sqlite"
+    with closing(connect(path)) as conn:
+        assert conn.execute("PRAGMA user_version").fetchone()[0] == 2
+        conn.execute("INSERT INTO machines (machine_id, created_at) VALUES ('m', 'now')")
+        conn.execute(
+            "INSERT INTO sessions (session_id, machine_id, agent) VALUES ('s', 'm', 'codex')"
+        )
+        conn.commit()
+    with closing(connect(path)) as conn:
+        assert conn.execute("SELECT origin FROM sessions").fetchone()[0] == "file"
+
+
+@pytest.mark.parametrize("revision", [0, 1, 3])
+def test_connect_rejects_other_schemas_without_changing_them(tmp_path: Path, revision: int) -> None:
+    path = tmp_path / "other.sqlite"
+    with closing(sqlite3.connect(path)) as conn:
+        conn.execute("CREATE TABLE old_data (value TEXT)")
+        conn.execute(f"PRAGMA user_version = {revision}")
+    before = path.read_bytes()
+
+    with pytest.raises(RuntimeError, match=r"insights/scripts/rebuild_db\.py"):
+        connect(path)
+
+    assert path.read_bytes() == before
 
 
 def test_apply_migrations_from_zero_creates_schema(conn: sqlite3.Connection) -> None:
