@@ -2,6 +2,8 @@
 
 Historical records only: one line per task. The full text of every entry, including its verification, is in [done-archive.md](docs/evidence/done-archive.md). Active work belongs in [TODO.md](TODO.md). Preserve task IDs when moving entries here.
 
+- [x] **WD-188 - Scan provider directories and backfill history (2026-11-12).** The first live cycle fully captured 1693 files and ignored 477 with reasons. No recognized files remained partial. The root suite passed 2123 tests with one skip. [Evidence](docs/evidence/wd188.md).
+
 - [x] **WD-187 - Capture raw transcripts into `capture.sqlite3` (2026-11-12).** Live byte comparisons passed for Codex and Claude Code. The root suite passed 2097 tests with one skip, and all three TDD pairs passed replay. [Evidence](docs/evidence/wd187.md).
 
 - [x] **WD-185 - Require Python 3.14 for both packages (2026-11-12).** Local Windows checks passed on CPython 3.14.3. The live daemon was rebuilt on the same version, passed `doctor`, and persisted fresh Codex hook events. [Evidence](docs/evidence/wd185.md).
