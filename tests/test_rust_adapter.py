@@ -378,6 +378,39 @@ def test_native_admission_lock_contention_records_busy(rust_adapter, native_setu
     }
 
 
+@pytest.mark.skipif(sys.platform != "win32", reason="Windows mandatory byte-range locks")
+def test_native_empty_admission_lock_contention_records_busy(rust_adapter, native_setup):
+    import msvcrt
+
+    from agent_watchdog.resources import losses
+
+    paths, project = native_setup
+    with (paths.data / "admission.lock").open("wb", buffering=0) as lock:
+        # Lock byte zero without initializing it, so a pre-lock write will fail.
+        msvcrt.locking(lock.fileno(), msvcrt.LK_NBLCK, 1)
+        result = invoke(rust_adapter, paths, {"cwd": str(project.root)})
+
+    assert result.returncode == 0 and result.stdout == "{}\n"
+    assert not spool_files(paths)
+    counts = losses(paths.data)
+    assert (counts["busy"], counts["invalid"], counts["io"]) == (1, 0, 0)
+
+
+def test_native_admission_lock_open_failure_records_io(rust_adapter, native_setup):
+    from agent_watchdog.resources import losses
+
+    paths, project = native_setup
+    (paths.data / "admission.lock").mkdir()
+    result = invoke(rust_adapter, paths, {"cwd": str(project.root)})
+
+    assert result.returncode == 0 and result.stdout == "{}\n"
+    assert not spool_files(paths)
+    counts = losses(paths.data)
+    assert (counts["busy"], counts["invalid"], counts["io"]) == (0, 0, 1)
+    fault = (paths.data / "faults.log").read_text(encoding="utf-8")
+    assert fault.split()[-1] == "admission-lock-io"
+
+
 def test_native_concurrent_shared_spool_admission_enforces_one_quota(rust_adapter, native_setup):
     from concurrent.futures import ThreadPoolExecutor
 
