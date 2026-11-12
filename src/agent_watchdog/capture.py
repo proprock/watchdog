@@ -61,7 +61,9 @@ class CaptureResult:
 class CaptureCursor:
     # Stream scheduling is persisted in last_read. Side files have no mutable
     # cursor row, so keep their directory traversal position for this daemon.
-    side_file: str = ""
+    side_walk: Iterator[tuple[Source, Path, Path]] | None = None
+    side_next: tuple[Source, Path, Path] | None = None
+    seal_after: int = 0
     background_first: bool = False
 
 
@@ -80,17 +82,18 @@ def stream_identity(provider: str, path: Path) -> tuple[str, str] | None:
 def _files(directory: Path) -> Iterator[Path]:
     if directory.is_symlink() or directory.is_junction():
         return
-    for base, dirs, names in os.walk(directory):
-        root = Path(base)
-        dirs[:] = sorted(
-            name
-            for name in dirs
-            if not (root / name).is_symlink() and not (root / name).is_junction()
-        )
-        for name in sorted(names):
-            path = root / name
-            if not path.is_symlink() and path.is_file():
+    try:
+        with os.scandir(directory) as entries:
+            for entry in entries:
+                path = Path(entry.path)
+                if entry.is_symlink() or path.is_junction():
+                    continue
+                # Yield directories as scheduling points, including empty ones.
                 yield path
+                if entry.is_dir(follow_symlinks=False):
+                    yield from _files(path)
+    except FileNotFoundError:
+        return
 
 
 def _sources(
@@ -182,6 +185,14 @@ def _records(stream: BinaryIO, offset: int) -> tuple[list[bytes], int, int, int]
     return [], offset, 0, 0
 
 
+def _latest(db: sqlite3.Connection, source: Source) -> sqlite3.Row | None:
+    return db.execute(
+        "SELECT * FROM streams WHERE provider=? AND session_id=? AND stream_id=? "
+        "ORDER BY generation DESC LIMIT 1",
+        source.key,
+    ).fetchone()
+
+
 def _visit(
     db: sqlite3.Connection,
     source: Source,
@@ -211,7 +222,17 @@ def _visit(
         return False, available
 
     raw_bytes = end - offset - skipped_bytes
-    available = _reserve(available, raw_bytes)
+    try:
+        available = _reserve(available, raw_bytes)
+    except QuotaExceeded:
+        _reserve(available)
+        if row is None:
+            _new_stream(db, source, 0, stamp)
+        else:
+            db.execute(
+                "UPDATE streams SET last_read=? WHERE stream_pk=?", (stamp, row["stream_pk"])
+            )
+        raise
     if row is None or replaced:
         row = _new_stream(db, source, 0 if row is None else row["generation"] + 1, stamp)
     pk = row["stream_pk"]
@@ -256,17 +277,20 @@ def _save_side_file(
 ) -> tuple[bool, int]:
     signature = _signature(path)
     size = signature[2]
-    remaining = _reserve(available, size)
     with path.open("rb") as stream:
+        digest = hashlib.file_digest(stream, "sha256").hexdigest()
+        rel = path.relative_to(directory).as_posix()
+        key = source.provider, source.session, rel, digest
+        if db.execute(
+            "SELECT 1 FROM side_files WHERE provider=? AND session_id=? "
+            "AND rel_path=? AND digest=?",
+            key,
+        ).fetchone():
+            return False, available
+        remaining = _reserve(available, size)
+        stream.seek(0)
         data = stream.read(size + 1)
-    if len(data) != size or _signature(path) != signature:
-        return False, available
-    rel = path.relative_to(directory).as_posix()
-    key = source.provider, source.session, rel, _digest(data)
-    if db.execute(
-        "SELECT 1 FROM side_files WHERE provider=? AND session_id=? AND rel_path=? AND digest=?",
-        key,
-    ).fetchone():
+    if len(data) != size or _digest(data) != digest or _signature(path) != signature:
         return False, available
     db.execute(
         "INSERT INTO side_files (provider, session_id, rel_path, digest, raw_bytes, codec, data, "
@@ -329,57 +353,56 @@ def _capture_round(
     cursor: CaptureCursor,
 ) -> None:
     stamp = now.isoformat()
-    rows = {
-        (row["provider"], row["session_id"], row["stream_id"]): row
-        for row in db.execute("SELECT * FROM streams ORDER BY generation")
-    }
-    side_dirs = []
-    for source in list(sources.values()):
-        if source.provider == "claude" and source.stream == "main":
-            directory = source.path.with_suffix("")
-            side_dirs.append((source, directory))
-            subagents = directory / "subagents"
-            if directory.is_symlink() or directory.is_junction():
-                continue
-            for path in _files(subagents):
-                identity = stream_identity("claude", path)
-                if path.parent != subagents or identity is None:
-                    continue
-                session, stream = identity
-                child = Source("claude", session, stream, path, source.hook_session)
-                sources.setdefault(child.key, child)
     background_first = cursor.background_first
     cursor.background_first = not background_first
     if background_first:
-        available = _background(
-            db, side_dirs, result, now, expired, available, target_bytes, cursor
-        )
-    for key in sorted(sources, key=lambda key: rows[key]["last_read"] if key in rows else ""):
+        available = _background(db, sources, result, now, expired, available, target_bytes, cursor)
+    rows = [(source, _latest(db, source)) for source in sources.values()]
+    for source, row in sorted(rows, key=lambda item: item[1]["last_read"] if item[1] else ""):
         if expired():
             result.pending = True
             return
-        source, row = sources[key], rows.get(key)
-        try:
-            progressed, available = _visit(db, source, row, stamp, available)
-            result.progressed |= progressed
-        except QuotaExceeded:
-            raise
-        except (OSError, zstd.ZstdError, ValueError) as error:
-            available = _reserve(available)
-            if row is None:
-                row = _new_stream(db, source, 0, stamp)
-            db.execute(
-                "UPDATE streams SET last_read=?, last_error=? WHERE stream_pk=?",
-                (stamp, type(error).__name__, row["stream_pk"]),
-            )
-            result.degraded = True
+        available = _visit_source(db, source, row, result, stamp, available)
     if not background_first:
-        _background(db, side_dirs, result, now, expired, available, target_bytes, cursor)
+        _background(db, sources, result, now, expired, available, target_bytes, cursor)
+
+
+def _visit_source(
+    db: sqlite3.Connection,
+    source: Source,
+    row: sqlite3.Row | None,
+    result: CaptureResult,
+    stamp: str,
+    available: int,
+) -> int:
+    try:
+        progressed, available = _visit(db, source, row, stamp, available)
+        result.progressed |= progressed
+    except QuotaExceeded:
+        raise
+    except (OSError, EOFError, zstd.ZstdError, ValueError) as error:
+        available = _reserve(available)
+        if row is None:
+            row = _new_stream(db, source, 0, stamp)
+        db.execute(
+            "UPDATE streams SET last_read=?, last_error=? WHERE stream_pk=?",
+            (stamp, type(error).__name__, row["stream_pk"]),
+        )
+        result.degraded = True
+    return available
+
+
+def _side_files(sources: list[Source]) -> Iterator[tuple[Source, Path, Path]]:
+    for source in sources:
+        if source.provider == "claude" and source.stream == "main":
+            directory = source.path.with_suffix("")
+            for path in _files(directory):
+                yield source, directory, path
 
 
 def _background(
     db: sqlite3.Connection,
-    side_dirs: list[tuple[Source, Path]],
+    sources: dict[tuple[str, str, str], Source],
     result: CaptureResult,
     now: datetime,
     expired: Callable[[], bool],
@@ -387,36 +410,50 @@ def _background(
     target_bytes: int,
     cursor: CaptureCursor,
 ) -> int:
-    for row in db.execute(
-        "SELECT s.stream_pk, s.last_growth, SUM(length(t.line)+1) AS size, "
-        "MAX(length(t.line)+1) AS largest FROM streams s "
-        "JOIN tail t USING (stream_pk) GROUP BY s.stream_pk "
-        "HAVING size >= ? OR s.last_growth <= ? ORDER BY s.last_read",
-        (target_bytes, (now - IDLE_AGE).isoformat()),
-    ).fetchall():
+    idle_since = (now - IDLE_AGE).isoformat()
+    while not expired():
+        row = db.execute(
+            "SELECT stream_pk, SUM(length(line)+1) AS size, MAX(length(line)+1) AS largest "
+            "FROM tail WHERE stream_pk > ? GROUP BY stream_pk ORDER BY stream_pk LIMIT 1",
+            (cursor.seal_after,),
+        ).fetchone()
+        if row is None:
+            cursor.seal_after = 0
+            break
         if expired():
             result.pending = True
             return available
+        cursor.seal_after = row["stream_pk"]
+        (last_growth,) = db.execute(
+            "SELECT last_growth FROM streams WHERE stream_pk=?", (cursor.seal_after,)
+        ).fetchone()
+        idle = last_growth <= idle_since
+        if row["size"] < target_bytes and not idle:
+            continue
         available = _reserve(available, min(max(target_bytes, row["largest"]), row["size"]))
-        seal_tail(
-            db,
-            row["stream_pk"],
-            target_bytes=target_bytes,
-            idle=datetime.fromisoformat(row["last_growth"]) <= now - IDLE_AGE,
-        )
+        seal_tail(db, cursor.seal_after, target_bytes=target_bytes, idle=idle)
         result.progressed = True
-    side_files = sorted(
-        (str(path), path, directory, source)
-        for source, directory in side_dirs
-        for path in _files(directory)
-        if path.parent != directory / "subagents" or not _SUBAGENT.fullmatch(path.name)
-    )
-    split = next((i for i, item in enumerate(side_files) if item[0] > cursor.side_file), 0)
-    for key, path, directory, source in side_files[split:] + side_files[:split]:
+    if cursor.side_walk is None:
+        cursor.side_walk = _side_files(list(sources.values()))
+    while not expired():
+        if cursor.side_next is None:
+            cursor.side_next = next(cursor.side_walk, None)
+        if cursor.side_next is None:
+            cursor.side_walk = None
+            return available
         if expired():
-            result.pending = True
             break
-        cursor.side_file = key
+        source, directory, path = cursor.side_next
+        cursor.side_next = None
+        if sources.get(source.key) != source or not path.is_file():
+            continue
+        if path.parent == directory / "subagents" and (match := _SUBAGENT.fullmatch(path.name)):
+            child = Source("claude", source.session, match[1].lower(), path, source.hook_session)
+            if child.key not in sources:
+                available = _visit_source(
+                    db, child, _latest(db, child), result, now.isoformat(), available
+                )
+            continue
         try:
             progressed, available = _save_side_file(
                 db, source, path, directory, now.isoformat(), available
@@ -435,4 +472,5 @@ def _background(
                 (type(error).__name__, *source.key, *source.key),
             )
             result.degraded = True
+    result.pending = True
     return available
