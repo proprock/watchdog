@@ -1510,14 +1510,17 @@ def test_daemon_writes_and_refreshes_store_manifest(paths, tmp_path):
     assert manifest.stat().st_mtime_ns == stamp
 
     relocated = tmp_path / "relocated"
-    relocated.mkdir()
-    save_config(paths.config, Config(projects=(project.model_copy(update={"root": relocated}),)))
+    project.root.rename(relocated)
+    mutate_registry(paths, lambda registry: registry.relocate(project.id, relocated))
     wait_for(lambda: json.loads(manifest.read_text(encoding="utf-8"))["root"] == str(relocated))
     updated = json.loads(manifest.read_text(encoding="utf-8"))
-    assert updated["name"] == "relocated"
+    assert updated["name"] == "original"
     assert updated["project_id"] == first["project_id"]
     assert updated["machine_id"] == first["machine_id"]
     assert updated["written_at"] != first["written_at"]
+
+    mutate_registry(paths, lambda registry: registry.rename(project.id, "chosen"))
+    wait_for(lambda: json.loads(manifest.read_text(encoding="utf-8"))["name"] == "chosen")
 
 
 def test_crash_releases_lock_and_hook_recovers(paths):

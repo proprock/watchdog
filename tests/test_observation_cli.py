@@ -1,6 +1,7 @@
 import json
 import sys
 import time
+import tomllib
 from datetime import UTC, datetime, timedelta
 from uuid import uuid4
 
@@ -36,9 +37,9 @@ def test_project_commands_preserve_collected_data(tmp_path, monkeypatch, capsys)
     new_root = tmp_path / "moved"
     root.rename(new_root)
     code, moved = invoke(monkeypatch, capsys, home, "project", "relocate", "source", str(new_root))
-    assert code == 0 and moved["project"] == "moved"
+    assert code == 0 and moved["project"] == "source"
     assert moved["root"] == str(new_root)
-    code, _ = invoke(monkeypatch, capsys, home, "project", "remove", "moved")
+    code, _ = invoke(monkeypatch, capsys, home, "project", "remove", "source")
     assert code == 0 and sentinel.read_text() == "collected"
     _, listed = invoke(monkeypatch, capsys, home, "project", "list")
     assert listed["projects"] == []
@@ -98,6 +99,67 @@ def test_project_aliases_are_case_sensitive_and_resolve_duplicates_cwd_and_uuid_
     assert third_project.id not in {
         project.id for project in load_config(home / "config.toml").projects
     }
+
+
+def test_project_alias_survives_removing_the_first_duplicate(tmp_path, monkeypatch, capsys):
+    home = tmp_path / "state"
+    first = tmp_path / "first" / "Project"
+    second = tmp_path / "second" / "Project"
+    first.mkdir(parents=True)
+    second.mkdir(parents=True)
+    code, _ = invoke(monkeypatch, capsys, home, "project", "add", str(first))
+    assert code == 0
+    code, added = invoke(monkeypatch, capsys, home, "project", "add", str(second))
+    assert code == 0 and added["project"] == "Project-2"
+
+    code, _ = invoke(monkeypatch, capsys, home, "project", "remove", "Project")
+    assert code == 0
+    code, listed = invoke(monkeypatch, capsys, home, "project", "list")
+    assert code == 0
+    assert [project["project"] for project in listed["projects"]] == ["Project-2"]
+    saved = tomllib.loads((home / "config.toml").read_text(encoding="utf-8"))
+    assert [project["alias"] for project in saved["projects"]] == ["Project-2"]
+
+
+@pytest.mark.parametrize("reference_kind", ["alias", "uuid"])
+def test_project_rename_changes_only_the_saved_alias(tmp_path, monkeypatch, capsys, reference_kind):
+    home, root = tmp_path / "state", tmp_path / "Project"
+    root.mkdir()
+    code, _ = invoke(monkeypatch, capsys, home, "project", "add", str(root))
+    assert code == 0
+    config_path = home / "config.toml"
+    expected = tomllib.loads(config_path.read_text(encoding="utf-8"))
+    project = expected["projects"][0]
+    reference = "Project" if reference_kind == "alias" else project["id"]
+
+    code, renamed = invoke(monkeypatch, capsys, home, "project", "rename", reference, "Renamed")
+
+    assert code == 0 and renamed["project"] == "Renamed"
+    assert renamed["root"] == str(root)
+    project["alias"] = "Renamed"
+    assert tomllib.loads(config_path.read_text(encoding="utf-8")) == expected
+
+
+@pytest.mark.parametrize("occupied_reference", ["alias", "uuid"])
+def test_project_rename_rejects_an_occupied_reference_without_writing_config(
+    tmp_path, monkeypatch, capsys, occupied_reference
+):
+    home = tmp_path / "state"
+    for name in ("Project", "Target"):
+        root = tmp_path / name
+        root.mkdir()
+        code, _ = invoke(monkeypatch, capsys, home, "project", "add", str(root))
+        assert code == 0
+    config_path = home / "config.toml"
+    before = config_path.read_bytes()
+    target = tomllib.loads(before.decode("utf-8"))["projects"][1]
+    alias = target["id"] if occupied_reference == "uuid" else target["alias"]
+
+    code, error = invoke(monkeypatch, capsys, home, "project", "rename", "Project", alias)
+
+    assert code == 1 and error["error"] == "RegistryError"
+    assert "alias" in error["message"].lower() and alias in error["message"]
+    assert config_path.read_bytes() == before
 
 
 def test_failed_command_log_names_the_error_category(tmp_path, monkeypatch, capsys):

@@ -2,10 +2,11 @@ import os
 import subprocess
 import tempfile
 from pathlib import Path
+from uuid import uuid4
 
 import pytest
 
-from agent_watchdog.config import Config, Pricing, Rules, load_config, save_config
+from agent_watchdog.config import Config, Pricing, Project, Rules, load_config, save_config
 from agent_watchdog.registry import Registry, RegistryError, Resolution
 
 
@@ -91,9 +92,26 @@ def test_relocation_is_explicit_and_preserves_project_uuid(tmp_path):
     assert registry.resolve(target) is None
     relocated = registry.relocate(project.id, target)
     assert relocated.id == project.id
+    assert relocated.alias == "before"
     resolution = registry.resolve(target)
     assert resolution is not None and resolution.project_id == project.id
     assert relocated.root == target.resolve()
+
+
+def test_legacy_aliases_are_preserved_on_first_removal(tmp_path):
+    one, two = (
+        Project(id=uuid4(), root=tmp_path / parent / "backend") for parent in ("one", "two")
+    )
+    path = tmp_path / "config.toml"
+    save_config(path, Config(projects=(one, two)))
+
+    registry = Registry(load_config(path))
+    registry.remove(one.id)
+    save_config(path, registry.config)
+
+    (remaining,) = load_config(path).projects
+    assert remaining.id == two.id
+    assert remaining.alias == "backend-2"
 
 
 def test_relocation_rejects_existing_source_and_registered_destination(tmp_path):
@@ -151,6 +169,7 @@ def test_git_repository_is_auto_added_once_without_a_trusted_directory(repositor
     resolution, added = registry.resolve_or_auto_add(nested)
     assert isinstance(resolution, Resolution) and added
     assert registry.config.projects[0].root == repository.resolve()
+    assert registry.config.projects[0].alias == repository.name
 
     repeated, added = registry.resolve_or_auto_add(repository)
     assert repeated == resolution and not added
