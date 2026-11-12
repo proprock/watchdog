@@ -66,6 +66,7 @@ Line numbers in these tasks refer to commit `0d5e984`. Paths under `insights/` e
   - **Acceptance:**
     - the tests pass, then the full suite;
     - `docs/evidence/wd188.md` holds the live `doctor` coverage after the backfill: every recognized file is either fully captured or ignored with a reason.
+  - **Status on 2026-11-12.** Implemented. The full suite and an isolated daemon backfill passed. Live installation, enablement and coverage remain open pending explicit approval. See [WD-188 evidence](docs/evidence/wd188.md).
 
 ## Split P1 - Read contract and insights on Watchdog data
 
