@@ -158,6 +158,16 @@ def test_session_environment_captures_initial_working_copy(
         assert files["rules.md"]["digest"]
         assert resumed["initial_diff_digest"] is None
         assert first["initial_diff_digest"]
+        assert tuple(
+            first[column]
+            for column in (
+                "initial_files_changed",
+                "initial_insertions",
+                "initial_deletions",
+                "initial_untracked",
+            )
+        ) == (1, 1, 1, 2)
+        assert resumed["initial_files_changed"] is None
         blobs = {
             row["digest"]: zstd.decompress(row["data"]) for row in db.execute("SELECT * FROM blobs")
         }
@@ -167,6 +177,134 @@ def test_session_environment_captures_initial_working_copy(
             assert blobs[files["config.toml"]["digest"]] == settings_bytes
         else:
             assert not blobs
+
+
+@pytest.fixture
+def outcome_checkout(paths, tmp_path, monkeypatch):
+    from agent_watchdog.capture_store import CaptureStore
+
+    root = tmp_path / "repo"
+    root.mkdir()
+    monkeypatch.setenv("CODEX_HOME", str(tmp_path / "empty-home"))
+
+    def git(*args):
+        return subprocess.run(
+            [
+                "git",
+                "-C",
+                str(root),
+                "-c",
+                "user.name=Test",
+                "-c",
+                "user.email=test@example.invalid",
+                *args,
+            ],
+            check=True,
+            capture_output=True,
+        ).stdout
+
+    git("init")
+    mutate_registry(paths, lambda registry: registry.add(root))
+    config = load_config(paths.config)
+    store = CaptureStore(paths.project_data(config.projects[0].id) / "capture.sqlite3")
+
+    def observe(hook, *, capture_content=True, session_id="s1"):
+        settings = config.model_copy(update={"defaults": Limits(capture_content=capture_content)})
+        write_spool_record(paths, spool_record(root, hook_event_name=hook, session_id=session_id))
+        assert _drain_spool(paths, settings)
+
+    return root, git, observe, store
+
+
+@pytest.mark.parametrize("change", ["none", "commit", "patch", "large", "metadata", "unknown_base"])
+def test_checkout_outcome(paths, outcome_checkout, monkeypatch, change):
+    from compression import zstd
+
+    root, git, observe, store = outcome_checkout
+    file = root / "file.txt"
+    file.write_text("base\n", encoding="utf-8")
+    git("add", "file.txt")
+    base = None
+    if change != "unknown_base":
+        git("commit", "-qm", "base")
+        base = git("rev-parse", "HEAD").decode().strip()
+    observe("SessionStart", capture_content=change != "metadata")
+    if change in {"commit", "patch", "large", "metadata", "unknown_base"}:
+        file.write_text("base\ncommitted\n", encoding="utf-8")
+        git("add", "file.txt")
+        git("commit", "-qm", "change")
+    if change in {"patch", "large", "metadata", "unknown_base"}:
+        file.write_text("base\ncommitted\nworking copy\n", encoding="utf-8")
+        (root / "untracked.txt").touch()
+    if change == "large":
+        monkeypatch.setattr("agent_watchdog.session_environment.MAX_DIFF_BYTES", 1)
+    observe("Stop", capture_content=change != "metadata")
+    with store.connect(write=False) as db:
+        (row,) = db.execute("SELECT * FROM checkout_states").fetchall()
+        assert row["trigger"] == "Stop"
+        assert row["base_head"] == base
+        assert row["head"] == git("rev-parse", "HEAD").decode().strip()
+        if change == "none":
+            assert tuple(row[key] for key in ("files_changed", "insertions", "deletions")) == (
+                0,
+                0,
+                0,
+            )
+        elif change == "unknown_base":
+            assert row["files_changed"] is None
+        else:
+            assert row["files_changed"] == 1
+            assert row["insertions"] == (1 if change == "commit" else 2)
+            assert row["deletions"] == 0
+        if change in {"patch", "unknown_base"}:
+            (data,) = db.execute(
+                "SELECT data FROM blobs WHERE digest = ?", (row["diff_digest"],)
+            ).fetchone()
+            assert zstd.decompress(data) == git("diff", "--binary", row["head"], "--")
+        else:
+            assert row["diff_digest"] is None
+        if change == "large":
+            assert row["error"] == "diff_too_large"
+        assert row["untracked"] == int(change in {"patch", "large", "metadata", "unknown_base"})
+
+
+def test_checkout_outcome_debounces_per_checkout_and_observes_new_head(outcome_checkout):
+    root, git, observe, store = outcome_checkout
+    git("commit", "--allow-empty", "-qm", "base")
+    observe("SessionStart")
+    observe("Stop")
+    observe("SessionEnd", session_id="s2")
+    git("commit", "--allow-empty", "-qm", "new head")
+    observe("SessionEnd")
+    with store.connect(write=False) as db:
+        first, second = db.execute("SELECT * FROM checkout_states ORDER BY observed_at").fetchall()
+        assert first["trigger"] == "Stop"
+        assert second["trigger"] == "SessionEnd"
+        assert first["head"] != second["head"]
+        assert first["base_head"] == second["base_head"]
+
+
+def test_purge_keeps_patch_shared_with_checkout_outcome(outcome_checkout):
+    root, git, observe, store = outcome_checkout
+    file = root / "file.txt"
+    file.write_text("base\n", encoding="utf-8")
+    git("add", "file.txt")
+    git("commit", "-qm", "base")
+    file.write_text("changed\n", encoding="utf-8")
+    observe("SessionStart")
+    observe("Stop", session_id="s2")
+    store.purge("codex", "s1")
+    with store.connect(write=False) as db:
+        assert (
+            db.execute(
+                "SELECT COUNT(*) FROM checkout_states JOIN blobs ON diff_digest = digest"
+            ).fetchone()[0]
+            == 1
+        )
+    store.purge("codex", "s2")
+    with store.connect(write=False) as db:
+        assert db.execute("SELECT COUNT(*) FROM checkout_states").fetchone()[0] == 0
+        assert db.execute("SELECT COUNT(*) FROM blobs").fetchone()[0] == 0
 
 
 def test_spool_drain_preserves_enabled_delivery_trace_and_disabled_omits_it(paths, tmp_path):
