@@ -12,7 +12,12 @@ Avoid global mutable state except immutable config loaded at startup.
 ## SQLite rules
 Enable foreign keys for every connection: PRAGMA foreign_keys = ON.
 Use explicit transactions for writes.
-No migration framework while in development. Edit `src/wdi/db/migrations/0001_init.sql` in place. Derived tables are rebuilt with `wdi import --full`. Primary tables are carried over by a helper script under `insights/scripts/`, run against the installed database and recorded in the task's evidence file. Never tell the user to delete a database that holds primary rows without running that script.
+Edit `src/wdi/db/migrations/0001_init.sql` in place and increment `SCHEMA_REVISION` in `src/wdi/db/connection.py` with every schema change. Open the database through `connect` so all entry points check the revision. For a revision change, run `scripts/rebuild_db.py` from `insights/`, then run `wdi import --full`. Record the installed database rebuild in the task's evidence file.
+
+- Primary rows include all `llm_analyses` and `coach_reports`, plus rows in `sessions`, `messages`, `tool_calls`, `context_events`, and `subagent_runs` that belong to sessions with `origin = 'legacy'`.
+- Derived rows include `machines`, `projects`, `project_paths`, `import_state`, and rows in the session tables that belong to sessions with origin `file` or `watchdog`. Rebuild retains the parent session rows required by preserved analyses and the machine and project references required by preserved sessions.
+- Provider imports preserve legacy sessions and their transcript rows.
+
 Never build SQL with f-strings or string concatenation.
 Use parameters for all user-provided values.
 Keep queries readable. Prefer named helper functions over large inline SQL blocks.

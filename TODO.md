@@ -45,21 +45,6 @@ Line numbers in these tasks refer to commit `0d5e984`. Paths under `insights/` e
 
 ## Split P1 - Read contract and insights on Watchdog data
 
-- [ ] **WD-193 - Insights database under `~/.wdi/`, a schema rule without migrations, and a one-off import of the old database.** P1. Depends on WD-184.
-  - **Why.** Owner decision 6. The old database cannot be rebuilt: 772 of its 1,580 sessions point at files that no longer exist, and it holds 60 paid analyses. The source rule "delete the database and re-import" would destroy both.
-  - **Fixed decisions.**
-    - The schema stays one file, `insights/src/wdi/db/migrations/0001_init.sql`, edited in place. Replace the numbered-file loop in `apply_migrations` (`insights/src/wdi/db/connection.py:33-45`) with a constant `SCHEMA_REVISION`: an empty database gets the schema and `PRAGMA user_version = SCHEMA_REVISION` in one transaction; an equal revision is used; any other revision raises an error that names `insights/scripts/rebuild_db.py`. Every change of the schema file increments `SCHEMA_REVISION`.
-    - One function opens the database and applies this check; the CLI, the web dependencies (`web/dependencies.py:38`) and the MCP server (`mcp/server.py:24`) all use it.
-    - Table kinds, marked by a comment above each `CREATE TABLE` and listed in `insights/AGENTS.md`: **primary** are `llm_analyses`, `coach_reports` and every row of the session tables with `origin = 'legacy'`; everything else is **derived**.
-    - New column `sessions.origin TEXT NOT NULL DEFAULT 'file'` with values `file`, `watchdog`, `legacy`.
-    - `insights/scripts/rebuild_db.py`: creates a new database from the current schema, copies the primary tables and the `legacy` sessions with their dependent rows (matching columns by name), keeps the old file as `wdi.sqlite.bak-<timestamp>`, and tells the user to run `wdi import --full`.
-    - `insights/scripts/import_legacy_db.py --from <old database>`: run after a full import; copies every session that is absent from the new database, with its messages, tool calls, context events and subagent runs, as `origin = 'legacy'`; copies all `llm_analyses` and `coach_reports`. Imports never delete or replace a `legacy` session.
-    - The old home directory and its database are never written to.
-  - **Steps.** Tests (the revision check and its error; one open path; `rebuild_db.py` keeps primary rows and legacy sessions on a synthetic database; `import_legacy_db.py` on a synthetic old database, run twice without duplicates; an import does not touch legacy sessions), then the code, the table marks, `insights/AGENTS.md`, and the live run: `wdi import --full`, then `import_legacy_db.py`, with the row counts recorded.
-  - **Out of scope.** Reading Watchdog stores (WD-192).
-  - **Acceptance:** the tests pass; `docs/evidence/wd193.md` holds the counts of sessions by `origin` and of analyses after the live run, and the checksum of the old database before and after, unchanged.
-  - **Status on 2026-11-12.** Implementation, the Insights suite, and the live transfer are verified. The SQLite rules update in `insights/AGENTS.md` awaits explicit authorization. See [WD-193 evidence](docs/evidence/wd193.md).
-
 - [ ] **WD-192 - `wdi` imports transcript lines from Watchdog stores.** P1. Depends on WD-188, WD-189, WD-193.
   - **Why.** Owner decision 2. Today the importer reads provider files, which are deleted after weeks and are invisible when compressed.
   - **Fixed decisions.**
