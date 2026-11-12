@@ -1,12 +1,21 @@
 """Atomic local writes shared by configuration, storage, and daemon controls."""
 
 import os
+import sys
 import tempfile
 import time
 from pathlib import Path
+from typing import BinaryIO
+
+if sys.platform == "win32":
+    from agent_watchdog._windows_files import open_shared_read, replace_shared
+else:
+
+    def open_shared_read(path: Path) -> BinaryIO:
+        return path.open("rb")
 
 
-def atomic_write(path: Path, content: bytes) -> None:
+def atomic_write(path: Path, content: bytes, *, allow_open_readers: bool = False) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     temporary: Path | None = None
     try:
@@ -18,7 +27,10 @@ def atomic_write(path: Path, content: bytes) -> None:
         deadline = time.monotonic() + 0.1
         while True:
             try:
-                temporary.replace(path)
+                if sys.platform == "win32" and allow_open_readers:
+                    replace_shared(temporary, path)
+                else:
+                    temporary.replace(path)
                 break
             except PermissionError as error:
                 # Windows readers can briefly deny replacement even with cooperative writers.

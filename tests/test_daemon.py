@@ -1370,8 +1370,10 @@ def test_concurrent_start_pause_and_explicit_resume(paths):
     assert status(paths)["instance_id"] != instance
 
 
-@pytest.mark.skipif(os.name != "nt", reason="Windows file sharing")
 def test_pause_replaces_control_while_a_shared_reader_is_open(paths):
+    if sys.platform != "win32":
+        pytest.skip("Windows file sharing")
+
     import _winapi
     import msvcrt
 
@@ -1387,6 +1389,29 @@ def test_pause_replaces_control_while_a_shared_reader_is_open(paths):
         paused = stop(paths)
         assert json.load(reader)["request_id"] == original
         assert desired(paths) == {"schema_version": 1, "paused": True, "request_id": paused}
+
+
+@pytest.mark.skipif(os.name != "nt", reason="Windows file sharing")
+def test_pause_replaces_control_while_a_watchdog_reader_is_open(paths):
+    from agent_watchdog.daemon import desired, set_desired
+    from agent_watchdog.files import open_shared_read
+
+    original = set_desired(paths, paused=False)
+    with open_shared_read(paths.data / "control.json") as reader:
+        paused = stop(paths)
+        assert json.load(reader)["request_id"] == original
+        assert desired(paths)["request_id"] == paused
+
+
+@pytest.mark.skipif(os.name != "nt", reason="Windows file sharing")
+def test_pause_reports_a_reader_that_blocks_control_replacement(paths):
+    from agent_watchdog.daemon import desired, set_desired
+
+    original = set_desired(paths, paused=False)
+    with (paths.data / "control.json").open("rb"), pytest.raises(PermissionError):
+        stop(paths)
+    assert desired(paths) == {"schema_version": 1, "paused": False, "request_id": original}
+    assert not list(paths.data.glob("*.tmp"))
 
 
 def test_registry_mutations_do_not_lose_updates(paths, tmp_path):

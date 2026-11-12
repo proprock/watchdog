@@ -27,6 +27,7 @@ from agent_watchdog.demotion import observe as observe_denial
 from agent_watchdog.demotion import remember_denial
 from agent_watchdog.diagnostics import Level, emit, error_code
 from agent_watchdog.events import Envelope
+from agent_watchdog.files import open_shared_read
 from agent_watchdog.ignored import IgnoredRecords, IgnoreReason
 from agent_watchdog.registry import Registry, RegistryError, Resolution
 from agent_watchdog.rules.api import PROVISIONAL_PROFILES, Decision
@@ -268,7 +269,7 @@ def control_lock(paths: UserPaths, timeout: float = 5) -> Iterator[None]:
 
 def read_json(path: Path) -> dict | None:
     try:
-        with path.open("rb") as stream:
+        with open_shared_read(path) as stream:
             content = stream.read(8193)
         if len(content) > 8192:
             raise ValueError("Oversized daemon state")
@@ -543,6 +544,7 @@ def set_desired(paths: UserPaths, *, paused: bool) -> str:
                 "request_id": request_id,
             }
         ).encode(),
+        allow_open_readers=True,
     )
     return request_id
 
