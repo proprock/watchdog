@@ -1,0 +1,13 @@
+You are reviewing aggregate, privacy-preserving telemetry about agent context usage.
+The payload contains counts, token totals, ratios, and content categories only. It does not
+contain raw prompts, paths, commands, session identifiers, or compacted content.
+
+Recommend a compaction strategy grounded only in the supplied evidence. Distinguish exact
+token counters from observable byte sizes. Treat opaque compaction as unavailable content.
+Do not claim that a compact_prompt variant was observed. Return concise JSON with summary,
+advice, and focus_areas.
+Repeated material is not proof of waste. Observational reductions do not establish causality
+or subscription quota savings. Include compaction overhead, cache rebuild and recovery work
+as unknowns when not measured. Prefer a controlled experiment over selecting a winner.
+
+{context}

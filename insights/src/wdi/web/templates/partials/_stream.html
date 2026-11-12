@@ -1,0 +1,47 @@
+{% if messages %}
+<h3>Messages</h3>
+<table>
+  <thead><tr><th>#</th><th>Role</th><th>Time</th><th>Content</th></tr></thead>
+  <tbody>
+  {% for m in messages %}
+    <tr>
+      <td>{{ m.idx }}</td>
+      <td>{{ m.role }}</td>
+      <td>{{ (m.ts or "")[:19] }}</td>
+      <td>{{ m.content_preview or "" }}</td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% endif %}
+
+{% if tool_calls %}
+<h3>Tool calls</h3>
+<table>
+  <thead><tr><th>#</th><th>Tool</th><th>Category</th><th>Target</th><th>Error</th><th>Output preview</th></tr></thead>
+  <tbody>
+  {% for c in tool_calls %}
+    <tr>
+      <td>{{ c.idx }}</td>
+      <td>{{ c.tool_name }}</td>
+      <td>{{ c.category }}</td>
+      <td>{{ c.target or "—" }}</td>
+      <td>{{ "⚠️" if c.is_error else "" }}</td>
+      <td>
+        {{ (c.output_preview or "")[:160] }}
+        {% if c.call_id %}
+        <button type="button"
+                hx-get="/sessions/{{ s.session_id }}/stream/{{ stream_id }}/call/{{ c.call_id }}/full"
+                hx-target="#full-{{ c.idx }}" hx-swap="innerHTML">Full I/O</button>
+        <div id="full-{{ c.idx }}" class="full-io"></div>
+        {% endif %}
+      </td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% endif %}
+
+{% if not messages and not tool_calls %}
+<section class="empty"><p>No activity recorded for this stream.</p></section>
+{% endif %}

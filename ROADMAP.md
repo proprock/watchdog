@@ -4,6 +4,16 @@ Agreed on 2026-09-05. A plan for small projects on top of stock harnesses. Each 
 
 Execution order: observation and analysis (M1-M2, done for Codex and Claude Code) -> M-Anthropic / WD-022a+b (done) -> App Server / WD-015 (complete: no generic attach contract) -> M-Control / WD-139 to WD-168 (current) with M3 guidance and M4 judge delivered through it -> final cross-platform validation / M5. Control is gated per provider, surface, exact version, event, tool and action by live evidence. Claude Code was probed first and has the broader set; Codex CLI has the exact WD-151 profiles, delivered 2026-10-15; Codex desktop stays observation-only until WD-153. Open order and dependencies are in [TODO.md](TODO.md). Ordinary chats are outside product scope.
 
+## M-Split - Collection and insights
+
+**Outcome:** separate collection and control from insights in two packages, preserve raw session data, and build analytics on a versioned read contract. The [owner decisions](docs/architecture.md#collection-and-insights-split-2026-11-11) govern this milestone; [TODO.md](TODO.md) holds dependencies and acceptance for open work.
+
+- **WD-183 to WD-188:** retention defaults, workspace import, Python baseline, automatic registration, raw capture, and historical backfill.
+- **WD-189 to WD-194:** read contract, environment and outcome snapshots, store import, insights database conversion, and full-text reads.
+- **WD-195 to WD-200:** hook facts, environment and outcome analytics, isolated model runs, pricing and report migration, and comparisons.
+- **WD-201 to WD-207:** experiments, application of selected recommendations, runner and extensions, oversized events, and session-format references.
+- **WD-208 to WD-210:** registry preservation, shared lint, and idle daemon cost.
+
 ## M0 - Foundation and verifiable design
 
 **Status:** complete. Local acceptance checks, including installation of the built wheel in an isolated environment, passed. See [verification](docs/verification.md). Remote CI and live provider checks are not claimed; live integration work starts at M1 / WD-002.

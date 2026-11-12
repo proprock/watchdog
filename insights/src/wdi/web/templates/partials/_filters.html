@@ -1,0 +1,45 @@
+<form class="filters"
+      hx-get="{{ filter_action }}"
+      hx-target="{{ filter_target }}"
+      hx-swap="innerHTML"
+      hx-push-url="true"
+      hx-trigger="submit, change"
+      action="{{ filter_action }}"
+      method="get">
+  <label>Agent
+    <select name="agent">
+      <option value="">All</option>
+      <option value="claude" {% if filter.agent == "claude" %}selected{% endif %}>Claude</option>
+      <option value="codex" {% if filter.agent == "codex" %}selected{% endif %}>Codex</option>
+    </select>
+  </label>
+  <label>Project
+    <select name="project">
+      <option value="">All</option>
+      {% for name in project_names or [] %}
+      <option value="{{ name }}" {% if filter.project == name %}selected{% endif %}>{{ name }}</option>
+      {% endfor %}
+      {% if filter.project and filter.project not in (project_names or []) %}
+      <option value="{{ filter.project }}" selected>Custom: {{ filter.project }}</option>
+      {% endif %}
+    </select>
+  </label>
+  <label>Period
+    <select name="since">
+      <option value="">All time</option>
+      <option value="1d" {% if filter.since == "1d" %}selected{% endif %}>Last day</option>
+      <option value="7d" {% if filter.since == "7d" %}selected{% endif %}>Last week</option>
+      <option value="30d" {% if filter.since == "30d" %}selected{% endif %}>Last month</option>
+      <option value="365d" {% if filter.since == "365d" %}selected{% endif %}>Last year</option>
+      {# Bookmarked URLs may carry a custom ISO date or span; keep them working. #}
+      {% if filter.since and filter.since not in ("1d", "7d", "30d", "365d") %}
+      <option value="{{ filter.since }}" selected>Custom: {{ filter.since }}</option>
+      {% endif %}
+    </select>
+  </label>
+  <label class="checkbox">
+    <input type="checkbox" name="include_noise" value="1" {% if filter.include_noise %}checked{% endif %}>
+    Include background sessions
+  </label>
+  <button type="submit">Apply</button>
+</form>

@@ -1,0 +1,35 @@
+<article id="coach-{{ provider }}" class="coach-card">
+  <h3>{{ provider_label }}</h3>
+  <form hx-post="/coach/{{ provider }}{{ coach_query }}"
+        hx-target="#coach-{{ provider }}" hx-swap="outerHTML"
+        hx-indicator="#coach-{{ provider }}-spinner"
+        hx-disabled-elt="#coach-{{ provider }} button, #coach-{{ provider }} select"
+        hx-sync="#coach-{{ provider }}:drop">
+    <label for="coach-{{ provider }}-model">{{ provider_label }} model</label>
+    <select id="coach-{{ provider }}-model" name="model"
+            hx-get="/coach/{{ provider }}{{ coach_query }}"
+            hx-trigger="change" hx-target="#coach-{{ provider }}" hx-swap="outerHTML">
+      {% for model in models %}
+      <option value="{{ model }}"{% if model == selected_model %} selected{% endif %}>{{ model }}</option>
+      {% endfor %}
+    </select>
+    {% if coach %}<input type="hidden" name="force" value="true">{% endif %}
+    <button type="submit">{% if error %}Retry {{ provider_label }}{% elif coach %}Refresh {{ provider_label }} advice{% else %}Get {{ provider_label }} advice{% endif %}</button>
+    <span id="coach-{{ provider }}-spinner" class="htmx-indicator muted" role="status">Asking {{ provider_label }}…</span>
+  </form>
+  <div class="coach-result" aria-live="polite">
+    {% if error %}<p class="coach-error" role="alert">{{ error }}</p>{% endif %}
+    {% if coach %}
+      {% if coach.stale %}<p class="coach-stale">Metrics or prices have changed. Refresh this advice.</p>{% endif %}
+      {% if coach.result.summary %}<p>{{ coach.result.summary }}</p>{% endif %}
+      {% if coach.result.advice %}
+      <ul>{% for tip in coach.result.advice %}<li>{{ tip }}</li>{% endfor %}</ul>
+      {% endif %}
+      {% if coach.result.focus_areas %}<p><strong>Focus areas:</strong> {{ coach.result.focus_areas | join(", ") }}</p>{% endif %}
+      {% if coach.result.raw %}<pre>{{ coach.result.raw }}</pre>{% endif %}
+      <p class="muted">{{ coach.model }}{% if coach.created_at %} · {{ coach.created_at }}{% endif %}{% if coach.cached %} · cached{% endif %}</p>
+    {% elif not error %}
+      <p class="muted">No advice yet for this model and these filters.</p>
+    {% endif %}
+  </div>
+</article>

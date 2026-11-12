@@ -1,0 +1,10 @@
+{% extends "pages/base.html" %}
+{% block title %}{{ s | name }} — {{ "session" if is_main else stream_id }}{% endblock %}
+{% block content %}
+<p><a href="/sessions/{{ s.session_id }}">← Back to session</a></p>
+<h2>{{ "User session" if is_main else "Subagent " ~ stream_id }}</h2>
+<p class="muted">{{ s | name }}</p>
+<div id="stream">
+{% include "partials/_stream.html" %}
+</div>
+{% endblock %}

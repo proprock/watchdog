@@ -1,0 +1,14 @@
+<section class="analysis">
+  <h2>Strategy scenarios</h2>
+  <p>Counterfactual API equivalents, not measured savings or subscription quota predictions. Output prevention applies before ingestion, not to existing history.</p>
+  <form action="/context-analysis/scenarios" method="get" hx-get="/context-analysis/scenarios" hx-target="#scenario-results" class="filters">
+    <label>Model <input name="model" required placeholder="Exact pricing model ID"></label>
+    <label>Cache policy <select name="provider"><option value="codex">Codex: misses billed as input</option><option value="claude">Claude: misses written to cache</option></select></label>
+    {% for name, label, value, step in [("calls", "Remaining calls", 20, 1), ("context", "Current context tokens", 100000, 1), ("cache_hit", "Expected cache hit fraction", 0.9, 0.01), ("remove_fraction", "Removed history fraction", 0.3, 0.01), ("preserved_prefix", "Preserved prefix tokens", 10000, 1), ("summary_tokens", "Summary output tokens", 2000, 1), ("recovery_tokens", "Reacquired tokens", 2000, 1), ("removable_tokens", "Preventable output tokens", 10000, 1), ("avoided_calls", "Avoidable retry calls", 1, 1), ("output_per_call", "Output per continuation", 500, 1)] %}
+    <label>{{ label }} <input type="number" name="{{ name }}" value="{{ value }}" min="0" step="{{ step }}" required></label>
+    {% endfor %}
+    <button type="submit">Compare locally</button>
+  </form>
+  <div id="scenario-results"></div>
+  <p><a href="/context-analysis/profiles">Native automation profiles and experiment records</a></p>
+</section>

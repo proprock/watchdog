@@ -1,0 +1,26 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{% block title %}watchdog-insights{% endblock %}</title>
+<link rel="stylesheet" href="/static/app.css?v=context-efficiency-2">
+<script src="/vendor/chart.umd.min.js" defer></script>
+<script src="/static/htmx.min.js" defer></script>
+<script src="/static/app.js?v=context-analysis-1" defer></script>
+</head>
+<body>
+<header class="page-header">
+  <h1>watchdog-insights</h1>
+  <nav class="nav">
+    <a href="/">Dashboard</a>
+    <a href="/sessions">Sessions</a>
+    <a href="/tools">Tools</a>
+    <a href="/context-analysis">Context Analysis</a>
+  </nav>
+</header>
+<main>
+{% block content %}{% endblock %}
+</main>
+</body>
+</html>

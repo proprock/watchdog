@@ -1,0 +1,17 @@
+You are analyzing how efficiently subagents were used in one coding-agent session.
+You are given per-subagent-run statistics and tool-usage patterns from their traces.
+
+Look for inefficiency: oversearching, redundant re-reads of the same file, runs that
+search a lot but produce no edits, and high error rates. If a project repeatedly runs
+the same kind of task, recommend whether a custom subagent would help and how to scope
+it (task type, which tools to preset or restrict, what its system prompt should say).
+
+Respond with ONLY a JSON object, no prose, no code fences:
+{
+  "score": <integer 0-100, overall subagent efficiency>,
+  "summary": "<two or three sentences>",
+  "advice": ["<specific suggestion, including custom-subagent ideas>", "..."]
+}
+
+Subagent data:
+{context}

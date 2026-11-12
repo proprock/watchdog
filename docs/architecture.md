@@ -2,6 +2,25 @@
 
 Status: accepted design decisions. WD-003 [contracts](contracts.md), WD-004/007 [storage, retention, and redaction](storage.md), WD-005 [daemon](daemon.md), and WD-006 [hooks](hooks.md) are implemented. WD-008 provides the [observation CLI](cli.md); WD-009 adds Codex rollout-v1 usage enrichment; WD-010 adds deterministic, read-only shadow analysis and reports. WD-024 replaced the slow Python adapter with Rust, retaining the Python core. WD-149 now routes every event through one schema 2 spool directly into each project Store. WD-027 made that adapter spool-and-forget: it durably spools each event, and the daemon resolves the checkout, builds the envelope, and admits it. WD-109 packages that Rust binary as versioned GitHub Actions release artifacts for the supported host matrix. WD-110 makes it the only production hook entry point: `hooks install` (WD-006) always requires one, never silently installing the Python CLI's `hook` subcommand, which remains only as a developer/test utility with prepared-envelope publication through the same spool (see "Processes and delivery" below). WD-115 moves the credential filter off the ingest path to the sanctioned-export boundary so the local store keeps the raw provider input. The implementation reports record exact verified boundaries. Date: 2026-09-16. Later work (WD-139 to WD-168) is recorded in the amendments below; [Current versus superseded decisions](#current-versus-superseded-decisions-wd-169) says which text governs, and TODO.md holds open status.
 
+## Collection and insights split (2026-11-11)
+
+The owner adopted these decisions for the Split milestones. They describe the target design; behavior documentation changes with the task that implements each behavior.
+
+1. Collection covers every agent session that runs inside a Git checkout on this machine. Any Git checkout is registered automatically. A session outside Git, or one whose directory cannot be resolved, is ignored with a visible warning and a count.
+2. Watchdog collects; the insights program analyses. Insights reads Watchdog stores through a versioned read contract and keeps its own derived database.
+3. Watchdog stores raw transcript lines unchanged and independent of the harness version. Parsing for analytics stays in the insights parsers.
+4. Storage is lossless, compressed with zstd in blocks, kept without expiry and without a quota by default. Both limits stay configurable.
+5. One repository, two packages: `agent-watchdog` at the root and `watchdog-insights` (command and Python package `wdi`) under `insights/`. One lock file, one toolchain (Ruff, ty, pytest).
+6. The project is in development with one installed instance. No upgrade code goes into a package; the instance is converted by a one-off script.
+7. A duplicate is removed only after parity: the task lists the capabilities of both implementations and a test shows none is lost.
+
+These decisions supersede the following statements, which describe earlier behavior or plans until their implementing tasks update them:
+
+- `README.md`: collection enabled for selected repositories, no eval runner, and the retention periods.
+- `docs/architecture.md`: the prohibition on scanning provider directories and enrichment persisting no transcript content by default.
+- `docs/storage.md`: restrictions on vendor transcript directories and the statement that diff text is never stored.
+- `ROADMAP.md`: the M2 exclusion of an eval runner and the deferred catalog/eval runner plan.
+
 ## Boundaries
 
 A local single-user system, without a network service, centralized database, container infrastructure, or custom agent harness. The Codex and Claude Code adapters each serve CLI and local desktop coding; the surface is an observation attribute, not a separate core. Control is enabled per provider, surface, exact version, event, tool and action, only where live evidence confirms the cell ([compatibility matrix](provider-compatibility.md)): Claude Code has the broader confirmed set, Codex CLI has the exact Windows profiles of WD-151, and Codex desktop is observation-only until WD-153. Ordinary chats are outside scope. Keep provider-neutral events and a small adapter interface without a general plugin framework. If the surface cannot be reliably identified, record `unknown`.

@@ -1,0 +1,15 @@
+You are reviewing how well a developer prompted a coding agent during one session.
+Below are the developer's prompts, in order.
+
+Assess clarity, sufficiency of context, and task decomposition. Be concrete and
+actionable: point to what to add or change, not generic praise.
+
+Respond with ONLY a JSON object, no prose, no code fences:
+{
+  "score": <integer 0-100, overall prompt quality>,
+  "summary": "<one or two sentences>",
+  "advice": ["<specific suggestion>", "..."]
+}
+
+Developer prompts:
+{prompts}

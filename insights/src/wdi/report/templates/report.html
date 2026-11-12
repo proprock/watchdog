@@ -1,0 +1,208 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{{ title }}</title>
+<style>{{ report_css }}</style>
+</head>
+<body>
+<header class="page-header">
+  <h1>{{ title }}</h1>
+  <p class="muted">Generated {{ generated_at }}</p>
+</header>
+
+{% if overview.sessions == 0 %}
+<section class="empty">
+  <p>No sessions match the current filter. Run <code>wdi import</code> first.</p>
+</section>
+{% else %}
+
+<section class="cards">
+  <div class="card"><span class="value">{{ overview.sessions | int_ }}</span><span class="label">Sessions</span></div>
+  <div class="card"><span class="value">{{ overview.claude_sessions | int_ }} / {{ overview.codex_sessions | int_ }}</span><span class="label">Claude / Codex</span></div>
+  <div class="card"><span class="value">{{ overview.projects | int_ }}</span><span class="label">Projects</span></div>
+  <div class="card"><span class="value">{{ overview.total_tokens | tokens }}</span><span class="label">Tokens (in+out)</span></div>
+  <div class="card"><span class="value">{{ overview.cache_hit_rate | pct }}</span><span class="label">Cache hit rate</span></div>
+  <div class="card"><span class="value">{{ overview.estimated_cost | cost }}</span><span class="label">Estimated cost</span></div>
+  <div class="card"><span class="value">{{ overview.tool_calls | int_ }}</span><span class="label">Tool calls</span></div>
+  <div class="card"><span class="value">{{ overview.total_duration_ms | duration }}</span><span class="label">Agent time</span></div>
+  {% if report.availability.context_window %}
+  <div class="card"><span class="value">{{ overview.max_context_pressure | pct }}</span><span class="label">Context pressure (codex only)</span></div>
+  {% endif %}
+  {% if report.availability.ttft %}
+  <div class="card"><span class="value">{{ overview.avg_time_to_first_token_ms | int | duration }}</span><span class="label">TTFT (codex only)</span></div>
+  {% endif %}
+  {% if overview.turns %}
+  <div class="card"><span class="value">{{ overview.turns | int_ }}</span><span class="label">Turns (codex only)</span></div>
+  {% endif %}
+  {% if report.availability.rate_limits %}
+  <div class="card"><span class="value">{{ ((overview.rate_limit_primary_max or 0) / 100) | pct }}</span><span class="label">Rate limit used (codex only)</span></div>
+  {% endif %}
+  <div class="card"><span class="value">{{ overview.tokens_per_edit | int | tokens }}</span><span class="label">Tokens/edit</span></div>
+  <div class="card"><span class="value">{{ overview.repeated_reads | int_ }}</span><span class="label">Repeated reads</span></div>
+</section>
+
+{% if report.waste %}
+<section class="cards">
+  <div class="card"><span class="value">{{ report.waste.duplicate_commands | int_ }}</span><span class="label">Duplicate commands</span></div>
+  <div class="card"><span class="value">{{ report.waste.failed_calls | int_ }}</span><span class="label">Failed tool calls</span></div>
+  {% if report.availability.stop_reason %}
+  <div class="card"><span class="value">{{ report.waste.truncated_outputs | int_ }}</span><span class="label">Truncated outputs (claude only)</span></div>
+  {% endif %}
+  {% if report.availability.turn_aborts %}
+  <div class="card"><span class="value">{{ report.waste.aborted_turns | int_ }}</span><span class="label">Interrupted turns (codex only)</span></div>
+  {% endif %}
+  {% if report.cache_misses %}
+  <div class="card"><span class="value">{{ report.cache_misses.total | int_ }}</span><span class="label">Cache misses (claude only)</span></div>
+  <div class="card"><span class="value">{{ report.cache_misses.estimated_cost | cost }}</span><span class="label">Cache miss cost (claude only)</span></div>
+  {% endif %}
+  {% if report.hooks and report.hooks.hook_count %}
+  <div class="card"><span class="value">{{ report.hooks.hook_error_count | int_ }} / {{ report.hooks.hook_count | int_ }}</span><span class="label">Hook errors / runs (claude only)</span></div>
+  {% endif %}
+</section>
+{% endif %}
+
+<section class="charts">
+  {% if report.activity %}<div class="chart-box"><h2>Activity by day</h2><canvas id="activityChart"></canvas></div>{% endif %}
+  <div class="chart-box"><h2>Token breakdown</h2><canvas id="tokenChart"></canvas></div>
+  {% if report.tool_categories %}<div class="chart-box"><h2>Tool usage</h2><canvas id="toolChart"></canvas></div>{% endif %}
+  {% if report.models %}<div class="chart-box"><h2>Tokens by model</h2><canvas id="modelChart"></canvas></div>{% endif %}
+  {% if report.cache_trend %}<div class="chart-box"><h2>Cache economics by day</h2><canvas id="cacheChart"></canvas></div>{% endif %}
+  {% if report.cache_misses and report.cache_misses.total %}<div class="chart-box"><h2>Cache misses by cause (claude only)</h2><canvas id="missChart"></canvas></div>{% endif %}
+</section>
+
+{% if report.unpriced_models %}
+<section>
+  <h2>Unpriced models</h2>
+  <p class="muted">cost totals are underestimated until pricing is configured for these model ids.</p>
+  <table>
+    <thead><tr><th>Model</th><th>Sessions</th><th>Tokens</th></tr></thead>
+    <tbody>
+    {% for m in report.unpriced_models %}
+      <tr><td>{{ m.model }}</td><td>{{ m.sessions | int_ }}</td><td>{{ m.tokens | tokens }}</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</section>
+{% endif %}
+
+{% if report.models %}
+<section>
+  <h2>Tokens and cost by model</h2>
+  <table>
+    <thead><tr><th>Model</th><th>Sessions</th><th>Input</th><th>Output</th><th>Reasoning</th><th>Cost</th></tr></thead>
+    <tbody>
+    {% for m in report.models %}
+      <tr><td>{{ m.model }}</td><td>{{ m.sessions | int_ }}</td><td>{{ m.input_tokens | tokens }}</td><td>{{ m.output_tokens | tokens }}</td><td>{{ m.reasoning_tokens | tokens }}</td><td>{{ m.cost | cost }}</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</section>
+{% endif %}
+
+{% if report.tool_categories %}
+<section>
+  <h2>Tool usage</h2>
+  <table>
+    <thead><tr><th>Category</th><th>Calls</th><th>Errors</th><th>Error rate</th></tr></thead>
+    <tbody>
+    {% for t in report.tool_categories %}
+      <tr><td>{{ t.category }}</td><td>{{ t.calls | int_ }}</td><td>{{ t.errors | int_ }}</td><td>{{ t.error_rate | pct }}</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</section>
+{% endif %}
+
+{% if report.tool_details %}
+<section>
+  <h2>Tool detail</h2>
+  <table>
+    <thead><tr><th>Tool</th><th>Calls</th><th>Errors</th><th>Error rate</th><th>p50 latency</th><th>p95 latency</th><th>Output</th></tr></thead>
+    <tbody>
+    {% for t in report.tool_details %}
+      <tr><td>{{ t.tool_name }}</td><td>{{ t.calls | int_ }}</td><td>{{ t.errors | int_ }}</td><td>{{ t.error_rate | pct }}</td><td>{{ t.p50_ms | duration }}</td><td>{{ t.p95_ms | duration }}</td><td>{{ t.output_bytes | int_ }} B</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</section>
+{% endif %}
+
+{% if report.repeated_targets %}
+<section>
+  <h2>Most re-read files</h2>
+  <table>
+    <thead><tr><th>File</th><th>Reads</th><th>Wasted</th><th>Sessions</th></tr></thead>
+    <tbody>
+    {% for r in report.repeated_targets %}
+      <tr><td>{{ r.target }}</td><td>{{ r.reads | int_ }}</td><td>{{ r.wasted_reads | int_ }}</td><td>{{ r.sessions | int_ }}</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</section>
+{% endif %}
+
+{% if report.shell_failure_clusters %}
+<section>
+  <h2>Shell failure clusters</h2>
+  <table>
+    <thead><tr><th>Command kind</th><th>Calls</th><th>Errors</th></tr></thead>
+    <tbody>
+    {% for c in report.shell_failure_clusters %}
+      <tr><td>{{ c.command_kind }}</td><td>{{ c.calls | int_ }}</td><td>{{ c.errors | int_ }}</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</section>
+{% endif %}
+
+{% if report.subagents %}
+<section>
+  <h2>Subagent efficiency by type</h2>
+  <table>
+    <thead><tr><th>Type</th><th>Runs</th><th>Avg tokens</th><th>Total tokens</th><th>Avg calls</th><th>Search/Edit</th><th>Tokens/edit</th><th>Repeated reads</th><th>Trace error rate</th></tr></thead>
+    <tbody>
+    {% for s in report.subagents %}
+      <tr><td>{{ s.agent_type }}</td><td>{{ s.runs | int_ }}</td><td>{{ s.avg_tokens | int | tokens }}</td><td>{{ s.total_tokens | tokens }}</td><td>{{ s.avg_tool_calls | ratio }}</td><td>{{ s.search_to_edit | ratio }}</td><td>{{ (s.tokens_per_edit | int | tokens) if s.tokens_per_edit is not none else "—" }}</td><td>{{ s.repeated_reads | int_ }}</td><td>{{ s.trace_error_rate | pct }}</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</section>
+{% endif %}
+
+{% if report.subagent_opportunities %}
+<section>
+  <h2>Subagent opportunities</h2>
+  <p class="muted">Exploration-heavy sessions that ran no subagents — candidates for delegating discovery.</p>
+  <table>
+    <thead><tr><th>Session</th><th>Searches</th><th>Reads</th><th>Lookup output</th></tr></thead>
+    <tbody>
+    {% for o in report.subagent_opportunities %}
+      <tr><td>{{ o.title or o.session_id[:8] }}</td><td>{{ o.search_count | int_ }}</td><td>{{ o.read_count | int_ }}</td><td>{{ o.lookup_output_bytes | int_ }} B</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</section>
+{% endif %}
+
+{% if report.projects %}
+<section>
+  <h2>Projects</h2>
+  <table>
+    <thead><tr><th>Project</th><th>Sessions</th><th>Tokens</th><th>Tool calls</th></tr></thead>
+    <tbody>
+    {% for p in report.projects %}
+      <tr><td>{{ p.project }}</td><td>{{ p.sessions | int_ }}</td><td>{{ p.tokens | tokens }}</td><td>{{ p.tool_calls | int_ }}</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</section>
+{% endif %}
+
+<script type="application/json" id="report-data">{{ chart_data | safe }}</script>
+<script>{{ chart_js | safe }}</script>
+<script>{{ report_js | safe }}</script>
+{% endif %}
+</body>
+</html>

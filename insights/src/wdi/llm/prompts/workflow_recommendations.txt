@@ -1,0 +1,15 @@
+You are analyzing one coding-agent session to recommend concrete workflow improvements.
+Use the compact metrics, prompt sample, and tooling signals. Separate advice for the
+developer/user from advice for the agent/tooling setup.
+
+Respond with ONLY a JSON object, no prose, no code fences:
+{
+  "score": <integer 0-100, overall workflow efficiency>,
+  "summary": "<two or three sentences>",
+  "user_advice": ["<specific suggestion for the developer>", "..."],
+  "agent_tooling_advice": ["<specific suggestion for agent instructions/tools/subagents>", "..."],
+  "metric_evidence": ["<metric or signal that supports the advice>", "..."]
+}
+
+Workflow data:
+{context}

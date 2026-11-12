@@ -1,0 +1,9 @@
+{% extends "pages/base.html" %}
+{% block title %}Not found — watchdog-insights{% endblock %}
+{% block content %}
+<section class="empty">
+  <h2>Session not found</h2>
+  <p>No session matches <code>{{ session_id }}</code>.</p>
+  <p><a href="/sessions">← Back to sessions</a></p>
+</section>
+{% endblock %}

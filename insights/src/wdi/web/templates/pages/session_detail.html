@@ -1,0 +1,101 @@
+{% extends "pages/base.html" %}
+{% block title %}{{ s | name }} — watchdog-insights{% endblock %}
+{% block content %}
+<p><a href="/sessions">← Back to sessions</a></p>
+<h2>{{ s | name }} {% for b in s.badges %}<span class="badge" title="{{ b.label }}">{{ b.icon }}</span>{% endfor %}</h2>
+{% include "partials/_badge_legend.html" %}
+<table>
+  <tbody>
+    <tr><th>Session id</th><td>{{ s.session_id }}</td></tr>
+    <tr><th>Agent / model</th><td>{{ s.agent }} / {{ s.model or "—" }}</td></tr>
+    <tr><th>Project</th><td>{{ s.project }}</td></tr>
+    <tr><th>Git branch</th><td>{{ s.git_branch or "—" }}</td></tr>
+    <tr><th>Started / ended</th><td>{{ s.started_at or "—" }} → {{ s.ended_at or "—" }}</td></tr>
+    <tr><th>Duration</th><td>{{ s.duration_ms | duration }}</td></tr>
+    <tr><th>User / assistant messages</th><td>{{ s.user_msg_count | int_ }} / {{ s.assistant_msg_count | int_ }}</td></tr>
+    <tr><th>Input / output tokens</th><td>{{ s.input_tokens | tokens }} / {{ s.output_tokens | tokens }}</td></tr>
+    <tr><th>Cache read tokens</th><td>{{ s.cache_read_tokens | tokens }}</td></tr>
+    {% if s.reasoning_tokens is not none %}<tr><th>Reasoning tokens</th><td>{{ s.reasoning_tokens | tokens }}</td></tr>{% endif %}
+    <tr><th>Estimated cost</th><td>{{ s.estimated_cost | cost }}</td></tr>
+    <tr><th>Tool calls</th><td>{{ s.tool_call_count | int_ }}</td></tr>
+    <tr><th>Compactions / API errors</th><td>{{ s.compaction_count | int_ }} / {{ s.api_error_count | int_ }}</td></tr>
+    {% if s.entrypoint %}<tr><th>Entrypoint</th><td>{{ s.entrypoint }}{% if s.is_noise %} (background){% endif %}</td></tr>{% endif %}
+    {% if s.web_search_requests or s.web_fetch_requests %}<tr><th>Web search / fetch requests</th><td>{{ s.web_search_requests | int_ }} / {{ s.web_fetch_requests | int_ }}</td></tr>{% endif %}
+    {% if s.hook_count %}<tr><th>Hook runs / errors</th><td>{{ s.hook_count | int_ }} / {{ s.hook_error_count | int_ }}</td></tr>{% endif %}
+    {% if s.effort %}<tr><th>Effort / approval / sandbox</th><td>{{ s.effort }} / {{ s.approval_policy or "—" }} / {{ s.sandbox_policy_type or "—" }}</td></tr>{% endif %}
+    {% if s.turn_count %}<tr><th>Turns / interrupted</th><td>{{ s.turn_count | int_ }} / {{ s.turn_abort_count | int_ }}</td></tr>{% endif %}
+    {% if s.task_duration_ms %}<tr><th>Task time / avg TTFT</th><td>{{ s.task_duration_ms | duration }} / {{ s.time_to_first_token_ms | duration }}</td></tr>{% endif %}
+    {% if s.peak_context_tokens %}<tr><th>Peak context</th><td>{{ s.peak_context_tokens | tokens }}{% if s.context_window %} of {{ s.context_window | tokens }}{% endif %}</td></tr>{% endif %}
+    {% if s.rate_limit_primary_used_percent is not none %}<tr><th>Rate limit used</th><td>{{ ((s.rate_limit_primary_used_percent or 0) / 100) | pct }}{% if s.rate_limit_plan %} ({{ s.rate_limit_plan }} plan){% endif %}</td></tr>{% endif %}
+    {% if s.parent_session_id %}<tr><th>Parent session</th><td><a href="/sessions/{{ s.parent_session_id }}">{{ s.parent_session_id[:8] }}</a></td></tr>{% endif %}
+  </tbody>
+</table>
+
+{% if has_context_curve %}
+<h2>Context growth</h2>
+<div class="chart-box wide"><canvas id="contextChart"></canvas></div>
+{% endif %}
+
+{% if waste and (waste.repeated_reads or waste.duplicate_commands or waste.failed_calls or waste.truncated_outputs) %}
+<h2>Waste signals</h2>
+<table>
+  <tbody>
+    <tr><th>Repeated reads</th><td>{{ waste.repeated_reads | int_ }}</td></tr>
+    <tr><th>Duplicate commands</th><td>{{ waste.duplicate_commands | int_ }}</td></tr>
+    <tr><th>Failed tool calls</th><td>{{ waste.failed_calls | int_ }} ({{ waste.failed_output_bytes | int_ }} B of output)</td></tr>
+    <tr><th>Truncated outputs (max_tokens)</th><td>{{ waste.truncated_outputs | int_ }}</td></tr>
+  </tbody>
+</table>
+{% if repeated_targets %}
+<p class="muted">Re-read files: {% for t in repeated_targets %}{{ t.target }} ×{{ t.reads }}{% if not loop.last %}, {% endif %}{% endfor %}</p>
+{% endif %}
+{% endif %}
+
+{% if analyses %}
+<h2>LLM analysis</h2>
+{% for a in analyses %}
+<section class="analysis">
+  <h3>{{ a.label }}{% if a.score is not none %} — score {{ a.score | int_ }}{% endif %}</h3>
+  {% if a.summary %}<p>{{ a.summary }}</p>{% endif %}
+  {% if a.advice %}
+  <ul>
+    {% for tip in a.advice %}<li>{{ tip }}</li>{% endfor %}
+  </ul>
+  {% endif %}
+  {% if a.raw %}<pre>{{ a.raw }}</pre>{% endif %}
+  <p class="muted">{{ a.model or "—" }} · {{ a.created_at or "—" }}</p>
+</section>
+{% endfor %}
+{% endif %}
+
+{% if categories %}
+<h2>Tools <a href="/sessions/{{ s.session_id }}/stream/main">(view tool calls →)</a></h2>
+<table>
+  <thead><tr><th>Category</th><th>Calls</th><th>Errors</th></tr></thead>
+  <tbody>
+  {% for c in categories %}
+    <tr><td>{{ c.category }}</td><td>{{ c.calls | int_ }}</td><td>{{ c.errors | int_ }}</td></tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% endif %}
+
+{% if subagents %}
+<h2>Subagents</h2>
+<table>
+  <thead><tr><th>Type</th><th>Flags</th><th>Status</th><th>Tokens</th><th>Duration</th><th>Tool calls</th></tr></thead>
+  <tbody>
+  {% for a in subagents %}
+    {# Codex subagents are standalone child sessions; Claude runs are streams. #}
+    {% if s.agent == 'codex' %}
+    <tr><td><a href="/sessions/{{ a.agent_run_id }}">{{ a.agent_type or "—" }}</a></td><td class="flags">{% for b in a.badges %}<span class="badge" title="{{ b.label }}">{{ b.icon }}</span>{% endfor %}</td><td>{{ a.status or "—" }}</td><td>{{ a.total_tokens | tokens }}</td><td>{{ a.total_duration_ms | duration }}</td><td>{{ a.total_tool_use_count | int_ }}</td></tr>
+    {% else %}
+    <tr><td><a href="/sessions/{{ s.session_id }}/stream/{{ a.agent_run_id }}">{{ a.agent_type or "—" }}</a></td><td class="flags">{% for b in a.badges %}<span class="badge" title="{{ b.label }}">{{ b.icon }}</span>{% endfor %}</td><td>{{ a.status or "—" }}</td><td>{{ a.total_tokens | tokens }}</td><td>{{ a.total_duration_ms | duration }}</td><td>{{ a.total_tool_use_count | int_ }}</td></tr>
+    {% endif %}
+  {% endfor %}
+  </tbody>
+</table>
+{% endif %}
+
+<script type="application/json" id="session-chart-data">{{ session_chart_data | safe }}</script>
+{% endblock %}

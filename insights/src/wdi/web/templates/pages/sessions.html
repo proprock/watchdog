@@ -1,0 +1,9 @@
+{% extends "pages/base.html" %}
+{% block title %}Sessions — watchdog-insights{% endblock %}
+{% block content %}
+{% include "partials/_filters.html" %}
+{% include "partials/_badge_legend.html" %}
+<div id="session-table">
+{% include "partials/_session_table.html" %}
+</div>
+{% endblock %}

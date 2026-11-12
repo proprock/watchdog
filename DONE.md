@@ -2,6 +2,8 @@
 
 Historical records only: one line per task. The full text of every entry, including its verification, is in [done-archive.md](docs/evidence/done-archive.md). Active work belongs in [TODO.md](TODO.md). Preserve task IDs when moving entries here.
 
+- [x] **WD-184 - Import `watchdog-insights` as a workspace package (2026-11-12).** Clean-clone package checks passed, including 263 insights tests matching the source. Outstanding root-suite acceptance and the owner decision moved to WD-214 in [TODO.md](TODO.md). [Evidence](docs/evidence/wd184.md).
+
 - [x] **WD-210 - Bound idle daemon tick cost (2026-11-11).** Per-project idle backoff, lazy transcript state and complete bounded health reporting; live instance updated and observed for one hour. Full suite: 2,061 passed, 1 skipped. [Evidence](docs/evidence/wd210.md).
 
 - [x] **WD-183 - Keep data by default: no expiry and no quota (2026-11-11).** Default retention and project quota are disabled; live limits and both provider hook paths verified. [Evidence](docs/evidence/wd183.md).

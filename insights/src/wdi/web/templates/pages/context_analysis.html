@@ -1,0 +1,42 @@
+{% extends "pages/base.html" %}
+{% block title %}Context Analysis — watchdog-insights{% endblock %}
+{% block content %}
+<h2>Context Analysis</h2>
+<p class="muted">Reconstruct the observable context around each model call. Usage is reconciled from provider records. Visible history may differ from active context; category token sizes are estimates.</p>
+<form id="context-filters" class="filters" action="/context-analysis" method="get"
+      hx-get="/context-analysis" hx-target="#context-analysis-results"
+      hx-swap="innerHTML" hx-push-url="true">
+  <input type="hidden" name="run" value="1">
+  <label>Agent
+    <select name="agent">
+      <option value="">All</option>
+      <option value="claude" {% if filter.agent == "claude" %}selected{% endif %}>Claude</option>
+      <option value="codex" {% if filter.agent == "codex" %}selected{% endif %}>Codex</option>
+    </select>
+  </label>
+  <label>Project
+    <select name="project">
+      <option value="">All</option>
+      {% for name in project_names %}<option value="{{ name }}" {% if filter.project == name %}selected{% endif %}>{{ name }}</option>{% endfor %}
+    </select>
+  </label>
+  <label>From <input type="date" name="since" value="{{ filter.since or '' }}"></label>
+  <label>Through <input type="date" name="until" value="{{ filter.until or '' }}"></label>
+  <label>Minimum calls <input type="number" name="min_calls" min="1" value="{{ filter.min_calls }}"></label>
+  <label>Minimum turns <input type="number" name="min_turns" min="0" value="{{ filter.min_turns }}"></label>
+  <label>Top N <input type="number" name="top_n" min="1" max="100" value="{{ filter.top_n }}"></label>
+  <label>Rank by
+    <select name="sort">
+      {% for value, label in [("input_tokens", "Cumulative input tokens"), ("peak_context_tokens", "Peak context tokens"), ("visible_context_bytes", "Peak visible bytes"), ("model_calls", "Model calls"), ("turns", "Turns"), ("compactions", "Compactions"), ("repeated_bytes", "Exact repeated bytes"), ("input_uncached", "Uncached input"), ("cache_read", "Cache read"), ("cache_write", "Cache write"), ("output", "Output"), ("cost", "API equivalent cost")] %}
+      <option value="{{ value }}" {% if filter.sort == value %}selected{% endif %}>{{ label }}</option>
+      {% endfor %}
+    </select>
+  </label>
+  <label class="checkbox"><input type="checkbox" name="include_noise" value="true" {% if filter.include_noise %}checked{% endif %}> Include background sessions</label>
+  <label>Analyze <select name="scope">{% for value in ["filtered", "top", "selected"] %}<option value="{{ value }}" {% if filter.scope == value %}selected{% endif %}>{{ value | title }}</option>{% endfor %}</select></label>
+  <button type="submit">Run local analysis</button>
+</form>
+<div id="context-analysis-results">
+{% include "partials/_context_analysis.html" %}
+</div>
+{% endblock %}

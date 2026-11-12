@@ -1,0 +1,9 @@
+{% extends "pages/base.html" %}
+{% block title %}Tools — watchdog-insights{% endblock %}
+{% block content %}
+<h2>Tools</h2>
+{% include "partials/_filters.html" %}
+<div id="tool-table">
+  {% include "partials/_tool_table.html" %}
+</div>
+{% endblock %}

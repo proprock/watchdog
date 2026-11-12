@@ -1,0 +1,10 @@
+{% if legend %}
+<details class="legend">
+  <summary>Badge legend</summary>
+  <ul>
+    {% for b in legend %}
+    <li><span class="badge">{{ b.icon }}</span> {{ b.label }}</li>
+    {% endfor %}
+  </ul>
+</details>
+{% endif %}

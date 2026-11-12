@@ -1,0 +1,30 @@
+<article id="context-advice-{{ provider }}" class="coach-card">
+  <h3>{{ provider_label }}</h3>
+  <form hx-post="/context-analysis/advice/{{ provider }}?{{ advice_query }}"
+        hx-target="#context-advice-{{ provider }}" hx-swap="outerHTML"
+        hx-indicator="#context-advice-{{ provider }}-spinner"
+        hx-disabled-elt="#context-advice-{{ provider }} button, #context-advice-{{ provider }} select">
+    <label for="context-advice-{{ provider }}-model">{{ provider_label }} model</label>
+    <select hx-get="/context-analysis?{{ advice_query }}&amp;estimate_provider={{ provider }}" hx-include="closest form" hx-target="#context-analysis-results" hx-swap="innerHTML" hx-trigger="change" hx-indicator="#context-estimate-{{ provider }}-spinner" id="context-advice-{{ provider }}-model" name="model">
+      {% for model in models %}<option value="{{ model }}" {% if model == selected_model %}selected{% endif %}>{{ model }}</option>{% endfor %}
+    </select>
+    <label>Estimated output budget <input type="number" name="output_budget" min="0" max="100000" value="{{ estimate.output_tokens if estimate else 600 }}" hx-get="/context-analysis?{{ advice_query }}&amp;estimate_provider={{ provider }}" hx-include="closest form" hx-target="#context-analysis-results" hx-swap="innerHTML" hx-trigger="change" hx-indicator="#context-estimate-{{ provider }}-spinner"></label>
+    <span id="context-estimate-{{ provider }}-spinner" class="htmx-indicator" role="status">Updating local estimate…</span>
+    {% if estimate %}<p>Approximate input: {{ estimate.input_tokens }} tokens; output: {{ estimate.output_tokens }} tokens. API equivalent: {{ estimate.cost | cost if estimate.cost is not none else "Unknown tariff" }}.</p>
+    {% if estimate.rates %}<p>USD / 1M: input {{ estimate.rates.input }}, output {{ estimate.rates.output }}, cache read {{ estimate.rates.cache_read }}.</p>{% endif %}
+    <p class="muted">{{ estimate.method }} No known conversion to subscription limits. Displaying cached advice makes no new LLM call.</p>{% endif %}
+    {% if advice %}<input type="hidden" name="force" value="true">{% endif %}
+    <button type="submit">{% if advice %}Refresh{% else %}Get advice{% endif %}</button>
+    <span id="context-advice-{{ provider }}-spinner" class="htmx-indicator muted" role="status">Asking {{ provider_label }}…</span>
+  </form>
+  <div class="coach-result" aria-live="polite">
+    {% if error %}<p class="coach-error" role="alert">{{ error }}</p>{% endif %}
+    {% if advice %}
+      {% if advice.stale %}<p class="coach-stale">The aggregate context data changed. Refresh this advice.</p>{% endif %}
+      {% if advice.result.summary %}<p>{{ advice.result.summary }}</p>{% endif %}
+      {% if advice.result.advice %}<ul>{% for item in advice.result.advice %}<li>{{ item }}</li>{% endfor %}</ul>{% endif %}
+      {% if advice.result.focus_areas %}<p><strong>Focus areas:</strong> {{ advice.result.focus_areas | join(", ") }}</p>{% endif %}
+      <p class="muted">{{ advice.model }}{% if advice.created_at %} · {{ advice.created_at }}{% endif %}{% if advice.cached %} · cached{% endif %}</p>
+    {% elif not error %}<p class="muted">No external advice yet. Only aggregate metrics will be sent.</p>{% endif %}
+  </div>
+</article>

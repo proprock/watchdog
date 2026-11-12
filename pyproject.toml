@@ -30,6 +30,12 @@ dev = [
 [tool.hatch.build.targets.wheel]
 packages = ["src/agent_watchdog"]
 
+[tool.hatch.build.targets.sdist]
+exclude = ["/insights"]
+
+[tool.uv.workspace]
+members = ["insights"]
+
 [tool.ruff]
 target-version = "py312"
 line-length = 100
@@ -37,7 +43,13 @@ line-length = 100
 extend-exclude = ["scripts/kaboost_audit_tdd.py"]
 
 [tool.ruff.lint]
-select = ["E", "F", "I", "UP", "B", "SIM", "PTH"]
+select = ["E", "F", "I", "UP", "B", "SIM", "PTH", "TID251"]
+
+[tool.ruff.lint.flake8-tidy-imports.banned-api]
+"wdi" = { msg = "agent_watchdog must not import wdi" }
+
+[tool.ruff.lint.per-file-ignores]
+"insights/**" = ["TID251"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

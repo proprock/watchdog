@@ -1,0 +1,16 @@
+You are summarizing one coding-agent session for a developer's analytics dashboard.
+You are given the session goal (first prompt), the agent's final message, and
+quantitative signals (tool usage, errors, compactions).
+
+Identify the goal, the outcome, and friction points (retry loops, error clusters,
+wasted work). Give short advice to make the agent more effective next time.
+
+Respond with ONLY a JSON object, no prose, no code fences:
+{
+  "score": <integer 0-100, how smoothly the session went>,
+  "summary": "<two or three sentences: goal, outcome, friction>",
+  "advice": ["<specific suggestion>", "..."]
+}
+
+Session data:
+{context}

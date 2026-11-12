@@ -1,0 +1,19 @@
+{% if not tools %}
+<section class="empty"><p>No tool calls match the current filter.</p></section>
+{% else %}
+<table>
+  <thead><tr><th>Tool</th><th>Calls</th><th>Errors</th><th>Error rate</th><th>Avg latency</th><th>Output</th></tr></thead>
+  <tbody>
+  {% for t in tools %}
+    <tr>
+      <td><a href="/tools/{{ t.tool_name | urlencode }}">{{ t.tool_name }}</a></td>
+      <td>{{ t.calls | int_ }}</td>
+      <td>{{ t.errors | int_ }}</td>
+      <td>{{ t.error_rate | pct }}</td>
+      <td>{{ (t.avg_duration_ms | int | duration) if t.avg_duration_ms is not none else "—" }}</td>
+      <td>{{ t.output_bytes | int_ }} B</td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% endif %}

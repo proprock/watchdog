@@ -1,0 +1,41 @@
+[project]
+name = "watchdog-insights"
+version = "0.1.0"
+description = "Local analytics for Claude Code and Codex agent sessions (wdi)"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "typer>=0.12",
+    "rich>=13",
+    "pydantic>=2.7",
+    "pyyaml>=6",
+    "jinja2>=3.1",
+    "fastapi>=0.136.3",
+    "uvicorn>=0.49.0",
+    "mcp>=1.27.2,<2",
+    "agent-watchdog",
+]
+
+[project.scripts]
+wdi = "wdi.cli:main"
+
+[dependency-groups]
+dev = [
+    "pytest>=8",
+    "ruff>=0.6",
+    "httpx>=0.28.1",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/wdi"]
+
+[tool.uv.sources]
+agent-watchdog = { workspace = true }
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"

@@ -1,0 +1,181 @@
+# watchdog-insights (wdi)
+
+Local analytics for Claude Code and OpenAI Codex agent sessions: import JSONL
+transcripts into a normalized SQLite database, compute quantitative metrics,
+run LLM analysis, generate a static HTML report, or browse a local web dashboard.
+
+## Install and run
+
+```bash
+uv sync --locked
+uv run wdi --help
+```
+
+## Quick start
+
+```bash
+uv run wdi init            # create ~/.wdi/config.yaml and import all sources
+uv run wdi stats           # terminal summary
+uv run wdi report          # static HTML report
+uv run wdi serve           # local web dashboard at http://127.0.0.1:8000
+```
+
+`wdi serve` runs a local web UI: a live dashboard with filters
+(agent/project/since), a sessions list and per-session detail. Sessions are shown
+by their real name (agent title, else the first prompt). Quality badges (with a
+legend) flag slow, error-prone, oversearching, and high/low-scoring sessions and
+subagents. The detail page surfaces stored LLM analysis (prompt quality, session
+summary, agent efficiency) for sessions run through `wdi analyze`, and you can
+drill into a session or subagent down to individual tool calls and their full
+input/output (read on demand from the original transcript). Override the bind
+address with `--host`/`--port` (defaults come from the `server` config block),
+and pass `--import` to refresh the database before serving:
+
+```bash
+uv run wdi serve --port 8080 --import
+```
+
+### Context analysis
+
+Open **Context Analysis** in the local dashboard and press **Run local analysis**
+to rank long sessions by model calls, turns, cumulative input, peak context,
+observable context size, compactions, or repeated content. The selected session
+shows a per-call timeline: exact token counters use one axis, while stacked UTF-8
+byte sizes of observable instructions, messages, code, search results, listings,
+diffs, and logs use the other.
+
+This is a reconstruction of data present in the session files, not a copy of the
+provider's complete API request. Missing internal prompts and encrypted reasoning
+or compaction state are marked `partial` or `opaque`; ciphertext length is never
+treated as context size. WDI stores only categories, sizes, tool/command kinds,
+and SHA-256 fingerprints in `context_events`, not duplicate raw content or paths.
+
+The local advisor compares measurable compaction outcomes only after enough
+events exist and provides a `compact_prompt` draft without changing Codex
+configuration. Optional Claude and Codex buttons are the only actions that invoke
+an external model; their payload contains aggregate counts, categories, and
+ratios, with no raw text, commands, paths, or session identifiers.
+
+The development schema is edited in place. Preserve primary rows when converting an
+existing database using a task-specific helper script before rebuilding derived data.
+See [Context structure analysis](docs/context-analysis.md) for reconstruction
+semantics, evidence thresholds, privacy boundaries, and the import benchmark.
+
+`wdi init` is sugar for `wdi config init` followed by `wdi import`. Run the
+steps separately when you need to edit the config before the first import:
+
+```bash
+uv run wdi config init     # create ~/.wdi/config.yaml
+uv run wdi import          # import Claude Code and Codex sessions
+```
+
+## Model pricing
+
+Set `pricing` in `~/.wdi/config.yaml`. All rates are USD per million tokens;
+model names match by their longest configured prefix, including dated variants.
+For example:
+
+```yaml
+pricing:
+  claude-opus-5:
+    input: 5.0
+    output: 25.0
+    cache_read: 0.50
+    cache_write_5m: 6.25
+    cache_write_1h: 10.0
+    batch_input: 2.50
+    batch_output: 12.50
+```
+
+`input` and `output` are required for each configured model. `cache_read` defaults
+to zero. The four extended cache and Batch fields are optional (`null` means
+unspecified). Existing `cache_write` settings remain supported: cost estimates use
+`cache_write_5m` when specified, otherwise `cache_write` (which defaults to zero).
+
+Current session aggregates do not distinguish cache lifetimes or Batch usage.
+Cache creation is therefore estimated at the 5-minute rate; `cache_write_1h`,
+`batch_input`, and `batch_output` are stored for future accounting and do not yet
+affect reports. One-hour cache use can consequently be underestimated.
+
+After editing prices, rerun `uv run wdi stats` or `uv run wdi report`; no session
+re-import is needed. Restart `wdi serve` to reload its configuration. New defaults
+apply to newly created configs; existing config files are not rewritten.
+
+## MCP server
+
+`wdi mcp` runs a read-only [Model Context Protocol](https://modelcontextprotocol.io)
+server over stdio so an agent can query the same analytics. It exposes four tools,
+each accepting optional `agent`, `project`, `since` (`2026-06-01` or `7d`) and
+`limit` arguments:
+
+- `get_recent_sessions` — recent sessions with tokens and tool-call counts.
+- `get_tool_failure_patterns` — tools that errored, ranked, with `error_rate`.
+- `get_oversearching_examples` — search-heavy / edit-light sessions and redundant re-reads.
+- `get_prompt_quality_report` — stored prompt-quality scores (worst first).
+  Run `wdi analyze prompt-quality` first; un-analyzed sessions are omitted.
+
+Register it with an MCP client (e.g. Claude Code / Claude Desktop):
+
+```json
+{
+  "mcpServers": {
+    "watchdog-insights": {
+      "command": "wdi",
+      "args": ["mcp"]
+    }
+  }
+}
+```
+
+Source data formats are described in [docs/](docs/).
+
+## Dashboard coaching
+
+The Coach section has independent Claude and Codex cards, each with its own model
+selector, run/refresh button, loading indicator and result. Changing a model only
+loads its saved advice. Running a card sends aggregate metrics (including frequently
+read file paths) for the active dashboard filters to that provider's CLI. It does
+not send full session transcripts. Both CLIs must be installed and signed in for
+their respective cards to work; model availability depends on the account.
+
+Model menus can be customized in `~/.wdi/config.yaml`:
+
+```yaml
+features:
+  llm_analysis:
+    enabled: true
+    coach_models:
+      claude: [haiku, sonnet, opus]
+      codex: [gpt-5.6-sol, gpt-5.6-terra, gpt-5.6-luna]
+```
+
+By default the Codex executable is resolved from the server's PATH. If several
+CLI installations coexist, set `features.llm_analysis.codex_executable` to the
+full path of the desired executable. This is useful when an older npm CLI is
+found before the newer CLI bundled with the Codex app.
+
+The Claude card initially uses `models.coach` (or the shared `model` default),
+which is included in its menu. Codex initially uses the first configured Codex
+model. Restart the server after editing the menus. Selecting a different model
+affects that card only; reloading the dashboard restores the configured defaults.
+
+Advice is cached separately by provider, model, filters and prompt version.
+Saved metrics fingerprints detect changed data or prices: outdated advice is
+marked on display and recomputed on the next run. Refresh always requests a new
+answer. Existing single-provider cache rows are retained but are not reused.
+No database schema change or re-import is required.
+
+Codex runs through `codex exec` with stdin input, an output JSON schema and an
+ephemeral session, using a temporary working directory and the CLI's existing
+authentication. It uses a read-only sandbox and ignores user configuration so
+project-specific settings do not influence the analysis. Its analysis sessions
+are not saved to the session files imported by WDI. Per-session `wdi analyze`
+continues using its existing Claude backend.
+
+### Context efficiency
+
+Use **Context Analysis** to compare filtered, Top N, or selected sessions, inspect
+observable context growth and reconciled token usage, preview aggregate-advisor
+API-equivalent prices, and compare local cost scenarios. See the
+[context efficiency audit](docs/context-efficiency-audit.md) for the local findings,
+rebuild instructions, and opt-in native compaction experiments.

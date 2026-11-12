@@ -1,0 +1,19 @@
+{% extends "pages/base.html" %}
+{% block content %}
+<h2>Native context experiments</h2>
+<p>Profiles are opt-in launches. Native is the default. Run these commands from the WDI checkout. No global configuration or transcript is rewritten. Normal launches restore native behavior.</p>
+<table><thead><tr><th>Action</th><th>Support</th></tr></thead><tbody>
+<tr><td>Claude earlier auto-compaction</td><td>{{ "Installed; documented percentage override" if claude_installed else "CLI unavailable" }}</td></tr>
+<tr><td>Codex threshold and compact prompt</td><td>{{ "Settings present in installed CLI schema; actual compaction outcome must be measured" if codex_supported else "Not verified for this installation" }}</td></tr>
+<tr><td>Delete arbitrary lines from active history</td><td>Not supported by these profiles</td></tr>
+</tbody></table>
+<pre>uv run python -m wdi.context_profiles claude --threshold native
+uv run python -m wdi.context_profiles claude --threshold 70 --record .cache/experiment.json --launch
+uv run python -m wdi.context_profiles claude --threshold 85 --launch
+uv run python -m wdi.context_profiles codex --threshold 70 --window 200000 --launch
+uv run python -m wdi.context_profiles claude --record .cache/experiment.json --session-id SESSION_ID --outcome success</pre>
+<p>Set the actual model context window for Codex. Its installed schema is checked again on launch. Record state-loss or inconclusive instead of success when appropriate. The output budget in the estimator is not a CLI output limit.</p>
+<h3>Output policy</h3><p>{{ output_policy }}</p>
+<h3>Preservation instructions</h3><p>{{ preserve }}</p>
+<p>Compare completed, similar tasks with the same model and effort. Review output/input/cache counters, compaction overhead, recovery work and task correctness. Historical correlations do not select a winning profile. Keep native when savings or quality are unproven.</p>
+{% endblock %}

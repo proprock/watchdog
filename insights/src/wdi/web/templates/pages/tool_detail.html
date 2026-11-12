@@ -1,0 +1,25 @@
+{% extends "pages/base.html" %}
+{% block title %}{{ tool_name }} — watchdog-insights{% endblock %}
+{% block content %}
+<p><a href="/tools">← Back to tools</a></p>
+<h2>{{ tool_name }}</h2>
+{% if not rows %}
+<section class="empty"><p>No sessions used this tool under the current filter.</p></section>
+{% else %}
+<table>
+  <thead><tr><th>Session</th><th>Agent</th><th>Started</th><th>Calls</th><th>Errors</th><th>Avg latency</th></tr></thead>
+  <tbody>
+  {% for r in rows %}
+    <tr>
+      <td><a href="/sessions/{{ r.session_id }}">{{ r | name }}</a></td>
+      <td>{{ r.agent }}</td>
+      <td>{{ r.started_at or "—" }}</td>
+      <td>{{ r.calls | int_ }}</td>
+      <td>{{ r.errors | int_ }}</td>
+      <td>{{ (r.avg_duration_ms | int | duration) if r.avg_duration_ms is not none else "—" }}</td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% endif %}
+{% endblock %}

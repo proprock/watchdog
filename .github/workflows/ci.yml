@@ -16,7 +16,7 @@ jobs:
       - uses: astral-sh/setup-uv@v7
         with:
           python-version: '3.12'
-      - run: uv sync --locked
+      - run: uv sync --locked --all-packages
       - run: rustup toolchain install stable --profile minimal --component rustfmt --component clippy
       - uses: Swatinem/rust-cache@v2
         with:
@@ -47,12 +47,14 @@ jobs:
       - uses: astral-sh/setup-uv@v7
         with:
           python-version: ${{ matrix.python }}
-      - run: uv sync --locked
+      - run: uv sync --locked --all-packages
       - run: rustup toolchain install stable --profile minimal
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: native
       - run: cargo +stable test --locked --manifest-path native/Cargo.toml
       - run: uv run pytest
-      - run: uv build
+      - run: uv run --directory insights pytest
+      - run: uv build --all-packages
       - run: uv run agent-watchdog --help
+      - run: uv run wdi --help

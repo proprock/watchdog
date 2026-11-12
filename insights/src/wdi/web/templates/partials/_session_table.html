@@ -1,0 +1,23 @@
+{% if not rows %}
+<section class="empty">
+  <p>No sessions match the current filter.</p>
+</section>
+{% else %}
+<table>
+  <thead><tr><th>Name</th><th>Flags</th><th>Agent</th><th>Project</th><th>Started</th><th>Model</th><th>Tokens</th><th>Duration</th></tr></thead>
+  <tbody>
+  {% for r in rows %}
+    <tr>
+      <td><a href="/sessions/{{ r.session_id }}">{{ r | name }}</a></td>
+      <td class="flags">{% for b in r.badges %}<span class="badge" title="{{ b.label }}">{{ b.icon }}</span>{% endfor %}</td>
+      <td>{{ r.agent }}</td>
+      <td>{{ r.project }}</td>
+      <td>{{ (r.started_at or "")[:16] }}</td>
+      <td>{{ r.model or "—" }}</td>
+      <td>{{ ((r.input_tokens or 0) + (r.output_tokens or 0)) | tokens }}</td>
+      <td>{{ r.duration_ms | duration }}</td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% endif %}

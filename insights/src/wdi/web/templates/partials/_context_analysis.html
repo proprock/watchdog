@@ -1,0 +1,97 @@
+{% if not run %}
+<section class="empty"><p>Choose filters and run the local analysis. No session content leaves this machine.</p></section>
+{% elif not report or report.matched_sessions == 0 %}
+<section class="empty"><p>No imported context events match these filters. Re-import source sessions after upgrading the database.</p></section>
+{% else %}
+<p>{{ report.matched_sessions }} matching sessions; {{ report.sessions | length }} displayed; {{ report.total_sessions }} analyzed ({{ filter.scope }}). Local analysis makes no LLM call.</p>
+<section class="cards">
+  <div class="card"><span class="value">{{ report.total_sessions | int_ }}</span><span class="label">Sessions analyzed</span></div>
+  <div class="card"><span class="value">{{ report.total_model_calls | int_ }}</span><span class="label">Model calls</span></div>
+  <div class="card"><span class="value">{{ report.total_compactions | int_ }}</span><span class="label">Compactions</span></div>
+  <div class="card"><span class="value">{{ report.advice.strategy }}</span><span class="label">Suggested strategy</span></div>
+</section>
+
+<section class="analysis">
+  <h3>Local advisor</h3>
+  <p>{{ report.advice.summary }}</p>
+  <ul>{% for item in report.advice.recommendations %}<li>{{ item }}</li>{% endfor %}</ul>
+  {% if report.advice.revise_compact_prompt %}<p><strong>compact_prompt review is recommended.</strong></p>{% endif %}
+  <details><summary>Ready-to-use compact prompt draft</summary><pre>{{ report.advice.compact_prompt_draft }}</pre></details>
+  <p class="muted">Interpretation follows <a href="https://developers.openai.com/api/docs/guides/latest-model?model=gpt-5.2">OpenAI compaction guidance</a>: compact after meaningful milestones, preserve equivalent instructions, and treat compacted items as opaque.</p>
+</section>
+
+{% if advice_cards %}
+<section>
+  <h2>Optional LLM advice</h2>
+  <p class="muted">Only aggregate counts, categories, and ratios are sent. Raw text, paths, commands, and session IDs are excluded.</p>
+  <div class="coach-grid">
+  {% for card in advice_cards %}
+    {% with provider=card.provider, provider_label=card.provider_label, models=card.models, selected_model=card.selected_model, advice=card.advice, advice_query=advice_query, estimate=card.estimate %}
+      {% include "partials/_context_advice.html" %}
+    {% endwith %}
+  {% endfor %}
+  </div>
+</section>
+{% endif %}
+
+{% if report.providers %}
+<section>
+  <h2>Provider cohorts</h2>
+  <div class="table-scroll"><table>
+    <thead><tr><th>Provider</th><th>Sessions</th><th>Calls</th><th>Compactions</th><th>Median peak tokens</th><th>Median visible bytes</th><th>Median reduction</th><th>Repeated after compact</th><th>Recovery 1/3/5 calls</th></tr></thead>
+    <tbody>{% for item in report.providers %}<tr>
+      <td>{{ item.agent | title }}</td><td>{{ item.sessions | int_ }}</td><td>{{ item.model_calls | int_ }}</td><td>{{ item.compactions | int_ }}</td>
+      <td>{{ item.median_peak_context_tokens | int | tokens }}</td><td>{{ item.median_peak_visible_bytes | int_ }}</td>
+      <td>{{ item.median_compaction_reduction | pct if item.median_compaction_reduction is not none else "—" }}</td>
+      <td>{{ item.repeated_after_compaction_rate | pct if item.repeated_after_compaction_rate is not none else "—" }}</td>
+      <td>{{ item.recovery_1 | pct if item.recovery_1 is not none else "—" }} / {{ item.recovery_3 | pct if item.recovery_3 is not none else "—" }} / {{ item.recovery_5 | pct if item.recovery_5 is not none else "—" }}</td>
+    </tr>{% endfor %}</tbody>
+  </table></div>
+  <h3>Observable context composition</h3>
+  <div class="provider-composition">
+  {% for item in report.providers %}
+    <article class="analysis"><h3>{{ item.agent | title }}</h3><table>
+      <thead><tr><th>Category</th><th>Byte-calls (observed history)</th><th>Added bytes</th><th>Estimated added tokens</th><th>Exact repeats</th><th>Overlap estimate</th><th>Changed target</th><th>Error output</th></tr></thead>
+      <tbody>{% for category, bytes in item.category_bytes | dictsort(false, 'value', reverse=true) %}<tr><td>{{ category | replace('_', ' ') }}</td><td>{{ bytes | int_ }}</td>{% for key in ["added_bytes", "estimated_tokens", "exact_repeat_bytes", "overlap_bytes", "changed_target_bytes", "error_bytes"] %}<td>{{ item.category_changes.get(category, {}).get(key, 0) | int_ }}</td>{% endfor %}</tr>{% endfor %}</tbody>
+    </table></article>
+  {% endfor %}
+  </div>
+</section>
+{% endif %}
+
+<section>
+  <h2>Longest sessions</h2>
+  <table>
+    <thead><tr><th>Select</th><th>Session</th><th>Provider</th><th>Project</th><th>Calls</th><th>Turns</th><th>Input tokens</th><th>Peak context</th><th>Peak visible bytes</th><th>Compactions</th><th>Exact repeat bytes</th><th>Uncached input</th><th>Cache read / write</th><th>Output</th><th>API equivalent</th></tr></thead>
+    <tbody>{% for item in report.sessions %}<tr>
+      <td><input type="checkbox" form="context-filters" name="selected_ids" value="{{ item.session_id }}" {% if item.session_id in filter.selected_ids %}checked{% endif %} aria-label="Select session"></td>
+      <td><a href="{{ detail_urls[item.session_id] }}">{{ item.title or item.session_id[:8] }}</a></td>
+      <td>{{ item.agent }}</td><td>{{ item.project or "—" }}</td><td>{{ item.model_calls | int_ }}</td><td>{{ item.turns | int_ }}</td>
+      <td>{{ item.input_tokens | tokens }}</td><td>{{ item.peak_context_tokens | tokens }}</td><td>{{ item.peak_visible_bytes | int_ }}</td>
+      <td>{{ item.compactions | int_ }}</td><td>{{ item.repeated_bytes | int_ }}</td><td>{{ item.input_uncached | tokens }}</td><td>{{ item.cache_read | tokens }} / {{ item.cache_write | tokens }}</td><td>{{ item.output | tokens }}</td><td>{{ item.cost | cost if item.cost is not none else "Unknown" }}</td>
+    </tr>{% endfor %}</tbody>
+  </table>
+</section>
+
+{% if report.selected %}
+<section>
+  <h2>Per-call timeline: {{ report.selected.title or report.selected.session_id[:8] }}</h2>
+  <p class="muted">Stacked bars are observable UTF-8 bytes. Lines are reconciled provider usage counters; observable history is not a complete request capture. Partial and opaque rows indicate provider data that cannot be inspected.</p>
+  <div class="chart-box chart-wide"><canvas id="contextCompositionChart"></canvas></div>
+  <div class="table-scroll"><table>
+    <thead><tr><th>Call</th><th>Context tokens</th><th>Input</th><th>Cache read</th><th>Cache write</th><th>Output</th><th>Reasoning</th><th>Visible bytes</th><th>Added bytes</th><th>Repeated bytes</th><th>Window use</th><th>Generation</th><th>Compact</th><th>Coverage</th><th>Estimated visible tokens</th><th>Changed target bytes</th><th>Overlap estimate bytes</th><th>Error output bytes</th></tr></thead>
+    <tbody>{% for item in report.selected.snapshots %}<tr>
+      <td>{{ item.call_index + 1 }}</td><td>{{ item.context_tokens | tokens }}</td><td>{{ item.input_tokens | tokens }}</td><td>{{ item.cache_read_tokens | tokens }}</td><td>{{ item.cache_creation_tokens | tokens }}</td><td>{{ item.output_tokens | tokens }}</td><td>{{ item.reasoning_tokens | tokens }}</td>
+      <td>{{ item.visible_bytes | int_ }}</td><td>{{ item.added_bytes | int_ }}</td><td>{{ item.repeated_bytes | int_ }}</td>
+      <td>{{ item.utilization | pct if item.utilization is not none else "—" }}</td><td>{{ item.generation }}</td><td>{{ item.compact_trigger or "—" }}</td><td>{{ item.coverage }}</td><td>{{ item.estimated_visible_tokens | tokens }}</td><td>{{ item.changed_target_bytes | int_ }}</td><td>{{ item.overlap_bytes | int_ }}</td><td>{{ item.error_bytes | int_ }}</td>
+    </tr>{% endfor %}</tbody>
+  </table></div>
+</section>
+<section><h3>Largest additions (observed bytes)</h3><p>Estimates use roughly 4 characters/token. Overlap uses bounded normalized line hashes, not relevance judgments.</p>
+<table><thead><tr><th>Event</th><th>Category</th><th>Tool</th><th>Bytes</th><th>Diagnostic</th></tr></thead><tbody>{% for e in report.selected.growth %}<tr><td>{{ e.idx }}</td><td>{{ e.category }}</td><td>{{ e.tool_name or "—" }}</td><td>{{ e.byte_count | int_ }}</td><td><a href="/sessions/{{ report.selected.session_id }}">Session details</a></td></tr>{% endfor %}</tbody></table>
+<p>Independent streams (do not add subagent summary tokens): {% for stream, calls in report.selected.stream_calls.items() %}{{ stream }}: {{ calls }} calls; {% endfor %}</p></section>
+<script type="application/json" id="context-analysis-data">{{ chart_data | safe }}</script>
+{% endif %}
+{% endif %}
+
+{% include "partials/_context_scenarios.html" %}
