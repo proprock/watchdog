@@ -47,6 +47,7 @@ Line numbers in these tasks refer to commit `0d5e984`. Paths under `insights/` e
   - **Acceptance:**
     - the tests pass, then the full suite;
     - on the live instance a session in a previously unregistered Git checkout is stored without any command, and `doctor` shows a non-Git session as ignored with its count.
+  - **Status on 2026-11-12.** Implemented, full suite passed, and both live acceptance probes passed. The first-day registration report is due on 2026-11-13 at 12:15:39 UTC. See [WD-186 evidence](docs/evidence/wd186.md).
 
 - [ ] **WD-188 - Scan the provider directories and backfill history.** P0. Depends on WD-186, WD-187.
   - **Why.** Hooks name only the files of sessions that ran while Watchdog was installed and healthy. The provider directories hold more: older sessions, sessions from periods when hooks were broken (WD-174), and Codex rollouts that Codex itself compressed to `.jsonl.zst` (783 files on the development host against 13 plain ones). The provider deletes old files, so every day without a backfill loses history.
