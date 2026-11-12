@@ -2,7 +2,7 @@
 
 Priority review: 2026-10-08, implementation baseline `23fce5f`. P1 is the next tranche for reliable Codex coverage and decision-channel correctness; P2 follows its stated prerequisites, and P3 is optional. Scope includes stock Codex CLI/local desktop coding and Claude Code, plus an explicitly selected Codex analysis backend; ordinary chats remain excluded. Design sources remain ROADMAP.md and docs/architecture.md; its "Current versus superseded decisions" table says which text governs.
 
-**Collection/insights split (owner decisions, 2026-11-11).** The Split P0 tranche below runs before the control track. WD-208, WD-209, WD-183, WD-210 and the WD-184 package import are complete. WD-214 completed the root-suite acceptance. The main chain continues with WD-185 -> WD-187 -> WD-188, and WD-186 joins before WD-188. The control track (WD-151, WD-166, WD-178, WD-181, WD-179) continues independently. The [owner decisions](docs/architecture.md#collection-and-insights-split-2026-11-11) supersede these statements: `README.md` on collection for selected repositories only, on the absence of an eval runner and on the retention periods; `docs/architecture.md` on never scanning provider directories and on enrichment persisting no transcript content; `docs/storage.md` on vendor transcript directories and on diff text never being stored; `ROADMAP.md` on no eval runner. The analysis behind the split is in the local, uncommitted `AUDIT-20261111.agents.md`.
+**Collection/insights split (owner decisions, 2026-11-11).** The Split P0 tranche below runs before the control track. WD-208, WD-209, WD-183, WD-210 and the WD-184 package import are complete. WD-214 completed the root-suite acceptance. WD-185 completed the Python 3.14 migration. The main chain continues with WD-187 -> WD-188, and WD-186 joins before WD-188. The control track (WD-151, WD-166, WD-178, WD-181, WD-179) continues independently. The [owner decisions](docs/architecture.md#collection-and-insights-split-2026-11-11) supersede these statements: `README.md` on collection for selected repositories only, on the absence of an eval runner and on the retention periods; `docs/architecture.md` on never scanning provider directories and on enrichment persisting no transcript content; `docs/storage.md` on vendor transcript directories and on diff text never being stored; `ROADMAP.md` on no eval runner. The analysis behind the split is in the local, uncommitted `AUDIT-20261111.agents.md`.
 
 Open-work order: start the surface/version gate in WD-151 using the [WD-163 probe results](docs/evidence/wd163.md); implement already confirmed Codex CLI cells without waiting for desktop, while each unresolved cell waits for its own clean probe. WD-166 can proceed independently. WD-155 and WD-168 establish trustworthy channel/state evidence before broader live measurements. Then complete WD-167 and the provider-specific portions of WD-159. WD-161 is complete with a [no-change decision](docs/evidence/wd161.md). WD-153 gates desktop control only. WD-143 is implemented ([evidence](docs/evidence/wd143.md)). WD-144/WD-145/WD-147 specification reviews are resolved by the 2026-10-18 decisions below; their implementation, dependencies and task-specific acceptance remain open. Historical M3 cohort selections remain unchanged: this review approves no live rule or action. Diagnostic judge calls do not authorize intervention or promotion, and local-adapter tests or an assistant's reading of findings are not live acceptance or user verdicts.
 
@@ -27,24 +27,6 @@ Line numbers in these tasks refer to commit `0d5e984`. Paths under `insights/` e
 - [ ] **WD-212 - Investigate concurrent daemon control replacement on Windows.** The WD-184 clean-clone full suite failed `test_concurrent_start_pause_and_explicit_resume` with WinError 5 replacing `control.json` after the existing retry window; the isolated test passed. Determine the cause and correct the failure without weakening bounded error handling. See [WD-184 evidence](docs/evidence/wd184.md).
 
 - [ ] **WD-213 - Investigate daemon status after crash.** The WD-184 clean-clone full suite failed `test_crash_releases_lock_and_hook_recovers`: after the daemon process exited, status returned `degraded` instead of `unavailable`. Saved evidence confirms a crash between heartbeat publication and completion of startup evidence cleanup. The test now waits for completed startup; a separate test covers the intermediate crash, and four focused cases pass. Full-suite verification remains open. See [WD-184 evidence](docs/evidence/wd184.md).
-
-- [ ] **WD-185 - Python 3.14 as the minimum for both packages.** P0. Depends on WD-184.
-  - **Why.** Owner decision: zstd from the standard library (`compression.zstd`, Python 3.14) is the only codec, with no third-party dependency.
-  - **Fixed decisions.**
-    - `requires-python = ">=3.14"` in both `pyproject.toml` files; Ruff `target-version = "py314"`.
-    - CI: the lint job and the full test matrix (Ubuntu, macOS, Windows) run on 3.14 (`ci.yml:18`, `:36-39`); `release-native.yml:31` and `:73` move to 3.14.
-    - No 3.15 job: `pydantic-core` has no `cp315` wheels in the lock. Add 3.15 later, when `uv lock` resolves them.
-    - E1 in `TENETS.md`: "Python 3.12+" becomes "Python 3.14+".
-  - **Steps.**
-    1. Change the pins, run `uv lock`, then `uv run ruff check . --fix` for the `UP` rules the new target enables; review that diff.
-    2. Update every "3.12" in documentation (`rg -n '3\.12' --glob '!uv.lock'`).
-    3. Live instance: its interpreter is Python 3.12 and its package was installed with `--no-deps --reinstall`. Rebuild the live environment on 3.14 with dependencies. This replaces the interpreter of the live instance: write the exact commands into the report and get the user's go-ahead before running them.
-  - **Out of scope.** Using zstd anywhere (WD-187).
-  - **Acceptance:**
-    - every check in `TENETS.md` passes on 3.14;
-    - `uv run python -c "import compression.zstd"` succeeds in the project environment;
-    - `docs/evidence/wd185.md` holds the live `doctor` output with the interpreter version after the rebuild.
-  - **Status.** Repository migration and Windows verification are recorded in [WD-185 evidence](docs/evidence/wd185.md). The minimum in `TENETS.md` and the live environment rebuild require owner approval.
 
 - [ ] **WD-186 - Collect from every Git checkout: automatic registration, exclusions, and a visible count of ignored sessions.** P0. Depends on WD-208, WD-210.
   - **Why.** Owner decision 1. Today a record from an unregistered directory is discarded at `DEBUG` with no counter (`daemon.py:985-996`), and automatic registration works only below `trusted_projects_dir` (`registry.py:129-151`, `config.py:210-213`).

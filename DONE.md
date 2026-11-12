@@ -2,6 +2,8 @@
 
 Historical records only: one line per task. The full text of every entry, including its verification, is in [done-archive.md](docs/evidence/done-archive.md). Active work belongs in [TODO.md](TODO.md). Preserve task IDs when moving entries here.
 
+- [x] **WD-185 - Require Python 3.14 for both packages (2026-11-12).** Local Windows checks passed on CPython 3.14.3. The live daemon was rebuilt on the same version, passed `doctor`, and persisted fresh Codex hook events. [Evidence](docs/evidence/wd185.md).
+
 - [x] **WD-214 - Preserve events during brief admission contention and complete WD-184 root-suite acceptance (2026-11-12).** The native admission wait is 250 ms. The clean-clone suite passed 2064 tests with one skip. Both installed adapters were updated, and the restarted daemon persisted fresh Codex and Claude hook events. [Evidence](docs/evidence/wd214.md).
 
 - [x] **WD-184 - Import `watchdog-insights` as a workspace package (2026-11-12).** Clean-clone package checks passed, including 263 insights tests matching the source. Outstanding root-suite acceptance and the owner decision moved to WD-214 in [TODO.md](TODO.md). [Evidence](docs/evidence/wd184.md).

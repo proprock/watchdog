@@ -1,6 +1,6 @@
 # Watchdog development
 
-Requirements: Python 3.12+, uv, Ruff, pytest; Rust stable for the hook adapter. 
+Requirements: Python 3.14+, uv, Ruff, pytest; Rust stable for the hook adapter.
 
 # Source of truth
 
