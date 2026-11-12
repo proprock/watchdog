@@ -706,6 +706,7 @@ class _FakePolicyServer:
         self._reply = b""
         self._hang = False
         self._closed = threading.Event()
+        self.replied = threading.Event()
         self._socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self._socket.bind(("127.0.0.1", 0))
         self._socket.listen(8)
@@ -758,6 +759,7 @@ class _FakePolicyServer:
                     continue
                 try:
                     connection.sendall(self._reply)
+                    self.replied.set()
                 except OSError:
                     continue
 
@@ -1009,6 +1011,36 @@ def test_native_sends_the_full_hook_input_and_the_spooled_event_id(rust_adapter,
     assert request["input"] == payload
     (spooled,) = spool_files(paths)
     assert request["event_id"] == json.loads(spooled.read_text(encoding="utf-8"))["event_id"]
+
+
+def test_native_spools_after_brief_admission_contention(rust_adapter, native_setup):
+    from concurrent.futures import ThreadPoolExecutor
+
+    from agent_watchdog.resources import losses
+
+    paths, project = native_setup
+    server = _FakePolicyServer(paths).respond("allow")
+    try:
+        with ThreadPoolExecutor(max_workers=1) as pool:
+            with writer_lock(paths.data / "admission.lock"):
+                future = pool.submit(
+                    invoke, rust_adapter, paths, agent_pretooluse(project, model="opus"), "claude"
+                )
+                assert server.replied.wait(timeout=1)
+                time.sleep(0.16)
+            result = future.result(timeout=2)
+    finally:
+        server.close()
+
+    assert result.returncode == 0 and result.stdout == "" and not result.stderr
+    assert losses(paths.data)["busy"] == 0
+    (record,) = spool_files(paths)
+    event_id = json.loads(record.read_bytes())["event_id"]
+
+    drain_spool(paths)
+    drain_spool(paths)
+    assert [str(event.event_id) for event in persisted_events(paths, project)] == [event_id]
+    assert not spool_files(paths)
 
 
 RENDERED_CASES = [
