@@ -46,10 +46,11 @@ When `project_bytes` is positive, `payload_bytes` must not exceed it. Older `inb
 defaults or project overrides are accepted but ignored with a warning. They do
 not configure the unified spool, whose daemon-wide limits are 64 MiB and 4096
 files. The native adapter and Python publishers share `<data>/admission.lock`
-while measuring occupancy and atomically publishing a record. The lock wait is
-bounded at 100 ms; temporary queue files count toward capacity. The native adapter
-records a `busy` loss when this lock remains contended for the full wait; other
-I/O failures retain their separate error path.
+while measuring occupancy and atomically publishing a record. The native adapter
+waits up to 250 ms to absorb brief contention. Python publishers wait up to
+100 ms. Temporary queue files count toward capacity. The native adapter records
+a `busy` loss if the lock stays contended through the wait. Other I/O failures
+retain their separate error path.
 Maintenance removes abandoned Watchdog-owned queue temporary files after one
 hour under the same shared maintenance budget. Recent temporary files remain
 counted and untouched.

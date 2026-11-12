@@ -684,7 +684,7 @@ fn observe(
     std::fs::create_dir_all(&paths.data)?;
     let admission = match disk::lock(
         &paths.data.join("admission.lock"),
-        Duration::from_millis(100),
+        Duration::from_millis(250),
     ) {
         Ok(guard) => guard,
         Err(error) if error.is::<disk::LockContended>() => {
