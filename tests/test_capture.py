@@ -7,6 +7,7 @@ from uuid import uuid4
 import pytest
 
 from agent_watchdog.config import Limits
+from agent_watchdog.events import Envelope
 from agent_watchdog.storage import Store
 
 NOW = datetime(2026, 11, 12, tzinfo=UTC)
@@ -217,3 +218,25 @@ def test_capture_refuses_project_quota(store, tmp_path, monkeypatch):
     monkeypatch.setattr(resources, "available", lambda *_: 0)
     assert run(store).degraded
     assert not (store.root / "capture.sqlite3").exists()
+
+
+def test_purge_removes_capture_named_by_hook_session(store, tmp_path):
+    path = tmp_path / ROLLOUT
+    path.write_bytes(b"child\n")
+    store.put(
+        Envelope(
+            provider="codex",
+            project_id=store.project_id,
+            kind="turn.start",
+            source="hook",
+            session_id="parent",
+            received_at=NOW,
+            payload={"codex": {"transcript_path": str(path)}},
+        )
+    )
+    run(store)
+    assert len(captured(store)) == 1
+    assert store.purge_provider_session("codex", "parent") == 1
+    run(store)
+    assert not captured(store)
+    assert path.read_bytes() == b"child\n"

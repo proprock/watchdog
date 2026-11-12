@@ -1827,6 +1827,31 @@ def test_real_adapter_daemon_roundtrip_reports_rendering_without_provider_effect
     assert row["provider_effect_unknown"] == 1
 
 
+def test_daemon_captures_a_hook_named_transcript(paths, tmp_path):
+    from agent_watchdog.capture_store import CAPTURE_FILENAME, CaptureStore, iter_lines
+
+    root = tmp_path / "project"
+    root.mkdir()
+    session = str(uuid4())
+    path = tmp_path / f"rollout-2026-11-12T00-00-00-{session}.jsonl"
+    path.write_bytes(b"{}\r\n\n")
+    mutate_registry(paths, lambda registry: registry.add(root))
+    project = load_config(paths.config).projects[0]
+    write_spool_record(
+        paths,
+        spool_record(root, hook_event_name="Stop", session_id=session, transcript_path=str(path)),
+    )
+    raw = CaptureStore(paths.project_data(project.id) / CAPTURE_FILENAME)
+    start(paths)
+    wait_for(lambda: raw.stats()["raw_bytes"] == 5)
+    with raw.connect(write=False) as db:
+        row = db.execute("SELECT stream_pk, session_id FROM streams").fetchone()
+        assert row["session_id"] == session
+        assert (
+            b"".join(line + b"\n" for line in iter_lines(db, row["stream_pk"])) == path.read_bytes()
+        )
+
+
 def test_spool_write_wakes_an_idle_project_for_the_next_tick(paths, tmp_path, monkeypatch):
     from agent_watchdog import daemon
 

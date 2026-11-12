@@ -98,6 +98,40 @@ def test_doctor_reports_effective_retention_and_disabled_quota(tmp_path, monkeyp
     }
 
 
+def test_doctor_reports_raw_capture_without_initializing_it(tmp_path, monkeypatch):
+    from agent_watchdog.capture import capture
+    from agent_watchdog.capture_store import CAPTURE_FILENAME
+
+    paths, project = setup(tmp_path, monkeypatch)
+    root = paths.project_data(project.id)
+    assert inspection.doctor(paths, transcript_roots={})["projects"][0]["capture"]["streams"] == 0
+    assert not (root / CAPTURE_FILENAME).exists()
+    source = tmp_path / "session.jsonl"
+    source.write_bytes(b"payload\n")
+    with Store(root, project.id) as store:
+        store.put(
+            Envelope(
+                provider="claude",
+                project_id=project.id,
+                kind="turn.start",
+                source="hook",
+                session_id="session",
+                payload={"claude": {"transcript_path": str(source)}},
+            )
+        )
+        capture(store)
+    report = inspection.doctor(paths, transcript_roots={})
+    assert report["projects"][0]["capture"] == {
+        "streams": 1,
+        "open": 1,
+        "missing": 0,
+        "raw_bytes": 8,
+        "stored_bytes": 7,
+        "skipped_lines": 0,
+        "last_errors": [],
+    }
+
+
 def test_doctor_ignores_a_mismatch_older_than_the_window(tmp_path, monkeypatch):
     paths, _ = setup(tmp_path, monkeypatch)
     queue = Spool(paths.data)
