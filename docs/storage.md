@@ -49,8 +49,8 @@ files. The native adapter and Python publishers share `<data>/admission.lock`
 while measuring occupancy and atomically publishing a record. The native adapter
 waits up to 250 ms to absorb brief contention. Python publishers wait up to
 100 ms. Temporary queue files count toward capacity. The native adapter records
-a `busy` loss if the lock stays contended through the wait. Other I/O failures
-retain their separate error path.
+a `busy` loss if the lock stays contended through the wait. Other errors
+acquiring the admission lock count as `io` and log `admission-lock-io`.
 Maintenance removes abandoned Watchdog-owned queue temporary files after one
 hour under the same shared maintenance budget. Recent temporary files remain
 counted and untouched.

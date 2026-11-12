@@ -691,7 +691,15 @@ fn observe(
             disk::loss(&paths.data, BUSY);
             return Ok(stdout);
         }
-        Err(error) => return Err(error),
+        Err(_) => {
+            disk::loss(&paths.data, IO);
+            disk::fault(
+                &paths.data,
+                "admission-lock-io",
+                event_hint.as_deref().unwrap_or("unknown"),
+            );
+            return Ok(None);
+        }
     };
     let (files, used) = disk::spool_footprint(&spool)?;
     let mut delivery = json!({});

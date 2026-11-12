@@ -29,9 +29,6 @@ pub fn lock(path: &Path, timeout: Duration) -> Result<File> {
                 .create(true)
                 .truncate(false)
                 .open(path)?;
-            if file.metadata()?.len() == 0 {
-                file.write_all(&[0])?;
-            }
             if let Err(error) = FileExt::try_lock_exclusive(&file) {
                 if error.raw_os_error().is_some()
                     && error.raw_os_error() == fs2::lock_contended_error().raw_os_error()
@@ -39,6 +36,11 @@ pub fn lock(path: &Path, timeout: Duration) -> Result<File> {
                     return Err(Box::new(LockContended));
                 }
                 return Err(error.into());
+            }
+            // Initialize only while holding the lock. On Windows a contender's
+            // write to the locked byte would fail even if the file is empty.
+            if file.metadata()?.len() == 0 {
+                file.write_all(&[0])?;
             }
             Ok(file)
         })();
