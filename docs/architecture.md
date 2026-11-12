@@ -17,7 +17,7 @@ The owner adopted these decisions for the Split milestones. They describe the ta
 These decisions supersede the following statements, which describe earlier behavior or plans until their implementing tasks update them:
 
 - `README.md`: collection enabled for selected repositories, no eval runner, and the retention periods.
-- `docs/architecture.md`: the prohibition on scanning provider directories and enrichment persisting no transcript content by default.
+- `docs/architecture.md`: the earlier limits on provider-directory reads and retained transcript content. WD-187 adds daemon-only [raw capture](storage.md#raw-capture-store) for hook-named streams and their Claude session files. WD-188 covers broader provider-directory discovery.
 - `docs/storage.md`: restrictions on vendor transcript directories and the statement that diff text is never stored.
 - `ROADMAP.md`: the M2 exclusion of an eval runner and the deferred catalog/eval runner plan.
 

@@ -370,8 +370,56 @@ hour in Watchdog-owned locations. Referenced shared artifacts and recent tempora
 files survive. Incremental vacuum and WAL checkpoint reclaim disk space. A reader
 can delay truncation; admission can remain degraded until it releases its
 snapshot. Cleanup is not forensic erasure of backups, snapshots, or old WAL
-readers. Vendor transcript directories are never recursively scanned or used as
-cleanup targets; WD-009 reads only exact hook-provided files.
+readers. The restrictions on transcript reads described for WD-009 are
+superseded by [Raw capture store](#raw-capture-store). Provider files remain
+outside the scope of cleanup.
+
+## Raw capture store
+
+The daemon writes `<project data>/capture.sqlite3` for projects with
+`capture_content = true`. The separate `events.sqlite3` stays at schema 9.
+Capture uses SQLite WAL, `synchronous=NORMAL`, foreign keys and `secure_delete`.
+The `user_version` is 1. The daemon initializes an empty store. A version mismatch
+reports the found and expected versions. A future schema change will supply the
+one-off `scripts/convert_capture_store.py` before deployment. Version 1 is the
+first capture schema and requires no conversion.
+
+| Table | Key and contents |
+| --- | --- |
+| `streams` | Provider, session, stream and generation identify a source. The row stores the hook session, canonical plain path, origin, optional working directory, head length and SHA-256, decompressed byte offset, record and byte totals, skip totals, UTC timestamps, open or missing state, and last error. |
+| `chunks` | Stream and chunk sequence identify a zstd block of complete records. Each row stores its first record number, record count, raw byte count, codec, and compressed bytes. |
+| `tail` | Stream and record sequence identify an unsealed record without its final LF. |
+| `side_files` | Provider, session, relative path and SHA-256 identify a captured version of a Claude session file. Each row stores its byte count, codec, compressed bytes, and capture time. |
+
+The daemon reads paths named by a hook in the last hour. For a Claude main
+transcript it also reads its session directory. Direct `subagents/agent-<hex>.jsonl`
+files become subagent streams and the other regular files become side files.
+Claude names identify the session and, where present, the subagent. A Codex
+`rollout-<timestamp>-<uuid>.jsonl` or `.jsonl.zst` identifies its own stream UUID.
+The hook session remains available for purging a parent and the streams it named.
+The daemon counts unrecognized filenames in the capture pass.
+
+Capture reads binary lines and stores every byte before the final LF, including
+CR, whitespace and invalid UTF-8. The byte offset advances only through a
+newline. Complete lines above 32 MiB increment the skipped line and byte
+counters, including their newline in the skipped bytes. The first 4 KiB of the
+decompressed stream identify its current generation. A shorter file below the
+saved offset or a changed head starts a new generation and preserves the old one.
+If the plain file disappears, capture continues at the same decompressed offset
+from its `.zst` replacement when the head still matches. If both paths disappear,
+capture marks the stream missing and preserves its records.
+
+Tail records are sealed transactionally into level-12 zstd blocks at a 4 MiB
+target or after 24 hours without growth. A record larger than the target occupies
+one chunk. An idle stream that grows again gets a new tail. The capture pass
+shares a 100 ms scheduling budget per daemon tick, rotating through streams by
+their persisted last-read timestamps. Each read, write, and compression unit
+finishes before the next deadline check. Disk reserve and project quota apply to
+capture admission. A refusal leaves the unread input in the provider file and
+marks the project degraded. Raw capture has no automatic expiry or eviction.
+`purge` removes the selected provider session's capture records, including
+streams named by its hooks. `doctor` reports per-project stream states, captured
+raw bytes, stored payload bytes, skipped lines, and the latest stream errors.
 
 ## Loss diagnostics and degraded state
 
