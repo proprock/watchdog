@@ -154,8 +154,9 @@ def test_scan_registers_nearest_git_ancestor_of_vanished_cwd(scan_config, tmp_pa
     finish_cycle(make_scanner(paths), config, IgnoredRecords(paths.data))
 
     original, registered = load_config(paths.config).projects
-    assert original == project
+    assert original == project.model_copy(update={"alias": project.root.name})
     assert registered.root == repo.resolve()
+    assert registered.alias == repo.name
     ((stream, _),) = captured(paths, registered)
     assert (stream["session_id"], stream["cwd"]) == (session, str(vanished))
 

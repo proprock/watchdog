@@ -54,6 +54,7 @@ def _log(
 def _project_record(project: Project, aliases: dict[UUID, str]) -> dict:
     record = project.model_dump(mode="json")
     record.pop("id")
+    record.pop("alias")
     return {"project": aliases[project.id], **record}
 
 
@@ -145,6 +146,9 @@ def main() -> int:
     relocate = actions.add_parser("relocate")
     relocate.add_argument("project")
     relocate.add_argument("path", type=Path)
+    rename = actions.add_parser("rename", help="Change a project's saved alias")
+    rename.add_argument("project", help="Current alias or UUID")
+    rename.add_argument("alias", help="New alias")
     rules = commands.add_parser("rules", help="List, review, approve and measure decision rules")
     rule_actions = rules.add_subparsers(dest="action", required=True)
     rule_actions.add_parser("list", help="Every rule with its status and firing count")
@@ -383,21 +387,20 @@ def main() -> int:
                     if args.action == "add":
                         project = registry.add(args.path)
                         result = _project_record(project, project_aliases(registry.config.projects))
-                    elif args.action == "relocate":
-                        project = project_for_reference(registry.config.projects, args.project)
-                        if project is None:
-                            raise RegistryError("Unknown project alias or UUID")
-                        relocated = registry.relocate(project.id, args.path)
-                        result = _project_record(
-                            relocated, project_aliases(registry.config.projects)
-                        )
+                        return
+                    project = project_for_reference(registry.config.projects, args.project)
+                    if project is None:
+                        raise RegistryError("Unknown project alias or UUID")
+                    if args.action == "relocate":
+                        updated = registry.relocate(project.id, args.path)
+                    elif args.action == "rename":
+                        updated = registry.rename(project.id, args.alias)
                     else:
-                        project = project_for_reference(registry.config.projects, args.project)
-                        if project is None:
-                            raise RegistryError("Unknown project alias or UUID")
                         alias = project_aliases(registry.config.projects)[project.id]
                         registry.remove(project.id)
                         result = {"removed": alias, "data_deleted": False}
+                        return
+                    result = _project_record(updated, project_aliases(registry.config.projects))
 
                 result = {}
                 daemon.mutate_registry(paths, mutate)

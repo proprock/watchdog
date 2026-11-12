@@ -9,7 +9,14 @@ from pathlib import Path
 from uuid import UUID, uuid4, uuid5
 
 from agent_watchdog._proc import run as _run
-from agent_watchdog.config import Config, ConfigError, Project, same_path
+from agent_watchdog.config import (
+    Config,
+    ConfigError,
+    Project,
+    project_aliases,
+    project_for_reference,
+    same_path,
+)
 from agent_watchdog.ignored import IgnoreReason
 
 
@@ -107,6 +114,17 @@ def discover(path: Path, *, timeout: float = 10) -> Checkout:
 class Registry:
     def __init__(self, config: Config | None = None) -> None:
         self.config = config if config is not None else Config()
+        if any(project.alias is None for project in self.config.projects):
+            aliases = project_aliases(self.config.projects)
+            # Preserve the names visible before the first mutation of a legacy registry.
+            self.config = self.config.model_copy(
+                update={
+                    "projects": tuple(
+                        project.model_copy(update={"alias": aliases[project.id]})
+                        for project in self.config.projects
+                    )
+                }
+            )
 
     def _find(self, checkout: Checkout) -> Project | None:
         for project in self.config.projects:
@@ -161,9 +179,8 @@ class Registry:
             )
         ):
             return "excluded", False
-        project = Project(id=uuid4(), root=root, git_common_dir=checkout.git_common_dir)
         try:
-            self._replace((*self.config.projects, project))
+            project = self._add(checkout)
         except RegistryError as error:
             raise ConfigError("Could not add the checkout to the project configuration") from error
         return self._resolution(checkout, project), True
@@ -185,7 +202,12 @@ class Registry:
             if checkout.git_common_dir is None and not same_path(checkout.root, existing.root):
                 raise RegistryError("Overlapping non-Git project roots")
             return existing
+        return self._add(checkout)
+
+    def _add(self, checkout: Checkout) -> Project:
         project = Project(id=uuid4(), root=checkout.root, git_common_dir=checkout.git_common_dir)
+        alias = project_aliases((*self.config.projects, project))[project.id]
+        project = project.model_copy(update={"alias": alias})
         self._replace((*self.config.projects, project))
         return project
 
@@ -208,13 +230,23 @@ class Registry:
         checkout = discover(path)
         if (project.git_common_dir is None) != (checkout.git_common_dir is None):
             raise RegistryError("Relocation cannot change the project kind")
-        relocated = Project(
-            id=project.id,
-            root=checkout.root,
-            git_common_dir=checkout.git_common_dir,
-            overrides=project.overrides,
+        relocated = project.model_copy(
+            update={"root": checkout.root, "git_common_dir": checkout.git_common_dir},
         )
         self._replace(
             tuple(relocated if item.id == project_id else item for item in self.config.projects)
         )
         return relocated
+
+    def rename(self, project_id: UUID, alias: str) -> Project:
+        project = self._get(project_id)
+        if not alias.strip():
+            raise RegistryError("Project alias must contain a non-whitespace character")
+        other_projects = (item for item in self.config.projects if item.id != project_id)
+        if project_for_reference(other_projects, alias) is not None:
+            raise RegistryError(f"Project alias {alias!r} is already in use")
+        renamed = project.model_copy(update={"alias": alias})
+        self._replace(
+            tuple(renamed if item.id == project_id else item for item in self.config.projects)
+        )
+        return renamed

@@ -2,6 +2,8 @@
 
 Historical records only: one line per task. The full text of every entry, including its verification, is in [done-archive.md](docs/evidence/done-archive.md). Active work belongs in [TODO.md](TODO.md). Preserve task IDs when moving entries here.
 
+- [x] **WD-216 - Preserve registered project aliases (2026-11-12).** Removal and relocation preserve saved aliases. The explicit rename command changes a project's alias, and migration retained all 15 aliases in the installed registry. [Evidence](docs/evidence/wd216.md).
+
 - [x] **WD-189 - Read contract v1 for Watchdog stores (2026-11-12).** The installed daemon published manifests for 15 stores, and the read API opened both databases in every store. The root and insights suites passed. [Evidence](docs/evidence/wd189.md).
 
 - [x] **WD-212 - Fix concurrent daemon control replacement on Windows (2026-11-12).** Pause can atomically replace `control.json` while a reader shares delete access. The full suite and the installed daemon pause and restart passed. [Evidence](docs/evidence/wd212.md).

@@ -100,6 +100,7 @@ class Overrides(StrictModel):
 class Project(StrictModel):
     id: UUID
     root: Path
+    alias: Annotated[str, Field(min_length=1)] | None = None
     git_common_dir: Path | None = None
     overrides: Overrides = Field(default_factory=Overrides)
 
@@ -112,10 +113,14 @@ class Project(StrictModel):
 
 
 def project_aliases(projects: Iterable[Project]) -> dict[UUID, str]:
-    """Derive stable-in-config-order CLI aliases without changing stored identities."""
+    """Use saved aliases and assign missing ones in registration order."""
+    registered = tuple(projects)
     aliases: dict[UUID, str] = {}
-    used: set[str] = set()
-    for project in projects:
+    used = {project.alias for project in registered if project.alias is not None}
+    for project in registered:
+        if project.alias is not None:
+            aliases[project.id] = project.alias
+            continue
         base = project.root.name or project.root.drive.removesuffix(":") or "project"
         alias = base
         suffix = 2
@@ -225,6 +230,9 @@ class Config(Versioned):
 
     @model_validator(mode="after")
     def unique_projects(self) -> Self:
+        aliases = [project.alias for project in self.projects if project.alias is not None]
+        if len(aliases) != len(set(aliases)):
+            raise ValueError("Duplicate project alias")
         for index, project in enumerate(self.projects):
             project.overrides.apply(self.defaults)
             for other in self.projects[:index]:

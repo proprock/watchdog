@@ -22,7 +22,7 @@ manifest atomically and updates it during a project visit when its metadata chan
 | `project_id` | Registered project UUID string |
 | `root` | Registered absolute checkout path |
 | `git_common_dir` | Absolute Git common directory or `null` |
-| `name` | Project alias |
+| `name` | Saved project alias, updated after an explicit rename |
 | `events_schema`, `capture_schema` | SQLite `user_version` for the respective database |
 | `written_at` | ISO 8601 timestamp in UTC of the most recent manifest write |
 

@@ -89,6 +89,7 @@ insights_llm_enabled = true
 # [[projects]]
 # id = "00000000-0000-0000-0000-000000000000"
 # root = "C:/path/to/project"
+# alias = "project"  # Saved when registered. Change with `project rename`.
 #
 # Optional per-project overrides go under the project:
 # [projects.overrides]

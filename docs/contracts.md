@@ -106,6 +106,13 @@ directory. These restrictions apply only to automatic registration. Use
 `agent-watchdog project add` to register a directory explicitly, including a non-Git
 directory.
 
+Registration saves a case-sensitive `alias` in the project entry. The initial
+alias is based on the directory name, with a numeric suffix when the name is in
+use. Removing another project or relocating the checkout preserves the saved
+alias. Run `agent-watchdog project rename <alias-or-uuid> <new-alias>` to change
+it. The new alias must be unique in the registry. Older configurations without
+aliases retain their current names on the first registry write.
+
 Automatically registered projects inherit `config.defaults`, including the
 default rule settings. A busy control lock or configuration error during
 registration leaves the record queued for the next daemon tick.
