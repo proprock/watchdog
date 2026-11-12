@@ -201,7 +201,9 @@ def test_capture_budget_resumes_next_stream(store, tmp_path):
         name_source(store, path)
     for second in (0, 1):
         ticks = iter([0, 0.01])
-        result = run(store, clock=lambda: next(ticks, 0.11), now=NOW + timedelta(seconds=second))
+        result = run(
+            store, clock=lambda ticks=ticks: next(ticks, 0.11), now=NOW + timedelta(seconds=second)
+        )
         assert result.pending
         assert len(captured(store)) == second + 1
 
