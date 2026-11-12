@@ -57,6 +57,16 @@ def pytest_unconfigure(config):
         _original_popen_init = None
 
 
+@pytest.fixture(scope="session", autouse=True)
+def _isolate_provider_settings(tmp_path_factory):
+    """Keep actual provider settings out of in-process and daemon test stores."""
+    root = tmp_path_factory.mktemp("provider-settings")
+    with pytest.MonkeyPatch.context() as patch:
+        patch.setenv("CODEX_HOME", str(root / "codex"))
+        patch.setenv("CLAUDE_CONFIG_DIR", str(root / "claude"))
+        yield
+
+
 @pytest.fixture(autouse=True)
 def _keep_runner_priority():
     """In-process CLI calls must not lower the priority of the pytest process itself.

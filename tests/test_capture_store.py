@@ -1,11 +1,22 @@
+from __future__ import annotations
+
+import json
 import sqlite3
+from compression import zstd
+from dataclasses import replace
+from hashlib import sha256
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import pytest
 
 from agent_watchdog.storage import StorageError
 
+if TYPE_CHECKING:
+    from agent_watchdog.capture_store import SessionEnvironment
+
 _NOW = "2026-11-12T12:00:00+00:00"
+_LATER = "2026-11-12T12:00:01+00:00"
 
 
 def _add_stream(
@@ -47,7 +58,7 @@ def test_create_and_reopen_capture_store(tmp_path: Path) -> None:
     path = tmp_path / CAPTURE_FILENAME
     assert path.name == "capture.sqlite3"
     with CaptureStore(path).connect() as db:
-        assert db.execute("PRAGMA user_version").fetchone()[0] == 1
+        assert db.execute("PRAGMA user_version").fetchone()[0] == 2
         assert db.execute("PRAGMA journal_mode").fetchone()[0] == "wal"
         assert db.execute("PRAGMA synchronous").fetchone()[0] == 1
         assert db.execute("PRAGMA foreign_keys").fetchone()[0] == 1
@@ -60,7 +71,7 @@ def test_create_and_reopen_capture_store(tmp_path: Path) -> None:
         assert row["session_id"] == "session"
 
 
-@pytest.mark.parametrize("version", [0, 7])
+@pytest.mark.parametrize("version", [0, 1, 7])
 def test_reject_unsupported_capture_schema(tmp_path: Path, version: int) -> None:
     from agent_watchdog.capture_store import CaptureStore
 
@@ -72,7 +83,7 @@ def test_reject_unsupported_capture_schema(tmp_path: Path, version: int) -> None
     db.close()
 
     with (
-        pytest.raises(StorageError, match=rf"version {version}.*expected 1.*convert_capture_store"),
+        pytest.raises(StorageError, match=rf"version {version}.*expected 2.*docs/storage.md"),
         CaptureStore(path).connect(),
     ):
         pytest.fail("Opening an unsupported capture schema must fail")
@@ -206,3 +217,129 @@ def test_stats_counts_stream_states_and_payload_sizes(tmp_path: Path) -> None:
         "skipped_lines": 2,
         "last_errors": ["read failed"],
     }
+
+
+def _session_environment(file_digest: str) -> SessionEnvironment:
+    from agent_watchdog.capture_store import SessionEnvironment
+
+    return SessionEnvironment(
+        provider="codex",
+        session_id="session",
+        captured_at=_NOW,
+        cwd="checkout/subdir",
+        checkout_id="checkout-id",
+        head="a" * 40,
+        branch="feature/capture",
+        harness={"model": "test-model"},
+        files=[{"path": "AGENTS.md", "role": "instructions", "digest": file_digest, "error": None}],
+        watchdog={"global_kill_switch": True},
+    )
+
+
+@pytest.mark.parametrize("capture_content", [True, False])
+def test_record_session_environment(tmp_path: Path, capture_content: bool) -> None:
+    from agent_watchdog.capture_store import CaptureStore
+
+    store = CaptureStore(tmp_path / "capture.sqlite3")
+    instructions = b"Synthetic instructions\n"
+    patch = b"diff --git a/file b/file\n"
+    file_digest = sha256(instructions).hexdigest()
+    patch_digest = sha256(patch).hexdigest()
+    snapshot = replace(_session_environment(file_digest), initial_diff_digest=patch_digest)
+    payloads = {file_digest: instructions, patch_digest: patch}
+
+    assert store.record_session_env(snapshot, payloads, capture_content=capture_content)
+
+    with store.connect() as db:
+        row = db.execute("SELECT * FROM session_env").fetchone()
+        for field in (
+            "provider",
+            "session_id",
+            "captured_at",
+            "cwd",
+            "checkout_id",
+            "head",
+            "branch",
+            "initial_diff_digest",
+            "initial_diff_error",
+        ):
+            assert row[field] == getattr(snapshot, field)
+        for field in ("harness", "files", "watchdog"):
+            assert json.loads(row[field]) == getattr(snapshot, field)
+        blobs = db.execute("SELECT digest, raw_bytes, codec, data FROM blobs").fetchall()
+
+    if capture_content:
+        assert {row["digest"] for row in blobs} == payloads.keys()
+        for digest, raw_bytes, codec, data in blobs:
+            assert (raw_bytes, codec, zstd.decompress(data)) == (
+                len(payloads[digest]),
+                "zstd",
+                payloads[digest],
+            )
+    else:
+        assert blobs == []
+
+
+def test_equal_environment_keeps_only_one_snapshot(tmp_path: Path) -> None:
+    from agent_watchdog.capture_store import CaptureStore
+
+    store = CaptureStore(tmp_path / "capture.sqlite3")
+    instructions = b"Synthetic instructions\n"
+    digest = sha256(instructions).hexdigest()
+    snapshot = _session_environment(digest)
+    payloads = {digest: instructions}
+
+    assert store.record_session_env(snapshot, payloads, capture_content=True)
+    assert not store.record_session_env(
+        replace(snapshot, captured_at=_LATER), payloads, capture_content=True
+    )
+
+    with store.connect() as db:
+        assert [row[0] for row in db.execute("SELECT captured_at FROM session_env")] == [_NOW]
+        assert db.execute("SELECT COUNT(*) FROM blobs").fetchone()[0] == 1
+
+
+def test_snapshot_respects_quota_and_retains_digests(tmp_path: Path, monkeypatch) -> None:
+    from agent_watchdog.capture_store import CaptureStore
+
+    instructions = b"instructions"
+    digest = sha256(instructions).hexdigest()
+    snapshot = _session_environment(digest)
+    monkeypatch.setattr("agent_watchdog.resources.available", lambda *_: 72 * 1024)
+    store = CaptureStore(tmp_path / "capture.sqlite3")
+    assert store.record_session_env(snapshot, {digest: instructions}, capture_content=True)
+    with store.connect(write=False) as db:
+        (files,) = db.execute("SELECT files FROM session_env").fetchone()
+        assert json.loads(files)[0]["digest"] == digest
+        assert json.loads(files)[0]["error"] == "quota"
+        assert db.execute("SELECT count(*) FROM blobs").fetchone()[0] == 0
+
+
+def test_purge_session_environment_retains_blobs_referenced_by_other_sessions(
+    tmp_path: Path,
+) -> None:
+    from agent_watchdog.capture_store import CaptureStore
+
+    store = CaptureStore(tmp_path / "capture.sqlite3")
+    instructions = b"Shared payload\n"
+    patch = b"Unshared patch\n"
+    shared_digest = sha256(instructions).hexdigest()
+    patch_digest = sha256(patch).hexdigest()
+    snapshot = replace(_session_environment(shared_digest), initial_diff_digest=patch_digest)
+    other = replace(snapshot, provider="claude", files=[], initial_diff_digest=shared_digest)
+
+    assert store.record_session_env(
+        snapshot, {shared_digest: instructions, patch_digest: patch}, capture_content=True
+    )
+    assert store.record_session_env(other, {shared_digest: instructions}, capture_content=True)
+    store.purge("codex", snapshot.session_id)
+
+    with store.connect() as db:
+        assert [row[0] for row in db.execute("SELECT provider FROM session_env")] == ["claude"]
+        assert [row[0] for row in db.execute("SELECT digest FROM blobs")] == [shared_digest]
+
+    store.purge("claude", other.session_id)
+
+    with store.connect() as db:
+        assert db.execute("SELECT COUNT(*) FROM session_env").fetchone()[0] == 0
+        assert db.execute("SELECT COUNT(*) FROM blobs").fetchone()[0] == 0

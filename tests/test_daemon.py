@@ -100,6 +100,75 @@ def test_spool_record_is_resolved_built_and_admitted(paths, tmp_path):
     assert not (paths.project_data(project.id) / "inbox").exists()
 
 
+@pytest.mark.parametrize("capture_content", [True, False])
+def test_session_environment_captures_initial_working_copy(
+    paths, tmp_path, monkeypatch, capture_content
+):
+    from compression import zstd
+
+    from agent_watchdog.capture_store import CaptureStore
+
+    codex_home = tmp_path / "codex-home"
+    codex_home.mkdir()
+    monkeypatch.setenv("CODEX_HOME", str(codex_home))
+    root = tmp_path / "repo"
+    root.mkdir()
+
+    def git(*args):
+        return subprocess.run(
+            ["git", "-C", str(root), *args], check=True, capture_output=True
+        ).stdout
+
+    git("init")
+    (root / "file.txt").write_text("base\n", encoding="utf-8")
+    git("add", "file.txt")
+    git("-c", "user.name=Test", "-c", "user.email=test@example.invalid", "commit", "-qm", "base")
+    (root / "file.txt").write_text("initial edit\n", encoding="utf-8")
+    (root / "AGENTS.md").write_text("@rules.md\n", encoding="utf-8")
+    (root / "rules.md").write_text("local instructions\n", encoding="utf-8")
+    settings_bytes = b'api_key = "test-secret"\r\n[env]\r\nNAME = "test-env"\r\n'
+    (codex_home / "config.toml").write_bytes(settings_bytes)
+    cwd = root / "nested"
+    cwd.mkdir()
+    mutate_registry(paths, lambda registry: registry.add(root))
+    config = load_config(paths.config)
+    config = config.model_copy(update={"defaults": Limits(capture_content=capture_content)})
+
+    def observe(hook, **fields):
+        write_spool_record(
+            paths, spool_record(cwd, hook_event_name=hook, session_id="s1", **fields)
+        )
+        assert _drain_spool(paths, config)
+
+    observe("UserPromptSubmit", prompt="hello", model="example-model")
+    (root / "file.txt").write_text("later edit\n", encoding="utf-8")
+    observe("SessionStart", model="example-model", source="resume", permission_mode="default")
+    observe("SessionStart", model="example-model", source="resume", permission_mode="default")
+    store = CaptureStore(paths.project_data(config.projects[0].id) / "capture.sqlite3")
+    with store.connect(write=False) as db:
+        first, resumed = db.execute("SELECT * FROM session_env ORDER BY captured_at").fetchall()
+        assert Path(first["cwd"]) == cwd
+        assert first["head"] == git("rev-parse", "HEAD").decode().strip()
+        assert first["branch"] == git("symbolic-ref", "--short", "HEAD").decode().strip()
+        assert first["checkout_id"]
+        assert json.loads(first["harness"])["model"] == "example-model"
+        assert json.loads(resumed["harness"])["source"] == "resume"
+        assert json.loads(first["watchdog"])["limits"]["capture_content"] is capture_content
+        files = {Path(item["path"]).name: item for item in json.loads(first["files"])}
+        assert files["rules.md"]["digest"]
+        assert resumed["initial_diff_digest"] is None
+        assert first["initial_diff_digest"]
+        blobs = {
+            row["digest"]: zstd.decompress(row["data"]) for row in db.execute("SELECT * FROM blobs")
+        }
+        if capture_content:
+            assert b"+initial edit" in blobs[first["initial_diff_digest"]]
+            assert b"later edit" not in blobs[first["initial_diff_digest"]]
+            assert blobs[files["config.toml"]["digest"]] == settings_bytes
+        else:
+            assert not blobs
+
+
 def test_spool_drain_preserves_enabled_delivery_trace_and_disabled_omits_it(paths, tmp_path):
     root = tmp_path / "project"
     root.mkdir()
@@ -1497,7 +1566,7 @@ def test_daemon_writes_and_refreshes_store_manifest(paths, tmp_path):
         "git_common_dir": None,
         "name": "original",
         "events_schema": 9,
-        "capture_schema": 1,
+        "capture_schema": 2,
         "written_at": first["written_at"],
     }
     assert datetime.fromisoformat(first["written_at"]).utcoffset() == timedelta(0)
@@ -2047,10 +2116,20 @@ def test_daemon_captures_a_hook_named_transcript(paths, tmp_path):
     )
     raw = CaptureStore(paths.project_data(project.id) / CAPTURE_FILENAME)
     start(paths)
-    wait_for(lambda: raw.stats()["raw_bytes"] == 5)
+
+    def transcript_ready():
+        if not raw.path.is_file():
+            return False
+        with raw.connect(write=False) as db:
+            return db.execute(
+                "SELECT 1 FROM streams WHERE session_id = ? AND raw_bytes = 5", (session,)
+            ).fetchone() is not None
+
+    wait_for(transcript_ready)
     with raw.connect(write=False) as db:
-        row = db.execute("SELECT stream_pk, session_id FROM streams").fetchone()
+        row = db.execute("SELECT stream_pk, session_id, raw_bytes FROM streams").fetchone()
         assert row["session_id"] == session
+        assert row["raw_bytes"] == 5
         assert (
             b"".join(line + b"\n" for line in iter_lines(db, row["stream_pk"])) == path.read_bytes()
         )
