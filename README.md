@@ -18,7 +18,7 @@ A local external observer, and through approved [rules](docs/rules.md) a control
 
 ## Development
 
-Python 3.12+, uv, and Rust stable with the platform linker/build tools. The commands are identical in PowerShell and POSIX shells:
+Python 3.14+, uv, and Rust stable with the platform linker/build tools. The commands are identical in PowerShell and POSIX shells:
 
 ```console
 uv sync --locked

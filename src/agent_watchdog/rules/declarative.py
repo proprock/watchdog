@@ -244,7 +244,7 @@ def parse_rule(text: str) -> DeclarativeRule:
         )
     except ValidationError as error:
         raise RuleError(_summary(error)) from None
-    except (tomllib.TOMLDecodeError, ValueError, TypeError, RecursionError):
+    except tomllib.TOMLDecodeError, ValueError, TypeError, RecursionError:
         raise RuleError("The rule file is not valid TOML") from None
 
 

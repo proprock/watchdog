@@ -146,7 +146,7 @@ def relay_adapter(payload: dict[str, object], adapter: Path, paths: UserPaths, l
     )
     try:
         response = json.loads(result.stdout)
-    except (json.JSONDecodeError, UnicodeDecodeError):
+    except json.JSONDecodeError, UnicodeDecodeError:
         response = {}
     with log.open("a", encoding="utf-8", newline="\n") as stream:
         stream.write(
@@ -171,7 +171,7 @@ def readback(paths: UserPaths) -> dict[str, int]:
     for path in spool_files:
         try:
             item = json.loads(path.read_text(encoding="utf-8"))
-        except (OSError, ValueError):
+        except OSError, ValueError:
             continue
         hook = item.get("input")
         if (
@@ -228,7 +228,7 @@ def main() -> int:
         if not isinstance(payload, dict):
             raise ValueError("invalid callback")
         sys.stdout.buffer.write(relay_adapter(payload, args.adapter, paths, args.log))
-    except (OSError, ValueError, subprocess.SubprocessError):
+    except OSError, ValueError, subprocess.SubprocessError:
         # A failed observer must never stop the provider.
         sys.stdout.buffer.write(b"{}\n")
     return 0

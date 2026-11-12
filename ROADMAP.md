@@ -149,6 +149,6 @@ Deferred compatibility work in the final milestone, not a dependency of M0-M4 or
 
 - Implement through feature branches and task-scoped commits. Installing the Python package never changes harness configuration: connection is a separate explicit command.
 - Unit/contract/integration tests run offline; live vendor smoke tests are a separate manual procedure with sanitized results.
-- CI: Windows/macOS/Linux, minimum Python 3.12 plus 3.13 on Linux. Claim newer Python support only after testing. Record actually verified versions at each milestone. Retain the existing CI matrix as early feedback; dedicated macOS/Linux host access and live compatibility acceptance belong to M5 / WD-019.
+- CI runs on Windows, macOS, and Linux with Python 3.14. Claim newer Python support only after testing. Record verified versions at each milestone. Dedicated macOS/Linux host access and live compatibility acceptance belong to M5 / WD-019.
 - Storage upgrades: versioned migrations and recovery tests; installer upgrade/uninstall preserves existing configuration. Do not leave test-owned daemons running.
 - M3-M5 intentionally include research/decision gates: these are future milestones, not permission to silently choose control or LLM policy.

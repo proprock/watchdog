@@ -246,7 +246,7 @@ def child_context(
                 return "", ["Parent used another tool; hook-token source is not isolated."]
             try:
                 arguments = json.loads(payload.get("arguments", ""))
-            except (TypeError, ValueError):
+            except TypeError, ValueError:
                 arguments = None
             tasks.append(arguments.get("message") if isinstance(arguments, dict) else None)
     if tasks != [SUBAGENT_TASK]:
@@ -669,7 +669,7 @@ def main() -> int:
         try:
             payload, _ = probes._read_hook_input()
             print(json.dumps(respond(args.root, payload)))
-        except (OSError, ValueError, TypeError, KeyError):
+        except OSError, ValueError, TypeError, KeyError:
             print("{}")
         return 0
     if args.action == "prepare":

@@ -324,7 +324,7 @@ def test_claude_symlink_target_is_refused(paths, tmp_path):
     link = tmp_path / "settings.json"
     try:
         link.symlink_to(real)
-    except (OSError, NotImplementedError):
+    except OSError, NotImplementedError:
         pytest.skip("symlinks unavailable")
     with pytest.raises(ValueError):
         change(link, paths, install=True, apply=True, provider="claude")

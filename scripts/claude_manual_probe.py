@@ -270,7 +270,7 @@ def _same_directory(left: Path, right: Path) -> bool:
     try:
         left_path = _safe_target(left)
         right_path = _safe_target(right)
-    except (OSError, ValueError):
+    except OSError, ValueError:
         return False
     return os.path.normcase(str(left_path)) == os.path.normcase(str(right_path))
 
@@ -338,7 +338,7 @@ def handle(directory: Path, case_name: str) -> int:
             {"case": case_name, "event": event, "input": payload, "output": response},
         )
         print(json.dumps(response, sort_keys=True))
-    except (OSError, KeyError, TypeError, ValueError):
+    except OSError, KeyError, TypeError, ValueError:
         try:
             if log is not None:
                 _append_log(log, {"case": case_name, "error": "handler_error"})
@@ -497,7 +497,7 @@ def _binding_issue(
     try:
         prepared_at = datetime.fromisoformat(created_at.replace("Z", "+00:00")).timestamp()
         transcript_mtime = transcript.stat().st_mtime
-    except (OSError, ValueError):
+    except OSError, ValueError:
         return "transcript timestamp could not be verified against case preparation"
     if transcript_mtime < prepared_at:
         return "transcript predates case preparation"
@@ -619,7 +619,7 @@ def _baseline_issue(path: Path | None, version: str, binding: Mapping[str, str])
         return "a supported baseline record is required to classify the interactive ask case"
     try:
         record = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError):
+    except OSError, json.JSONDecodeError:
         return "the linked baseline record could not be read"
     if not isinstance(record, dict):
         return "the linked baseline record is not an object"

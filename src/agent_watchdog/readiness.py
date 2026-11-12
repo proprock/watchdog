@@ -215,7 +215,7 @@ def _published_schema(paths: UserPaths) -> int | None:
         with (paths.data / "policy" / "socket.json").open("rb") as stream:
             raw = stream.read(_DISCOVERY_BYTES + 1)
         schema = json.loads(raw)["schema_version"] if len(raw) <= _DISCOVERY_BYTES else None
-    except (OSError, ValueError, KeyError, TypeError):
+    except OSError, ValueError, KeyError, TypeError:
         return None
     return schema if type(schema) is int else None
 
@@ -370,7 +370,7 @@ def _admitted(paths: UserPaths, project: Project, marker: str) -> bool:
                 db.execute("SELECT 1 FROM events WHERE session_id=?", (marker,)).fetchone()
                 is not None
             )
-    except (StorageError, OSError, ValueError, sqlite3.Error):
+    except StorageError, OSError, ValueError, sqlite3.Error:
         return False  # Not created yet, or briefly locked: keep polling.
 
 
@@ -398,7 +398,7 @@ def _probe(
     def losses() -> dict | None:
         try:
             return resources.losses(paths.data)
-        except (OSError, ValueError):
+        except OSError, ValueError:
             return None
 
     before = losses()
@@ -469,7 +469,7 @@ def _probe(
             }
         )
         cleanup, action = "purged", None
-    except (StorageError, OSError, ValueError):
+    except StorageError, OSError, ValueError:
         cleanup = "purge_failed"
         action = f"Run `agent-watchdog purge {marker} --provider {provider}` to remove the probe."
     return spool_stage, _stage("ready", action, cleanup=cleanup, **synthetic)
@@ -495,7 +495,7 @@ def check(
     try:
         report = daemon.status(paths)
         state = str(report.get("state", "unavailable"))
-    except (OSError, ValueError):
+    except OSError, ValueError:
         report, state = {}, "unknown"
     ready = hook["state"] == "ready" and project_stage["state"] == "ready"
     passive = _delivery(state, report, ready)

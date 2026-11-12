@@ -111,7 +111,7 @@ def main() -> None:
         temporary = args.output / f"{uuid.uuid4().hex}.tmp"
         temporary.write_text(json.dumps(summary), encoding="utf-8")
         temporary.replace(temporary.with_suffix(".json"))
-    except (OSError, ValueError, TypeError, RecursionError):
+    except OSError, ValueError, TypeError, RecursionError:
         pass
     finally:
         if args.json_noop:

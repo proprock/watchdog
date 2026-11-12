@@ -371,7 +371,7 @@ def parse_claude_lines(
     for raw in lines:
         try:
             obj = json.loads(raw)
-        except (json.JSONDecodeError, UnicodeDecodeError):
+        except json.JSONDecodeError, UnicodeDecodeError:
             chunk.warnings += 1
             continue
         if not isinstance(obj, dict):

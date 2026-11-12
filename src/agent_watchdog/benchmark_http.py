@@ -29,7 +29,7 @@ def benchmark_http_server(
                 payload = self.rfile.read(length)
                 if len(payload) == length:
                     answer(payload, self.send_decision)
-            except (OSError, ValueError):
+            except OSError, ValueError:
                 return
             finally:
                 self.close_connection = True

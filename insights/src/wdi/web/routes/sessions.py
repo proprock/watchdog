@@ -41,7 +41,7 @@ def _shape_analyses(rows: list[sqlite3.Row]) -> list[dict[str, object]]:
     for row in rows:
         try:
             data = json.loads(row["result"])
-        except (json.JSONDecodeError, TypeError):
+        except json.JSONDecodeError, TypeError:
             data = {}
         if not isinstance(data, dict):
             data = {}

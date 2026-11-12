@@ -95,7 +95,7 @@ def demote(paths: UserPaths, profile: str, *, evidence: str) -> None:
     with _lock:
         try:
             profiles = _record(paths)
-        except (OSError, ValueError):
+        except OSError, ValueError:
             profiles = {}
         profiles[profile] = {"demoted_at": datetime.now(UTC).isoformat(), "evidence": evidence}
         atomic_write(
@@ -119,7 +119,7 @@ def is_demoted(paths: UserPaths, profile: str) -> bool:
         if cached is None or cached[0] != mtime:
             try:
                 names: frozenset[str] | None = frozenset(_record(paths))
-            except (OSError, ValueError):
+            except OSError, ValueError:
                 names = None
             cached = _cache[file] = (mtime, names)
     return cached[1] is None or profile in cached[1]

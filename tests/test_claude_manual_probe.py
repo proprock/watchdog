@@ -3,8 +3,10 @@
 import hashlib
 import importlib.util
 import json
+import os
 import sys
 from copy import deepcopy
+from datetime import datetime
 from pathlib import Path
 
 import pytest
@@ -155,7 +157,16 @@ def test_prepare_refuses_reparse_path(tmp_path, monkeypatch):
         manual_probe.prepare(link / "scratch", "baseline")
 
 
-def _completed_transcript(path: Path, *, denied: bool = True, session: str = "bound") -> None:
+def _mark_transcript_after_preparation(scratch: Path, transcript: Path) -> None:
+    manifest = json.loads((scratch / manual_probe.MANIFEST_RELATIVE).read_text(encoding="utf-8"))
+    # On Windows a new file can get the same coarse timestamp as the manifest file.
+    modified = datetime.fromisoformat(manifest["created_at"]).timestamp() + 1
+    os.utime(transcript, (modified, modified))
+
+
+def _completed_transcript(
+    scratch: Path, path: Path, *, denied: bool = True, session: str = "bound"
+) -> None:
     entries = [
         {"type": "user", "sessionId": session, "message": {"content": "the user prompt"}},
         {
@@ -181,6 +192,7 @@ def _completed_transcript(path: Path, *, denied: bool = True, session: str = "bo
         },
     ]
     path.write_text("\n".join(json.dumps(entry) for entry in entries), encoding="utf-8")
+    _mark_transcript_after_preparation(scratch, path)
 
 
 def _write_hook_log(scratch: Path, transcript: Path, session: str, events: list[str]) -> None:
@@ -218,7 +230,7 @@ def test_collect_binds_callbacks_to_session_and_requires_transcript_deny_readbac
     scratch = tmp_path / "ask"
     manual_probe.prepare(scratch, "pre-tool-ask")
     transcript = tmp_path / "session.jsonl"
-    _completed_transcript(transcript)
+    _completed_transcript(scratch, transcript)
     log = scratch / manual_probe.LOG_RELATIVE
     log.write_text(
         "\n".join(
@@ -282,7 +294,9 @@ def test_matching_supported_baseline_is_required_and_allows_ask_classification(
     baseline_dir = tmp_path / "baseline"
     manual_probe.prepare(baseline_dir, "baseline")
     baseline_transcript = tmp_path / "baseline-session.jsonl"
-    _completed_transcript(baseline_transcript, denied=False, session="baseline-session")
+    _completed_transcript(
+        baseline_dir, baseline_transcript, denied=False, session="baseline-session"
+    )
     _write_hook_log(
         baseline_dir,
         baseline_transcript,
@@ -296,7 +310,7 @@ def test_matching_supported_baseline_is_required_and_allows_ask_classification(
     ask_dir = tmp_path / "ask"
     manual_probe.prepare(ask_dir, "pre-tool-ask")
     ask_transcript = tmp_path / "ask-session.jsonl"
-    _completed_transcript(ask_transcript, session="ask-session")
+    _completed_transcript(ask_dir, ask_transcript, session="ask-session")
     _write_hook_log(
         ask_dir,
         ask_transcript,
@@ -325,7 +339,7 @@ def test_modified_settings_are_preserved_and_make_collection_inconclusive(tmp_pa
     scratch = tmp_path / "baseline"
     manual_probe.prepare(scratch, "baseline")
     transcript = tmp_path / "session.jsonl"
-    _completed_transcript(transcript, denied=False, session="s1")
+    _completed_transcript(scratch, transcript, denied=False, session="s1")
     _write_hook_log(scratch, transcript, "s1", ["UserPromptSubmit", "PreToolUse", "PostToolUse"])
     (scratch / live_probe.SENTINEL).write_text("WD139_PERMISSION", encoding="utf-8")
     settings = scratch / ".claude" / "settings.local.json"
@@ -351,6 +365,7 @@ def test_collection_integrity_defects_never_claim_support(tmp_path, monkeypatch,
     manual_probe.prepare(scratch, "baseline")
     transcript = tmp_path / "session.jsonl"
     _completed_transcript(
+        scratch,
         transcript,
         denied=False,
         session="elsewhere" if defect == "transcript-session" else "s1",
@@ -366,8 +381,6 @@ def test_collection_integrity_defects_never_claim_support(tmp_path, monkeypatch,
         rows[1]["input"]["cwd"] = str(tmp_path / "elsewhere")
         log.write_text("\n".join(json.dumps(row) for row in rows), encoding="utf-8")
     elif defect == "old-transcript":
-        import os
-
         os.utime(transcript, (1, 1))
     (scratch / live_probe.SENTINEL).write_text("WD139_PERMISSION", encoding="utf-8")
 
@@ -654,6 +667,7 @@ def test_absent_notification_callback_is_never_supported(tmp_path, monkeypatch):
         ),
         encoding="utf-8",
     )
+    _mark_transcript_after_preparation(scratch, transcript)
     (scratch / manual_probe.LOG_RELATIVE).write_text(
         json.dumps(
             {
@@ -680,7 +694,7 @@ def test_record_ids_are_unique_for_same_case_and_day(tmp_path, monkeypatch):
         scratch = tmp_path / f"notification-{index}"
         manual_probe.prepare(scratch, "notification")
         transcript = tmp_path / f"notification-{index}.jsonl"
-        _completed_transcript(transcript, session=f"session-{index}")
+        _completed_transcript(scratch, transcript, session=f"session-{index}")
         _write_hook_log(scratch, transcript, f"session-{index}", ["UserPromptSubmit"])
         ids.append(manual_probe.collect(scratch, version="2.1.300")["record"]["record_id"])
 

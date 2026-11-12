@@ -74,7 +74,7 @@ class SessionState:
         return json.dumps(asdict(self), sort_keys=True, separators=(",", ":"))
 
     @classmethod
-    def from_json(cls, document: str) -> "SessionState":
+    def from_json(cls, document: str) -> SessionState:
         data: dict[str, Any] = json.loads(document)
         data["last_signatures"] = tuple(Signature(**item) for item in data["last_signatures"])
         return cls(**data)

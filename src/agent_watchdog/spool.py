@@ -97,7 +97,7 @@ class Spool:
                             path.unlink()
                     except FileNotFoundError:
                         pass
-        except (OSError, StorageError):
+        except OSError, StorageError:
             return True
         finally:
             budget.remaining = max(0.0, budget.remaining - (time.monotonic() - started))
@@ -186,7 +186,7 @@ class Spool:
         """Return the cumulative record-schema mismatch report, or None if never observed."""
         try:
             document = json.loads((self.root / MISMATCH_FILE).read_bytes())
-        except (OSError, ValueError):
+        except OSError, ValueError:
             return None
         if (
             not isinstance(document, dict)

@@ -31,7 +31,7 @@ class PreparedQueue(Spool):
                     if event.project_id != store.project_id:
                         raise RejectedEvent("Event belongs to another project")
                     pending.append((path, event))
-                except (KeyError, ValidationError, RejectedEvent):
+                except KeyError, ValidationError, RejectedEvent:
                     self.quarantine(path, result)
             self.commit(store, pending, result)
             if deadline is not None and time.monotonic() >= deadline:

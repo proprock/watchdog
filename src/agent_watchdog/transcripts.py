@@ -278,7 +278,7 @@ def _meta_record(record: object, session_id: str, agent_id: str | None) -> None:
         raise UnsupportedTranscript("session_meta_version_missing")
 
 
-def _gap(store: "Store", source: dict[str, object], reason: str, signature: str) -> None:
+def _gap(store: Store, source: dict[str, object], reason: str, signature: str) -> None:
     provider = str(source.get("provider") or "codex")
     reader = CLAUDE_READER if provider == "claude" else READER
     session_id, _ = _split_subagent(source)
@@ -333,7 +333,7 @@ def _delta(
 
 
 def _usage_event(
-    store: "Store",
+    store: Store,
     source: dict[str, object],
     record: dict[str, Any],
     counters: dict[str, int | None],
@@ -382,7 +382,7 @@ def _occurred_at(value: object) -> datetime | None:
 
 
 def _attribution_event(
-    store: "Store", source: dict[str, object], record: dict[str, Any], version: str
+    store: Store, source: dict[str, object], record: dict[str, Any], version: str
 ) -> Envelope | None:
     if record.get("type") != "turn_context" or not isinstance(record.get("payload"), dict):
         return None
@@ -428,7 +428,7 @@ def _attribution_event(
     )
 
 
-def _put_tool_observation(store: "Store", event: Envelope) -> bool:
+def _put_tool_observation(store: Store, event: Envelope) -> bool:
     # A replay has a new receipt time, but is still the same native observation.
     # Receipts survive content expiry, so expired raw content is not resurrected.
     if store.connection.execute(
@@ -438,7 +438,7 @@ def _put_tool_observation(store: "Store", event: Envelope) -> bool:
     return store.put(event)
 
 
-def _tool_gap(store: "Store", source: dict[str, object], version: str) -> None:
+def _tool_gap(store: Store, source: dict[str, object], version: str) -> None:
     agent_id = _rollout_agent(source)
     event_id = uuid5(
         NAMESPACE_URL,
@@ -463,7 +463,7 @@ def _tool_gap(store: "Store", source: dict[str, object], version: str) -> None:
 
 
 def _tool_event(
-    store: "Store", source: dict[str, object], record: dict[str, Any], version: str
+    store: Store, source: dict[str, object], record: dict[str, Any], version: str
 ) -> Envelope | None:
     """Retain native observations; correlation and outcome classification happen later.
 
@@ -703,7 +703,7 @@ def _claude_counters(usage: dict[str, Any]) -> dict[str, int | None]:
 
 
 def _claude_usage_event(
-    store: "Store", source: Mapping[str, object], response: _ClaudeResponse
+    store: Store, source: Mapping[str, object], response: _ClaudeResponse
 ) -> Envelope:
     session_id, agent_id = _split_subagent(source)
     # One request is one usage event per conversation agent, however the
@@ -752,7 +752,7 @@ def _load_counters(value: object) -> dict[str, int | None] | None:
 
 
 def _update_failure(
-    store: "Store",
+    store: Store,
     source: dict[str, object],
     code: TranscriptFailureCode,
     signature: str,
@@ -830,7 +830,7 @@ def _never_read(source: Mapping[str, object]) -> bool:
     return source["device"] is None and source["last_error"] is None
 
 
-def _process_source(store: "Store", source: dict[str, object]) -> EnrichmentResult:
+def _process_source(store: Store, source: dict[str, object]) -> EnrichmentResult:
     path = Path(str(source["path"]))
     try:
         device, inode, size, mtime = _signature(path)
@@ -1031,7 +1031,7 @@ class _Consumed:
 
 
 def _consume_codex(
-    store: "Store",
+    store: Store,
     source: dict[str, object],
     lines: list[bytes],
     signature: str,
@@ -1103,7 +1103,7 @@ _MAX_HELD_TAIL = 512 * 1024
 
 
 def _consume_claude(
-    store: "Store",
+    store: Store,
     source: dict[str, object],
     lines: list[bytes],
     signature: str,
@@ -1196,11 +1196,11 @@ def _consume_claude(
     )
 
 
-def _unexpected_source_failure(store: "Store", source: dict[str, object]) -> EnrichmentResult:
+def _unexpected_source_failure(store: Store, source: dict[str, object]) -> EnrichmentResult:
     try:
         device, inode, size, mtime = _signature(Path(str(source["path"])))
         signature = f"{device}:{inode}:{size}:{mtime}"
-    except (OSError, UnsupportedTranscript, ValueError):
+    except OSError, UnsupportedTranscript, ValueError:
         device, inode, size, mtime = None, None, None, None
         signature = "invalid"
     changed = _update_failure(
@@ -1220,13 +1220,13 @@ def _unexpected_source_failure(store: "Store", source: dict[str, object]) -> Enr
     )
 
 
-def enrich(store: "Store", *, active_failure_since: datetime | None = None) -> EnrichmentResult:
+def enrich(store: Store, *, active_failure_since: datetime | None = None) -> EnrichmentResult:
     """Read bounded usage from known Codex and Claude transcript paths, daemon only."""
     try:
         sources = store.transcript_sources()
     except StorageError:
         raise
-    except (OSError, KeyError, TypeError, ValueError):
+    except OSError, KeyError, TypeError, ValueError:
         return EnrichmentResult(
             failures=("transcript_sources_unavailable",),
             active_failures=("transcript_sources_unavailable",),
@@ -1257,7 +1257,7 @@ def enrich(store: "Store", *, active_failure_since: datetime | None = None) -> E
             )
         except StorageError:
             raise
-        except (OSError, KeyError, TypeError, ValueError):
+        except OSError, KeyError, TypeError, ValueError:
             result = _unexpected_source_failure(store, source)
         accepted += result.accepted
         progressed = progressed or result.progressed

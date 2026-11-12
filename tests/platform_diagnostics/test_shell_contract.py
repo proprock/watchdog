@@ -27,7 +27,7 @@ def _bash_is_usable() -> bool:
         result = subprocess.run(
             ["bash", "-c", "printf ok"], capture_output=True, text=True, timeout=5
         )
-    except (OSError, subprocess.TimeoutExpired):
+    except OSError, subprocess.TimeoutExpired:
         return False
     return result.returncode == 0 and result.stdout == "ok"
 

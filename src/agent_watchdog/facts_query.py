@@ -111,7 +111,7 @@ def token_usage(
 
 def cost(
     db: sqlite3.Connection,
-    tariffs: "Tariffs",
+    tariffs: Tariffs,
     *,
     since_us: int | None = None,
     until_us: int | None = None,

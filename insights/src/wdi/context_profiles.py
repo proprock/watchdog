@@ -96,7 +96,7 @@ def detect_codex_keys(executable: str = "codex") -> set[str]:
                 check=False,
             )
             return schema_keys(Path(directory)) if result.returncode == 0 else set()
-    except (OSError, subprocess.TimeoutExpired, ValueError):
+    except OSError, subprocess.TimeoutExpired, ValueError:
         return set()
 
 

@@ -34,7 +34,7 @@ def _error(output: TextIO, request_id: object, code: int, message: str) -> None:
 def _tool_result(output: TextIO, request_id: object, text: str, work: Path) -> None:
     try:
         (work / SENTINEL_NAME).write_text(text, encoding="utf-8")
-    except (OSError, UnicodeError):
+    except OSError, UnicodeError:
         _reply(
             output,
             request_id,

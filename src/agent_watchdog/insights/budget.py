@@ -31,7 +31,7 @@ def memory_path(paths: UserPaths) -> Path:
 def _memory(paths: UserPaths) -> dict[str, Any]:
     try:
         value = json.loads(memory_path(paths).read_text(encoding="utf-8"))
-    except (OSError, ValueError):
+    except OSError, ValueError:
         return {"models": {}, "backends": {}}
     models = value.get("models") if isinstance(value, dict) else None
     backends = value.get("backends") if isinstance(value, dict) else None

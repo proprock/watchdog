@@ -75,7 +75,7 @@ def json_text(value: Any) -> str | None:
         if value.lstrip().startswith(("{", "[")):
             try:
                 parsed = json.loads(value)
-            except (ValueError, RecursionError):
+            except ValueError, RecursionError:
                 parsed = None
             if isinstance(parsed, (dict, list)):
                 return json.dumps(

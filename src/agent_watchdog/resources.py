@@ -73,7 +73,7 @@ def count_loss(root: Path, reason: str, count: int = 1) -> bool:
             # The unbuffered update is visible; slow disk sync need not hold the lock.
             os.fsync(stream.fileno())
         return True
-    except (OSError, StorageError, ValueError):
+    except OSError, StorageError, ValueError:
         return False
 
 

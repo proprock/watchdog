@@ -162,7 +162,7 @@ def _project_of(config: Config, hook_input: Mapping[str, object]) -> Project | N
         return None
     try:
         resolution = Registry(config).resolve(Path(cwd), timeout=0.5)
-    except (OSError, ValueError):
+    except OSError, ValueError:
         return None
     if resolution is None:
         return None

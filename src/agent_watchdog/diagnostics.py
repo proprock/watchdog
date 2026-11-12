@@ -179,7 +179,7 @@ def _append(data: Path, limits: Limits, line: bytes) -> None:
                 _rotate(active, limits.log_files)
             with active.open("ab", buffering=0) as stream:
                 stream.write(line)
-    except (OSError, WriterBusy):
+    except OSError, WriterBusy:
         return
 
 

@@ -2272,7 +2272,7 @@ def _wait_for_subscription(paths, timeout: float) -> bool:
         try:
             if json.loads(document.read_text(encoding="utf-8")).get("subscriptions"):
                 return True
-        except (OSError, ValueError):
+        except OSError, ValueError:
             pass
         time.sleep(0.2)
     return False

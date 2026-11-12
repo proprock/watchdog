@@ -241,7 +241,7 @@ class _Call:
     input: object = None
     finishes: list[Envelope] = field(default_factory=list)
     results: list[ResultFacts] = field(default_factory=list)
-    polls: list["_Call"] = field(default_factory=list)
+    polls: list[_Call] = field(default_factory=list)
 
     def add(self, event: Envelope) -> None:
         if event in self.rows:

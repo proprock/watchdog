@@ -139,7 +139,7 @@ class Context:
     hook_input: Event
     session: SessionState | None = None
 
-    def readonly(self) -> "Context":
+    def readonly(self) -> Context:
         """Detach mutable collections and expose a recursively read-only snapshot."""
         return Context(
             self.paths,

@@ -1152,7 +1152,7 @@ class Store:
             return True
         try:
             previous = datetime.fromisoformat(row[0])
-        except (TypeError, ValueError):
+        except TypeError, ValueError:
             return True
         return (now - previous).total_seconds() >= debounce_seconds
 

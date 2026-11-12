@@ -3,7 +3,7 @@ name = "watchdog-insights"
 version = "0.1.0"
 description = "Local analytics for Claude Code and Codex agent sessions (wdi)"
 readme = "README.md"
-requires-python = ">=3.12"
+requires-python = ">=3.14"
 dependencies = [
     "typer>=0.12",
     "rich>=13",

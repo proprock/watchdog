@@ -177,7 +177,7 @@ def _capture_diff_snapshot(
                 {item for item in logged_unknown if item[0] == checkout_id}
             )
             store.record_diff_snapshot(checkout_id, *fingerprint, observed_at=now)
-    except (OSError, StorageError, ValueError):
+    except OSError, StorageError, ValueError:
         return
 
 
@@ -334,7 +334,7 @@ def status(paths: UserPaths) -> dict:
                     reasons.append("heartbeat_invalid")
                 elif now - stamp >= 10:
                     reasons.append("heartbeat_stale")
-    except (ValueError, OSError, TypeError):
+    except ValueError, OSError, TypeError:
         report = {}
         reasons.append("heartbeat_invalid")
     if report.get("errors"):
@@ -376,7 +376,7 @@ def status(paths: UserPaths) -> dict:
             reasons.append("storage_unavailable")
         if lagging:
             reasons.append("storage_lag")
-    except (OSError, ValueError):
+    except OSError, ValueError:
         loss_report = {"unavailable": True}
         queues = {"unavailable": True}
         reasons.append("queue_or_configuration_unavailable")
@@ -493,7 +493,7 @@ def _storage_health(
                 if row:
                     stamp = datetime.fromisoformat(row).timestamp()
                     newest = max(newest, stamp) if newest is not None else stamp
-        except (OSError, sqlite3.Error, ValueError):
+        except OSError, sqlite3.Error, ValueError:
             unavailable_projects.append(str(project.id))
     unavailable = bool(unavailable_projects)
     spool = queues["spool"]
@@ -867,8 +867,8 @@ def _drain_spool(
     limit: int = 100,
     batch_size: int = 100,
     logged_unknown_checkouts: set[tuple[UUID, str]] | None = None,
-    channel: "_Channel | None" = None,
-    sessions: "_SessionTracker | None" = None,
+    channel: _Channel | None = None,
+    sessions: _SessionTracker | None = None,
     stores: dict[UUID, Store] | None = None,
     owner: ExitStack | None = None,
     maintenance_deadline: float | None = None,
@@ -1213,7 +1213,7 @@ def _drain_spool(
                     resources.count_loss(paths.project_data(project_id), "quota")
                     _discard(path)
                     activity = True
-                except (OSError, StorageError, sqlite3.Error):
+                except OSError, StorageError, sqlite3.Error:
                     break
             _log(
                 paths,
@@ -1255,7 +1255,7 @@ _POLICY_REQUEST_OVERHEAD_BYTES = 64 * 1024
 def _policy_request_bytes(paths: UserPaths) -> int:
     try:
         return _request_budget(load_config(paths.config))
-    except (ConfigError, OSError):
+    except ConfigError, OSError:
         return Limits().payload_bytes + _POLICY_REQUEST_OVERHEAD_BYTES
 
 
@@ -1379,11 +1379,11 @@ class _PolicyRequestHandler(socketserver.StreamRequestHandler):
     adapter reads as "no opinion". The channel never fails closed.
     """
 
-    server: "_PolicyServer"
+    server: _PolicyServer
 
     @staticmethod
     def _session(
-        server: "_PolicyServer", provider: str, hook_input: Mapping[str, object]
+        server: _PolicyServer, provider: str, hook_input: Mapping[str, object]
     ) -> SessionState | None:
         """The daemon's in-memory state of the calling agent; None until it is observed."""
         session_id, agent_id = hook_input.get("session_id"), hook_input.get("agent_id")
@@ -1394,7 +1394,7 @@ class _PolicyRequestHandler(socketserver.StreamRequestHandler):
         )
 
     @staticmethod
-    def _rule_failed(server: "_PolicyServer", name: str, error: Exception) -> None:
+    def _rule_failed(server: _PolicyServer, name: str, error: Exception) -> None:
         """Log errors and the first disabling timeout independently, once per lifetime."""
         key = f"{name}:timeout" if isinstance(error, PythonRuleTimeout) else name
         if key in server.watchdog_failed_rules:
@@ -1424,12 +1424,10 @@ class _PolicyRequestHandler(socketserver.StreamRequestHandler):
         self.connection.shutdown(socket.SHUT_WR)
 
     @staticmethod
-    def answer(
-        server: "_PolicyServer", line: bytes, send_response: Callable[[bytes], None]
-    ) -> None:
+    def answer(server: _PolicyServer, line: bytes, send_response: Callable[[bytes], None]) -> None:
         try:
             request = json.loads(line)
-        except (UnicodeDecodeError, json.JSONDecodeError):
+        except UnicodeDecodeError, json.JSONDecodeError:
             return
         if not isinstance(request, dict) or request.get("schema_version") != _POLICY_SCHEMA_VERSION:
             return
@@ -1497,9 +1495,9 @@ class _PolicyServer(socketserver.ThreadingTCPServer):
     watchdog_paths: UserPaths
     watchdog_token: str
     watchdog_request_bytes: int
-    watchdog_sessions: "_SessionTracker | None"
+    watchdog_sessions: _SessionTracker | None
     watchdog_failed_rules: set[str]
-    watchdog_stats: "_ChannelStats"
+    watchdog_stats: _ChannelStats
 
 
 class _ChannelStats:
@@ -1614,14 +1612,12 @@ class _Channel:
 def _initial_subscriptions(paths: UserPaths) -> list[dict[str, str | None]]:
     try:
         return subscriptions(paths, load_config(paths.config))
-    except (ConfigError, OSError):
+    except ConfigError, OSError:
         return []
 
 
 @contextmanager
-def _policy_server(
-    paths: UserPaths, sessions: "_SessionTracker | None" = None
-) -> Iterator[_Channel]:
+def _policy_server(paths: UserPaths, sessions: _SessionTracker | None = None) -> Iterator[_Channel]:
     """Run the WD-014 ``intervene`` decision socket for one daemon lifetime.
 
     Loopback-only (binding wider triggers a Windows Firewall prompt for no

@@ -330,7 +330,7 @@ def _spooled_callbacks(paths: UserPaths, spec: Case) -> tuple[set[str], set[str]
     for path in (paths.data / "spool").glob("*.json"):
         try:
             item = json.loads(path.read_text(encoding="utf-8"))
-        except (OSError, ValueError):
+        except OSError, ValueError:
             continue
         hook = item.get("input") if isinstance(item, dict) else None
         if (

@@ -747,7 +747,7 @@ def parse_codex_lines(
     for raw in lines:
         try:
             obj = json.loads(raw)
-        except (json.JSONDecodeError, UnicodeDecodeError):
+        except json.JSONDecodeError, UnicodeDecodeError:
             parser.chunk.warnings += 1
             continue
         if not isinstance(obj, dict):

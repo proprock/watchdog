@@ -454,7 +454,7 @@ def main() -> None:
             args.profile_events,
             measure_control=not args.no_control_latency,
         )
-    except (OSError, ValueError, sqlite3.Error, RuntimeError):
+    except OSError, ValueError, sqlite3.Error, RuntimeError:
         parser.error("Benchmark failed; source paths and data are withheld from output")
     print(json.dumps(report, sort_keys=True, indent=2))
 

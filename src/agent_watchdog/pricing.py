@@ -61,7 +61,7 @@ class Tariffs:
     _sections: tuple[tuple[date, Mapping[str, Mapping[str, Decimal]]], ...]
 
     @classmethod
-    def load(cls, path: str | Path) -> "Tariffs":
+    def load(cls, path: str | Path) -> Tariffs:
         source = Path(path)
         try:
             raw = tomllib.loads(source.read_text(encoding="utf-8"))

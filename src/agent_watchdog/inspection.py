@@ -472,11 +472,11 @@ def telemetry(paths: UserPaths, project: Project, *, since: datetime | None) -> 
     project_losses: dict[str, int] | None
     try:
         adapter_losses = resources.losses(paths.data)
-    except (OSError, ValueError):
+    except OSError, ValueError:
         adapter_losses = None
     try:
         project_losses = resources.losses(paths.project_data(project.id))
-    except (OSError, ValueError):
+    except OSError, ValueError:
         project_losses = None
     combined = (
         {

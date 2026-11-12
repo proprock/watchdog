@@ -75,7 +75,7 @@ def collect(
             raw = module.read(
                 paths, project, provider=provider, session_id=None, since=since, until=until
             )
-        except (StorageError, sqlite3.Error):
+        except StorageError, sqlite3.Error:
             unreadable.append(alias)
             continue
         sources.append((alias, raw))

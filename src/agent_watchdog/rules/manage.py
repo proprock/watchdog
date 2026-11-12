@@ -236,7 +236,7 @@ def stats(paths: UserPaths, config: Config, *, since: datetime | None) -> list[d
                         )
                         if verdict is not None:
                             verdicts.setdefault(rule, Counter())[verdict] += 1
-        except (StorageError, OSError, ValueError, sqlite3.Error):
+        except StorageError, OSError, ValueError, sqlite3.Error:
             continue  # a project with no or a damaged database must not hide the others
     result: list[dict[str, object]] = []
     for rule in sorted(fired):

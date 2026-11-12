@@ -44,6 +44,7 @@ Line numbers in these tasks refer to commit `0d5e984`. Paths under `insights/` e
     - every check in `TENETS.md` passes on 3.14;
     - `uv run python -c "import compression.zstd"` succeeds in the project environment;
     - `docs/evidence/wd185.md` holds the live `doctor` output with the interpreter version after the rebuild.
+  - **Status.** Repository migration and Windows verification are recorded in [WD-185 evidence](docs/evidence/wd185.md). The minimum in `TENETS.md` and the live environment rebuild require owner approval.
 
 - [ ] **WD-186 - Collect from every Git checkout: automatic registration, exclusions, and a visible count of ignored sessions.** P0. Depends on WD-208, WD-210.
   - **Why.** Owner decision 1. Today a record from an unregistered directory is discarded at `DEBUG` with no counter (`daemon.py:985-996`), and automatic registration works only below `trusted_projects_dir` (`registry.py:129-151`, `config.py:210-213`).
