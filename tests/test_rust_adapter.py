@@ -378,8 +378,10 @@ def test_native_admission_lock_contention_records_busy(rust_adapter, native_setu
     }
 
 
-@pytest.mark.skipif(sys.platform != "win32", reason="Windows mandatory byte-range locks")
 def test_native_empty_admission_lock_contention_records_busy(rust_adapter, native_setup):
+    if sys.platform != "win32":
+        pytest.skip("Windows mandatory byte-range locks")
+
     import msvcrt
 
     from agent_watchdog.resources import losses
