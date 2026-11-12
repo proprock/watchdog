@@ -9,6 +9,7 @@ import pytest
 
 from agent_watchdog.config import UserPaths
 from agent_watchdog.hook_install import change, group
+from agent_watchdog.resources import losses
 
 REALISTIC_SETTINGS: dict = {
     "theme": "dark",
@@ -130,7 +131,9 @@ def test_generated_command_executes_with_shell_metacharacters(tmp_path):
     assert result.returncode == 0, result.stderr
     assert result.stdout.strip() == "{}"
     assert shlex.split(handler["command"])[0] == sys.executable
-    assert not home.exists()
+    assert losses(paths.data)["invalid"] == 1
+    assert not paths.config.exists()
+    assert not paths.runtime.exists()
 
 
 def test_empty_user_event_groups_survive_round_trip(paths, tmp_path):

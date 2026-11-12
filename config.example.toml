@@ -3,7 +3,16 @@
 
 schema_version = 1
 projects = []
-auto_add_projects = false
+# Register Git checkouts on first observation. Set false for manual registration.
+auto_add_projects = true
+# Optionally restrict automatic registration to checkouts under this directory.
+# trusted_projects_dir = "C:/path/to/trusted/projects"
+# Globs match case-normalized absolute checkout roots with forward slashes.
+# They affect automatic registration only. Watchdog also skips roots containing
+# its data, runtime or configuration directory, or the system temp directory.
+collect_exclude = []
+# To skip checkouts under a scratch directory, use a pattern like this.
+# collect_exclude = ["C:/path/to/scratch/*"]
 # Record adapter and spool timing/occupancy metadata for delivery diagnostics.
 pipeline_telemetry = true
 
@@ -67,10 +76,6 @@ insights_llm_enabled = true
 # disabled = ["destructive_command"]                         # switch a rule off
 # enabled = ["stop_without_verification"]                    # opt in a built-in that ships off
 # tiers = ["haiku", "sonnet", "opus", "fable"]               # model families, lowest first
-
-# To enable automatic registration, set an existing trusted directory and enable it:
-# auto_add_projects = true
-# trusted_projects_dir = "C:/path/to/trusted/projects"
 
 # To register a project explicitly, add an entry like this:
 # [[projects]]

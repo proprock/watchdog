@@ -187,7 +187,8 @@ class Rules(StrictModel):
 class Config(Versioned):
     defaults: Limits = Field(default_factory=Limits)
     projects: tuple[Project, ...] = ()
-    auto_add_projects: bool = False
+    auto_add_projects: bool = True
+    collect_exclude: tuple[str, ...] = ()
     pipeline_telemetry: bool = True
     pricing: Pricing = Field(default_factory=Pricing)
     rules: Rules = Field(default_factory=Rules)
@@ -208,10 +209,6 @@ class Config(Versioned):
 
     @model_validator(mode="after")
     def unique_projects(self) -> Self:
-        if self.auto_add_projects and (
-            self.trusted_projects_dir is None or not self.trusted_projects_dir.is_dir()
-        ):
-            raise ValueError("Auto-add requires an existing trusted projects directory")
         for index, project in enumerate(self.projects):
             project.overrides.apply(self.defaults)
             for other in self.projects[:index]:

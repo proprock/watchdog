@@ -1,16 +1,18 @@
 """Codex observation only: bounded, redacted content and no model feedback."""
 
 import json
-from datetime import datetime
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import BinaryIO
-from uuid import UUID
+from uuid import UUID, uuid4
 
 from agent_watchdog import daemon, resources
-from agent_watchdog.config import Limits, UserPaths, load_config
+from agent_watchdog.config import ConfigError, Limits, UserPaths, load_config
 from agent_watchdog.diagnostics import emit, error_code
 from agent_watchdog.events import Envelope, EventKind
-from agent_watchdog.registry import Registry, Resolution
+from agent_watchdog.registry import Registry, RegistryError, Resolution
+from agent_watchdog.spool import SCHEMA_VERSION, Spool
+from agent_watchdog.storage import StorageError, WriterBusy
 
 EVENTS: dict[str, dict[str, EventKind]] = {
     "codex": {
@@ -284,20 +286,7 @@ def observe(paths: UserPaths, stream: BinaryIO, provider: str = "codex") -> None
                 decision="paused",
             )
             return
-        if not config.projects and not config.auto_add_projects:
-            emit(
-                paths.data,
-                config.defaults,
-                "DEBUG",
-                component="hook",
-                event="observe",
-                decision="disabled",
-            )
-            return
-        maximum = max(
-            (project.overrides.apply(config.defaults).payload_bytes for project in config.projects),
-            default=config.defaults.payload_bytes,
-        )
+        maximum = daemon.spool_payload_bytes(config)
         raw = stream.read(maximum + 1)
         if len(raw) > maximum:
             resources.count_loss(paths.data, "payload")
@@ -342,18 +331,40 @@ def observe(paths: UserPaths, stream: BinaryIO, provider: str = "codex") -> None
         input_payload = {key: value for key, value in payload.items() if key != "cwd"}
         if not isinstance(input_payload, dict):
             raise ValueError("Invalid hook input")
-        resolution = Registry(config).resolve(Path(cwd), timeout=0.25)
-        if resolution is None and config.auto_add_projects:
-            config, resolution = daemon.resolve_or_auto_register(paths, Path(cwd), timeout=0.25)
-        if resolution is None:
-            emit(
-                paths.data,
-                config.defaults,
-                "DEBUG",
-                component="hook",
-                event="observe",
-                decision="unregistered",
-            )
+        try:
+            resolution = Registry(config).resolve(Path(cwd), timeout=0.25)
+            if resolution is None and config.auto_add_projects:
+                config, resolution = daemon.resolve_or_auto_register(paths, Path(cwd), timeout=0.25)
+        except ConfigError, RegistryError, WriterBusy:
+            resolution = None
+        if not isinstance(resolution, Resolution):
+            # The daemon owns ignore counters and retries registry writes.
+            try:
+                Spool(paths.data, payload_bytes=maximum).publish_record(
+                    {
+                        "schema_version": SCHEMA_VERSION,
+                        "record_type": "hook",
+                        "provider": provider,
+                        "cwd": cwd,
+                        "input": input_payload,
+                        "event_id": str(uuid4()),
+                        "received_at": datetime.now(UTC).isoformat(),
+                    },
+                    telemetry=config.pipeline_telemetry,
+                )
+                if not daemon.alive(paths):
+                    daemon.launch(paths)
+            except (OSError, StorageError) as error:
+                emit(
+                    paths.data,
+                    config.defaults,
+                    "WARNING",
+                    component="hook",
+                    event="observe",
+                    decision="failed",
+                    error_type=error_code(error),
+                    detail=str(error),
+                )
             return
         project = next(item for item in config.projects if item.id == resolution.project_id)
         limits = project.overrides.apply(config.defaults)

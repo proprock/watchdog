@@ -21,26 +21,26 @@ Use an installed Watchdog environment with a stable Python executable location.
 Generated commands use that interpreter and absolute Watchdog paths, so moving
 or deleting the environment requires uninstalling and reinstalling the hooks.
 
-Explicitly register the repository before installing observation hooks, unless
-the opt-in trusted Git auto-add configuration below applies:
+Eligible Git checkouts register on first observation. To register a project
+explicitly, including a non-Git project, run:
 
 ```console
 agent-watchdog project add /absolute/project
 ```
 
-To collect any new Git checkout below one trusted directory, configure both
-options. `~` expands to the local home directory and is saved as a canonical
-absolute path. The directory must already exist. Auto-add never registers
-non-Git directories or paths outside that directory.
+To restrict automatic registration to one directory, set
+`trusted_projects_dir`. `~` expands to the local home directory and is saved as
+a canonical absolute path. See the
+[collection contract](contracts.md#automatic-registration-and-ignored-records)
+for checkout exclusions and ignored-record diagnostics.
 
 ```toml
-auto_add_projects = true
 trusted_projects_dir = "~/repos"
 ```
 
 Choose an explicit absolute `hooks.json` path. Use a project-local
-`<project>/.codex/hooks.json` for one checkout, or a user-level file for registered
-repositories and worktrees. Watchdog still checks the registry for every event.
+`<project>/.codex/hooks.json` for one checkout, or a user-level file for
+collection across checkouts. Watchdog resolves the project for every event.
 Do not install the same observer at both levels: Codex combines hook sources.
 
 Installation always requires a native adapter (WD-110): omitting both

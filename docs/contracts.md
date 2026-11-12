@@ -22,7 +22,8 @@ Minimal configuration, with all other limits inherited from the architecture:
 ```toml
 schema_version = 1
 projects = []
-auto_add_projects = false
+auto_add_projects = true
+collect_exclude = []
 pipeline_telemetry = true
 # trusted_projects_dir = "~/repos"
 
@@ -35,12 +36,8 @@ reserve_bytes = 1048576
 ```
 
 Projects contain `id`, absolute `root`, optional `git_common_dir`, and partial
-`overrides`. Overrides apply only to that project. `auto_add_projects` defaults
-to false. When enabled, `trusted_projects_dir` is required and must name an
-existing directory; `~` is expanded and the canonical absolute path is stored.
-Only an unregistered Git checkout whose canonical root is inside that directory
-is added automatically. Non-Git directories and all paths outside it remain
-unregistered. Numeric limits must be positive integers except `content_days`,
+`overrides`. Overrides apply only to that project. Numeric limits must be
+positive integers except `content_days`,
 `metrics_days` (zero never expires) and `project_bytes` (zero disables the
 quota). The `transcript_failure_minutes` health window is always positive,
 and `payload_bytes <= project_bytes` when the quota is on; numeric strings and booleans
@@ -95,6 +92,41 @@ save_config(paths.config, registry.config)
   collision. Repair moved Git worktrees with Git itself before registering their
   new locations. Relocation never rewrites Git metadata.
 - `remove(id)` disables registration only; it deletes neither source nor data.
+
+### Automatic registration and ignored records
+
+`auto_add_projects` defaults to true. When set, `trusted_projects_dir` restricts
+automatic registration to checkouts under that directory. Watchdog expands `~`
+and resolves the path before comparing it with the canonical checkout root.
+`collect_exclude` defaults to an empty list of globs. Watchdog matches these globs
+against the absolute, canonical checkout root with case normalization and forward
+slashes. Automatic registration also skips checkouts whose root equals or contains
+the Watchdog data, runtime or configuration directory, or the system temporary
+directory. These restrictions apply only to automatic registration. Use
+`agent-watchdog project add` to register a directory explicitly, including a non-Git
+directory.
+
+Automatically registered projects inherit `config.defaults`, including the
+default rule settings. A busy control lock or configuration error during
+registration leaves the record queued for the next daemon tick.
+
+Watchdog ignores records whose directory cannot be resolved
+(`unresolvable_cwd`), belongs to no Git checkout or explicit registration
+(`not_git`), or belongs to an unregistered Git checkout blocked by the
+automatic-registration settings or built-in restrictions (`excluded`).
+
+The daemon counts ignored records in `<data>/ignored.json`. It stores each
+directory's `reason`, `first_at`, `last_at` and `records`, retaining up to 500
+directories and dropping the least recently seen first. It writes this file
+atomically at most once per 60 seconds. Ignored records remain queued until
+the corresponding counters are written. The daemon logs one warning per
+directory and reason per run with `event=spool decision=ignored`. The directory
+appears in the warning only when `log_detail` is enabled. Ignored records stay
+outside the project stores and the `losses.bin` counters.
+
+`agent-watchdog doctor` reports counts for the retained directories and up to
+five of the most recent directories. Its JSON `ignored` object contains `total`, `by_reason` and
+`recent`. Each entry in `recent` includes the directory.
 
 ## Event envelope
 

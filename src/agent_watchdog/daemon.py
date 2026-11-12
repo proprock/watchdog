@@ -27,6 +27,7 @@ from agent_watchdog.demotion import observe as observe_denial
 from agent_watchdog.demotion import remember_denial
 from agent_watchdog.diagnostics import Level, emit, error_code
 from agent_watchdog.events import Envelope
+from agent_watchdog.ignored import IgnoredRecords, IgnoreReason
 from agent_watchdog.registry import Registry, RegistryError, Resolution
 from agent_watchdog.rules.api import PROVISIONAL_PROFILES, Decision
 from agent_watchdog.rules.engine import decide, subscriptions
@@ -547,9 +548,12 @@ def set_desired(paths: UserPaths, *, paused: bool) -> str:
 
 def spool_payload_bytes(config: Config) -> int:
     """Largest per-project payload limit; the adapter caps stdin at this."""
-    return max(
+    registered = max(
         (project.overrides.apply(config.defaults).payload_bytes for project in config.projects),
         default=config.defaults.payload_bytes,
+    )
+    return (
+        max(registered, config.defaults.payload_bytes) if config.auto_add_projects else registered
     )
 
 
@@ -627,16 +631,18 @@ def mutate_registry(paths: UserPaths, mutation: Callable[[Registry], object]) ->
 
 def resolve_or_auto_register(
     paths: UserPaths, path: Path, *, timeout: float = 10
-) -> tuple[Config, Resolution | None]:
+) -> tuple[Config, Resolution | IgnoreReason]:
     """Resolve a path against the latest config and persist a permitted auto-add."""
     with control_lock(paths, timeout=timeout):
         registry = Registry(load_config(paths.config))
-        resolution, added = registry.resolve_or_auto_add(path, timeout=timeout)
+        resolution, added = registry.resolve_or_auto_add(
+            path,
+            timeout=timeout,
+            protected_roots=(paths.data, paths.runtime, paths.config.parent),
+        )
         if added:
             save_config(paths.config, registry.config)
             _log(paths, registry.config, "INFO", event="registry", decision="auto_registered")
-        elif resolution is None:
-            _log(paths, registry.config, "DEBUG", event="registry", decision="unregistered")
         return registry.config, resolution
 
 
@@ -878,6 +884,7 @@ def _drain_spool(
     stats: DrainResult | None = None,
     spool: Spool | None = None,
     wake_projects: set[UUID] | None = None,
+    ignored: IgnoredRecords | None = None,
 ) -> bool:
     """Resolve one queue window and commit bounded batches before acknowledging files."""
     from agent_watchdog.hooks import EVENTS, build_envelope, warn_unknown_fields
@@ -903,12 +910,14 @@ def _drain_spool(
                 stats=stats,
                 spool=spool,
                 wake_projects=wake_projects,
+                ignored=ignored,
             )
     assert stores is not None
     logged_unknown_checkouts = (
         logged_unknown_checkouts if logged_unknown_checkouts is not None else set()
     )
     queue = spool or Spool(paths.data)
+    ignored = ignored if ignored is not None else IgnoredRecords(paths.data)
     queue.payload_bytes = spool_payload_bytes(config)
     result = stats if stats is not None else DrainResult()
     registry = Registry(config)
@@ -916,6 +925,12 @@ def _drain_spool(
     pending: dict[UUID, list] = {}
     captured_checkouts: set[UUID] = set()
     activity = False
+    registration_busy = False
+    ignore_error: OSError | None = None
+    try:
+        ignored.recover()
+    except OSError as error:
+        ignore_error = error
 
     def invalid_record(error: Exception) -> None:
         _log(
@@ -930,6 +945,8 @@ def _drain_spool(
         )
 
     for path, record in queue.records(result, limit=limit, on_error=invalid_record):
+        if path in ignored:
+            continue
         try:
             payload = None
             resolution = None
@@ -953,55 +970,51 @@ def _drain_spool(
                 received_at = datetime.fromisoformat(record["received_at"])
                 if received_at.tzinfo is None:
                     raise RejectedEvent("Spool timestamp must have a timezone")
+                target: Resolution | IgnoreReason | None = resolved_checkouts.get(cwd)
                 try:
-                    resolution = resolved_checkouts.get(cwd)
-                    if resolution is None:
-                        resolution = registry.resolve(Path(cwd), timeout=0.25)
-                    if resolution is None and config.auto_add_projects:
-                        config, resolution = resolve_or_auto_register(
-                            paths, Path(cwd), timeout=0.25
-                        )
+                    if target is None:
+                        target = registry.resolve(Path(cwd), timeout=0.25)
+                    if target is None:
+                        if registration_busy:
+                            continue
+                        config, target = resolve_or_auto_register(paths, Path(cwd), timeout=0.25)
                         registry = Registry(config)
                         resolved_checkouts.clear()
-                    if resolution is not None:
-                        resolved_checkouts[cwd] = resolution
-                except RegistryError as error:
-                    if not Path(cwd).exists():
-                        _log(
-                            paths,
-                            config,
-                            "WARNING",
-                            event="spool",
-                            decision="discarded",
-                            reason="unresolvable_cwd",
-                            error_type=error_code(error),
-                        )
-                        _discard(path)
-                        activity = True
-                    elif (event_id, "unresolvable_cwd") not in logged_unknown_checkouts:
-                        logged_unknown_checkouts.add((event_id, "unresolvable_cwd"))
-                        _log(
-                            paths,
-                            config,
-                            "WARNING",
-                            event="spool",
-                            decision="deferred",
-                            reason="unresolvable_cwd",
-                            error_type=error_code(error),
-                        )
-                    continue
-                if resolution is None:
+                except RegistryError:
+                    target = "unresolvable_cwd"
+                except (ConfigError, WriterBusy) as error:
+                    registration_busy = isinstance(error, WriterBusy)
                     _log(
                         paths,
                         config,
                         "DEBUG",
                         event="spool",
-                        decision="unregistered",
-                        event_id=event_id,
+                        decision="deferred",
+                        reason="auto_registration",
+                        error_type=error_code(error),
                     )
-                    _discard(path)
+                    continue
+                if not isinstance(target, Resolution):
+                    directory = os.path.normpath(cwd)
+                    try:
+                        warn = ignored.record(path, directory, target)
+                    except OSError as error:
+                        ignore_error = error
+                        continue
+                    if warn:
+                        _log(
+                            paths,
+                            config,
+                            "WARNING",
+                            event="spool",
+                            decision="ignored",
+                            reason=target,
+                            detail=directory,
+                        )
                     activity = True
                     continue
+                resolution = target
+                resolved_checkouts[cwd] = resolution
                 project = next(item for item in config.projects if item.id == resolution.project_id)
                 limits = project.overrides.apply(config.defaults)
                 event = build_envelope(
@@ -1085,8 +1098,11 @@ def _drain_spool(
             queue.quarantine(path, result)
             activity = True
 
+    projects = {project.id: project for project in config.projects}
     for project_id, items in pending.items():
-        project = next(item for item in config.projects if item.id == project_id)
+        project = projects.get(project_id)
+        if project is None:
+            continue
         limits = project.overrides.apply(config.defaults)
         try:
             store = stores.get(project_id)
@@ -1236,8 +1252,26 @@ def _drain_spool(
                 detail=str(error),
                 project_id=project_id,
             )
-    return activity or bool(
-        result.inserted + result.duplicates + result.quarantined + result.discarded
+    flushed_ignored = False
+    try:
+        flushed_ignored = ignored.flush()
+    except OSError as error:
+        ignore_error = error
+    if ignore_error is not None:
+        _log(
+            paths,
+            config,
+            "WARNING",
+            event="spool",
+            decision="retry",
+            reason="ignored_counters",
+            error_type=error_code(ignore_error),
+            detail=str(ignore_error),
+        )
+    return (
+        activity
+        or flushed_ignored
+        or bool(result.inserted + result.duplicates + result.quarantined + result.discarded)
     )
 
 
@@ -1842,6 +1876,7 @@ def _poll(
     maintenance_cursor = 0
     spool_maintenance_at = 0.0
     spool_queue = Spool(paths.data)
+    ignored = IgnoredRecords(paths.data)
     logged_enrichment_failures: set[tuple[str, str]] = set()
     logged_inert_enrichment: set[str] = set()
     logged_unknown_checkouts: set[tuple[UUID, str]] = set()
@@ -2064,6 +2099,7 @@ def _poll(
                 maintenance_budget=maintenance_budget,
                 spool=spool_queue,
                 wake_projects=wake_projects,
+                ignored=ignored,
             ):
                 activity = True
                 progressed.add("spool")

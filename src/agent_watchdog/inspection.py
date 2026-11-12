@@ -1077,6 +1077,7 @@ def doctor(
     now: datetime | None = None,
     transcript_roots: dict[str, Path] | None = None,
 ) -> dict:
+    from agent_watchdog.ignored import report as ignored_report
     from agent_watchdog.spool import Spool
 
     now = now or datetime.now(UTC)
@@ -1140,6 +1141,17 @@ def doctor(
     healthy &= core["state"] != "degraded"
     mismatch = Spool(paths.data).schema_mismatch()
     warnings: list[dict] = []
+    try:
+        ignored = ignored_report(paths.data)
+    except OSError:
+        ignored = None
+        healthy = False
+        warnings.append(
+            {
+                "code": "ignored_counters_unreadable",
+                "message": "Could not read ignored.json in the Watchdog data directory.",
+            }
+        )
     if mismatch is not None:
         try:
             recent = now - datetime.fromisoformat(mismatch["last_at"]) <= COVERAGE_WINDOW
@@ -1165,6 +1177,7 @@ def doctor(
     return {
         "ok": healthy,
         "adapter": {"schema_mismatch": mismatch},
+        "ignored": ignored,
         "coverage": coverage,
         "warnings": warnings + coverage_warnings,
         "projects": projects,

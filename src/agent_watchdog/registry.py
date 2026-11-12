@@ -2,12 +2,15 @@
 
 import os
 import subprocess
+import tempfile
 from dataclasses import dataclass
+from fnmatch import fnmatchcase
 from pathlib import Path
 from uuid import UUID, uuid4, uuid5
 
 from agent_watchdog._proc import run as _run
-from agent_watchdog.config import Config, Project, same_path
+from agent_watchdog.config import Config, ConfigError, Project, same_path
+from agent_watchdog.ignored import IgnoreReason
 
 
 class RegistryError(ValueError):
@@ -52,6 +55,12 @@ def _fast_checkout(dot_git: Path) -> tuple[Path, Path] | None:
         common = relative if relative.is_absolute() else git_dir / relative
     else:
         common = git_dir
+    if not (
+        (git_dir / "HEAD").is_file()
+        and (common / "objects").is_dir()
+        and (common / "refs").is_dir()
+    ):
+        return None
     return toplevel, common
 
 
@@ -127,28 +136,37 @@ class Registry:
         return self._resolution(checkout, project)
 
     def resolve_or_auto_add(
-        self, path: Path, *, timeout: float = 10
-    ) -> tuple[Resolution | None, bool]:
-        """Resolve a checkout and opt in to registration only below the trusted Git root."""
+        self, path: Path, *, timeout: float = 10, protected_roots: tuple[Path, ...] = ()
+    ) -> tuple[Resolution | IgnoreReason, bool]:
+        """Resolve a registered project or register an eligible Git checkout."""
         checkout = discover(path, timeout=timeout)
         project = self._find(checkout)
-        added = False
+        if project is not None:
+            return self._resolution(checkout, project), False
+        if checkout.git_common_dir is None:
+            return "not_git", False
         trusted = self.config.trusted_projects_dir
+        root = checkout.root
+        normalized = root.as_posix().casefold()
         if (
-            project is None
-            and self.config.auto_add_projects
-            and trusted is not None
-            and checkout.git_common_dir is not None
-            and checkout.root.is_relative_to(trusted)
-        ):
-            project = Project(
-                id=uuid4(), root=checkout.root, git_common_dir=checkout.git_common_dir
+            not self.config.auto_add_projects
+            or (trusted is not None and not root.is_relative_to(trusted))
+            or any(
+                fnmatchcase(normalized, pattern.replace("\\", "/").casefold())
+                for pattern in self.config.collect_exclude
             )
+            or any(
+                directory.resolve().is_relative_to(root)
+                for directory in (*protected_roots, Path(tempfile.gettempdir()))
+            )
+        ):
+            return "excluded", False
+        project = Project(id=uuid4(), root=root, git_common_dir=checkout.git_common_dir)
+        try:
             self._replace((*self.config.projects, project))
-            added = True
-        if project is None:
-            return None, False
-        return self._resolution(checkout, project), added
+        except RegistryError as error:
+            raise ConfigError("Could not add the checkout to the project configuration") from error
+        return self._resolution(checkout, project), True
 
     def _replace(self, projects: tuple[Project, ...]) -> None:
         # Validate before changing state, including duplicate and overlap checks.
