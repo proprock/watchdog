@@ -2,6 +2,8 @@
 
 Historical records only: one line per task. The full text of every entry, including its verification, is in [done-archive.md](docs/evidence/done-archive.md). Active work belongs in [TODO.md](TODO.md). Preserve task IDs when moving entries here.
 
+- [x] **WD-211 - Investigate native admission loss classification under concurrency (2026-11-12).** The adapter acquires the lock before initializing it and accounts separately for contention and admission-lock I/O. The full suite passed 2125 tests with one skip, and both installed adapters were updated and verified. [Evidence](docs/evidence/wd211.md).
+
 - [x] **WD-188 - Scan provider directories and backfill history (2026-11-12).** The first live cycle fully captured 1693 files and ignored 477 with reasons. No recognized files remained partial. The root suite passed 2123 tests with one skip. [Evidence](docs/evidence/wd188.md).
 
 - [x] **WD-187 - Capture raw transcripts into `capture.sqlite3` (2026-11-12).** Live byte comparisons passed for Codex and Claude Code. The root suite passed 2097 tests with one skip, and all three TDD pairs passed replay. [Evidence](docs/evidence/wd187.md).
