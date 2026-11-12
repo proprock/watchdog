@@ -22,7 +22,16 @@ from pydantic import ValidationError
 from agent_watchdog import daemon_lifecycle, resources
 from agent_watchdog._proc import hidden_creationflags
 from agent_watchdog.capture import TICK_BUDGET, CaptureCursor, capture
-from agent_watchdog.config import Config, ConfigError, Limits, UserPaths, load_config, save_config
+from agent_watchdog.capture_store import write_manifest
+from agent_watchdog.config import (
+    Config,
+    ConfigError,
+    Limits,
+    UserPaths,
+    load_config,
+    project_aliases,
+    save_config,
+)
 from agent_watchdog.demotion import observe as observe_denial
 from agent_watchdog.demotion import remember_denial
 from agent_watchdog.diagnostics import Level, emit, error_code
@@ -1858,12 +1867,27 @@ class _SessionTracker:
         return done, failures
 
 
+def _machine_id(data: Path) -> UUID:
+    path = data / "machine_id"
+    try:
+        identity = UUID(path.read_text(encoding="utf-8").strip())
+        if identity.version != 4:
+            raise ValueError("Expected UUID4")
+    except FileNotFoundError:
+        identity = uuid4()
+        atomic_write(path, f"{identity}\n".encode())
+    except ValueError as error:
+        raise StorageError("Invalid machine_id; restore the original UUID4 file") from error
+    return identity
+
+
 def _poll(
     paths: UserPaths,
     owner: ExitStack,
     sessions: _SessionTracker | None = None,
     channel: _Channel | None = None,
 ) -> None:
+    machine_id = _machine_id(paths.data)
     sessions = sessions or _SessionTracker()
     channel = channel or _Channel(paths)
     logged_findings_failures: set[tuple[str, str]] = set()
@@ -1934,6 +1958,7 @@ def _poll(
             channel.sync(config)
             if _drain_controls(paths, config):
                 activity = True
+            aliases = project_aliases(config.projects)
             projects = [*config.projects, None]
             offset = maintenance_cursor % len(projects)
             projects = projects[offset:] + projects[:offset]
@@ -2063,6 +2088,9 @@ def _poll(
                         )
                         if resources.available(root, limits) < 65536 and len(errors) < 32:
                             errors.append(str(project.id))
+                    write_manifest(
+                        root, machine_id=machine_id, project=project, name=aliases[project.id]
+                    )
                 except (OSError, StorageError, sqlite3.Error) as error:
                     if len(errors) < 32:
                         errors.append(str(project.id))

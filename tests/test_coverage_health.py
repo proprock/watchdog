@@ -119,7 +119,7 @@ def test_doctor_reports_raw_capture_without_initializing_it(tmp_path, monkeypatc
                 payload={"claude": {"transcript_path": str(source)}},
             )
         )
-        capture(store)
+        capture(store, clock=lambda: 0.0)
     report = inspection.doctor(paths, transcript_roots={})
     assert report["projects"][0]["capture"] == {
         "streams": 1,

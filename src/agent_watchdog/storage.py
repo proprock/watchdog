@@ -21,6 +21,8 @@ from agent_watchdog.files import atomic_write as atomic_write
 from agent_watchdog.state import SessionState, StateKey, fold, initial, key_of
 from agent_watchdog.state import apply as apply_state
 
+EVENTS_SCHEMA_VERSION = 9
+
 # Sessions whose events or analysis version outran their materialized findings.
 PENDING_SESSIONS = (
     "SELECT e.provider, e.session_id FROM events e WHERE e.session_id IS NOT NULL "
@@ -300,7 +302,7 @@ class Store:
     def _initialize(self) -> None:
         db = self.connection
         version = db.execute("PRAGMA user_version").fetchone()[0]
-        if version not in (0, 1, 2, 3, 4, 5, 6, 7, 8, 9):
+        if not 0 <= version <= EVENTS_SCHEMA_VERSION:
             raise StorageError("Unsupported database schema; database left unchanged")
         if version == 0:
             tables = db.execute("SELECT name FROM sqlite_master WHERE name NOT LIKE 'sqlite_%'")

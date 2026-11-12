@@ -2,6 +2,8 @@
 
 Historical records only: one line per task. The full text of every entry, including its verification, is in [done-archive.md](docs/evidence/done-archive.md). Active work belongs in [TODO.md](TODO.md). Preserve task IDs when moving entries here.
 
+- [x] **WD-189 - Read contract v1 for Watchdog stores (2026-11-12).** The installed daemon published manifests for 15 stores, and the read API opened both databases in every store. The root and insights suites passed. [Evidence](docs/evidence/wd189.md).
+
 - [x] **WD-212 - Fix concurrent daemon control replacement on Windows (2026-11-12).** Pause can atomically replace `control.json` while a reader shares delete access. The full suite and the installed daemon pause and restart passed. [Evidence](docs/evidence/wd212.md).
 
 - [x] **WD-211 - Investigate native admission loss classification under concurrency (2026-11-12).** The adapter acquires the lock before initializing it and accounts separately for contention and admission-lock I/O. The full suite passed 2125 tests with one skip, and both installed adapters were updated and verified. [Evidence](docs/evidence/wd211.md).

@@ -47,28 +47,6 @@ Line numbers in these tasks refer to commit `0d5e984`. Paths under `insights/` e
 
 ## Split P1 - Read contract and insights on Watchdog data
 
-- [ ] **WD-189 - Read contract v1 for Watchdog stores.** P1. Depends on WD-187.
-  - **Why.** Owner decision 2. `wdi` must read stores without importing the daemon or depending on private functions, and must tell stores of different machines apart.
-  - **Fixed decisions.**
-    - Machine identity: `<data>/machine_id`, a UUID4 written once at the first daemon start and never regenerated.
-    - Manifest `<project data>/store.json`, rewritten atomically by the daemon whenever its content would change: `contract` (1), `machine_id`, `hostname`, `os`, `project_id`, `root`, `git_common_dir` (or `null`), `name` (the project alias), `events_schema`, `capture_schema`, `written_at`.
-    - New module `src/agent_watchdog/readapi.py`. It imports only the standard library, `agent_watchdog.config` and the constants of `agent_watchdog.capture_store`; never `daemon` or `inspection`. Functions:
-      - `default_data_dir() -> Path`;
-      - `stores(data_dir) -> list[StoreInfo]` from the manifests; a directory without a manifest is skipped; a manifest with a newer `contract` is returned with `supported = False`;
-      - `open_events(info)` and `open_capture(info)`: read-only connections (`mode=ro`, `query_only`), version checked against the manifest;
-      - `streams(info) -> Iterator[StreamInfo]` (the latest generation of each stream, with `record_count`, `raw_bytes`, `cwd`, `generation`);
-      - `lines(info, stream_pk, start_record=0) -> Iterator[bytes]`: sealed chunks, then the tail;
-      - `side_files(info, provider, session_id)` and `side_file_bytes(info, ...)`.
-    - No long snapshots: each chunk or page is fetched in its own short read, so the writer's WAL checkpoint (`storage.py:1658-1667`) is never held back for the length of an import.
-    - Move the read-only open helper into `readapi` and make `inspection.database` (`inspection.py:269-281`) call it, not the other way round: `inspection` imports `daemon` at module level.
-    - `docs/read-contract.md`: the files of a store, the contractual tables and columns of `capture.sqlite3`, the manifest fields, the public modules (`agent_watchdog.readapi` at runtime; `agent_watchdog.capture_store` for building stores in tests only), and the evolution rule: adding a table or a nullable column does not change `contract`; removing, renaming or retyping does, together with `readapi.CONTRACT_VERSION`; a reader refuses a store with a newer contract.
-  - **Steps.**
-    1. Tests: the manifest is written and rewritten; `machine_id` is stable across restarts; `stores` skips and flags; `lines` returns sealed and tail records in order and byte-exact; a store with a newer contract is refused; a writer checkpoint succeeds while a reader iterates.
-    2. Implementation and the document.
-    3. Add `capture_store.write_manifest` for tests of both packages that build a synthetic store through the real writer.
-  - **Out of scope.** Reading hook events and facts (WD-195), environment and outcome (WD-196).
-  - **Acceptance:** the tests pass, then both suites; `docs/read-contract.md` describes everything `readapi` exposes and nothing else.
-
 - [ ] **WD-190 - Session environment snapshot.** P1. Depends on WD-187.
   - **Why.** An A/B comparison needs the conditions of each run: where it ran, on which commit, under which instructions, settings and Watchdog rules. Today the hook path drops `cwd` (`native/src/main.rs:664-677`, `hooks.py:342`), the checkout fingerprint never reads `HEAD` (`analysis.py:702-745`), and the active rule set is not recorded per session.
   - **Fixed decisions.**
@@ -348,6 +326,7 @@ Line numbers in these tasks refer to commit `0d5e984`. Paths under `insights/` e
 
 ## P2 - Pipeline, scheduling and performance
 
+- [ ] **WD-215 - Investigate transient `storage_unavailable` during daemon status checks.** An installed `daemon status` call outside the sandbox reported three unavailable project stores under concurrent test load. A read-only diagnostic reproduced `SQLITE_INTERRUPT` for `MAX(received_at)` at the health query's 100 ms limit on one store. Status later returned `running` before the WD-189 deployment. Verify the cause for the affected stores and cover any fix with a representative status check. See [WD-189 evidence](docs/evidence/wd189.md).
 
 - [ ] **WD-152 - Audit periodic processes and revise their cadence.** Inventory every daemon, maintenance, background, and scheduled periodic process; record its trigger, current interval, precision requirement, cost, and failure/recovery role. Replace fixed polling intervals where evidence supports an event-driven or deadline-based schedule, and retain documented intervals only where their latency or safety benefit justifies the cost. Acceptance: the inventory and decisions are recorded in `docs/architecture.md`; retention expiry, quota enforcement, spool draining, health/status publication, transcript enrichment, and policy/control processing each have measured or reasoned cadence; focused tests cover every changed scheduling contract; the live daemon is observed after the change without missed ingestion or delayed expiry beyond its declared bound.
   **P2; coordination.** Include the planned WD-149/WD-157/WD-162 maintenance, content migration and recomputation jobs in the inventory, with resume/fairness and quota-admission versus periodic-cleanup bounds. Scheduling changes follow measured cost and correctness requirements, not an interval reduction alone.

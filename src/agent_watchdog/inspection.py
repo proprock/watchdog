@@ -4,7 +4,7 @@ import json
 import sqlite3
 from collections import defaultdict
 from collections.abc import Iterator
-from contextlib import closing, contextmanager
+from contextlib import contextmanager
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any, Literal, TypedDict, cast
@@ -20,8 +20,14 @@ from agent_watchdog.config import (
 )
 from agent_watchdog.events import Envelope
 from agent_watchdog.execution import normalize_events
+from agent_watchdog.readapi import _readonly_database
 from agent_watchdog.registry import Registry
-from agent_watchdog.storage import PENDING_SESSIONS, StorageError, persisted_envelope
+from agent_watchdog.storage import (
+    EVENTS_SCHEMA_VERSION,
+    PENDING_SESSIONS,
+    StorageError,
+    persisted_envelope,
+)
 
 
 class SessionLabel(TypedDict):
@@ -272,10 +278,9 @@ def database(paths: UserPaths, project: Project) -> Iterator[sqlite3.Connection]
     path = paths.project_data(project.id) / "events.sqlite3"
     if not path.is_file():
         raise StorageError("Project has no collected database")
-    with closing(sqlite3.connect(path.as_uri() + "?mode=ro", uri=True, timeout=0.1)) as db:
-        db.execute("PRAGMA query_only=ON")
+    with _readonly_database(path) as db:
         db.execute("BEGIN")
-        if db.execute("PRAGMA user_version").fetchone()[0] not in (1, 2, 3, 4, 5, 6, 7, 8, 9):
+        if not 1 <= db.execute("PRAGMA user_version").fetchone()[0] <= EVENTS_SCHEMA_VERSION:
             raise StorageError("Unsupported database schema")
         if db.execute("SELECT project_id FROM metadata").fetchall() != [(str(project.id),)]:
             raise StorageError("Database belongs to a different project")

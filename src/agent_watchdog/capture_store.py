@@ -1,17 +1,26 @@
 """SQLite storage for byte-exact transcript capture."""
 
+import json
+import socket
 import sqlite3
+import sys
 from collections.abc import Iterator
 from compression import zstd
 from contextlib import closing, contextmanager
+from datetime import UTC, datetime
 from io import BytesIO
 from pathlib import Path
 from typing import TypedDict
+from uuid import UUID
 
-from agent_watchdog.storage import StorageError
+from agent_watchdog.config import Project, project_aliases
+from agent_watchdog.files import atomic_write, open_shared_read
+from agent_watchdog.storage import EVENTS_SCHEMA_VERSION, StorageError
 
 CAPTURE_FILENAME = "capture.sqlite3"
 SCHEMA_VERSION = 1
+STORE_CONTRACT_VERSION = 1
+STORE_MANIFEST_FILENAME = "store.json"
 CHUNK_TARGET_BYTES = 4 * 1024**2
 ZSTD_LEVEL = 12
 
@@ -86,6 +95,41 @@ class CaptureStats(TypedDict):
     stored_bytes: int
     skipped_lines: int
     last_errors: list[str]
+
+
+def write_manifest(
+    project_dir: Path,
+    *,
+    machine_id: UUID,
+    project: Project,
+    events_schema: int = EVENTS_SCHEMA_VERSION,
+    name: str | None = None,
+) -> None:
+    """Publish store metadata when its content changes."""
+    path = project_dir / STORE_MANIFEST_FILENAME
+    manifest = {
+        "contract": STORE_CONTRACT_VERSION,
+        "machine_id": str(machine_id),
+        "hostname": socket.gethostname(),
+        "os": sys.platform,
+        "project_id": str(project.id),
+        "root": str(project.root),
+        "git_common_dir": str(project.git_common_dir) if project.git_common_dir else None,
+        "name": name if name is not None else project_aliases((project,))[project.id],
+        "events_schema": events_schema,
+        "capture_schema": SCHEMA_VERSION,
+    }
+    try:
+        with open_shared_read(path) as stream:
+            previous = json.load(stream)
+    except FileNotFoundError, ValueError:
+        previous = None
+    if isinstance(previous, dict):
+        written_at = previous.pop("written_at", None)
+        if isinstance(written_at, str) and previous == manifest:
+            return
+    content = json.dumps({**manifest, "written_at": datetime.now(UTC).isoformat()})
+    atomic_write(path, (content + "\n").encode("utf-8"), allow_open_readers=True)
 
 
 class CaptureStore:
