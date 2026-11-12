@@ -1458,6 +1458,68 @@ def test_stale_pid_is_not_treated_as_ownership(paths):
     assert status(paths)["state"] == "paused"
 
 
+def test_machine_id_survives_daemon_restart(paths):
+    identity = paths.data / "machine_id"
+    assert start(paths)
+    wait_for(lambda: status(paths)["state"] == "running")
+    assert identity.is_file()
+    first = identity.read_text(encoding="utf-8").strip()
+    assert UUID(first).version == 4
+
+    stop(paths)
+    wait_for(lambda: not status(paths)["alive"])
+    stamp = identity.stat().st_mtime_ns
+    assert start(paths)
+    wait_for(lambda: status(paths)["state"] == "running")
+    assert identity.read_text(encoding="utf-8").strip() == first
+    assert identity.stat().st_mtime_ns == stamp
+
+
+def test_daemon_writes_and_refreshes_store_manifest(paths, tmp_path):
+    project = Project(id=uuid4(), root=tmp_path / "original")
+    project.root.mkdir()
+    config = Config(projects=(project,))
+    save_config(paths.config, config)
+    project_dir = paths.project_data(project.id)
+    manifest = project_dir / "store.json"
+
+    assert start(paths)
+    wait_for(lambda: status(paths)["state"] == "running")
+    assert manifest.is_file()
+    first = json.loads(manifest.read_text(encoding="utf-8"))
+    assert first == {
+        "contract": 1,
+        "machine_id": (paths.data / "machine_id").read_text(encoding="utf-8").strip(),
+        "hostname": socket.gethostname(),
+        "os": sys.platform,
+        "project_id": str(project.id),
+        "root": str(project.root),
+        "git_common_dir": None,
+        "name": "original",
+        "events_schema": 9,
+        "capture_schema": 1,
+        "written_at": first["written_at"],
+    }
+    assert datetime.fromisoformat(first["written_at"]).utcoffset() == timedelta(0)
+
+    stop(paths)
+    wait_for(lambda: not status(paths)["alive"])
+    stamp = manifest.stat().st_mtime_ns
+    assert start(paths)
+    wait_for(lambda: status(paths)["state"] == "running")
+    assert manifest.stat().st_mtime_ns == stamp
+
+    relocated = tmp_path / "relocated"
+    relocated.mkdir()
+    save_config(paths.config, Config(projects=(project.model_copy(update={"root": relocated}),)))
+    wait_for(lambda: json.loads(manifest.read_text(encoding="utf-8"))["root"] == str(relocated))
+    updated = json.loads(manifest.read_text(encoding="utf-8"))
+    assert updated["name"] == "relocated"
+    assert updated["project_id"] == first["project_id"]
+    assert updated["machine_id"] == first["machine_id"]
+    assert updated["written_at"] != first["written_at"]
+
+
 def test_crash_releases_lock_and_hook_recovers(paths):
     process = subprocess.Popen(
         [
