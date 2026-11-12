@@ -9,6 +9,7 @@ import pytest
 
 from agent_watchdog.cli import main
 from agent_watchdog.config import Config, Limits, Project, UserPaths, load_config, save_config
+from agent_watchdog.daemon import _drain_spool
 from agent_watchdog.hooks import build_envelope, observe
 from agent_watchdog.privacy import sanitize
 from agent_watchdog.registry import Resolution
@@ -100,25 +101,27 @@ def test_invalid_input_is_ignored(setup, raw):
     assert events == []
 
 
-def test_unregistered_project_is_ignored(setup, tmp_path):
+def test_non_git_cwd_is_spooled_for_daemon_accounting(setup, tmp_path, monkeypatch):
     paths, events = setup
+    monkeypatch.setattr("agent_watchdog.hooks.daemon.launch", lambda paths: None)
     save_config(paths.config, Config())
     observe(
         paths, io.BytesIO(json.dumps({"cwd": str(tmp_path), "hook_event_name": "Stop"}).encode())
     )
     assert events == []
+    assert list((paths.data / "spool").glob("*.json"))
+    _drain_spool(paths, load_config(paths.config))
+    ignored = json.loads((paths.data / "ignored.json").read_text(encoding="utf-8"))
+    assert ignored[str(tmp_path.resolve())]["reason"] == "not_git"
+    assert ignored[str(tmp_path.resolve())]["records"] == 1
 
 
-def test_trusted_git_project_is_auto_added_and_observed(setup, tmp_path):
+def test_git_project_is_auto_added_and_observed_by_default(setup, tmp_path):
     paths, events = setup
-    trusted = tmp_path / "repos"
-    repository = trusted / "new-project"
-    repository.mkdir(parents=True)
+    repository = tmp_path / "new-project"
+    repository.mkdir()
     subprocess.run(["git", "-C", str(repository), "init"], check=True, capture_output=True)
-    save_config(
-        paths.config,
-        Config(auto_add_projects=True, trusted_projects_dir=trusted),
-    )
+    save_config(paths.config, Config())
 
     observe(
         paths,

@@ -1,11 +1,12 @@
 import os
 import subprocess
+import tempfile
 from pathlib import Path
 
 import pytest
 
 from agent_watchdog.config import Config, Pricing, Rules, load_config, save_config
-from agent_watchdog.registry import Registry, RegistryError
+from agent_watchdog.registry import Registry, RegistryError, Resolution
 
 
 def git(path, *args):
@@ -142,26 +143,22 @@ def test_unregistered_nested_git_repository_is_not_collected(repository):
     assert registry.resolve(repository) is None
 
 
-def test_trusted_git_repository_is_auto_added_once(repository, tmp_path):
-    trusted = tmp_path / "repos"
-    trusted.mkdir()
-    repository.rename(trusted / "project")
-    repository = trusted / "project"
+def test_git_repository_is_auto_added_once_without_a_trusted_directory(repository, tmp_path):
     nested = repository / "nested"
     nested.mkdir()
-    registry = Registry(Config(auto_add_projects=True, trusted_projects_dir=trusted))
+    registry = Registry()
 
     resolution, added = registry.resolve_or_auto_add(nested)
-    assert resolution is not None and added
+    assert isinstance(resolution, Resolution) and added
     assert registry.config.projects[0].root == repository.resolve()
 
     repeated, added = registry.resolve_or_auto_add(repository)
     assert repeated == resolution and not added
 
-    worktree = trusted / "project-worktree"
+    worktree = tmp_path / "project-worktree"
     git(repository, "worktree", "add", "-b", "auto-add-worktree", str(worktree))
     linked, added = registry.resolve_or_auto_add(worktree)
-    assert linked is not None and not added
+    assert isinstance(linked, Resolution) and not added
     assert linked.project_id == resolution.project_id
     assert linked.checkout_id != resolution.checkout_id
 
@@ -211,8 +208,42 @@ def test_auto_add_rejects_non_git_and_outside_trusted_directory(repository, tmp_
     plain = trusted / "plain"
     plain.mkdir()
 
-    assert registry.resolve_or_auto_add(plain) == (None, False)
-    assert registry.resolve_or_auto_add(repository) == (None, False)
+    assert registry.resolve_or_auto_add(plain) == ("not_git", False)
+    assert registry.resolve_or_auto_add(repository) == ("excluded", False)
+    assert registry.config.projects == ()
+
+
+def test_collection_glob_matches_the_checkout_root_before_auto_add(repository):
+    nested = repository / "nested"
+    nested.mkdir()
+    registry = Registry(Config(collect_exclude=("*/REPO WITH SPACES",)))
+
+    assert registry.resolve_or_auto_add(nested) == ("excluded", False)
+    assert registry.config.projects == ()
+    project = registry.add(repository)
+    resolution, added = registry.resolve_or_auto_add(nested)
+    assert isinstance(resolution, Resolution)
+    assert resolution.project_id == project.id and not added
+
+
+def test_auto_add_excludes_checkout_containing_the_temp_directory(repository, monkeypatch):
+    scratch = repository / "temp"
+    scratch.mkdir()
+    monkeypatch.setattr(tempfile, "tempdir", str(scratch))
+    registry = Registry()
+
+    assert registry.resolve_or_auto_add(repository) == ("excluded", False)
+    assert registry.config.projects == ()
+
+
+def test_auto_add_excludes_checkout_containing_a_protected_directory(repository):
+    protected = repository / "watchdog-data"
+    registry = Registry()
+
+    assert registry.resolve_or_auto_add(repository, protected_roots=(protected,)) == (
+        "excluded",
+        False,
+    )
     assert registry.config.projects == ()
 
 
@@ -231,6 +262,15 @@ def test_broken_git_metadata_is_not_silently_registered_as_non_git(tmp_path):
     (tmp_path / ".git").write_text("gitdir: missing\n")
     with pytest.raises(RegistryError):
         Registry().add(tmp_path)
+
+
+def test_empty_git_metadata_cannot_trigger_automatic_registration(tmp_path):
+    (tmp_path / ".git").mkdir()
+    registry = Registry()
+
+    with pytest.raises(RegistryError):
+        registry.resolve_or_auto_add(tmp_path)
+    assert registry.config.projects == ()
 
 
 def test_git_relocation_keeps_uuid_and_persists_new_common_dir(repository, tmp_path):

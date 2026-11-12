@@ -402,10 +402,16 @@ def test_native_unregistered_and_invalid_config_fail_open(rust_adapter, native_s
     paths, project = native_setup
     foreign = tmp_path / "foreign"
     foreign.mkdir()
-    assert invoke(rust_adapter, paths, {"cwd": str(foreign)}).stdout == "{}\n"
+    assert (
+        invoke(rust_adapter, paths, {"cwd": str(foreign), "hook_event_name": "Stop"}).stdout
+        == "{}\n"
+    )
     drain_spool(paths)
     assert not persisted_events(paths, project)
-    assert not spool_files(paths)  # unregistered cwd is discarded at drain
+    assert not spool_files(paths)
+    ignored = json.loads((paths.data / "ignored.json").read_text(encoding="utf-8"))
+    assert ignored[str(foreign.resolve())]["reason"] == "not_git"
+    assert ignored[str(foreign.resolve())]["records"] == 1
 
     paths.config.write_text("schema_version = 999\n", encoding="utf-8")
     assert invoke(rust_adapter, paths, {"cwd": str(project.root)}).stdout == "{}\n"
@@ -413,13 +419,12 @@ def test_native_unregistered_and_invalid_config_fail_open(rust_adapter, native_s
     assert not list(paths.data.glob("projects/*/inbox/*.json"))
 
 
-def test_native_spool_auto_adds_a_trusted_git_project(rust_adapter, native_setup, tmp_path):
+def test_native_spool_auto_adds_a_git_project_by_default(rust_adapter, native_setup, tmp_path):
     paths, _ = native_setup
-    trusted = tmp_path / "repos"
-    repository = trusted / "new-project"
-    repository.mkdir(parents=True)
+    repository = tmp_path / "new-project"
+    repository.mkdir()
     subprocess.run(["git", "-C", str(repository), "init"], check=True, capture_output=True)
-    save_config(paths.config, Config(auto_add_projects=True, trusted_projects_dir=trusted))
+    save_config(paths.config, Config())
 
     assert (
         invoke(rust_adapter, paths, {"cwd": str(repository), "hook_event_name": "Stop"}).stdout

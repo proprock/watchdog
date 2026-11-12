@@ -16,6 +16,7 @@ import pytest
 from agent_watchdog.analysis import CheckoutUnknown
 from agent_watchdog.config import (
     Config,
+    ConfigError,
     Limits,
     Overrides,
     Pricing,
@@ -32,6 +33,7 @@ from agent_watchdog.daemon import (
     _policy_server,
     _record_enrichment_failures,
     _SessionTracker,
+    control_lock,
     launch,
     mutate_registry,
     publish,
@@ -42,7 +44,8 @@ from agent_watchdog.daemon import (
     write_spool_limits,
 )
 from agent_watchdog.events import Envelope
-from agent_watchdog.registry import Registry, RegistryError
+from agent_watchdog.inspection import doctor
+from agent_watchdog.registry import Registry
 from agent_watchdog.resources import losses
 from agent_watchdog.rules.engine import decide
 from agent_watchdog.state import SessionState, Signature
@@ -239,7 +242,7 @@ def test_unknown_checkout_detail_is_opt_in_and_carries_the_checkout_path(
     assert ' detail="' in line and str(tmp_path) in line and "locked by another process" in line
 
 
-def test_spool_unregistered_cwd_is_discarded_without_loss(paths, tmp_path):
+def test_spool_non_git_records_are_counted_and_warned_once_without_loss(paths, tmp_path):
     root = tmp_path / "project"
     root.mkdir()
     mutate_registry(paths, lambda registry: registry.add(root))
@@ -247,14 +250,109 @@ def test_spool_unregistered_cwd_is_discarded_without_loss(paths, tmp_path):
     foreign = tmp_path / "foreign"
     foreign.mkdir()
     write_spool_record(paths, spool_record(foreign, hook_event_name="Stop"))
+    write_spool_record(paths, spool_record(foreign, hook_event_name="Stop"))
 
     assert _drain_spool(paths, config) is True
     assert not list((paths.data / "spool").glob("*.json"))
     assert not list(paths.data.glob("projects/*/inbox"))
     assert losses(paths.data)["invalid"] == 0
     body = (paths.data / "watchdog.log").read_text(encoding="ascii")
-    assert "component=daemon event=spool decision=unregistered" in body
+    assert body.count("component=daemon event=spool decision=ignored reason=not_git") == 1
     assert str(foreign) not in body
+    report = doctor(paths, transcript_roots={})["ignored"]
+    assert report["total"] == 2
+    assert report["by_reason"] == {"not_git": 2}
+    (recent,) = report["recent"]
+    assert Path(recent["directory"]) == foreign.resolve()
+    assert recent["records"] == 2
+    assert recent["first_at"] <= recent["last_at"]
+
+
+def test_ignored_counts_flush_once_per_minute_and_keep_pending_records(paths, tmp_path):
+    from agent_watchdog.ignored import IgnoredRecords
+
+    foreign = tmp_path / "foreign"
+    foreign.mkdir()
+    tracker = IgnoredRecords(paths.data)
+    first = paths.data / "spool" / "first.json"
+    second = first.with_name("second.json")
+    first.parent.mkdir(parents=True)
+    first.touch()
+    second.touch()
+    tracker.record(first, str(foreign), "not_git")
+    assert tracker.flush(now=100)
+    tracker.record(second, str(foreign), "not_git")
+    assert not tracker.flush(now=159.99)
+    assert not first.exists() and second.exists()
+    assert doctor(paths, transcript_roots={})["ignored"]["total"] == 1
+    assert tracker.flush(now=160)
+    assert not second.exists()
+    assert doctor(paths, transcript_roots={})["ignored"]["total"] == 2
+
+
+def test_ignored_counts_evict_the_oldest_directory(paths, tmp_path):
+    from agent_watchdog.ignored import IgnoredRecords
+
+    tracker = IgnoredRecords(paths.data)
+    for index in range(501):
+        tracker.record(
+            paths.data / "spool" / f"{index}.json", str(tmp_path / str(index)), "not_git"
+        )
+    assert tracker.flush(now=100)
+    entries = json.loads((paths.data / "ignored.json").read_text(encoding="utf-8"))
+    assert len(entries) == 500
+    assert str(tmp_path / "0") not in entries
+    report = doctor(paths, transcript_roots={})["ignored"]
+    assert [Path(row["directory"]).name for row in report["recent"]] == [
+        "500",
+        "499",
+        "498",
+        "497",
+        "496",
+    ]
+
+
+def test_ignored_counts_do_not_double_count_after_failed_acknowledgement(
+    paths, tmp_path, monkeypatch
+):
+    from agent_watchdog.ignored import IgnoredRecords
+
+    record = paths.data / "spool" / "ignored.json"
+    record.parent.mkdir(parents=True)
+    record.touch()
+    tracker = IgnoredRecords(paths.data)
+    tracker.record(record, str(tmp_path), "not_git")
+    with monkeypatch.context() as patch:
+
+        def fail_unlink(*args, **kwargs):
+            raise PermissionError("Spool record temporarily in use")
+
+        patch.setattr(Path, "unlink", fail_unlink)
+        with pytest.raises(PermissionError):
+            tracker.flush(now=100)
+    assert record.exists()
+
+    restarted = IgnoredRecords(paths.data)
+    restarted.record(record, str(tmp_path), "not_git")
+    assert restarted.flush(now=200)
+    assert not record.exists()
+    assert doctor(paths, transcript_roots={})["ignored"]["total"] == 1
+
+
+def test_unreadable_ignored_counts_do_not_prevent_storing_git_records(paths, tmp_path):
+    root = tmp_path / "registered"
+    root.mkdir()
+    mutate_registry(paths, lambda registry: registry.add(root))
+    config = load_config(paths.config)
+    paths.data.joinpath("ignored.json").write_text("{", encoding="utf-8")
+    foreign = tmp_path / "foreign"
+    foreign.mkdir()
+    write_named_spool_record(paths, "0-foreign.json", spool_record(foreign, hook_event_name="Stop"))
+    write_named_spool_record(paths, "1-registered.json", spool_record(root, hook_event_name="Stop"))
+
+    assert _drain_spool(paths, config)
+    assert [event.kind for event in stored_events(paths, config.projects[0])] == ["turn.end"]
+    assert paths.data.joinpath("spool", "0-foreign.json").is_file()
 
 
 def write_named_spool_record(paths, name, record):
@@ -284,41 +382,38 @@ def test_spool_record_whose_cwd_is_gone_is_discarded_and_the_drain_continues(pat
     assert not list((paths.data / "spool").glob("*.json"))
     assert [event.kind for event in stored_events(paths, project)] == ["turn.start"]
     body = (paths.data / "watchdog.log").read_text(encoding="ascii")
-    assert "component=daemon event=spool decision=discarded reason=unresolvable_cwd" in body
+    assert "component=daemon event=spool decision=ignored reason=unresolvable_cwd" in body
+    assert doctor(paths, transcript_roots={})["ignored"]["by_reason"] == {"unresolvable_cwd": 1}
     assert str(gone) not in body
 
 
-def test_spool_record_with_a_transient_resolution_failure_is_kept_for_a_retry(
-    paths, tmp_path, monkeypatch
-):
-    root = tmp_path / "project"
-    root.mkdir()
-    mutate_registry(paths, lambda registry: registry.add(root))
-    config = load_config(paths.config)
-    project = config.projects[0]
-    slow = tmp_path / "slow"
-    slow.mkdir()
-    real_resolve = Registry.resolve
-
-    def resolve(self, path, **options):
-        if Path(path) == slow:
-            raise RegistryError("Cannot resolve project path or Git metadata")
-        return real_resolve(self, path, **options)
-
-    monkeypatch.setattr(Registry, "resolve", resolve)
-    write_named_spool_record(paths, "0-slow.json", spool_record(slow, hook_event_name="Stop"))
+@pytest.mark.parametrize("failure", ["busy", "configuration"])
+def test_spool_retries_auto_registration_without_loss(paths, tmp_path, monkeypatch, failure):
+    repository = tmp_path / "new-project"
+    repository.mkdir()
+    subprocess.run(["git", "-C", str(repository), "init"], check=True, capture_output=True)
+    config = Config(auto_add_projects=True, trusted_projects_dir=tmp_path)
+    save_config(paths.config, config)
     write_named_spool_record(
-        paths, "1-ok.json", spool_record(root, hook_event_name="UserPromptSubmit", session_id="s1")
+        paths, "pending.json", spool_record(repository, hook_event_name="Stop")
     )
-    logged: set = set()
 
-    assert _drain_spool(paths, config, logged_unknown_checkouts=logged) is True
-    assert _drain_spool(paths, config, logged_unknown_checkouts=logged) is False
+    def fail_save(*args):
+        raise ConfigError("Could not save configuration")
 
-    assert [item.name for item in (paths.data / "spool").glob("*.json")] == ["0-slow.json"]
-    assert [event.kind for event in stored_events(paths, project)] == ["turn.start"]
-    body = (paths.data / "watchdog.log").read_text(encoding="ascii")
-    assert body.count("event=spool decision=deferred reason=unresolvable_cwd") == 1
+    with monkeypatch.context() as patch:
+        if failure == "busy":
+            with control_lock(paths):
+                assert _drain_spool(paths, config) is False
+        else:
+            patch.setattr("agent_watchdog.daemon.save_config", fail_save)
+            assert _drain_spool(paths, config) is False
+
+    assert (paths.data / "spool" / "pending.json").is_file()
+    assert losses(paths.data)["invalid"] == 0
+    assert _drain_spool(paths, config) is True
+    (project,) = load_config(paths.config).projects
+    assert [event.kind for event in stored_events(paths, project)] == ["turn.end"]
 
 
 def test_invalid_spool_quarantine_does_not_store_record_content(paths):
@@ -373,12 +468,12 @@ def test_oversized_spool_record_is_discarded_with_a_size_reason(paths, tmp_path)
     assert "component=daemon event=spool decision=discarded reason=oversized" in body
 
 
-def test_spool_trusted_git_project_is_auto_added_and_admitted(paths, tmp_path):
+def test_spool_git_project_is_auto_added_and_admitted_by_default(paths, tmp_path):
     trusted = tmp_path / "repos"
     repository = trusted / "new-project"
     repository.mkdir(parents=True)
     subprocess.run(["git", "-C", str(repository), "init"], check=True, capture_output=True)
-    config = Config(auto_add_projects=True, trusted_projects_dir=trusted)
+    config = Config()
     save_config(paths.config, config)
     write_spool_record(paths, spool_record(repository, hook_event_name="Stop"))
 

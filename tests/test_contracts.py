@@ -27,7 +27,8 @@ def test_missing_config_uses_defaults_without_creating_files(tmp_path):
     assert config.defaults.transcript_failure_minutes == 15
     assert config.defaults.project_bytes == 0
     assert config.projects == ()
-    assert config.auto_add_projects is False
+    assert config.auto_add_projects is True
+    assert config.collect_exclude == ()
     assert config.trusted_projects_dir is None
     assert config.pipeline_telemetry is True
     assert list(tmp_path.iterdir()) == []
@@ -97,23 +98,20 @@ def test_repository_config_example_matches_default_configuration():
     assert load_config(path) == Config()
 
 
-def test_auto_add_configuration_expands_home_and_requires_a_trusted_directory(tmp_path):
+def test_auto_add_configuration_expands_home_and_round_trips_exclusions(tmp_path):
     home = Path.home()
-    config = Config(auto_add_projects=True, trusted_projects_dir=Path("~"))
+    config = Config(trusted_projects_dir=Path("~"), collect_exclude=("*/scratch/*",))
     assert config.trusted_projects_dir == home.resolve()
     path = tmp_path / "config.toml"
     save_config(path, config)
-    assert load_config(path).trusted_projects_dir == home.resolve()
+    assert load_config(path) == config
 
-    with pytest.raises(ValidationError):
-        Config(auto_add_projects=True)
-    with pytest.raises(ValidationError):
-        Config(auto_add_projects=True, trusted_projects_dir=tmp_path / "missing")
 
-    file = tmp_path / "not-a-directory"
-    file.write_text("x", encoding="utf-8")
-    with pytest.raises(ValidationError):
-        Config(auto_add_projects=True, trusted_projects_dir=file)
+def test_auto_add_does_not_require_the_trusted_directory_to_exist(tmp_path):
+    missing = tmp_path / "missing"
+    config = Config(auto_add_projects=True, trusted_projects_dir=missing)
+
+    assert config.trusted_projects_dir == missing.resolve()
 
 
 def test_project_overrides_round_trip_and_do_not_change_other_projects(tmp_path):
