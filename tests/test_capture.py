@@ -222,6 +222,64 @@ def test_capture_refuses_project_quota(store, tmp_path, monkeypatch):
     assert not (store.root / "capture.sqlite3").exists()
 
 
+def test_capture_budget_resumes_claude_directory_discovery(store, tmp_path, monkeypatch):
+    from agent_watchdog import capture
+
+    main = tmp_path / "session.jsonl"
+    main.write_bytes(b"main\n")
+    directory = tmp_path / "session" / "subagents"
+    directory.mkdir(parents=True)
+    for identity in ("a1", "a2", "a3"):
+        (directory / f"agent-{identity}.jsonl").write_bytes(b"child\n")
+    name_source(store, main, provider="claude")
+    original = capture._files
+    elapsed = 0.0
+
+    def slow_files(directory):
+        nonlocal elapsed
+        for path in original(directory):
+            elapsed += 0.06
+            yield path
+
+    monkeypatch.setattr(capture, "_files", slow_files)
+    cursor = capture.CaptureCursor()
+    for second in range(10):
+        run(store, clock=lambda: elapsed, cursor=cursor, now=NOW + timedelta(seconds=second))
+    assert {row["stream_id"] for row, _ in captured(store)} == {"main", "a1", "a2", "a3"}
+
+
+def test_capture_quota_refusal_yields_to_next_stream(store, tmp_path, monkeypatch):
+    from agent_watchdog import resources
+    from agent_watchdog.capture import WRITE_OVERHEAD
+
+    large = tmp_path / ROLLOUT
+    small = tmp_path / "rollout-2026-11-12T00-00-00-99999999-9999-9999-9999-999999999999.jsonl"
+    large.write_bytes(b"x" * 400 + b"\n")
+    small.write_bytes(b"ok\n")
+    name_source(store, large)
+    name_source(store, small)
+    monkeypatch.setattr(resources, "available", lambda *_: WRITE_OVERHEAD + 500)
+    assert run(store).degraded
+    run(store, now=NOW + timedelta(seconds=1))
+    assert [lines for _, lines in captured(store) if lines] == [[b"ok"]]
+
+
+def test_capture_retries_truncated_zstd_without_losing_records(store, tmp_path):
+    path = tmp_path / ROLLOUT
+    path.write_bytes(b"first\n")
+    name_source(store, path)
+    run(store)
+    path.unlink()
+    compressed = path.with_suffix(".jsonl.zst")
+    data = zstd.compress(b"first\nsecond\n")
+    compressed.write_bytes(data[:-1])
+    assert run(store, now=NOW + timedelta(seconds=1)).degraded
+    assert captured(store)[0][1] == [b"first"]
+    compressed.write_bytes(data)
+    assert not run(store, now=NOW + timedelta(seconds=2)).degraded
+    assert captured(store)[0][1] == [b"first", b"second"]
+
+
 def test_purge_removes_capture_named_by_hook_session(store, tmp_path):
     path = tmp_path / ROLLOUT
     path.write_bytes(b"child\n")
