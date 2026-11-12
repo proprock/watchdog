@@ -10,6 +10,8 @@ Historical records only: one line per task. The full text of every entry, includ
 
 - [x] **WD-189 - Read contract v1 for Watchdog stores (2026-11-12).** The installed daemon published manifests for 15 stores, and the read API opened both databases in every store. The root and insights suites passed. [Evidence](docs/evidence/wd189.md).
 
+- [x] **WD-213 - Investigate daemon status after crash (2026-11-12).** The recovery test waits for startup to finish, and a separate test covers a crash during startup. The full root suite passed 2128 tests with one skip. [Evidence](docs/evidence/wd213.md).
+
 - [x] **WD-212 - Fix concurrent daemon control replacement on Windows (2026-11-12).** Pause can atomically replace `control.json` while a reader shares delete access. The full suite and the installed daemon pause and restart passed. [Evidence](docs/evidence/wd212.md).
 
 - [x] **WD-211 - Investigate native admission loss classification under concurrency (2026-11-12).** The adapter acquires the lock before initializing it and accounts separately for contention and admission-lock I/O. The full suite passed 2125 tests with one skip, and both installed adapters were updated and verified. [Evidence](docs/evidence/wd211.md).

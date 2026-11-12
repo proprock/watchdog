@@ -22,8 +22,6 @@ Owner decisions of 2026-11-11 that every Split task follows:
 
 Line numbers in these tasks refer to commit `0d5e984`. Paths under `insights/` exist after WD-184. The source checkout of the insights program is the sibling repository aliased `project-b` in `LIVE.md`; never write its real name, its old command name or its old home directory into committed text.
 
-- [ ] **WD-213 - Investigate daemon status after crash.** The WD-184 clean-clone full suite failed `test_crash_releases_lock_and_hook_recovers`: after the daemon process exited, status returned `degraded` instead of `unavailable`. Saved evidence confirms a crash between heartbeat publication and completion of startup evidence cleanup. The test now waits for completed startup; a separate test covers the intermediate crash, and four focused cases pass. Full-suite verification remains open. See [WD-184 evidence](docs/evidence/wd184.md).
-
 - [ ] **WD-186 - Collect from every Git checkout: automatic registration, exclusions, and a visible count of ignored sessions.** P0. Depends on WD-208, WD-210.
   - **Why.** Owner decision 1. Today a record from an unregistered directory is discarded at `DEBUG` with no counter (`daemon.py:985-996`), and automatic registration works only below `trusted_projects_dir` (`registry.py:129-151`, `config.py:210-213`).
   - **Fixed decisions.**
