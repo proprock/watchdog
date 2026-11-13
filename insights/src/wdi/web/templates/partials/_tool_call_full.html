@@ -1,4 +1,8 @@
-{% if not from_source %}<p class="muted">Full source unavailable — showing stored preview.</p>{% endif %}
-{% if full_input %}<h4>Input</h4><pre>{{ full_input }}</pre>{% endif %}
-{% if full_output %}<h4>Output</h4><pre>{{ full_output }}</pre>{% endif %}
-{% if not full_input and not full_output %}<p class="muted">No input or output recorded.</p>{% endif %}
+{% if full_input is none and full_output is none %}
+<p class="muted">Full source unavailable.</p>
+{% else %}
+<h4>Input</h4>
+{% if full_input is none %}<p class="muted">Full input unavailable.</p>{% else %}<pre>{{ full_input }}</pre>{% endif %}
+<h4>Output</h4>
+{% if full_output is none %}<p class="muted">Full output unavailable.</p>{% else %}<pre>{{ full_output }}</pre>{% endif %}
+{% endif %}

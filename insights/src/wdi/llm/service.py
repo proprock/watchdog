@@ -3,9 +3,10 @@
 from __future__ import annotations
 
 import sqlite3
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field
+from pathlib import Path
 
 from wdi.db.repository import Repository
 from wdi.llm.analyzers import ANALYZERS, Analyzer
@@ -58,6 +59,7 @@ def estimate_analyzer(
     model: str,
     limit: int,
     pricing: PricingResolver,
+    data_dirs: Sequence[Path] = (),
     force: bool = False,
     on_progress: Callable[[int, int], None] | None = None,
 ) -> AnalysisEstimate:
@@ -80,7 +82,9 @@ def estimate_analyzer(
                 on_progress(done, total)
             continue
         estimate.sessions += 1
-        estimate.input_tokens += _estimate_tokens(analyzer.build_prompt(conn, session_id))
+        estimate.input_tokens += _estimate_tokens(
+            analyzer.build_prompt(conn, session_id, data_dirs=data_dirs)
+        )
         if on_progress is not None:
             on_progress(done, total)
     estimate.output_tokens = estimate.sessions * _EST_OUTPUT_TOKENS_PER_CALL
@@ -102,6 +106,7 @@ def run_analyzer(
     limit: int,
     force: bool = False,
     workers: int = 1,
+    data_dirs: Sequence[Path] = (),
     on_progress: Callable[[bool], None] | None = None,
 ) -> AnalysisStats:
     """Run one analyzer over matching sessions.
@@ -125,7 +130,7 @@ def run_analyzer(
         if not analyzer.applies(conn, session_id):
             stats.skipped_not_applicable += 1
             continue
-        prompt = analyzer.build_prompt(conn, session_id)
+        prompt = analyzer.build_prompt(conn, session_id, data_dirs=data_dirs)
         work_items.append((session_id, row["machine_id"], prompt))
 
     def _call_llm(

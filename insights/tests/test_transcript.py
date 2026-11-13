@@ -63,7 +63,8 @@ def _transcript(tmp_path: Path) -> Path:
 
 
 def test_iter_segments_classifies_full_fidelity(tmp_path: Path) -> None:
-    segs = list(transcript.iter_segments(_transcript(tmp_path)))
+    with _transcript(tmp_path).open("rb") as lines:
+        segs = list(transcript.iter_segments(lines))
     kinds = [s.kind for s in segs]
     assert kinds == [USER_PROMPT, REASONING, ASSISTANT_TEXT, TOOL_USE, TOOL_RESULT]
 
@@ -107,7 +108,23 @@ def test_stream_source_path_resolves_subagent(tmp_path: Path) -> None:
 
 def test_malformed_lines_skipped(tmp_path: Path) -> None:
     path = tmp_path / "bad.jsonl"
-    path.write_text('not json\n{"type": "user", "message": {"content": "hi"}}\n', encoding="utf-8")
-    segs = list(transcript.iter_segments(path))
+    path.write_text(
+        'not json\n{"type": "user", "message": "bad"}\n'
+        '{"type": "user", "message": {"content": "hi"}}\n',
+        encoding="utf-8",
+    )
+    with path.open("rb") as lines:
+        segs = list(transcript.iter_segments(lines))
     assert [s.kind for s in segs] == [USER_PROMPT]
     assert segs[0].text == "hi"
+
+
+def test_codex_custom_tool_result_is_read_in_full() -> None:
+    output = json.dumps({"output": "result " + "x" * 900, "metadata": {"exit_code": 0}})
+    record = {
+        "type": "response_item",
+        "payload": {"type": "custom_tool_call_output", "call_id": "call-1", "output": output},
+    }
+
+    segments = list(transcript.iter_segments([json.dumps(record)]))
+    assert [(segment.call_id, segment.text) for segment in segments] == [("call-1", output)]

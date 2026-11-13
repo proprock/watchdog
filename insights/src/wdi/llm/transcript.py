@@ -1,23 +1,26 @@
-"""Read-only segmenter over original Claude transcripts.
-
-Parses a session's source JSONL at full fidelity (no truncation) into typed
-segments. Powers both per-analyzer LLM context (sieve by kind, cap by budget) and
-the web drill-down's on-demand full tool I/O. Codex is not segmented yet; callers
-fall back to stored previews for those sessions.
-
-All functions are defensive: a missing or malformed file yields nothing rather
-than raising into a request or an analysis run.
-"""
+"""Read and segment full Claude and Codex transcripts from capture or JSONL."""
 
 from __future__ import annotations
 
 import json
-from collections.abc import Iterator
+import re
+import sqlite3
+from collections.abc import Iterable, Iterator, Sequence
+from contextlib import contextmanager
 from dataclasses import dataclass
-from pathlib import Path
+from pathlib import Path, PurePosixPath, PureWindowsPath
 from typing import Any
 
+from agent_watchdog import readapi
 from wdi.ingest.claude_code import _block_text, tool_target
+from wdi.ingest.watchdog import WatchdogSource
+
+SOURCE_ERRORS = (OSError, ValueError, KeyError, sqlite3.Error)
+
+_PERSISTED_OUTPUT = re.compile(
+    r"\A<persisted-output>\r?\nOutput too large \([^\r\n]+\)\. "
+    r"Full output saved to: ([^\r\n]+)\r?\n"
+)
 
 # Segment kinds.
 USER_PROMPT = "user_prompt"
@@ -48,27 +51,84 @@ def stream_source_path(main_source: Path, stream_id: str) -> Path | None:
     return subagent if subagent.is_file() else None
 
 
-def iter_segments(path: Path, stream_id: str = "main") -> Iterator[Segment]:
-    """Yield full-fidelity segments from one Claude transcript file."""
-    try:
-        handle = path.open(encoding="utf-8")
-    except OSError:
-        return
-    idx = 0
-    with handle:
-        for line in handle:
-            line = line.strip()
-            if not line:
+def _watchdog_source(key: str, stream_id: str, data_dirs: Sequence[Path]) -> WatchdogSource | None:
+    parts = key.removeprefix("wd://").split("/")
+    if len(parts) != 5 or not all(parts):
+        return None
+    machine, project, provider, session, stored_stream = parts
+    capture_stream = stream_id if provider == "claude" else stored_stream
+    if provider != "claude" and stream_id != "main":
+        return None
+
+    best: WatchdogSource | None = None
+    for data_dir in data_dirs:
+        try:
+            stores = readapi.stores(data_dir)
+        except SOURCE_ERRORS:
+            continue
+        for store in stores:
+            if not store.supported or (store.machine_id, store.project_id) != (machine, project):
                 continue
             try:
-                obj = json.loads(line)
-            except json.JSONDecodeError:
+                stream = next(
+                    (
+                        candidate
+                        for candidate in readapi.streams(store)
+                        if (candidate.provider, candidate.session_id, candidate.stream_id)
+                        == (provider, session, capture_stream)
+                    ),
+                    None,
+                )
+            except SOURCE_ERRORS:
                 continue
-            if not isinstance(obj, dict):
-                continue
-            for seg in _record_segments(obj, idx, stream_id):
-                yield seg
-                idx += 1
+            if stream is not None and (
+                best is None
+                or (stream.generation, stream.record_count) > (best.version, best.record_count)
+            ):
+                best = WatchdogSource(store, stream)
+    return best
+
+
+@contextmanager
+def source_lines(
+    source_path: str | Path | None,
+    stream_id: str = "main",
+    *,
+    data_dirs: Sequence[Path] = (),
+) -> Iterator[tuple[Iterable[str | bytes], WatchdogSource | None] | None]:
+    """Open the requested stream, or yield None if the source is unavailable."""
+    if not source_path:
+        yield None
+    elif isinstance(source_path, str) and source_path.startswith("wd://"):
+        source = _watchdog_source(source_path, stream_id, data_dirs)
+        if source is None:
+            yield None
+        else:
+            yield readapi.lines(source.store, source.stream.stream_pk), source
+    else:
+        path = stream_source_path(Path(source_path), stream_id)
+        if path is None:
+            yield None
+        else:
+            with path.open("rb") as lines:
+                yield lines, None
+
+
+def iter_segments(lines: Iterable[str | bytes], stream_id: str = "main") -> Iterator[Segment]:
+    """Yield full-fidelity segments from one transcript stream."""
+    idx = 0
+    for line in lines:
+        if not line.strip():
+            continue
+        try:
+            obj = json.loads(line)
+        except json.JSONDecodeError, UnicodeError:
+            continue
+        if not isinstance(obj, dict):
+            continue
+        for seg in _record_segments(obj, idx, stream_id):
+            yield seg
+            idx += 1
 
 
 def _record_segments(obj: dict[str, Any], idx: int, stream_id: str) -> Iterator[Segment]:
@@ -77,7 +137,9 @@ def _record_segments(obj: dict[str, Any], idx: int, stream_id: str) -> Iterator[
     if isinstance(payload, dict):
         yield from _codex_record_segments(rtype, payload, idx, stream_id)
         return
-    message = obj.get("message") or {}
+    message = obj.get("message")
+    if not isinstance(message, dict):
+        return
     content = message.get("content")
     if rtype == "assistant":
         yield from _assistant_segments(content, idx, stream_id)
@@ -122,7 +184,7 @@ def _codex_record_segments(
             tool_name=name,
             call_id=payload.get("call_id"),
         )
-    elif rtype == "response_item" and ptype == "function_call_output":
+    elif rtype == "response_item" and ptype in ("function_call_output", "custom_tool_call_output"):
         output = payload.get("output")
         if isinstance(output, str):
             yield Segment(TOOL_RESULT, output, idx, stream_id, call_id=payload.get("call_id"))
@@ -188,18 +250,63 @@ def _user_segments(content: Any, idx: int, stream_id: str) -> Iterator[Segment]:
         yield Segment(USER_PROMPT, text, idx, stream_id)
 
 
-def find_tool_io(main_source: Path, stream_id: str, call_id: str) -> tuple[str | None, str | None]:
-    """Return (full_input, full_output) for one tool call, read from source."""
-    path = stream_source_path(main_source, stream_id)
-    if path is None:
-        return None, None
+def _tool_output(text: str, source: WatchdogSource | None) -> str | None:
+    reference = _PERSISTED_OUTPUT.match(text)
+    if reference is None:
+        return text
+    if source is None or source.stream.provider != "claude":
+        return None
+    provider, session = source.stream.provider, source.stream.session_id
+    path = reference[1].replace("\\", "/")
+    if not (PurePosixPath(path).is_absolute() or PureWindowsPath(path).is_absolute()):
+        return None
+    parts = path.split("/")
+    if parts[-3:-1] != [session, "tool-results"] or parts[-1] in ("", ".", ".."):
+        return None
+    rel_path = f"tool-results/{parts[-1]}"
+    try:
+        side_file = max(
+            (
+                side
+                for side in readapi.side_files(source.store, provider, session)
+                if side.rel_path == rel_path
+            ),
+            key=lambda side: (side.captured_at, side.digest),
+            default=None,
+        )
+        if side_file is not None:
+            return readapi.side_file_bytes(
+                source.store, provider, session, rel_path, side_file.digest
+            ).decode("utf-8", errors="replace")
+    except SOURCE_ERRORS:
+        pass
+    return None
+
+
+def find_tool_io(
+    source_path: str | Path | None,
+    stream_id: str,
+    call_id: str,
+    *,
+    data_dirs: Sequence[Path] = (),
+) -> tuple[str | None, str | None]:
+    """Return full tool input and output, using None for an unavailable field."""
     tool_input: str | None = None
     tool_output: str | None = None
-    for seg in iter_segments(path, stream_id):
-        if seg.call_id != call_id:
-            continue
-        if seg.kind == TOOL_USE:
-            tool_input = seg.text
-        elif seg.kind == TOOL_RESULT:
-            tool_output = seg.text
+    try:
+        with source_lines(source_path, stream_id, data_dirs=data_dirs) as opened:
+            if opened is None:
+                return None, None
+            lines, source = opened
+            for seg in iter_segments(lines, stream_id):
+                if seg.call_id != call_id:
+                    continue
+                if seg.kind == TOOL_USE:
+                    tool_input = seg.text
+                elif seg.kind == TOOL_RESULT:
+                    tool_output = seg.text
+            if tool_output is not None:
+                tool_output = _tool_output(tool_output, source)
+    except SOURCE_ERRORS:
+        return None, None
     return tool_input, tool_output

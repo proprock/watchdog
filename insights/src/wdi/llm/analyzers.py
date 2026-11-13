@@ -5,9 +5,10 @@ from __future__ import annotations
 import hashlib
 import json
 import sqlite3
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from importlib import resources
+from pathlib import Path
 from typing import Any
 
 from wdi.llm import context
@@ -42,7 +43,7 @@ class Analyzer:
     key: str  # CLI-facing name
     analysis_type: str  # stored in llm_analyses
     template: str
-    context_fn: Callable[[sqlite3.Connection, str], str]
+    context_fn: Callable[[sqlite3.Connection, str, Sequence[Path]], str]
     placeholder: str
     applies: Callable[[sqlite3.Connection, str], bool] = lambda _c, _s: True
 
@@ -53,8 +54,10 @@ class Analyzer:
     def version(self) -> str:
         return _version(self.template)
 
-    def build_prompt(self, conn: sqlite3.Connection, session_id: str) -> str:
-        ctx = self.context_fn(conn, session_id)
+    def build_prompt(
+        self, conn: sqlite3.Connection, session_id: str, *, data_dirs: Sequence[Path] = ()
+    ) -> str:
+        ctx = self.context_fn(conn, session_id, data_dirs)
         if len(ctx) > self.max_context_chars:
             ctx = ctx[: self.max_context_chars] + "\n…(truncated)"
         return self.template.replace(self.placeholder, ctx)
@@ -63,8 +66,10 @@ class Analyzer:
         return _parse_response(text)
 
 
-def _prompts_context(conn: sqlite3.Connection, session_id: str) -> str:
-    prompts = context.user_prompts(conn, session_id)
+def _prompts_context(conn: sqlite3.Connection, session_id: str, data_dirs: Sequence[Path]) -> str:
+    prompts = context.user_prompts(conn, session_id, data_dirs=data_dirs)
+    if prompts is None:
+        return "Full transcript unavailable."
     return "\n\n".join(f"[{i + 1}] {p}" for i, p in enumerate(prompts))
 
 

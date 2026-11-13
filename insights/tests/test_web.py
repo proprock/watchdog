@@ -452,11 +452,9 @@ def test_tool_call_full_reads_source(
     assert "Full source unavailable" not in res.text
 
 
-def test_tool_call_full_falls_back_to_preview(client: TestClient, seeded: None) -> None:
-    # Seeded session s1 has tool calls without a source file -> preview fallback.
+def test_tool_call_full_marks_source_unavailable(client: TestClient, seeded: None) -> None:
     res = client.get("/sessions/s1/stream/main/call/none/full")
     assert res.status_code == 200
-    # No matching call_id and no source -> the unavailable note is shown.
     assert "Full source unavailable" in res.text
 
 

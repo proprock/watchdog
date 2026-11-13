@@ -45,16 +45,6 @@ Line numbers in these tasks refer to commit `0d5e984`. Paths under `insights/` e
 
 ## Split P1 - Read contract and insights on Watchdog data
 
-- [ ] **WD-194 - Full text is read through `readapi`.** P1. Depends on WD-192.
-  - **Why.** The database keeps previews of 300 and 500 characters. The tool-call detail view and the analyzer context read the full text from `sessions.source_path` and silently fall back to the preview when that is not a file (`llm/context.py:28-39`, `web/routes/sessions.py:184-189`, `llm/transcript.py:42-71`, `:191-205`).
-  - **Fixed decisions.**
-    - One function in `insights/src/wdi/llm/transcript.py` returns the lines of a stream for a `source_path`: a `wd://` key through `readapi.lines`, anything else as a file when it exists, otherwise "unavailable". The three call sites use it. `iter_segments` accepts an iterable of lines.
-    - "Unavailable" is shown as such in the page and passed as such to analyzers, never replaced by a preview without saying so.
-    - Externalised tool results: find the reference format in a real local transcript, record it in `insights/GOTCHAS.md`, and make the detail view return the content of the referenced side file through `readapi.side_file_bytes`. Cover it with a synthetic fixture.
-  - **Steps.** Tests for the three call sites with a synthetic store, with a file, and with neither; then the code.
-  - **Out of scope.** Storing full text in the insights database.
-  - **Acceptance:** the tests pass; on the live instance the detail view of a tool call from a session whose provider file is gone shows the full input and output.
-
 - [ ] **WD-197 - Isolated Claude runs for analysis in `wdi`.** P1. Depends on WD-184.
   - **Why.** The Claude backend in `wdi` (`insights/src/wdi/llm/backend.py:103-148`) runs `claude -p --output-format json --model M` in the inherited directory with the user's settings, hooks and MCP servers. Each analysis becomes an ordinary observed session, and the result depends on the user's configuration. Watchdog already has an isolated runner (`src/agent_watchdog/insights/llm.py:29-90`, `:197-246`).
   - **Parity table (owner decision 7); the result keeps every row.**

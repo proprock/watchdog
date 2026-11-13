@@ -1,14 +1,10 @@
-"""Read queries that gather per-session context for LLM analyzers.
-
-Prefers the original transcript (full fidelity, sieved by segment kind) when the
-local source file is available; falls back to stored DB previews otherwise
-(e.g. Codex sessions or snapshots imported from another machine).
-"""
+"""Read queries that gather per-session context for LLM analyzers."""
 
 from __future__ import annotations
 
 import json
 import sqlite3
+from collections.abc import Sequence
 from pathlib import Path
 from typing import Any
 
@@ -25,51 +21,39 @@ def _is_observed_tool_event(text: str) -> bool:
     )
 
 
-def _source_segments(conn: sqlite3.Connection, session_id: str) -> list[transcript.Segment] | None:
-    """Full-fidelity segments from the source file, or None when unavailable."""
+def _source_segments(
+    conn: sqlite3.Connection, session_id: str, data_dirs: Sequence[Path]
+) -> list[transcript.Segment] | None:
     row = conn.execute(
-        "SELECT agent, source_path FROM sessions WHERE session_id = ?",
+        "SELECT source_path FROM sessions WHERE session_id = ?",
         (session_id,),
     ).fetchone()
-    if row is None or not row["source_path"]:
+    if row is None:
         return None
-    path = Path(row["source_path"])
-    if not path.is_file():
+    try:
+        with transcript.source_lines(row["source_path"], data_dirs=data_dirs) as opened:
+            if opened is not None:
+                return list(transcript.iter_segments(opened[0]))
+    except transcript.SOURCE_ERRORS:
         return None
-    return list(transcript.iter_segments(path))
+    return None
 
 
-def user_prompts(conn: sqlite3.Connection, session_id: str, limit: int = 40) -> list[str]:
-    segments = _source_segments(conn, session_id)
-    if segments is not None:
-        raw_prompts = [s.text for s in segments if s.kind == transcript.USER_PROMPT]
-        prompts = [p for p in raw_prompts if not _is_observed_tool_event(p)]
-        if raw_prompts:
-            return prompts[:limit]
-    rows = conn.execute(
-        """
-        SELECT content_preview FROM messages
-        WHERE session_id = ? AND stream_id = 'main' AND role = 'user'
-          AND content_preview IS NOT NULL
-        ORDER BY idx
-        LIMIT ?
-        """,
-        (session_id, limit),
-    ).fetchall()
-    return [r["content_preview"] for r in rows if not _is_observed_tool_event(r["content_preview"])]
-
-
-def _last_assistant(conn: sqlite3.Connection, session_id: str) -> str | None:
-    row = conn.execute(
-        """
-        SELECT content_preview FROM messages
-        WHERE session_id = ? AND stream_id = 'main' AND role = 'assistant'
-          AND content_preview IS NOT NULL
-        ORDER BY idx DESC LIMIT 1
-        """,
-        (session_id,),
-    ).fetchone()
-    return row["content_preview"] if row else None
+def user_prompts(
+    conn: sqlite3.Connection,
+    session_id: str,
+    limit: int = 40,
+    *,
+    data_dirs: Sequence[Path] = (),
+) -> list[str] | None:
+    segments = _source_segments(conn, session_id, data_dirs)
+    if segments is None:
+        return None
+    return [
+        s.text
+        for s in segments
+        if s.kind == transcript.USER_PROMPT and not _is_observed_tool_event(s.text)
+    ][:limit]
 
 
 def _tool_counts(conn: sqlite3.Connection, session_id: str) -> dict[str, dict[str, int]]:
@@ -85,7 +69,9 @@ def _tool_counts(conn: sqlite3.Connection, session_id: str) -> dict[str, dict[st
     return {r["category"]: {"calls": r["calls"], "errors": r["errors"]} for r in rows}
 
 
-def summary_context(conn: sqlite3.Connection, session_id: str) -> str:
+def summary_context(
+    conn: sqlite3.Connection, session_id: str, data_dirs: Sequence[Path] = ()
+) -> str:
     row = conn.execute(
         """
         SELECT agent, model, title, duration_ms, user_msg_count, assistant_msg_count,
@@ -96,20 +82,14 @@ def summary_context(conn: sqlite3.Connection, session_id: str) -> str:
         """,
         (session_id,),
     ).fetchone()
-    segments = _source_segments(conn, session_id)
-    if segments is not None:
-        prompts = [s.text for s in segments if s.kind == transcript.USER_PROMPT]
-        assistant_texts = [s.text for s in segments if s.kind == transcript.ASSISTANT_TEXT]
-        first_prompt = prompts[0] if prompts else None
-        final_message = assistant_texts[-1] if assistant_texts else None
-        error_outputs = [
-            s.text[:_FIELD_MAX] for s in segments if s.kind == transcript.TOOL_RESULT and s.is_error
-        ]
-    else:
-        db_prompts = user_prompts(conn, session_id, limit=3)
-        first_prompt = db_prompts[0] if db_prompts else None
-        final_message = _last_assistant(conn, session_id)
-        error_outputs = []
+    segments = _source_segments(conn, session_id, data_dirs)
+    prompts = [s.text for s in segments or [] if s.kind == transcript.USER_PROMPT]
+    assistant_texts = [s.text for s in segments or [] if s.kind == transcript.ASSISTANT_TEXT]
+    error_outputs = [
+        s.text[:_FIELD_MAX]
+        for s in segments or []
+        if s.kind == transcript.TOOL_RESULT and s.is_error
+    ]
 
     data: dict[str, Any] = {
         "agent": row["agent"],
@@ -138,15 +118,18 @@ def summary_context(conn: sqlite3.Connection, session_id: str) -> str:
                 else None
             ),
         },
-        "first_prompt": first_prompt[:_FIELD_MAX] if first_prompt else None,
-        "final_message": final_message[:_FIELD_MAX] if final_message else None,
+        "transcript": "unavailable" if segments is None else "available",
+        "first_prompt": prompts[0][:_FIELD_MAX] if prompts else None,
+        "final_message": assistant_texts[-1][:_FIELD_MAX] if assistant_texts else None,
         "error_outputs": error_outputs[:10],
         "tools": _tool_counts(conn, session_id),
     }
     return json.dumps(data, ensure_ascii=False, indent=2)
 
 
-def workflow_recommendations_context(conn: sqlite3.Connection, session_id: str) -> str:
+def workflow_recommendations_context(
+    conn: sqlite3.Connection, session_id: str, data_dirs: Sequence[Path] = ()
+) -> str:
     row = conn.execute(
         """
         SELECT s.agent, s.model, s.title, s.input_tokens, s.output_tokens,
@@ -176,7 +159,7 @@ def workflow_recommendations_context(conn: sqlite3.Connection, session_id: str) 
         """,
         (session_id,),
     ).fetchone()
-    prompts = user_prompts(conn, session_id, limit=5)
+    prompts = user_prompts(conn, session_id, limit=5, data_dirs=data_dirs)
     data = {
         "session": {
             "agent": row["agent"],
@@ -197,7 +180,7 @@ def workflow_recommendations_context(conn: sqlite3.Connection, session_id: str) 
             "compactions": row["compaction_count"],
             "api_errors": row["api_error_count"],
         },
-        "developer_prompt_sample": prompts,
+        "developer_prompt_sample": prompts if prompts is not None else "unavailable",
         "tooling_signals": {
             "search_count": row["search_count"],
             "edit_count": row["edit_count"],
@@ -212,7 +195,9 @@ def workflow_recommendations_context(conn: sqlite3.Connection, session_id: str) 
     return json.dumps(data, ensure_ascii=False, indent=2)
 
 
-def agent_efficiency_context(conn: sqlite3.Connection, session_id: str) -> str:
+def agent_efficiency_context(
+    conn: sqlite3.Connection, session_id: str, _data_dirs: Sequence[Path] = ()
+) -> str:
     runs = conn.execute(
         """
         SELECT agent_run_id, agent_type, status, total_tokens, total_tool_use_count,

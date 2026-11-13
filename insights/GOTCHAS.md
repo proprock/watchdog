@@ -196,11 +196,11 @@ before touching ingest, the LLM backend, packaging, or the SQLite merge.
 
 - The DB stores only short previews (input 300 / output 500 / assistant 500 chars;
   user text 10000). Tool `input_preview`/`output_preview` are display-only — nothing
-  else reads them. Full tool I/O and full-fidelity LLM context come from re-reading
-  the original JSONL on demand (`llm/transcript.py`), keyed by `call_id`.
-- Source of truth = the local session files. Snapshot-imported sessions (no local
-  source) and Codex (not segmented yet) fall back to previews — both the web full
-  view and `llm/context.py` builders degrade gracefully, never raise.
+  else reads them. Full tool I/O and analyzer context read the original records
+  on demand through `llm/transcript.py`. It resolves `wd://` keys through the
+  Watchdog read contract and opens local JSONL for file-backed sessions.
+- The web full view matches tool I/O by `call_id`. The full view and analyzer
+  context mark missing source text as unavailable.
 - Subagent transcripts resolve to `<sessionId>/subagents/agent-<streamId>.jsonl`
   next to the main file; `stream_id` in the DB equals the subagent `agent_run_id`.
 
@@ -241,3 +241,26 @@ before touching ingest, the LLM backend, packaging, or the SQLite merge.
   dirs. Tests that exercise the create path must monkeypatch
   `wdi.ingest.service.run_import` so they don't read real sessions or write to
   the real `~/.wdi` database.
+## Claude tool results stored beside the transcript
+
+A Claude user message can contain a `tool_result` block whose string content
+starts with `<persisted-output>`. Its header gives an absolute path before a
+short preview. A synthetic example follows.
+
+```text
+<persisted-output>
+Output too large (42.1KB). Full output saved to: C:\Users\example\.claude\projects\demo\session-id\tool-results\result-1.txt
+
+Preview (first 2KB):
+[preview]
+</persisted-output>
+```
+
+Local transcripts confirmed that the filename can differ from the tool call ID.
+Watchdog captures the file under `tool-results/<filename>` for the parent
+session. The detail view validates the session directory in the reference,
+looks up that relative path in the capture, and reads the bytes by digest.
+When a file has several captured versions, the view uses the latest capture.
+Missing side files are shown as unavailable. The separate `<output-file>`
+marker in background task notifications can reference files outside that
+session directory.

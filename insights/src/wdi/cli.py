@@ -781,6 +781,7 @@ def analyze_cmd(
                         model=chosen,
                         limit=per_run,
                         pricing=pricing,
+                        data_dirs=settings.watchdog.data_dirs,
                         force=force,
                         on_progress=_estimate_cb,
                     )
@@ -863,6 +864,7 @@ def analyze_cmd(
                     limit=per_run,
                     force=force,
                     workers=workers,
+                    data_dirs=settings.watchdog.data_dirs,
                     on_progress=_cb,
                 )
                 all_stats.append((analyzer.key, chosen, stats))

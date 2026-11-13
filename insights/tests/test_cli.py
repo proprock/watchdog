@@ -509,9 +509,20 @@ def test_analyze_yes_skips_prompt_and_runs(tmp_path: Path, monkeypatch) -> None:
     cfg = _seeded_config(tmp_path)
     runs: list[str] = []
 
-    def fake_run(
-        conn, backend, analyzer, flt, *, model, limit, force=False, workers=1, on_progress=None
-    ):  # noqa: ANN001, ANN202, E501
+    def fake_run(  # noqa: ANN001, ANN202
+        conn,
+        backend,
+        analyzer,
+        flt,
+        *,
+        model,
+        limit,
+        data_dirs,
+        force=False,
+        workers=1,
+        on_progress=None,
+    ):
+        assert data_dirs == [tmp_path / "unconfigured-watchdog"]
         runs.append(analyzer.key)
         return AnalysisStats(analyzed=1)
 
@@ -532,15 +543,26 @@ def test_analyze_force_passes_through(tmp_path: Path, monkeypatch) -> None:
     seen: list[bool] = []
 
     def fake_estimate(  # noqa: ANN001, ANN202
-        conn, analyzer, flt, *, model, limit, pricing, force=False, on_progress=None
+        conn, analyzer, flt, *, model, limit, pricing, data_dirs, force=False, on_progress=None
     ):
         from wdi.llm.service import AnalysisEstimate
 
+        assert data_dirs == [tmp_path / "unconfigured-watchdog"]
         return AnalysisEstimate(analyzer=analyzer.key, model=model, sessions=1, input_tokens=10)
 
-    def fake_run(
-        conn, backend, analyzer, flt, *, model, limit, force=False, workers=1, on_progress=None
-    ):  # noqa: ANN001, ANN202, E501
+    def fake_run(  # noqa: ANN001, ANN202
+        conn,
+        backend,
+        analyzer,
+        flt,
+        *,
+        model,
+        limit,
+        data_dirs,
+        force=False,
+        workers=1,
+        on_progress=None,
+    ):
         seen.append(force)
         return AnalysisStats(analyzed=1)
 

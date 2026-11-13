@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import json
 import sqlite3
-from pathlib import Path
 from typing import Annotated
 
 from fastapi import APIRouter, Query, Request
@@ -15,7 +14,7 @@ from wdi.metrics import queries
 from wdi.metrics.filters import SessionFilter
 from wdi.report.charts import embed_json, session_chart_data
 from wdi.web import badges
-from wdi.web.dependencies import DbDep, PricingDep, TemplatesDep
+from wdi.web.dependencies import DbDep, PricingDep, SettingsDep, TemplatesDep
 from wdi.web.filters import FilterDep
 
 router = APIRouter()
@@ -179,30 +178,16 @@ def tool_call_full(
     request: Request,
     conn: DbDep,
     templates: TemplatesDep,
+    settings: SettingsDep,
 ) -> HTMLResponse:
-    """Full tool input/output read from the source transcript, with preview fallback."""
+    """Read full tool input and output from the source transcript."""
     session = queries.session_detail(conn, session_id)
     source = session["source_path"] if session is not None else None
-    full_input: str | None = None
-    full_output: str | None = None
-    if isinstance(source, str):
-        full_input, full_output = transcript.find_tool_io(Path(source), stream_id, call_id)
-    available = full_input is not None or full_output is not None
-    if not available:
-        # Fall back to the stored previews (e.g. snapshot import without local source).
-        row = conn.execute(
-            """
-            SELECT input_preview, output_preview FROM tool_calls
-            WHERE session_id = ? AND stream_id = ? AND call_id = ?
-            LIMIT 1
-            """,
-            (session_id, stream_id, call_id),
-        ).fetchone()
-        if row is not None:
-            full_input, full_output = row["input_preview"], row["output_preview"]
+    full_input, full_output = transcript.find_tool_io(
+        source, stream_id, call_id, data_dirs=settings.watchdog.data_dirs
+    )
     context = {
         "full_input": full_input,
         "full_output": full_output,
-        "from_source": available,
     }
     return templates.TemplateResponse(request, "partials/_tool_call_full.html", context)
