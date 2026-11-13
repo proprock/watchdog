@@ -138,6 +138,270 @@ def test_read_failure_rolls_back_projection_and_cursor(repository, monkeypatch):
     )
 
 
+def test_incremental_import_refreshes_late_codex_attribution(tmp_path):
+    from datetime import UTC, datetime, timedelta
+
+    from wdi.ingest.hook_facts import import_hook_facts
+
+    from agent_watchdog.events import Envelope
+    from agent_watchdog.storage import Store
+
+    project_id = UUID("22222222-2222-4222-8222-222222222222")
+    machine_id = UUID("11111111-1111-4111-8111-111111111111")
+    project = config.Project(id=project_id, root=tmp_path)
+    project_dir = tmp_path / "watchdog" / "projects" / str(project_id)
+    base = datetime(2026, 10, 10, tzinfo=UTC)
+
+    def event(kind, seconds, *, record_type=None, **metadata):
+        payload = {"metadata": metadata}
+        if kind == "usage":
+            payload["usage"] = {"delta": {"input_tokens": 123, "output_tokens": 45}}
+        if record_type:
+            payload["metadata"]["record_type"] = record_type
+        return Envelope(
+            provider="codex",
+            project_id=project_id,
+            session_id="session",
+            turn_id="turn",
+            kind=kind,
+            source="transcript",
+            occurred_at=base + timedelta(seconds=seconds),
+            received_at=base + timedelta(days=1, seconds=seconds),
+            payload={"codex": payload},
+        )
+
+    usage = event("usage", 5)
+    with Store(project_dir, project_id) as source:
+        source.put(usage)
+    capture_store.write_manifest(project_dir, machine_id=machine_id, project=project)
+    stores = readapi.stores(tmp_path / "watchdog")
+    conn = connect(tmp_path / "insights.sqlite")
+    repo = Repository(conn)
+    try:
+        assert import_hook_facts(repo, stores) == 1
+        raw_before = conn.execute(
+            "SELECT e.envelope, f.input_tokens, f.output_tokens FROM hook_events e "
+            "JOIN hook_facts f USING (machine_id, project_id, event_rowid) "
+            "WHERE e.event_id = ?",
+            (str(usage.event_id),),
+        ).fetchone()
+        assert raw_before[1:] == (123, 45)
+
+        with Store(project_dir, project_id) as source:
+            source.put(
+                event(
+                    "unknown",
+                    1,
+                    record_type="turn_context",
+                    attribution_projection="wd-165.v1",
+                    model="gpt-test",
+                    reasoning_effort="high",
+                )
+            )
+        assert import_hook_facts(repo, stores) == 1
+
+        fact = conn.execute(
+            "SELECT model, model_attribution, reasoning_effort, "
+            "reasoning_effort_attribution, input_tokens, output_tokens "
+            "FROM hook_facts WHERE event_id = ?",
+            (str(usage.event_id),),
+        ).fetchone()
+        assert tuple(fact) == ("gpt-test", "inherited", "high", "inherited", 123, 45)
+        raw_after = conn.execute(
+            "SELECT envelope FROM hook_events WHERE event_id = ?", (str(usage.event_id),)
+        ).fetchone()[0]
+        assert raw_after == raw_before[0]
+    finally:
+        conn.close()
+
+
+def test_incremental_refresh_is_bounded_and_wraps_frozen_cycles(repository, monkeypatch):
+    from wdi.ingest.hook_facts import import_hook_facts
+
+    store = _store()
+    key = ("machine-a", "project-a")
+    records = {key: [_event(rowid, f"event-{rowid}") for rowid in range(1, 1201)]}
+    source_facts = {
+        row["event_rowid"]: {
+            **dict.fromkeys(readapi.FACT_COLUMNS),
+            "event_rowid": row["event_rowid"],
+            "event_id": row["event_id"],
+            "model": "old-model",
+            "model_attribution": "observed",
+        }
+        for row in records[key]
+    }
+    call_id = [0]
+    refreshed_per_call = {}
+
+    def events(info, after_rowid=0):
+        return iter(row for row in records[key] if row["event_rowid"] > after_rowid)
+
+    def facts(info, after_rowid=0):
+        for rowid, row in sorted(source_facts.items()):
+            if rowid > after_rowid:
+                if rowid <= 1200:
+                    refreshed_per_call[call_id[0]] = refreshed_per_call.get(call_id[0], 0) + 1
+                yield row
+
+    monkeypatch.setattr(readapi, "events", events, raising=False)
+    monkeypatch.setattr(readapi, "event_facts", facts, raising=False)
+    assert import_hook_facts(repository, [store], full=True) == 1200
+    refresh_key = "wd-facts-refresh://machine-a/project-a"
+    assert repository.get_import_state("machine-a", refresh_key).byte_offset == 0
+    assert repository.get_import_state("machine-a", refresh_key).file_size == 1200
+
+    for row in source_facts.values():
+        row["model"] = "late-model"
+        row["model_attribution"] = "inherited"
+
+    for added in range(1201, 1204):
+        records[key].append(_event(added, f"event-{added}"))
+        source_facts[added] = {
+            **dict.fromkeys(readapi.FACT_COLUMNS),
+            "event_rowid": added,
+            "event_id": f"event-{added}",
+            "model": "new-model",
+            "model_attribution": "observed",
+        }
+        before = repository.conn.execute(
+            "SELECT count(*) FROM hook_facts WHERE event_rowid <= 1200 AND model = 'late-model'"
+        ).fetchone()[0]
+        call_id[0] += 1
+        assert import_hook_facts(repository, [store]) == 1
+        assert refreshed_per_call[call_id[0]] <= 500
+        after = repository.conn.execute(
+            "SELECT count(*) FROM hook_facts WHERE event_rowid <= 1200 AND model = 'late-model'"
+        ).fetchone()[0]
+        assert after - before <= 500
+        if added == 1201:
+            source_facts[1]["model"] = "visited-again"
+
+    state = repository.get_import_state("machine-a", refresh_key)
+    assert state.byte_offset == 0
+    assert state.file_size == 0
+
+    assert (
+        repository.conn.execute("SELECT model FROM hook_facts WHERE event_rowid = 1200").fetchone()[
+            0
+        ]
+        == "late-model"
+    )
+    assert (
+        repository.conn.execute("SELECT model FROM hook_facts WHERE event_rowid = 1").fetchone()[0]
+        == "late-model"
+    )
+    assert (
+        repository.conn.execute("SELECT model FROM hook_facts WHERE event_rowid = 1201").fetchone()[
+            0
+        ]
+        == "new-model"
+    )
+    records[key].append(_event(1204, "event-1204"))
+    source_facts[1204] = {
+        **dict.fromkeys(readapi.FACT_COLUMNS),
+        "event_rowid": 1204,
+        "event_id": "event-1204",
+        "model": "new-model",
+        "model_attribution": "observed",
+    }
+    call_id[0] += 1
+    assert import_hook_facts(repository, [store]) == 1
+    assert refreshed_per_call[call_id[0]] <= 500
+    assert (
+        repository.conn.execute("SELECT model FROM hook_facts WHERE event_rowid = 1").fetchone()[0]
+        == "visited-again"
+    )
+
+
+def test_refresh_failure_rolls_back_attribution_cursors_and_new_events(repository, monkeypatch):
+    from wdi.ingest.hook_facts import import_hook_facts
+
+    store = _store()
+    key = ("machine-a", "project-a")
+    records = {key: [_event(1, "one")]}
+    _readers(monkeypatch, records)
+    assert import_hook_facts(repository, [store]) == 1
+    refresh_key = "wd-facts-refresh://machine-a/project-a"
+    repository.set_import_state("machine-a", refresh_key, file_size=1, file_mtime=0, byte_offset=0)
+    before = repository.get_import_state("machine-a", refresh_key)
+    records[key].append(_event(2, "two"))
+
+    def facts(info, after_rowid=0):
+        for rowid, event_id in ((1, "one"), (2, "two")):
+            if rowid > after_rowid:
+                yield {
+                    **dict.fromkeys(readapi.FACT_COLUMNS),
+                    "event_rowid": rowid,
+                    "event_id": event_id,
+                    "model": "late" if rowid == 1 else None,
+                    "model_attribution": "inherited" if rowid == 1 else "unavailable",
+                }
+
+    monkeypatch.setattr(readapi, "event_facts", facts, raising=False)
+    original_set_state = repository.set_import_state
+
+    def fail_refresh_cursor(machine_id, source_path, **kwargs):
+        original_set_state(machine_id, source_path, **kwargs)
+        if source_path == refresh_key:
+            raise ValueError("synthetic refresh failure")
+
+    monkeypatch.setattr(repository, "set_import_state", fail_refresh_cursor)
+    with pytest.raises(ValueError, match="synthetic refresh failure"):
+        import_hook_facts(repository, [store])
+    assert [
+        row[0]
+        for row in repository.conn.execute("SELECT event_id FROM hook_events ORDER BY event_rowid")
+    ] == ["one"]
+    assert (
+        repository.conn.execute("SELECT model FROM hook_facts WHERE event_rowid = 1").fetchone()[0]
+        is None
+    )
+    assert (
+        repository.get_import_state("machine-a", "wd-facts://machine-a/project-a").byte_offset == 1
+    )
+    assert repository.get_import_state("machine-a", refresh_key) == before
+
+
+def test_full_import_resets_refresh_progress_and_updates_all_facts(repository, monkeypatch):
+    from wdi.ingest.hook_facts import import_hook_facts
+
+    store = _store()
+    key = ("machine-a", "project-a")
+    records = {key: [_event(rowid, f"event-{rowid}") for rowid in range(1, 4)]}
+    source_facts = {
+        row["event_rowid"]: {
+            **dict.fromkeys(readapi.FACT_COLUMNS),
+            "event_rowid": row["event_rowid"],
+            "event_id": row["event_id"],
+            "model": "refreshed",
+            "model_attribution": "inherited",
+        }
+        for row in records[key]
+    }
+    _readers(monkeypatch, records)
+    assert import_hook_facts(repository, [store]) == 3
+    refresh_key = "wd-facts-refresh://machine-a/project-a"
+    repository.set_import_state(
+        "machine-a", refresh_key, file_size=50, file_mtime=0, byte_offset=25
+    )
+
+    def facts(info, after_rowid=0):
+        yield from (row for rowid, row in sorted(source_facts.items()) if rowid > after_rowid)
+
+    monkeypatch.setattr(readapi, "event_facts", facts, raising=False)
+    assert import_hook_facts(repository, [store], full=True) == 3
+    state = repository.get_import_state("machine-a", refresh_key)
+    assert state.byte_offset == 0
+    assert state.file_size == 3
+    assert [
+        tuple(row)
+        for row in repository.conn.execute(
+            "SELECT model FROM hook_facts ORDER BY event_rowid"
+        ).fetchall()
+    ] == [("refreshed",), ("refreshed",), ("refreshed",)]
+
+
 def test_absent_events_database_is_empty(repository, tmp_path):
     from wdi.ingest.hook_facts import import_hook_facts
 
