@@ -128,6 +128,51 @@ def test_extended_pricing_survives_config_round_trip(tmp_path: Path) -> None:
     assert load_settings(path) == settings
 
 
+def test_tariffs_override_inline_and_packaged_rates_completely(tmp_path: Path) -> None:
+    from wdi.metrics.pricing import PricingResolver
+
+    tariffs = tmp_path / "tariffs.toml"
+    tariffs.write_text('["2026-01-01"]\n"custom"={input="9",output="0"}\n', encoding="utf-8")
+    settings = Settings.model_validate(
+        {
+            "machine_id": "fixture",
+            "tariffs": str(tariffs),
+            "pricing": {"inline": {"input": 2, "output": 3}},
+        }
+    )
+    assert settings.tariffs == tariffs
+    resolver = PricingResolver.from_settings(settings)
+    assert resolver.cost("custom", input_tokens=1_000_000) == 9
+    assert resolver.cost("inline", input_tokens=1) is None
+    assert resolver.cost("gpt-5", input_tokens=1) is None
+
+
+def test_inline_prices_normalize_without_default_model_fallback() -> None:
+    from wdi.metrics.pricing import PricingResolver
+
+    settings = Settings.model_validate(
+        {"machine_id": "fixture", "pricing": {"custom": {"input": 2, "output": 3}}}
+    )
+    resolver = PricingResolver.from_settings(settings)
+    assert resolver.cost("custom-version", input_tokens=1_000_000) == 2
+    assert resolver.cost("gpt-5", input_tokens=1) is None
+
+
+def test_tariff_setting_expands_home() -> None:
+    settings = Settings.model_validate({"machine_id": "fixture", "tariffs": "~/rates.toml"})
+    assert settings.tariffs == Path("~/rates.toml").expanduser()
+
+
+@pytest.mark.parametrize("rate", [-1, float("nan"), float("inf")])
+def test_inline_pricing_rejects_invalid_rates(rate: float) -> None:
+    from pydantic import ValidationError
+
+    with pytest.raises(ValidationError):
+        Settings.model_validate(
+            {"machine_id": "fixture", "pricing": {"custom": {"input": rate, "output": 1}}}
+        )
+
+
 @pytest.mark.parametrize("models", [[], [" "]])
 def test_coach_model_menu_requires_nonempty_names(tmp_path: Path, models: list[str]) -> None:
     path = tmp_path / "config.yaml"

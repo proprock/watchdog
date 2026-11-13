@@ -14,6 +14,204 @@ from agent_watchdog.storage import Store
 _NOW = "2026-11-12T12:00:00+00:00"
 
 
+def _registered(tmp_path):
+    from agent_watchdog import readapi
+
+    reader = getattr(readapi, "registered_projects", None)
+    assert callable(reader), "registered-project reader is required"
+    project = config.Project(id=uuid4(), root=tmp_path / "checkout", alias="sample")
+    config.save_config(tmp_path / "config.toml", config.Config(projects=(project,)))
+    (registered,) = reader(tmp_path / "config.toml", tmp_path / "data")
+    return registered
+
+
+def test_registered_projects_includes_uncollected_projects(tmp_path):
+    project = _registered(tmp_path)
+    assert project.name == "sample"
+    assert project.root == str(tmp_path / "checkout")
+    assert project.path == tmp_path / "data" / "projects" / project.project_id
+    assert not project.path.exists()
+
+
+def test_registered_snapshot_is_read_only_consistent_and_manifest_optional(tmp_path):
+    from agent_watchdog import readapi
+    from agent_watchdog.storage import StorageError
+
+    project = _registered(tmp_path)
+    with pytest.raises(StorageError, match="no collected database"), readapi.snapshot(project):
+        pass
+    with Store(project.path, UUID(project.project_id)):
+        pass
+    with readapi.snapshot(project) as db:
+        assert isinstance(db.execute("SELECT * FROM metadata").fetchone(), sqlite3.Row)
+        with sqlite3.connect(project.path / "events.sqlite3") as writer:
+            writer.execute("UPDATE metadata SET project_id=?", (str(uuid4()),))
+        assert db.execute("SELECT project_id FROM metadata").fetchone()[0] == project.project_id
+        db.execute("PRAGMA query_only=OFF")
+        with pytest.raises(sqlite3.OperationalError, match="readonly"):
+            db.execute("CREATE TABLE forbidden (id INTEGER)")
+    with pytest.raises(StorageError, match="different project"), readapi.snapshot(project):
+        pass
+
+
+@pytest.mark.parametrize("schema", [0, 99])
+def test_registered_snapshot_refuses_unsupported_schema(tmp_path, schema):
+    from agent_watchdog import readapi
+    from agent_watchdog.storage import StorageError
+
+    project = _registered(tmp_path)
+    with Store(project.path, UUID(project.project_id)):
+        pass
+    with sqlite3.connect(project.path / "events.sqlite3") as db:
+        db.execute(f"PRAGMA user_version={schema}")
+    with (
+        pytest.raises(StorageError, match="Unsupported database schema"),
+        readapi.snapshot(project),
+    ):
+        pass
+
+
+@pytest.mark.parametrize("schema", [7, 8, 9])
+def test_findings_old_schemas_and_missing_data_are_explicit(tmp_path, schema):
+    from agent_watchdog import readapi
+    from agent_watchdog.analysis import analyze
+    from agent_watchdog.events import Envelope
+
+    project = _registered(tmp_path)
+    assert readapi.findings(project) == {"state": "unavailable", "reason": "no_collected_database"}
+    with Store(project.path, UUID(project.project_id)) as store:
+        store.put(
+            Envelope(
+                project_id=UUID(project.project_id),
+                provider="codex",
+                session_id="s",
+                kind="session.end",
+                source="hook",
+            )
+        )
+    with sqlite3.connect(project.path / "events.sqlite3") as db:
+        db.execute(f"PRAGMA user_version={schema}")
+        if schema == 8:
+            db.execute("ALTER TABLE session_analysis DROP COLUMN rule_version")
+    result = readapi.findings(project)
+    if schema < 8:
+        assert result == {"state": "unsupported", "reason": "schema_predates_v8"}
+    else:
+        assert result["state"] == "ready" and result["pending_sessions"] == 1
+        assert result["as_of"] is None
+        assert result["by_provider"] == {
+            p: {"by_rule": {}, "gaps": analyze([])["gaps"]} for p in ("codex", "claude")
+        }
+    with sqlite3.connect(project.path / "events.sqlite3") as db:
+        assert db.execute("PRAGMA user_version").fetchone()[0] == schema
+
+
+def test_findings_filter_current_version_and_deduplicate_fingerprints(tmp_path, monkeypatch):
+    from agent_watchdog import analysis, readapi
+    from agent_watchdog.events import Envelope
+
+    project = _registered(tmp_path)
+    with Store(project.path, UUID(project.project_id)) as store:
+        for sid in ("s1", "s2"):
+            store.put(
+                Envelope(
+                    project_id=UUID(project.project_id),
+                    provider="codex",
+                    session_id=sid,
+                    kind="session.end",
+                    source="hook",
+                )
+            )
+            store.refresh_session_findings("codex", sid)
+    with sqlite3.connect(project.path / "events.sqlite3") as db:
+        for sid in ("s1", "s2"):
+            db.execute(
+                "INSERT INTO session_findings VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                ("codex", sid, "diff_oscillation", analysis.RULE_VERSION, "shared", 9, "[]", _NOW),
+            )
+        db.execute(
+            "UPDATE session_analysis SET gaps_json='[\"retained_gap\"]', computed_at=?", (_NOW,)
+        )
+    result = readapi.findings(project)
+    assert result["as_of"] == _NOW
+    assert result["window"] == "all" and result["pending_sessions"] == 0
+    assert result["by_provider"]["codex"] == {
+        "by_rule": {"diff_oscillation": 1},
+        "gaps": ["retained_gap"],
+    }
+    monkeypatch.setattr(analysis, "RULE_VERSION", "new-rule-version")
+    refreshed = readapi.findings(project)
+    assert refreshed["pending_sessions"] == 2 and refreshed["as_of"] is None
+    assert refreshed["by_provider"]["codex"]["by_rule"] == {}
+
+
+@pytest.mark.parametrize("label_schema", ["missing", "legacy", "current"])
+def test_session_review_sanitizes_provider_events_and_preserves_labels(tmp_path, label_schema):
+    from agent_watchdog import readapi
+    from agent_watchdog.events import Envelope
+
+    project = _registered(tmp_path)
+    with Store(project.path, UUID(project.project_id)) as store:
+        for provider in ("codex", "claude"):
+            store.put(
+                Envelope(
+                    project_id=UUID(project.project_id),
+                    provider=provider,
+                    session_id="s",
+                    kind="session.end",
+                    source="hook",
+                    payload={provider: {"token": "private-value"}},
+                )
+            )
+        store.label(
+            "codex",
+            "s",
+            outcome="success",
+            task_type="review",
+            progress_state="progress",
+            reviewer_note="Reviewed",
+        )
+    with sqlite3.connect(project.path / "events.sqlite3") as db:
+        if label_schema == "missing":
+            db.execute("DROP TABLE session_labels")
+        elif label_schema == "legacy":
+            db.execute("ALTER TABLE session_labels DROP COLUMN progress_state")
+            db.execute("ALTER TABLE session_labels DROP COLUMN reviewer_note")
+    (record,) = readapi.session_review(project, "codex", ["s", "s"])
+    assert record["session_id"] == "s" and record["event_count"] == 1
+    assert record["events"][0].provider == "codex"
+    assert record["events"][0].payload == {"codex": {"token": "[REDACTED]"}}
+    assert record["label"] == {
+        "task_outcome": "unknown" if label_schema == "missing" else "success",
+        "task_type": None if label_schema == "missing" else "review",
+        "progress_state": "progress" if label_schema == "current" else None,
+        "reviewer_note": "Reviewed" if label_schema == "current" else None,
+    }
+    assert ("task_outcome_unknown" in record["gaps"]) == (label_schema == "missing")
+    with sqlite3.connect(project.path / "events.sqlite3") as db:
+        assert "private-value" in db.execute("SELECT envelope FROM events LIMIT 1").fetchone()[0]
+
+
+@pytest.mark.parametrize(
+    "provider,session_ids,message",
+    [
+        ("other", ["s"], "Unsupported provider"),
+        ("codex", [], "Select at least"),
+        ("codex", [" "], "Select at least"),
+        ("codex", ["unknown"], "Unknown session"),
+    ],
+)
+def test_session_review_validates_selection(tmp_path, provider, session_ids, message):
+    from agent_watchdog import readapi
+    from agent_watchdog.storage import StorageError
+
+    project = _registered(tmp_path)
+    with Store(project.path, UUID(project.project_id)):
+        pass
+    with pytest.raises(StorageError, match=message):
+        readapi.session_review(project, provider, session_ids)
+
+
 def test_environment_readers_preserve_columns_and_blob_bytes(tmp_path):
     from agent_watchdog import readapi
 
