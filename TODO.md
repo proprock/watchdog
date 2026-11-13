@@ -53,7 +53,9 @@ Line numbers in these tasks refer to commit `0d5e984`. Paths under `insights/` e
 
 ## Split P2 - Analytics, comparison and applying recommendations
 
-- [ ] **WD-223 - Investigate Codex subagent token discrepancies.** WD-195 found input, cached-input, and output differences above 1% in 17 of 21 comparable parent sessions (51 dimension/session differences). Thirty other parent sessions had unavailable comparisons. Verify parent/child coverage and usage conventions against source records before deciding a correction; add synthetic regression coverage and repeat the comparison. [Evidence](docs/evidence/wd195.md).
+- [ ] **WD-225 - Trace historical Codex child receipt routing and coverage.** WD-223 verified 98 imported children but parent-attributed usage receipts and child hook facts for only 42 in the WD-195 snapshot. One covered child's 80 responses occur in two project stores with identical usage. Investigate historical hook registration/routing and project provenance before deciding whether capture or cross-store reconciliation needs correction; current isolated collector replay succeeds for all 98 children. Do not infer a current delivery defect from missing historical facts or silently deduplicate across project boundaries. [Evidence](docs/evidence/wd223.md).
+
+- [ ] **WD-226 - Investigate daemon file-read failures under parallel test load.** The WD-223 full Watchdog run failed `test_daemon_captures_a_hook_named_transcript` with capture schema version 0 instead of 3 and `test_a_running_daemon_picks_up_a_rule_approved_while_it_runs` with `PermissionError` reading temporary `policy/socket.json`. Both passed together with `-n 0`. Establish publication/readiness and Windows file-access provenance before choosing a fix; do not infer a common cause or weaken assertions based on the passing serial repeat. [Evidence](docs/evidence/wd223.md).
 
 - [ ] **WD-198 - One pricing implementation; `usage`, `overview` and `export` move to `wdi`.** P2. Depends on WD-195.
   - **Why.** Both programs estimate cost and summarise usage, with different features.

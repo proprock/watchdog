@@ -227,3 +227,88 @@ def test_reconcile_codex_usage_events_in_main_and_child_sessions(conn):
     rows = {r["scope"]: r for r in reconcile_tokens(conn) if r["metric"] == "input_tokens"}
     assert (rows["main"]["wdi"], rows["main"]["differs"]) == (100, False)
     assert (rows["subagent"]["wdi"], rows["subagent"]["differs"]) == (20, False)
+
+
+@pytest.mark.parametrize("observed_child_count", [0, 1])
+def test_reconcile_codex_children_preserves_partial_receipt_coverage(conn, observed_child_count):
+    from wdi.metrics.hooks import reconcile_tokens
+
+    conn.execute("UPDATE sessions SET agent='codex' WHERE session_id='s1'")
+    conn.executemany(
+        "INSERT INTO sessions (session_id, machine_id, agent, parent_session_id) "
+        "VALUES (?, 'm1', 'codex', 's1')",
+        [("child-a",), ("child-b",)],
+    )
+    conn.execute(
+        "INSERT INTO messages (session_id, machine_id, idx, role, input_tokens, "
+        "cache_read_tokens, output_tokens) VALUES "
+        "('s1', 'm1', 0, 'event', 100, 80, 5), ('child-a', 'm1', 0, 'event', 20, 10, 2), "
+        "('child-b', 'm1', 0, 'event', 30, 20, 3)"
+    )
+    fact(conn, 1, "usage", provider="codex", input_tokens=100)
+    if observed_child_count:
+        fact(
+            conn,
+            2,
+            "usage",
+            provider="codex",
+            agent_id="child-a",
+            native_event_id="child-a-response",
+            input_tokens=20,
+            cached_input_tokens=10,
+            output_tokens=2,
+        )
+
+    rows = {r["metric"]: r for r in reconcile_tokens(conn) if r["scope"] == "subagent"}
+    for metric, total, observed in [
+        ("input_tokens", 50, 20),
+        ("cached_input_tokens", 30, 10),
+        ("output_tokens", 5, 2),
+    ]:
+        assert rows[metric]["wdi"] == total
+        assert rows[metric]["watchdog"] == (observed if observed_child_count else None)
+        assert rows[metric]["differs"] is (True if observed_child_count else None)
+    assert (
+        rows["cache_write_input_tokens"]["wdi"],
+        rows["cache_write_input_tokens"]["watchdog"],
+        rows["cache_write_input_tokens"]["differs"],
+    ) == (None, None, None)
+
+
+def test_reconcile_codex_child_native_response_counts_each_project_store(conn):
+    from wdi.metrics.hooks import reconcile_tokens
+
+    conn.execute("UPDATE sessions SET agent='codex' WHERE session_id='s1'")
+    conn.execute(
+        "INSERT INTO sessions (session_id, machine_id, agent, parent_session_id) "
+        "VALUES ('child', 'm1', 'codex', 's1')"
+    )
+    conn.execute(
+        "INSERT INTO messages (session_id, machine_id, idx, role, input_tokens, "
+        "cache_read_tokens, output_tokens) VALUES "
+        "('s1', 'm1', 0, 'event', 100, 80, 5), ('child', 'm1', 0, 'event', 20, 10, 2)"
+    )
+    fact(conn, 1, "usage", provider="codex", input_tokens=100)
+    for rowid, project, tokens in [(2, "p1", 20), (3, "p1", 999), (4, "p2", 20), (5, "p2", 999)]:
+        fact(
+            conn,
+            rowid,
+            "usage",
+            project=project,
+            provider="codex",
+            agent_id="child",
+            native_event_id="child-response",
+            input_tokens=tokens,
+            cached_input_tokens=10 if tokens == 20 else 999,
+            output_tokens=2 if tokens == 20 else 999,
+        )
+
+    rows = {r["metric"]: r for r in reconcile_tokens(conn) if r["scope"] == "subagent"}
+    for metric, total in [("input_tokens", 20), ("cached_input_tokens", 10), ("output_tokens", 2)]:
+        row = rows[metric]
+        assert (row["wdi"], row["watchdog"], row["differs"]) == (total, 2 * total, True)
+    assert (
+        rows["cache_write_input_tokens"]["wdi"],
+        rows["cache_write_input_tokens"]["watchdog"],
+        rows["cache_write_input_tokens"]["differs"],
+    ) == (None, None, None)

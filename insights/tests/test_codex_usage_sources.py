@@ -226,3 +226,62 @@ def test_repeated_cumulative_notification_is_distinct_in_another_turn(tmp_path: 
         }
     assert chunk.messages[1].extra is not None
     assert chunk.messages[1].extra["duplicate_usage"] is True
+
+
+def test_child_compaction_preserves_parent_attribution_and_source_difference(
+    tmp_path: Path,
+) -> None:
+    parent = "019eae50-c169-73c1-81ba-eeba321f3027"
+    records = prefix(tmp_path)
+    records[0]["payload"].update(session_id=parent, parent_thread_id=parent)
+    records.extend(
+        [
+            native("r2", 130, 100, 12, response_usage=(30, 20, 7)),
+            record("compacted", {"compaction_response_id": "r2"}),
+        ]
+    )
+    for item in records:
+        if item["type"] == "token_usage_record":
+            item["payload"]["session_id"] = parent
+    raw = encode(records)
+    path = tmp_path / f"rollout-2026-06-09T20-00-00-{SID}.jsonl"
+    path.write_bytes(raw)
+    project = uuid4()
+    with Store(tmp_path / "collector", project) as store:
+        store.put(
+            Envelope(
+                provider="codex",
+                project_id=project,
+                session_id=parent,
+                kind="turn.end",
+                source="hook",
+                payload={"codex": {"transcript_path": str(path)}},
+            )
+        )
+        result = enrich(store)
+        assert result.failures == ()
+        usage_events = [event for event in store.events() if event.kind == "usage"]
+        assert len(usage_events) == 2
+        assert all(event.session_id == parent and event.agent_id == SID for event in usage_events)
+        deltas = []
+        for event in usage_events:
+            codex = event.payload["codex"]
+            assert isinstance(codex, dict)
+            usage = codex["usage"]
+            assert isinstance(usage, dict)
+            delta = usage["delta"]
+            assert isinstance(delta, dict)
+            deltas.append(delta)
+        assert tuple(
+            sum(delta[name] for delta in deltas)
+            for name in ("input_tokens", "cached_input_tokens", "output_tokens")
+        ) == (130, 100, 12)
+
+    chunk = parse_codex_lines(raw.splitlines(keepends=True), msg_idx0=0, tool_idx0=0)
+    assert chunk.session_fields["parent_session_id"] == parent
+    assert tuple(
+        sum(getattr(message, name) or 0 for message in chunk.messages)
+        for name in ("input_tokens", "cache_read_tokens", "output_tokens")
+    ) == (100, 80, 5)
+    assert all(message.cache_creation_tokens is None for message in chunk.messages)
+    assert path.read_bytes() == raw
