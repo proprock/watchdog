@@ -5,7 +5,13 @@ from pathlib import Path
 
 import pytest
 import yaml
-from wdi.config import ConfigError, Settings, create_default_config, load_settings
+from wdi.config import (
+    ConfigError,
+    LlmAnalysisConfig,
+    Settings,
+    create_default_config,
+    load_settings,
+)
 
 
 def test_create_default_config_writes_file_with_machine_id(tmp_path: Path) -> None:
@@ -85,6 +91,19 @@ def test_llm_model_per_analyzer_with_fallback() -> None:
 
     assert llm.model_for("agent_efficiency") == "sonnet"
     assert llm.model_for("prompt_quality") == "haiku"
+
+
+def test_codex_analysis_uses_codex_default_instead_of_haiku() -> None:
+    llm = LlmAnalysisConfig(backend="codex", models={"prompt_quality": "fixture-override"})
+    assert llm.analysis_model_for("session_summary") == llm.coach_models.codex[0]
+    assert llm.analysis_model_for("prompt_quality") == "fixture-override"
+
+
+def test_load_settings_rejects_unknown_analysis_backend(tmp_path: Path) -> None:
+    cfg = tmp_path / "config.yaml"
+    cfg.write_text("features: {llm_analysis: {backend: typo}}\n", encoding="utf-8")
+    with pytest.raises(ConfigError, match=r"llm_analysis.backend"):
+        load_settings(cfg)
 
 
 def test_extended_pricing_survives_config_round_trip(tmp_path: Path) -> None:

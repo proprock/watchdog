@@ -711,7 +711,7 @@ def analyze_cmd(
     from rich.table import Table
 
     from wdi.cli_format import fmt_cost, fmt_tokens
-    from wdi.llm.backend import ClaudeCliBackend
+    from wdi.llm.backend import ClaudeCliBackend, CodexCliBackend, LLMBackend
     from wdi.llm.service import (
         AnalysisStats,
         estimate_analyzer,
@@ -739,7 +739,8 @@ def analyze_cmd(
         # Pre-flight: estimate how much will be sent to the LLM and confirm before
         # processing, in case a large batch would be expensive.
         plan = [
-            (analyzer, model or llm_cfg.model_for(analyzer.analysis_type)) for analyzer in analyzers
+            (analyzer, model or llm_cfg.analysis_model_for(analyzer.analysis_type))
+            for analyzer in analyzers
         ]
         from rich.progress import Progress
 
@@ -834,7 +835,11 @@ def analyze_cmd(
 
         from rich.progress import Progress
 
-        backend = ClaudeCliBackend(data_dirs=settings.watchdog.data_dirs)
+        backend: LLMBackend
+        if llm_cfg.backend == "codex":
+            backend = CodexCliBackend(executable=llm_cfg.codex_executable, structured=False)
+        else:
+            backend = ClaudeCliBackend(data_dirs=settings.watchdog.data_dirs)
         all_stats: list[tuple[str, str, AnalysisStats]] = []
 
         with Progress(

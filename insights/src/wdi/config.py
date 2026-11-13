@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import uuid
 from pathlib import Path
+from typing import Literal
 
 import yaml
 from pydantic import BaseModel, Field, ValidationError, field_validator
@@ -110,7 +111,7 @@ class CoachModelsConfig(BaseModel):
 
 class LlmAnalysisConfig(BaseModel):
     enabled: bool = True
-    backend: str = "claude-cli"
+    backend: Literal["claude", "codex", "claude-cli"] = "claude"
     model: str = "haiku"
     # per-analyzer override, e.g. {"agent_efficiency": "sonnet"}
     models: dict[str, str] = Field(default_factory=dict)
@@ -120,6 +121,11 @@ class LlmAnalysisConfig(BaseModel):
 
     def model_for(self, analysis_type: str) -> str:
         return self.models.get(analysis_type, self.model)
+
+    def analysis_model_for(self, analysis_type: str) -> str:
+        if self.backend == "codex" and self.model == "haiku":
+            return self.models.get(analysis_type, self.coach_models.codex[0])
+        return self.model_for(analysis_type)
 
 
 class CostEstimationConfig(BaseModel):

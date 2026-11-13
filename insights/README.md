@@ -202,14 +202,33 @@ marked on display and recomputed on the next run. Refresh always requests a new
 answer. Existing single-provider cache rows are retained but are not reused.
 No database schema change or re-import is required.
 
-Claude advice and `wdi analyze` use Watchdog's isolated Claude runner. It uses
+`wdi analyze` selects its engine through `features.llm_analysis.backend` in
+`~/.wdi/config.yaml`. Use `claude` (the default) or `codex`. Existing
+`claude-cli` settings select Claude.
+
+```yaml
+features:
+  llm_analysis:
+    backend: codex
+    model: gpt-5.6-sol
+```
+
+`--model` overrides the configured model for one invocation. Per-analyzer
+settings under `models` take precedence over `model`. If `model` is left at
+the Claude default `haiku`, Codex uses the first model in `coach_models.codex`.
+Set `codex_executable` if the CLI needs an explicit path. On Windows, use a
+native `codex.exe`. Use `--force` to regenerate analyses already saved for
+the same sessions. The Coach and Context Advice cards select their engine
+through the provider-specific buttons.
+
+Claude advice and Claude-backed `wdi analyze` use Watchdog's isolated runner. It uses
 the CLI's existing authentication and runs in a temporary directory outside
 registered checkouts. Safe mode, empty setting sources, strict MCP configuration
 and an empty tool list disable customizations and tools. Session persistence is
 disabled. The runner refuses the request if it cannot establish isolation.
 
-Codex runs through `codex exec` with stdin input, an output JSON schema and an
-ephemeral session, using a temporary working directory and the CLI's existing
+Codex runs through `codex exec` with stdin input and an ephemeral session,
+using a temporary working directory and the CLI's existing
 authentication. It uses a read-only sandbox and ignores user configuration so
 project-specific settings do not influence the analysis. Its analysis sessions
 are not saved to the session files imported by WDI. This path provides weaker

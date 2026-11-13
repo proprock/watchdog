@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 import shutil
 import subprocess
 from collections.abc import Sequence
@@ -25,13 +26,21 @@ class LLMBackend(Protocol):
 
 
 class CodexCliBackend:
-    """Run an ephemeral Codex coaching request in an isolated working directory."""
+    """Run an ephemeral Codex request in a temporary working directory."""
 
-    def __init__(self, executable: str = "codex", timeout: float = 180.0) -> None:
-        self._executable = shutil.which(executable) or executable
+    def __init__(
+        self, executable: str = "codex", timeout: float = 180.0, *, structured: bool = True
+    ) -> None:
+        native = shutil.which("codex.exe") if os.name == "nt" and executable == "codex" else None
+        self._executable = native or shutil.which(executable) or executable
         self._timeout = timeout
+        self._structured = structured
 
     def complete(self, prompt: str, model: str) -> str:
+        if os.name == "nt" and Path(self._executable).suffix.lower() in {".bat", ".cmd"}:
+            raise LLMError(
+                "Set features.llm_analysis.codex_executable to a native Codex executable."
+            )
         schema = {
             "type": "object",
             "additionalProperties": False,
@@ -42,11 +51,14 @@ class CodexCliBackend:
             },
             "required": ["summary", "advice", "focus_areas"],
         }
-        with TemporaryDirectory(prefix="wdi-coach-") as directory:
+        with TemporaryDirectory(prefix="wdi-codex-") as directory:
             root = Path(directory)
-            schema_path = root / "schema.json"
             output_path = root / "answer.json"
-            schema_path.write_text(json.dumps(schema), encoding="utf-8")
+            schema_args = []
+            if self._structured:
+                schema_path = root / "schema.json"
+                schema_path.write_text(json.dumps(schema), encoding="utf-8")
+                schema_args = ["--output-schema", str(schema_path)]
             try:
                 proc = subprocess.run(
                     [
@@ -59,8 +71,7 @@ class CodexCliBackend:
                         "--skip-git-repo-check",
                         "--model",
                         model,
-                        "--output-schema",
-                        str(schema_path),
+                        *schema_args,
                         "--output-last-message",
                         str(output_path),
                         "-",
@@ -88,9 +99,13 @@ class CodexCliBackend:
                 )
             try:
                 text = output_path.read_text(encoding="utf-8")
+                if not self._structured:
+                    if not text.strip():
+                        raise ValueError("empty output")
+                    return text
                 data = json.loads(text)
             except (OSError, ValueError) as exc:
-                raise LLMError("Codex CLI did not return a valid coaching response.") from exc
+                raise LLMError("Codex CLI did not return a valid response.") from exc
             if (
                 not isinstance(data, dict)
                 or not isinstance(data.get("summary"), str)

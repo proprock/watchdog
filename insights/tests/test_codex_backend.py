@@ -29,7 +29,9 @@ def test_codex_uses_stdin_schema_ephemeral_mode_and_final_file(monkeypatch: pyte
         return subprocess.CompletedProcess(args, 0, "event output is not the answer", "")
 
     monkeypatch.setattr(backend.subprocess, "run", run)
-    result = backend.CodexCliBackend().complete("metrics payload", "test-model")
+    result = backend.CodexCliBackend(executable="fixture-codex.exe").complete(
+        "metrics payload", "test-model"
+    )
     assert json.loads(result) == response
     assert not workdirs[0].exists()
 
