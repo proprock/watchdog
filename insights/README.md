@@ -64,8 +64,20 @@ steps separately when you need to edit the config before the first import:
 
 ```bash
 uv run wdi config init     # create ~/.wdi/config.yaml
-uv run wdi import          # import Claude Code and Codex sessions
+uv run wdi import          # import Watchdog captures and provider files
 ```
+
+`wdi import` reads Watchdog captures first, then imports any remaining sessions
+from enabled Claude Code and Codex file sources. Insights stores the parsed
+metrics and previews. The original captured transcript remains in Watchdog.
+
+`watchdog.data_dirs` in the YAML config defaults to the platform's Watchdog
+data directory. Set it to a list of paths when the installed Watchdog uses a
+custom data directory. Run `uv run wdi doctor` to see the discovered stores,
+unsupported contracts, session counts by origin, and file-only counts per
+provider. Once a provider's file-only count has been zero for a week, disable
+its file source with `sources.claude_code.enabled: false` or
+`sources.codex.enabled: false`, as appropriate.
 
 ## Database maintenance
 

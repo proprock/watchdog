@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import io
 import sys
+from collections import Counter
+from contextlib import closing
 from pathlib import Path
 from typing import TYPE_CHECKING, Annotated, Never
 
@@ -219,6 +221,52 @@ def _open_db(settings: Settings):  # noqa: ANN202 - sqlite3.Connection, kept loc
         return connect(settings.db_path)
     except SchemaRevisionError as exc:
         _exit_schema_error(exc)
+
+
+@app.command("doctor")
+def doctor_cmd(config_path: ConfigOpt = None) -> None:
+    """Report Watchdog stores and transcript source coverage."""
+    from wdi.db.repository import Repository
+    from wdi.ingest.models import MAIN_STREAM
+    from wdi.ingest.watchdog import scan_stores
+
+    settings = _load_settings_or_exit(config_path)
+    captured = set()
+    for scan in scan_stores(settings.watchdog.data_dirs):
+        console.print(f"Watchdog data directory: {scan.data_dir}", markup=False, soft_wrap=True)
+        console.print(f"  Stores found: {len(scan.stores)}")
+        for store in scan.stores:
+            status = "supported" if store.supported else "unsupported"
+            console.print(
+                f"  {store.path.name} (contract {store.contract}, {status})", markup=False
+            )
+        for warning in scan.warnings:
+            err_console.print(f"Warning: {warning}", markup=False)
+        captured.update(
+            (source.stream.provider, source.stream.session_id)
+            for source in scan.sources
+            if source.record_count and source.stream.stream_id == MAIN_STREAM
+        )
+
+    rows = []
+    if settings.db_path.is_file():
+        with closing(_open_db(settings)) as conn:
+            rows = Repository(conn).session_coverage()
+    origins = Counter(row["origin"] for row in rows)
+    file_only = Counter(
+        row["agent"]
+        for row in rows
+        if row["origin"] == "file"
+        and row["source_path"] is not None
+        and (row["agent"], row["session_id"]) not in captured
+    )
+    console.print(
+        f"Sessions by origin: file={origins['file']}, watchdog={origins['watchdog']}, "
+        f"legacy={origins['legacy']}"
+    )
+    console.print("File-only sessions by provider")
+    for agent in ("claude", "codex"):
+        console.print(f"  {agent}: {file_only[agent]}")
 
 
 def _make_filter(

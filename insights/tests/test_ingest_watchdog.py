@@ -2,6 +2,7 @@
 
 import json
 import re
+import shutil
 from contextlib import closing
 from pathlib import Path
 from typing import Any
@@ -249,6 +250,35 @@ def test_watchdog_import_preserves_claude_subagent_stream_identity(tmp_path: Pat
         (_key(stream=SUBAGENT),),
         (_key(),),
     ]
+
+
+def test_stale_copy_cannot_replace_newer_generation_during_full_import(tmp_path: Path) -> None:
+    store = _store(tmp_path)
+    _append(store, [_prompt("old first"), _prompt("old second")])
+    stale = tmp_path / "copy"
+    shutil.copytree(tmp_path / "watchdog", stale)
+    _append(store, [_prompt("new generation")], generation=1)
+    options = _options(tmp_path)
+    options["watchdog"]["data_dirs"].insert(0, str(stale))
+    settings = Settings.model_validate(options)
+    run_import(settings)
+    assert _previews(settings) == [("main", "new generation")]
+
+    options["watchdog"]["data_dirs"] = [str(stale)]
+    run_import(Settings.model_validate(options), full=True)
+    assert _previews(settings) == [("main", "new generation")]
+
+
+def test_claude_subagent_capture_cannot_displace_main_file(tmp_path: Path) -> None:
+    path = _claude_file(tmp_path, [_prompt("main file")])
+    settings = Settings.model_validate(_options(tmp_path, files=True))
+    run_import(settings)
+    _append(_store(tmp_path), [_prompt("captured child")], stream_id=SUBAGENT)
+
+    run_import(settings)
+
+    assert _rows(settings, "SELECT origin, source_path FROM sessions") == [("file", str(path))]
+    assert _previews(settings) == [("main", "main file")]
 
 
 def test_watchdog_import_creates_a_separate_session_for_each_codex_thread(tmp_path: Path) -> None:

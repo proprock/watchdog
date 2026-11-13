@@ -4,9 +4,11 @@ from __future__ import annotations
 
 import json
 import sqlite3
-from collections.abc import Mapping
+from collections.abc import Iterator, Mapping
+from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import UTC, datetime
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -36,6 +38,24 @@ def _utcnow() -> str:
 class Repository:
     def __init__(self, conn: sqlite3.Connection) -> None:
         self.conn = conn
+
+    @contextmanager
+    def import_transaction(self) -> Iterator[None]:
+        # In autocommit mode the individual repository context managers leave
+        # this explicit transaction open until the projection and cursor agree.
+        previous = self.conn.autocommit
+        self.conn.autocommit = True
+        try:
+            self.conn.execute("BEGIN IMMEDIATE")
+            try:
+                yield
+                self.conn.execute("COMMIT")
+            except BaseException:
+                if self.conn.in_transaction:
+                    self.conn.execute("ROLLBACK")
+                raise
+        finally:
+            self.conn.autocommit = previous
 
     def ensure_machine(
         self, machine_id: str, hostname: str | None = None, os_name: str | None = None
@@ -117,9 +137,102 @@ class Repository:
                 (machine_id, source_path, file_size, file_mtime, byte_offset, _utcnow()),
             )
 
-    def reset_import_state(self, machine_id: str) -> None:
+    def reset_import_state(self, machine_id: str, *, files_only: bool = False) -> None:
         with self.conn:
-            self.conn.execute("DELETE FROM import_state WHERE machine_id = ?", (machine_id,))
+            self.conn.execute(
+                "DELETE FROM import_state WHERE machine_id = ? AND (NOT ? OR source_path NOT LIKE 'wd://%')",
+                (machine_id, files_only),
+            )
+
+    def import_session(self, session_id: str) -> sqlite3.Row | None:
+        return self.conn.execute(
+            "SELECT origin, source_path, machine_id FROM sessions WHERE session_id = ?",
+            (session_id,),
+        ).fetchone()
+
+    def session_coverage(self) -> list[sqlite3.Row]:
+        return self.conn.execute(
+            "SELECT agent, origin, session_id, source_path FROM sessions"
+        ).fetchall()
+
+    def discard_other_watchdog_cursors(
+        self, key: str, agent: str, session: str, stream: str
+    ) -> None:
+        # Session and stream identities are unique in the Insights projection.
+        suffix = f"/{agent}/{session}/{stream}"
+        self.conn.execute(
+            """DELETE FROM import_state WHERE source_path LIKE 'wd://%' AND source_path != ?
+               AND substr(source_path, -?) = ?""",
+            (key, len(suffix), suffix),
+        )
+
+    def claim_watchdog_session(
+        self, session_id: str, machine_id: str, source_path: str, *, main: bool
+    ) -> None:
+        self.conn.execute(
+            """UPDATE sessions SET origin = 'watchdog', machine_id = ?,
+               source_path = CASE WHEN ? THEN ? ELSE COALESCE(source_path, ?) END
+               WHERE session_id = ?""",
+            (machine_id, main, source_path, source_path, session_id),
+        )
+
+    def replace_file_projection(self, session_id: str, previous: sqlite3.Row, agent: str) -> None:
+        """Clear file-derived rows in place, preserving the session's saved analyses."""
+        old_path = previous["source_path"]
+        machine_id = previous["machine_id"]
+        paths = self.conn.execute(
+            "SELECT source_path FROM import_state WHERE machine_id = ? AND source_path NOT LIKE 'wd://%'",
+            (machine_id,),
+        )
+        cursors = [
+            (machine_id, path)
+            for (path,) in paths
+            if path == old_path
+            or (
+                agent == "claude"
+                and Path(path).parent.name == "subagents"
+                and Path(path).parent.parent.name == session_id
+            )
+        ]
+        self.conn.executemany(
+            "DELETE FROM import_state WHERE machine_id = ? AND source_path = ?", cursors
+        )
+        for row in self.conn.execute(
+            """SELECT stream_id FROM messages WHERE session_id = :sid
+               UNION SELECT stream_id FROM tool_calls WHERE session_id = :sid
+               UNION SELECT stream_id FROM context_events WHERE session_id = :sid""",
+            {"sid": session_id},
+        ).fetchall():
+            self.delete_stream(session_id, row[0])
+        self.conn.execute("DELETE FROM subagent_runs WHERE session_id = ?", (session_id,))
+        self.reset_watchdog_metadata(session_id, agent)
+
+    def reset_watchdog_metadata(self, session_id: str, agent: str) -> None:
+        if agent == "codex":
+            self.conn.execute(
+                """DELETE FROM subagent_runs WHERE agent_run_id = :sid AND session_id IN (
+                       SELECT parent.session_id FROM sessions child JOIN sessions parent
+                         ON parent.session_id = child.parent_session_id
+                       WHERE child.session_id = :sid AND parent.origin != 'legacy'
+                   )""",
+                {"sid": session_id},
+            )
+        self.conn.execute(
+            """UPDATE sessions SET
+                project_id = NULL, cwd = NULL, git_branch = NULL, cli_version = NULL,
+                originator = NULL, title = NULL, model = NULL, context_window = NULL,
+                duration_ms = NULL, task_duration_ms = NULL, time_to_first_token_ms = NULL,
+                rate_limit_primary_used_percent = NULL, rate_limit_secondary_used_percent = NULL,
+                effort = NULL, approval_policy = NULL, sandbox_policy_type = NULL,
+                collaboration_mode = NULL, parent_session_id = NULL, rate_limit_plan = NULL,
+                developer_instructions_hash = NULL, user_instructions_hash = NULL,
+                cache_creation_5m_tokens = NULL, cache_creation_1h_tokens = NULL,
+                entrypoint = NULL, web_search_requests = NULL, web_fetch_requests = NULL,
+                hook_count = 0, hook_error_count = 0, hook_commands = NULL,
+                hook_has_output_count = 0, usage_iteration_count = 0
+                WHERE session_id = ?""",
+            (session_id,),
+        )
 
     # --- sessions and their streams ---
 

@@ -8,6 +8,8 @@ from pathlib import Path
 import yaml
 from pydantic import BaseModel, Field, ValidationError, field_validator
 
+from agent_watchdog.readapi import default_data_dir
+
 DEFAULT_CONFIG_PATH = Path("~/.wdi/config.yaml")
 
 # USD per million tokens. Session logs carry no cost data, so prices are
@@ -81,6 +83,15 @@ class SourcesConfig(BaseModel):
 class ProjectsConfig(BaseModel):
     # canonical_name -> names/paths merged into one project across machines
     aliases: dict[str, list[str]] = Field(default_factory=dict)
+
+
+class WatchdogConfig(BaseModel):
+    data_dirs: list[Path] = Field(default_factory=lambda: [default_data_dir()])
+
+    @field_validator("data_dirs")
+    @classmethod
+    def _expand_data_dirs(cls, paths: list[Path]) -> list[Path]:
+        return list(dict.fromkeys(path.expanduser().absolute() for path in paths))
 
 
 class CoachModelsConfig(BaseModel):
@@ -158,6 +169,7 @@ class Settings(BaseModel):
     machine_id: str
     db_path: Path = Field(default=Path("~/.wdi/wdi.sqlite"), validate_default=True)
     sources: SourcesConfig = Field(default_factory=SourcesConfig)
+    watchdog: WatchdogConfig = Field(default_factory=WatchdogConfig)
     projects: ProjectsConfig = Field(default_factory=ProjectsConfig)
     features: FeaturesConfig = Field(default_factory=FeaturesConfig)
     pricing: dict[str, ModelPricing] = Field(

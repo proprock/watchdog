@@ -503,15 +503,7 @@ def import_claude_source(
             session_id,
             stream_id,
             "claude",
-            lambda lines, m0, t0, c0, mc0, g0, previous: parse_claude_lines(
-                lines,
-                msg_idx0=m0,
-                tool_idx0=t0,
-                context_idx0=c0,
-                model_call_idx0=mc0,
-                generation0=g0,
-                previous_context_event=previous,
-            ),
+            parse_claude_lines,
         )
         if file_stats is None:
             total.files_seen += 1

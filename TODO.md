@@ -45,21 +45,6 @@ Line numbers in these tasks refer to commit `0d5e984`. Paths under `insights/` e
 
 ## Split P1 - Read contract and insights on Watchdog data
 
-- [ ] **WD-192 - `wdi` imports transcript lines from Watchdog stores.** P1. Depends on WD-188, WD-189, WD-193.
-  - **Why.** Owner decision 2. Today the importer reads provider files, which are deleted after weeks and are invisible when compressed.
-  - **Fixed decisions.**
-    - Settings: `watchdog.data_dirs`, a list of data directories, default `[readapi.default_data_dir()]`. `wdi doctor` lists each directory, the stores found and the unsupported ones.
-    - In `insights/src/wdi/ingest/runner.py`, split `import_stream_file` into a source object with `key`, `size`, `version` and `read_lines()`, and one `import_stream` that works on it. The file source keeps today's behaviour and its tests pass unmodified. The parsers (`ParseFn`) do not change.
-    - The Watchdog source: `key = wd://<machine_id>/<project_id>/<provider>/<session_id>/<stream_id>`, stored in the existing `import_state` columns as `path = key`, `file_size = raw_bytes`, `file_mtime = generation`, `byte_offset = record_count`; a comment documents the mapping. Only the latest generation of a stream is imported.
-    - Stream mapping: Claude `main` is the main stream and a subagent stream keeps its hex id, as the file importer does; every Codex thread is its own session.
-    - `machine_id`, `hostname` and `os` come from the manifest. The project is resolved from the parsed `cwd` as today, falling back to the manifest `root`.
-    - `sessions.origin = 'watchdog'` and `sessions.source_path = key`.
-    - Precedence: a session with `origin = 'watchdog'` is skipped by the file importer; a session first imported from a file and later found in a store is re-imported from the store and its file `import_state` row is removed; a `legacy` session is never touched.
-    - `wdi import` runs the Watchdog import first, then the file import. The file import stays enabled. `wdi doctor` reports per provider how many sessions exist only as files; `insights/README.md` says to turn the file sources off once that number has been zero for a week.
-  - **Steps.** Tests on synthetic stores built with `capture_store`: parity (the same lines through a file and through a store give identical rows apart from `origin` and `source_path`); growth replays the stream; a new generation replaces the rows; several streams; a store without a manifest and one with a newer contract are skipped with a warning; the three precedence rules. Then the code and the `doctor` section.
-  - **Out of scope.** Full text on demand (WD-194). Hook facts (WD-195).
-  - **Acceptance:** the tests pass; `docs/evidence/wd192.md` holds the live `wdi doctor` output with sessions by `origin` and the file-only counts.
-
 - [ ] **WD-194 - Full text is read through `readapi`.** P1. Depends on WD-192.
   - **Why.** The database keeps previews of 300 and 500 characters. The tool-call detail view and the analyzer context read the full text from `sessions.source_path` and silently fall back to the preview when that is not a file (`llm/context.py:28-39`, `web/routes/sessions.py:184-189`, `llm/transcript.py:42-71`, `:191-205`).
   - **Fixed decisions.**

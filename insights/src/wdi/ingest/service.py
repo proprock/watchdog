@@ -13,6 +13,7 @@ from wdi.ingest.claude_code import import_claude_source
 from wdi.ingest.codex import import_codex_source
 from wdi.ingest.models import ImportProgress, ImportStats
 from wdi.ingest.projects import ProjectResolver
+from wdi.ingest.watchdog import import_watchdog
 
 
 def run_import(
@@ -29,10 +30,18 @@ def run_import(
             settings.machine_id, hostname=socket.gethostname(), os_name=sys.platform
         )
         if full:
-            repo.reset_import_state(settings.machine_id)
+            repo.reset_import_state(settings.machine_id, files_only=True)
         resolver = ProjectResolver(repo, settings.machine_id, settings.projects.aliases)
 
         results: dict[str, ImportStats] = {}
+        if settings.watchdog.data_dirs:
+            results["watchdog"] = import_watchdog(
+                repo,
+                settings.watchdog.data_dirs,
+                settings.projects.aliases,
+                full=full,
+                on_progress=on_progress,
+            )
         claude = settings.sources.claude_code
         if claude.enabled and claude.root.is_dir():
             results["claude"] = import_claude_source(

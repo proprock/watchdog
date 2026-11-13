@@ -2,6 +2,8 @@
 
 Historical records only: one line per task. The full text of every entry, including its verification, is in [done-archive.md](docs/evidence/done-archive.md). Active work belongs in [TODO.md](TODO.md). Preserve task IDs when moving entries here.
 
+- [x] **WD-192 - Import Watchdog transcripts into Insights.** Live import populated 797 Watchdog sessions and preserved all 60 saved analyses and 772 legacy sessions. Doctor counted 296 Claude and 13 Codex file-only sessions. [Evidence](docs/evidence/wd192.md).
+
 - [x] **WD-193 - Insights schema revision and legacy database transfer (2026-11-12).** The new database holds 1,010 file sessions, 772 legacy sessions, and all 60 paid analyses. The source checksum matched before and after transfer, and all 277 Insights tests passed. [Evidence](docs/evidence/wd193.md).
 
 - [x] **WD-191 - Repository outcome snapshots (2026-11-12).** Schema 3 was deployed to 15 stores. A live Stop recorded both commits and one insertion. [Evidence](docs/evidence/wd191.md).
