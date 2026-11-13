@@ -115,6 +115,8 @@ pub fn atomic(path: &Path, bytes: &[u8]) -> Result<()> {
             .create_new(true)
             .open(&temporary)?;
         file.write_all(bytes)?;
+        #[cfg(test)]
+        tests::run_before_sync();
         file.sync_all()?;
         drop(file);
         let deadline = Instant::now() + Duration::from_millis(100);
@@ -204,13 +206,24 @@ pub fn loss(root: &Path, reason: usize) {
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
 
-    struct Scratch(std::path::PathBuf);
+    thread_local! {
+        pub(crate) static BEFORE_SYNC: std::cell::RefCell<Option<Box<dyn FnOnce()>>> =
+            const { std::cell::RefCell::new(None) };
+    }
+
+    pub(crate) fn run_before_sync() {
+        if let Some(callback) = BEFORE_SYNC.with(|slot| slot.take()) {
+            callback();
+        }
+    }
+
+    pub(crate) struct Scratch(pub(crate) std::path::PathBuf);
 
     impl Scratch {
-        fn new() -> Self {
+        pub(crate) fn new() -> Self {
             let path = std::env::temp_dir().join(format!("watchdog-disk-{}", Uuid::new_v4()));
             fs::create_dir_all(&path).unwrap();
             Scratch(path)

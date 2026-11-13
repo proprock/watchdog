@@ -596,6 +596,7 @@ fn observe(
     provider: &str,
     codex_control_profile: Option<&str>,
     event_hint: &mut Option<String>,
+    input: impl Read,
 ) -> Result<Option<Value>> {
     if paused(paths)? || !paths.config.exists() {
         return Ok(None);
@@ -603,7 +604,7 @@ fn observe(
     let limits = SpoolLimits::read(&paths.data);
     let adapter_started_at = limits.pipeline_telemetry.then(utc_now);
     let mut raw = Vec::new();
-    std::io::stdin()
+    input
         .take(
             limits
                 .payload_bytes
@@ -779,6 +780,7 @@ fn main() {
             &provider,
             codex_control_profile.as_deref(),
             &mut event_hint,
+            std::io::stdin(),
         ) {
             Ok(value) => deny_stdout = value,
             Err(error) => {
@@ -826,6 +828,63 @@ fn prevent_stdio_inheritance() {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_writer_can_publish_while_a_competitor_is_waiting_to_sync() {
+        let scratch = disk::tests::Scratch::new();
+        let paths = Paths {
+            config: scratch.0.join("config.toml"),
+            data: scratch.0.join("data"),
+            runtime: scratch.0.join("runtime"),
+            python: scratch.0.join("unused"),
+        };
+        std::fs::write(&paths.config, "").unwrap();
+        std::fs::create_dir_all(paths.data.join("spool")).unwrap();
+        let _daemon = disk::lock(&paths.data.join("daemon.lock"), Duration::ZERO).unwrap();
+        let input = json!({"cwd": scratch.0, "hook_event_name": "SessionStart"});
+        let bytes = serde_json::to_vec(&input).unwrap();
+        let publish = |paths: &Paths, bytes: &[u8]| {
+            observe(paths, "codex", None, &mut None, bytes).unwrap();
+        };
+
+        let competing_paths = Paths {
+            config: paths.config.clone(),
+            data: paths.data.clone(),
+            runtime: paths.runtime.clone(),
+            python: paths.python.clone(),
+        };
+        disk::tests::BEFORE_SYNC.with(|callback| {
+            callback.replace(Some(Box::new(move || {
+                let spool = competing_paths.data.join("spool");
+                let published = || {
+                    spool
+                        .read_dir()
+                        .unwrap()
+                        .flatten()
+                        .filter(|entry| {
+                            entry
+                                .path()
+                                .extension()
+                                .is_some_and(|extension| extension == "json")
+                        })
+                        .count()
+                };
+                assert_eq!(published(), 0);
+                publish(&competing_paths, &bytes);
+                assert_eq!(
+                    published(),
+                    1,
+                    "the competing writer must publish before the first sync"
+                );
+            })));
+        });
+        publish(&paths, &serde_json::to_vec(&input).unwrap());
+        assert_eq!(
+            disk::spool_footprint(&paths.data.join("spool")).unwrap().0,
+            2
+        );
+        assert!(!paths.data.join("losses.bin").exists());
+    }
 
     #[test]
     fn the_banner_declares_the_decision_schema_the_adapter_speaks() {
