@@ -91,6 +91,14 @@ Totals include only pairs with known values on both sides; unavailable pairs
 are counted separately. This reports differences without correcting either
 accounting convention. Model/effort-only backfills do not affect reconciliation.
 
+Codex comparisons can differ even with complete source coverage: Insights sums
+`token_count.last_token_usage` notifications within their recorded turn/generation
+identities, while Watchdog uses deltas of `token_usage_record.thread_token_usage`.
+Captured compaction responses can contribute only to the latter; a repeated
+notification under a new turn can contribute only to the former. Compare import
+positions as well: hook facts may include usage beyond the transcript projection's
+last import. [WD-222](../docs/evidence/wd222.md) records a source-level investigation.
+
 `watchdog.data_dirs` in the YAML config defaults to the platform's Watchdog
 data directory. Set it to a list of paths when the installed Watchdog uses a
 custom data directory. Run `uv run wdi doctor` to see the discovered stores,
