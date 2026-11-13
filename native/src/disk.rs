@@ -3,7 +3,7 @@ use chrono::{SecondsFormat, Utc};
 use fs2::FileExt;
 use std::fs::{self, File, OpenOptions};
 use std::io::{Read, Seek, SeekFrom, Write};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::thread::sleep;
 use std::time::{Duration, Instant};
 use uuid::Uuid;
@@ -102,26 +102,40 @@ pub fn spool_footprint(dir: &Path) -> Result<(u64, u64)> {
     Ok((files, bytes))
 }
 
-pub fn atomic(path: &Path, bytes: &[u8]) -> Result<()> {
-    let parent = path.parent().ok_or("missing parent")?;
-    if linked(parent) {
-        return Err("linked output directory".into());
-    }
-    fs::create_dir_all(parent)?;
-    let temporary = parent.join(format!("{}.tmp", Uuid::new_v4()));
-    let result = (|| -> Result<()> {
-        let mut file = OpenOptions::new()
+pub struct Temporary(PathBuf);
+
+impl Temporary {
+    pub fn create(parent: &Path) -> Result<(Self, File)> {
+        if linked(parent) {
+            return Err("linked output directory".into());
+        }
+        fs::create_dir_all(parent)?;
+        let path = parent.join(format!("{}.tmp", Uuid::new_v4()));
+        let file = OpenOptions::new()
             .write(true)
             .create_new(true)
-            .open(&temporary)?;
-        file.write_all(bytes)?;
-        #[cfg(test)]
-        tests::run_before_sync();
-        file.sync_all()?;
+            .open(&path)?;
+        Ok((Self(path), file))
+    }
+
+    pub fn reserve(parent: &Path, size: u64) -> Result<Self> {
+        let (temporary, file) = Self::create(parent)?;
+        file.set_len(size)?;
+        // Windows directory enumeration can report the old length while the
+        // handle that changed EOF remains open.
         drop(file);
+        Ok(temporary)
+    }
+
+    pub fn fill(&self, bytes: &[u8]) -> Result<()> {
+        let file = OpenOptions::new().write(true).open(&self.0)?;
+        write_and_sync(file, bytes)
+    }
+
+    pub fn publish(&self, path: &Path) -> Result<()> {
         let deadline = Instant::now() + Duration::from_millis(100);
         loop {
-            match fs::rename(&temporary, path) {
+            match fs::rename(&self.0, path) {
                 Ok(()) => return Ok(()),
                 Err(error)
                     if matches!(error.raw_os_error(), Some(5 | 32))
@@ -132,9 +146,28 @@ pub fn atomic(path: &Path, bytes: &[u8]) -> Result<()> {
                 Err(error) => return Err(error.into()),
             }
         }
-    })();
-    let _ = fs::remove_file(temporary);
-    result
+    }
+}
+
+impl Drop for Temporary {
+    fn drop(&mut self) {
+        let _ = fs::remove_file(&self.0);
+    }
+}
+
+pub fn write_and_sync(mut file: File, bytes: &[u8]) -> Result<()> {
+    file.write_all(bytes)?;
+    #[cfg(test)]
+    tests::run_before_sync();
+    file.sync_all()?;
+    Ok(())
+}
+
+pub fn atomic(path: &Path, bytes: &[u8]) -> Result<()> {
+    let parent = path.parent().ok_or("missing parent")?;
+    let (temporary, file) = Temporary::create(parent)?;
+    write_and_sync(file, bytes)?;
+    temporary.publish(path)
 }
 
 /// Append one content-free line describing an adapter failure to a rotating,

@@ -683,25 +683,27 @@ fn observe(
         return Err("linked spool directory".into());
     }
     std::fs::create_dir_all(&paths.data)?;
-    let admission = match disk::lock(
-        &paths.data.join("admission.lock"),
-        Duration::from_millis(250),
-    ) {
-        Ok(guard) => guard,
-        Err(error) if error.is::<disk::LockContended>() => {
+    let lock_path = paths.data.join("admission.lock");
+    let wait_budget = Duration::from_millis(250);
+    let admission_failure = |error: &(dyn std::error::Error + 'static), stdout| {
+        if error.is::<disk::LockContended>() {
             disk::loss(&paths.data, BUSY);
-            return Ok(stdout);
+            return stdout;
         }
-        Err(_) => {
-            disk::loss(&paths.data, IO);
-            disk::fault(
-                &paths.data,
-                "admission-lock-io",
-                event_hint.as_deref().unwrap_or("unknown"),
-            );
-            return Ok(None);
-        }
+        disk::loss(&paths.data, IO);
+        disk::fault(
+            &paths.data,
+            "admission-lock-io",
+            event_hint.as_deref().unwrap_or("unknown"),
+        );
+        None
     };
+    let wait_started = Instant::now();
+    let admission = match disk::lock(&lock_path, wait_budget) {
+        Ok(guard) => guard,
+        Err(error) => return Ok(admission_failure(error.as_ref(), stdout)),
+    };
+    let remaining_wait = wait_budget.saturating_sub(wait_started.elapsed());
     let (files, used) = disk::spool_footprint(&spool)?;
     let mut delivery = json!({});
     let delivery_object = delivery.as_object_mut().ok_or("invalid delivery")?;
@@ -730,12 +732,38 @@ fn observe(
         disk::loss(&paths.data, QUOTA);
         return Ok(stdout);
     }
-    if disk::atomic(&spool.join(format!("{}.json", Uuid::new_v4())), &bytes).is_err() {
-        drop(admission);
+    // Charge the complete record to both quotas before unlocking. All
+    // publishers count this .tmp, and a crashed writer leaves it for maintenance.
+    let reservation = disk::Temporary::reserve(&spool, bytes.len() as u64);
+    drop(admission);
+    let staged = reservation.and_then(|temporary| {
+        temporary.fill(&bytes)?;
+        Ok(temporary)
+    });
+    let temporary = match staged {
+        Ok(temporary) => temporary,
+        Err(_) => {
+            disk::loss(&paths.data, IO);
+            return Ok(stdout);
+        }
+    };
+
+    // Serialize promotion with quota scans so a scan cannot miss a file
+    // between reading its directory entry and looking up its size.
+    let admission = match disk::lock(&lock_path, remaining_wait) {
+        Ok(guard) => guard,
+        Err(error) => {
+            drop(temporary);
+            return Ok(admission_failure(error.as_ref(), stdout));
+        }
+    };
+    let published = temporary.publish(&spool.join(format!("{}.json", Uuid::new_v4())));
+    drop(admission);
+    drop(temporary);
+    if published.is_err() {
         disk::loss(&paths.data, IO);
         return Ok(stdout);
     }
-    drop(admission);
     ensure_daemon(paths)?;
     Ok(stdout)
 }
@@ -839,7 +867,13 @@ mod tests {
             python: scratch.0.join("unused"),
         };
         std::fs::write(&paths.config, "").unwrap();
-        std::fs::create_dir_all(paths.data.join("spool")).unwrap();
+        let spool = paths.data.join("spool");
+        std::fs::create_dir_all(&spool).unwrap();
+        std::fs::write(
+            spool.join("limits.json"),
+            br#"{"schema_version":1,"spool_files":2}"#,
+        )
+        .unwrap();
         let _daemon = disk::lock(&paths.data.join("daemon.lock"), Duration::ZERO).unwrap();
         let input = json!({"cwd": scratch.0, "hook_event_name": "SessionStart"});
         let bytes = serde_json::to_vec(&input).unwrap();
@@ -862,20 +896,40 @@ mod tests {
                         .unwrap()
                         .flatten()
                         .filter(|entry| {
-                            entry
-                                .path()
-                                .extension()
-                                .is_some_and(|extension| extension == "json")
+                            entry.file_name() != "limits.json"
+                                && entry
+                                    .path()
+                                    .extension()
+                                    .is_some_and(|extension| extension == "json")
                         })
                         .count()
                 };
                 assert_eq!(published(), 0);
+                let (reserved_files, reserved_bytes) = disk::spool_footprint(&spool).unwrap();
+                assert_eq!(reserved_files, 1);
+                assert!(reserved_bytes >= bytes.len() as u64);
                 publish(&competing_paths, &bytes);
                 assert_eq!(
                     published(),
                     1,
                     "the competing writer must publish before the first sync"
                 );
+                let (files, total_bytes) = disk::spool_footprint(&spool).unwrap();
+                assert_eq!(files, 2, "the reservation consumes a file slot");
+                std::fs::write(
+                    spool.join("limits.json"),
+                    json!({"schema_version": 1, "spool_bytes": total_bytes}).to_string(),
+                )
+                .unwrap();
+                publish(&competing_paths, &bytes);
+                assert_eq!(
+                    published(),
+                    1,
+                    "the reservation also consumes byte capacity"
+                );
+                let losses = std::fs::read(competing_paths.data.join("losses.bin")).unwrap();
+                assert_eq!(losses[QUOTA * 8], 1);
+                assert_eq!(losses[BUSY * 8], 0);
             })));
         });
         publish(&paths, &serde_json::to_vec(&input).unwrap());
@@ -883,7 +937,12 @@ mod tests {
             disk::spool_footprint(&paths.data.join("spool")).unwrap().0,
             2
         );
-        assert!(!paths.data.join("losses.bin").exists());
+        assert!(!spool.read_dir().unwrap().flatten().any(|entry| {
+            entry
+                .path()
+                .extension()
+                .is_some_and(|extension| extension == "tmp")
+        }));
     }
 
     #[test]
