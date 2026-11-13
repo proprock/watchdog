@@ -1,5 +1,7 @@
 """Tests for the CLI skeleton."""
 
+import json
+import subprocess
 from pathlib import Path
 
 from typer.testing import CliRunner
@@ -533,6 +535,43 @@ def test_analyze_yes_skips_prompt_and_runs(tmp_path: Path, monkeypatch) -> None:
     assert result.exit_code == 0
     assert "Proceed with analysis?" not in result.output
     assert runs  # at least one analyzer processed
+
+
+def test_analyze_uses_configured_codex_backend(tmp_path: Path, monkeypatch) -> None:
+    from wdi.llm import backend
+
+    cfg = _seeded_config(tmp_path)
+    with cfg.open("a", encoding="utf-8") as stream:
+        stream.write(
+            "\nfeatures:\n  llm_analysis:\n    backend: codex\n"
+            "    model: fixture-model\n    codex_executable: fixture-codex\n"
+        )
+
+    def run(args, **kwargs):
+        assert args[:2] == ["fixture-codex", "exec"]
+        assert args[args.index("--model") + 1] == "fixture-model"
+        assert "--ephemeral" in args
+        assert "--output-schema" not in args
+        assert "hi" in kwargs["input"]
+        output = Path(args[args.index("--output-last-message") + 1])
+        output.write_text(json.dumps({"score": 95, "summary": "fixture"}), encoding="utf-8")
+        return subprocess.CompletedProcess(args, 0, "", "")
+
+    monkeypatch.setattr(backend.subprocess, "run", run)
+    monkeypatch.setattr(backend.shutil, "which", lambda name: None)
+    result = runner.invoke(app, ["analyze", "-c", str(cfg), "--type", "summary", "--yes"])
+
+    assert result.exit_code == 0, result.exception
+    from wdi.db.connection import connect
+
+    conn = connect(tmp_path / "wdi.sqlite")
+    try:
+        row = conn.execute("SELECT model, score, result FROM llm_analyses").fetchone()
+        assert row is not None
+        assert (row["model"], row["score"]) == ("fixture-model", 95)
+        assert json.loads(row["result"])["summary"] == "fixture"
+    finally:
+        conn.close()
 
 
 def test_analyze_force_passes_through(tmp_path: Path, monkeypatch) -> None:
