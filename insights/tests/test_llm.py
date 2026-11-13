@@ -105,11 +105,15 @@ def test_context_prefers_source_transcript(conn: sqlite3.Connection, tmp_path: P
     assert context.user_prompts(conn, "s1") == [full_prompt]
 
 
-def test_context_falls_back_to_db_without_source(conn: sqlite3.Connection) -> None:
+def test_context_marks_full_text_unavailable_without_source(conn: sqlite3.Connection) -> None:
     from wdi.llm import context
 
     _session(conn)  # no source_path
-    assert context.user_prompts(conn, "s1") == ["add a feature please"]
+    assert context.user_prompts(conn, "s1") is None
+    for analyzer in ("prompt-quality", "summary", "workflow-recommendations"):
+        prompt = ANALYZERS[analyzer].build_prompt(conn, "s1")
+        assert "unavailable" in prompt.lower()
+        assert "add a feature please" not in prompt
 
 
 def test_context_reads_codex_source_transcript(conn: sqlite3.Connection, tmp_path: Path) -> None:
@@ -272,7 +276,7 @@ def test_run_analyzer_stores_and_caches(conn: sqlite3.Connection) -> None:
     stats = run_analyzer(conn, backend, analyzer, SessionFilter(), model="haiku", limit=10)
     assert stats.analyzed == 1
     assert len(backend.calls) == 1
-    assert "add a feature please" in backend.calls[0][0]
+    assert "unavailable" in backend.calls[0][0].lower()
 
     row = Repository(conn).get_llm_analysis("s1", "prompt_quality", analyzer.version)
     assert row is not None

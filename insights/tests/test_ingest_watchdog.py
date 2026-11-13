@@ -1,20 +1,25 @@
 """Exercise the Watchdog import through the Insights service and CLI."""
 
+import hashlib
 import json
 import re
 import shutil
+from compression import zstd
 from contextlib import closing
 from pathlib import Path
 from typing import Any
 from uuid import UUID
 
 import pytest
+from fastapi.testclient import TestClient
 from typer.testing import CliRunner
 from wdi.cli import app
 from wdi.config import Settings
 from wdi.db.connection import connect
 from wdi.db.repository import Repository
 from wdi.ingest.service import run_import
+from wdi.llm.analyzers import ANALYZERS
+from wdi.web import create_app
 
 from agent_watchdog import capture_store, config
 
@@ -142,6 +147,100 @@ def _previews(settings: Settings) -> list[tuple[Any, ...]]:
 
 def _key(provider: str = "claude", session: str = SESSION, stream: str = "main") -> str:
     return f"wd://{MACHINE}/{PROJECT}/{provider}/{session}/{stream}"
+
+
+@pytest.mark.parametrize("analyzer", ["prompt-quality", "summary", "workflow-recommendations"])
+def test_analyzer_reads_captured_prompt(tmp_path: Path, analyzer: str) -> None:
+    settings = Settings.model_validate(_options(tmp_path))
+    prompt = "Original developer prompt " + "x" * 900 + " beyond the preview"
+    _append(_store(tmp_path), [_prompt(prompt)])
+    run_import(settings)
+
+    with closing(connect(settings.db_path)) as db:
+        rendered = ANALYZERS[analyzer].build_prompt(
+            db, SESSION, data_dirs=settings.watchdog.data_dirs
+        )
+    assert prompt in rendered
+
+
+@pytest.mark.parametrize("stream_id", ["main", SUBAGENT])
+@pytest.mark.parametrize("side_file", ["inline", "captured", "missing"])
+def test_tool_detail_reads_capture_without_provider_file(
+    tmp_path: Path, stream_id: str, side_file: str
+) -> None:
+    settings = Settings.model_validate(_options(tmp_path))
+    store = _store(tmp_path)
+    full_input = "input " + "x" * 900 + " end"
+    full_output = "output " + "é" * 900 + " end"
+    filename = "result-1.txt"
+    provider_file = tmp_path / SESSION / "tool-results" / filename
+    reference = (
+        f"<persisted-output>\nOutput too large (42.1KB). Full output saved to: {provider_file}"
+        "\n\nPreview (first 2KB):\npreview text\n</persisted-output>"
+    )
+    _append(store, [_prompt("main prompt")])
+    _append(
+        store,
+        [
+            _line(
+                type="assistant",
+                uuid="call",
+                timestamp=STAMP,
+                message={
+                    "role": "assistant",
+                    "content": [
+                        {
+                            "type": "tool_use",
+                            "id": "call-1",
+                            "name": "Bash",
+                            "input": {"command": full_input},
+                        },
+                    ],
+                },
+            ),
+            _line(
+                type="user",
+                uuid="result",
+                timestamp=STAMP,
+                message={
+                    "role": "user",
+                    "content": [
+                        {
+                            "type": "tool_result",
+                            "tool_use_id": "call-1",
+                            "content": full_output if side_file == "inline" else reference,
+                        },
+                    ],
+                },
+            ),
+        ],
+        stream_id=stream_id,
+    )
+    if side_file == "captured":
+        data = full_output.encode()
+        with store.connect() as db:
+            db.execute(
+                """INSERT INTO side_files VALUES ('claude', ?, ?, ?, ?, 'zstd', ?, ?)""",
+                (
+                    SESSION,
+                    f"tool-results/{filename}",
+                    hashlib.sha256(data).hexdigest(),
+                    len(data),
+                    zstd.compress(data),
+                    STAMP,
+                ),
+            )
+    run_import(settings)
+    with TestClient(create_app(settings)) as client:
+        response = client.get(f"/sessions/{SESSION}/stream/{stream_id}/call/call-1/full")
+
+    assert response.status_code == 200
+    assert full_input in response.text
+    assert "preview text" not in response.text
+    if side_file == "missing":
+        assert "Full output unavailable" in response.text
+    else:
+        assert full_output in response.text
 
 
 def test_watchdog_import_matches_file_projection(tmp_path: Path) -> None:
