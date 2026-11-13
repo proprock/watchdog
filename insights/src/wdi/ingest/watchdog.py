@@ -13,6 +13,7 @@ from agent_watchdog import readapi
 from wdi.db.repository import Repository
 from wdi.ingest.claude_code import parse_claude_lines
 from wdi.ingest.codex import parse_codex_lines
+from wdi.ingest.environment import import_environment
 from wdi.ingest.hook_facts import import_hook_facts
 from wdi.ingest.models import MAIN_STREAM, ImportProgress, ImportStats
 from wdi.ingest.projects import ProjectResolver
@@ -132,6 +133,11 @@ def import_watchdog(
                 import_hook_facts(repo, [store], full=full)
             except (OSError, ValueError, sqlite3.Error) as exc:
                 logger.warning("Could not import hook events for %s: %s", store.path.name, exc)
+                total.warnings += 1
+            try:
+                import_environment(repo, store)
+            except (OSError, ValueError, sqlite3.Error) as exc:
+                logger.warning("Could not import environment for %s: %s", store.path.name, exc)
                 total.warnings += 1
         for source in scan.sources:
             stream = source.stream

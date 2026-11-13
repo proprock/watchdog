@@ -41,5 +41,24 @@
     <input type="checkbox" name="include_noise" value="1" {% if filter.include_noise %}checked{% endif %}>
     Include background sessions
   </label>
+  {% if filter_action == "/sessions" %}
+  <label>Branch
+    <input name="branch" value="{{ filter.branch or '' }}" placeholder="All branches">
+  </label>
+  <label>Changed the repository
+    <select name="repository_changed">
+      <option value="">All</option>
+      <option value="true" {% if filter.repository_changed is sameas true %}selected{% endif %}>Yes</option>
+      <option value="false" {% if filter.repository_changed is sameas false %}selected{% endif %}>No</option>
+    </select>
+  </label>
+  <label>Instructions changed since previous session
+    <select name="instructions_changed">
+      <option value="">All</option>
+      <option value="true" {% if filter.instructions_changed is sameas true %}selected{% endif %}>Yes</option>
+      <option value="false" {% if filter.instructions_changed is sameas false %}selected{% endif %}>No</option>
+    </select>
+  </label>
+  {% endif %}
   <button type="submit">Apply</button>
 </form>

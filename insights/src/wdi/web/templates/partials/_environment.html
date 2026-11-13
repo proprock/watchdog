@@ -1,0 +1,57 @@
+<section id="environment" class="analysis environment-panel">
+  <h2>Environment</h2>
+  {% set env = panels.environment %}
+  {% if env %}
+  <dl class="snapshot-facts">
+    <dt>Directory</dt><dd>{{ env.cwd or "Unavailable" }}</dd>
+    <dt>Commit</dt><dd><code>{{ env.head or "Unavailable" }}</code></dd>
+    <dt>Branch</dt><dd>{{ env.branch or "Unavailable" }}</dd>
+    <dt>Model</dt><dd>{{ env.harness.model or s.model or "Unavailable" }}</dd>
+    <dt>Captured</dt><dd>{{ env.captured_at }}</dd>
+  </dl>
+  <h3>Instructions and settings</h3>
+  <p class="muted">Compared with the previous session of this project:
+    {% if panels.instructions_changed is sameas true %}Changed since previous session
+    {% elif panels.instructions_changed is sameas false %}Unchanged
+    {% else %}Comparison unavailable{% endif %}.
+  </p>
+  {% if panels.files %}
+  <div class="table-scroll"><table>
+    <thead><tr><th>File</th><th>Role</th><th>Digest</th><th>Change</th></tr></thead>
+    <tbody>{% for file in panels.files %}
+      <tr><td>{{ file.path }}</td><td>{{ file.role or "Unavailable" }}</td>
+        <td><code>{{ file.digest or "Unavailable" }}</code>{% if file.error %}<br>{{ file.error }}{% endif %}</td>
+        <td>{% if file.changed is sameas true %}Changed since previous session{% elif file.changed is sameas false %}Unchanged{% else %}Unavailable{% endif %}</td></tr>
+    {% endfor %}</tbody>
+  </table></div>
+  {% else %}<p class="muted">No instruction or settings files captured.</p>{% endif %}
+  <h3>Watchdog rule set</h3>
+  {% if panels.rules %}
+  <ul>{% for rule in panels.rules %}<li>{{ rule.name }} · {{ rule.status or "Unavailable" }}{% if rule.source %} · {{ rule.source }}{% endif %}{% if rule.digest %} · <code>{{ rule.digest }}</code>{% endif %}</li>{% endfor %}</ul>
+  {% elif env.watchdog.rules is defined %}<p class="muted">No Watchdog rules captured.</p>
+  {% else %}<p class="muted">Rule set unavailable{% if env.watchdog.rules_error %}: {{ env.watchdog.rules_error }}{% endif %}.</p>{% endif %}
+  {% if panels.initial and panels.initial.initial_diff_digest %}<p><a href="/sessions/{{ s.session_id }}/diff/initial">View captured diff at session start</a></p>{% endif %}
+  {% if panels.initial and panels.initial.initial_diff_error %}<p class="muted">Initial checkout capture: {{ panels.initial.initial_diff_error }}</p>{% endif %}
+  {% else %}<p class="muted">Environment unavailable. No captured environment was imported for this session.</p>{% endif %}
+</section>
+
+<section id="outcome" class="analysis environment-panel">
+  <h2>Outcome</h2>
+  {% set outcome = panels.outcome %}
+  {% if outcome %}
+  <p class="muted">Observed checkout state at {{ outcome.observed_at }} ({{ outcome.trigger }}).
+    Statistics compare the observed checkout with its Git base and may include changes present before this session.
+    A snapshot does not establish task success.</p>
+  <dl class="snapshot-facts">
+    <dt>Files changed</dt><dd>{{ outcome.files_changed if outcome.files_changed is not none else "Unavailable" }}</dd>
+    <dt>Insertions</dt><dd>{{ outcome.insertions if outcome.insertions is not none else "Unavailable" }}</dd>
+    <dt>Deletions</dt><dd>{{ outcome.deletions if outcome.deletions is not none else "Unavailable" }}</dd>
+    <dt>Untracked files</dt><dd>{{ outcome.untracked if outcome.untracked is not none else "Unavailable" }}</dd>
+    <dt>HEAD moved</dt><dd>{% if panels.head_moved is sameas true %}Yes{% elif panels.head_moved is sameas false %}No{% else %}Unavailable{% endif %}</dd>
+    <dt>Base → observed HEAD</dt><dd><code>{{ outcome.base_head or "Unavailable" }} → {{ outcome.head or "Unavailable" }}</code></dd>
+  </dl>
+  {% if outcome.error %}<p class="muted">Capture unavailable: {{ outcome.error }}</p>{% endif %}
+  {% if outcome.diff_digest %}<p><a href="/sessions/{{ s.session_id }}/diff/outcome">View captured diff</a></p>
+  {% else %}<p class="muted">Diff unavailable. No working-copy patch was captured.</p>{% endif %}
+  {% else %}<p class="muted">Outcome unavailable. No checkout outcome was imported for this session.</p>{% endif %}
+</section>

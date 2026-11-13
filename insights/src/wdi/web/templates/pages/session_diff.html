@@ -1,0 +1,11 @@
+{% extends "pages/base.html" %}
+{% block title %}Captured diff — watchdog-insights{% endblock %}
+{% block content %}
+<p><a href="/sessions/{{ s.session_id }}">← Back to session</a></p>
+<section class="analysis">
+  <h2>Captured {{ "initial" if kind == "initial" else "outcome" }} diff</h2>
+  <p class="muted">Working-copy patch against the HEAD recorded in this snapshot. Committed changes between the base and observed HEAD are not included in this patch.</p>
+  {% if diff.text is not none %}<pre>{{ diff.text if diff.text else "No working-copy changes in this snapshot." }}</pre>
+  {% else %}<p>Diff unavailable. {{ diff.reason }}</p>{% endif %}
+</section>
+{% endblock %}

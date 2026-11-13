@@ -128,6 +128,11 @@ cursors within one store; they are not cross-machine event identities.
   `rel_path`, `digest`, `raw_bytes`, and `captured_at` for each captured version.
 - `side_file_bytes(info, provider, session_id, rel_path, digest)` returns the
   original bytes of one version. Unknown keys raise `KeyError`.
+- `session_env(info)` and `checkout_states(info)` yield dictionaries containing
+  every source column. JSON values remain serialized. Schema 2 environment rows
+  include the four initial statistics as `None`; older schemas yield no rows.
+- `blob_bytes(info, digest)` returns the original bytes of a captured blob;
+  missing content raises `KeyError`.
 
 `streams` and `side_files` yield nothing if the capture database is absent.
 The iterators release each read transaction before yielding results so that a

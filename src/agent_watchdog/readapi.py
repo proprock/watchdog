@@ -199,6 +199,62 @@ def event_facts(info: StoreInfo, after_rowid: int = 0) -> Iterator[dict[str, Any
     yield from _event_rows(info, facts=True, after_rowid=after_rowid)
 
 
+def _snapshot_rows(info: StoreInfo, table: str, minimum_schema: int) -> Iterator[dict[str, Any]]:
+    if not _has_capture(info):
+        return
+    # Open even old schemas to validate the manifest against the database.
+    with open_capture(info) as db:
+        if info.capture_schema is None or info.capture_schema < minimum_schema:
+            return
+        high_water = db.execute(f"SELECT coalesce(max(rowid), 0) FROM {table}").fetchone()[0]
+    after = 0
+    while after < high_water:
+        with open_capture(info) as db:
+            db.row_factory = sqlite3.Row
+            page = db.execute(
+                f"SELECT rowid AS _read_rowid, * FROM {table} "
+                "WHERE rowid > ? AND rowid <= ? ORDER BY rowid LIMIT ?",
+                (after, high_water, _PAGE_SIZE),
+            ).fetchall()
+        for row in page:
+            values = dict(row)
+            after = values.pop("_read_rowid")
+            if table == "session_env":
+                for name in (
+                    "initial_files_changed",
+                    "initial_insertions",
+                    "initial_deletions",
+                    "initial_untracked",
+                ):
+                    values.setdefault(name, None)
+            yield values
+        if len(page) < _PAGE_SIZE:
+            return
+
+
+def session_env(info: StoreInfo) -> Iterator[dict[str, Any]]:
+    """Yield captured environment rows, preserving serialized JSON."""
+    yield from _snapshot_rows(info, "session_env", 2)
+
+
+def checkout_states(info: StoreInfo) -> Iterator[dict[str, Any]]:
+    """Yield captured checkout outcomes."""
+    yield from _snapshot_rows(info, "checkout_states", 3)
+
+
+def blob_bytes(info: StoreInfo, digest: str) -> bytes:
+    """Return original captured blob bytes, or raise KeyError when unavailable."""
+    if not _has_capture(info):
+        raise KeyError(digest)
+    with open_capture(info) as db:
+        if info.capture_schema is None or info.capture_schema < 2:
+            raise KeyError(digest)
+        row = db.execute("SELECT codec, data FROM blobs WHERE digest = ?", (digest,)).fetchone()
+    if row is None:
+        raise KeyError(digest)
+    return _decompress(*row)
+
+
 def streams(info: StoreInfo) -> Iterator[StreamInfo]:
     """List the latest generation of each logical stream."""
     if not _has_capture(info):

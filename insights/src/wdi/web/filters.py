@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Annotated
+from typing import Annotated, Literal
 from urllib.parse import urlencode
 
 from fastapi import Depends, HTTPException, Query
@@ -17,6 +17,9 @@ def parse_filter(
     project: Annotated[str | None, Query()] = None,
     since: Annotated[str | None, Query()] = None,
     include_noise: Annotated[str | None, Query()] = None,
+    branch: Annotated[str | None, Query()] = None,
+    repository_changed: Annotated[Literal["", "true", "false"] | None, Query()] = None,
+    instructions_changed: Annotated[Literal["", "true", "false"] | None, Query()] = None,
 ) -> SessionFilter:
     """Build a SessionFilter from query params; empty strings mean 'no filter'.
 
@@ -31,6 +34,9 @@ def parse_filter(
         project=project or None,
         since=since or None,
         include_noise=bool(include_noise),
+        branch=branch or None,
+        repository_changed=(repository_changed == "true") if repository_changed else None,
+        instructions_changed=(instructions_changed == "true") if instructions_changed else None,
     )
 
 
@@ -45,6 +51,12 @@ def filter_query(flt: SessionFilter) -> str:
         params["since"] = flt.since
     if flt.include_noise:
         params["include_noise"] = "1"
+    if flt.branch:
+        params["branch"] = flt.branch
+    if flt.repository_changed is not None:
+        params["repository_changed"] = str(flt.repository_changed).lower()
+    if flt.instructions_changed is not None:
+        params["instructions_changed"] = str(flt.instructions_changed).lower()
     return f"?{urlencode(params)}" if params else ""
 
 

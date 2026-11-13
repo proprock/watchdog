@@ -259,6 +259,32 @@ are not saved to the session files imported by WDI. This path provides weaker
 isolation than the Claude runner. Watchdog's own Codex analysis backend remains
 unavailable pending a verified isolation contract (WD-166).
 
+### Captured environment and repository outcome
+
+Session pages show the **Environment** captured by Watchdog: working directory,
+commit, branch, model, instruction/settings file digests and the Watchdog rule
+set. File markers compare with the previous session of the same project. A missing
+previous snapshot or unreadable file is unavailable, rather than unchanged.
+
+The **Outcome** panel shows the latest captured checkout statistics and whether
+HEAD moved. These are observed repository changes against the snapshot's Git
+base, including changes that may predate the session; they do not establish task
+success. The session list supports branch, **Changed the repository**, and
+**Instructions changed since previous session** filters. Yes/No filters exclude
+unavailable comparisons.
+
+Captured initial and outcome working-copy patches open on demand. Their bytes
+remain in the configured Watchdog store and are never copied into Insights.
+A patch can be unavailable when content capture was disabled, the blob was not
+retained, or the source store is no longer configured. The outcome patch is
+against the observed HEAD; it does not include committed changes between the
+base and observed HEAD.
+
+This feature requires Insights schema revision 4. Close Insights clients, run
+`uv run --directory insights python scripts/rebuild_db.py`, then
+`uv run --directory insights wdi import --full`. The rebuild preserves primary
+data and creates a backup; metadata is rebuilt from the source stores.
+
 ### Context efficiency
 
 Use **Context Analysis** to compare filtered, Top N, or selected sessions, inspect

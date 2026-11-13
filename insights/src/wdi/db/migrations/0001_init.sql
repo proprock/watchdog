@@ -246,6 +246,55 @@ CREATE TABLE hook_facts (
 CREATE INDEX hook_events_session ON hook_events(session_id);
 CREATE INDEX hook_facts_session ON hook_facts(session_id);
 
+-- Derived snapshot metadata.
+CREATE TABLE session_env (
+    machine_id TEXT NOT NULL,
+    project_id TEXT NOT NULL,
+    store_path TEXT NOT NULL,
+    provider TEXT NOT NULL,
+    session_id TEXT NOT NULL,
+    captured_at TEXT NOT NULL,
+    cwd TEXT,
+    checkout_id TEXT,
+    head TEXT,
+    branch TEXT,
+    harness TEXT NOT NULL,
+    files TEXT NOT NULL,
+    watchdog TEXT NOT NULL,
+    initial_diff_digest TEXT,
+    initial_diff_error TEXT,
+    initial_files_changed INTEGER,
+    initial_insertions INTEGER,
+    initial_deletions INTEGER,
+    initial_untracked INTEGER,
+    PRIMARY KEY (machine_id, project_id, provider, session_id, captured_at)
+);
+CREATE INDEX idx_session_env_session
+    ON session_env (machine_id, provider, session_id, captured_at DESC);
+
+CREATE TABLE checkout_states (
+    machine_id TEXT NOT NULL,
+    project_id TEXT NOT NULL,
+    store_path TEXT NOT NULL,
+    checkout_id TEXT NOT NULL,
+    observed_at TEXT NOT NULL,
+    provider TEXT NOT NULL,
+    session_id TEXT NOT NULL,
+    trigger TEXT NOT NULL,
+    base_head TEXT,
+    head TEXT,
+    branch TEXT,
+    files_changed INTEGER,
+    insertions INTEGER,
+    deletions INTEGER,
+    untracked INTEGER,
+    diff_digest TEXT,
+    error TEXT,
+    PRIMARY KEY (machine_id, project_id, checkout_id, session_id, observed_at)
+);
+CREATE INDEX idx_checkout_states_session
+    ON checkout_states (machine_id, provider, session_id, checkout_id, observed_at DESC);
+
 -- Primary.
 CREATE TABLE llm_analyses (
     analysis_id    INTEGER PRIMARY KEY,

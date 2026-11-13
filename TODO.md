@@ -82,15 +82,6 @@ Line numbers in these tasks refer to commit `0d5e984`. Paths under `insights/` e
 
 - [ ] **WD-223 - Investigate Codex subagent token discrepancies.** WD-195 found input, cached-input, and output differences above 1% in 17 of 21 comparable parent sessions (51 dimension/session differences). Thirty other parent sessions had unavailable comparisons. Verify parent/child coverage and usage conventions against source records before deciding a correction; add synthetic regression coverage and repeat the comparison. [Evidence](docs/evidence/wd195.md).
 
-- [ ] **WD-196 - Environment and repository outcome in `wdi`.** P2. Depends on WD-190, WD-191, WD-192.
-  - **Fixed decisions.**
-    - `readapi` gains readers for `session_env`, `checkout_states` and `blobs`.
-    - `wdi` tables `session_env` and `checkout_states` (derived); blobs are fetched on demand, not copied.
-    - Session page: an "Environment" panel (directory, commit, branch, model, each instruction and settings file with a marker when its digest differs from the previous session of the same project, the Watchdog rule set) and an "Outcome" panel (files changed, insertions, deletions, whether `HEAD` moved, a diff view).
-    - Session list filters: branch, "changed the repository", "instructions changed since the previous session".
-  - **Steps.** Tests for the import, the panels in their normal, empty and unavailable states, and the filters; then the code.
-  - **Acceptance:** both suites pass; the panels render for a live session.
-
 - [ ] **WD-198 - One pricing implementation; `usage`, `overview` and `export` move to `wdi`.** P2. Depends on WD-195.
   - **Why.** Both programs estimate cost and summarise usage, with different features.
   - **Parity table for pricing (owner decision 7); the result has every row.**

@@ -19,7 +19,7 @@ def main() -> None:
     )
     schema = schema_path.read_text(encoding="utf-8")
     projection = schema.split("-- Derived hook data, scoped to the originating store.", 1)[1].split(
-        "-- Primary.", 1
+        "-- Derived snapshot metadata.", 1
     )[0]
     with sqlite3.connect(args.database.resolve().as_uri() + "?mode=rw", uri=True) as db:
         if db.execute("PRAGMA user_version").fetchone()[0] != 2:

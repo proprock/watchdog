@@ -20,15 +20,17 @@ _MAX_LIST_ITEMS = 5
 
 def filter_hash(flt: SessionFilter) -> str:
     """Stable cache key for the filter a coach report was built for."""
-    canonical = json.dumps(
-        {
-            "agent": flt.agent,
-            "project": flt.project,
-            "since": flt.since,
-            "include_noise": flt.include_noise,
-        },
-        sort_keys=True,
-    )
+    values: dict[str, object] = {
+        "agent": flt.agent,
+        "project": flt.project,
+        "since": flt.since,
+        "include_noise": flt.include_noise,
+    }
+    for name in ("branch", "repository_changed", "instructions_changed"):
+        value = getattr(flt, name)
+        if value is not None:
+            values[name] = value
+    canonical = json.dumps(values, sort_keys=True)
     return hashlib.sha256(canonical.encode("utf-8")).hexdigest()[:16]
 
 

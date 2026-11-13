@@ -4,13 +4,13 @@ from __future__ import annotations
 
 import json
 import sqlite3
-from typing import Annotated
+from typing import Annotated, Literal
 
 from fastapi import APIRouter, Query, Request
 from fastapi.responses import HTMLResponse
 
 from wdi.llm import transcript
-from wdi.metrics import queries
+from wdi.metrics import environment, queries
 from wdi.metrics.filters import SessionFilter
 from wdi.report.charts import embed_json, session_chart_data
 from wdi.web import badges
@@ -128,8 +128,31 @@ def session_detail(
         # (Claude assistant rows or Codex token_count rows).
         "has_context_curve": any(r["subtype"] in (None, "token_count") for r in curve),
         "session_chart_data": embed_json(session_chart_data(curve)),
+        "panels": environment.session_panels(conn, sid),
     }
     return templates.TemplateResponse(request, "pages/session_detail.html", context)
+
+
+@router.get("/sessions/{session_id}/diff/{kind}", response_class=HTMLResponse)
+def session_diff(
+    session_id: str,
+    kind: Literal["initial", "outcome"],
+    request: Request,
+    conn: DbDep,
+    settings: SettingsDep,
+    templates: TemplatesDep,
+) -> HTMLResponse:
+    row = queries.session_detail(conn, session_id)
+    if row is None:
+        return templates.TemplateResponse(
+            request, "pages/not_found.html", {"session_id": session_id}, status_code=404
+        )
+    result = environment.read_session_diff(conn, session_id, kind, settings.watchdog.data_dirs)
+    return templates.TemplateResponse(
+        request,
+        "pages/session_diff.html",
+        {"s": dict(row), "kind": kind, "diff": result},
+    )
 
 
 @router.get("/sessions/{session_id}/stream/{stream_id}", response_class=HTMLResponse)

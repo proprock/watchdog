@@ -146,3 +146,8 @@ tbody tr:last-child td { border-bottom: none; }
 .coach-error, .coach-stale { color: #ffd38a; }
 @media (max-width: 700px) { .coach-grid { grid-template-columns: 1fr; } }
 .full-io pre { white-space: pre-wrap; word-break: break-word; max-height: 400px; overflow: auto; }
+.environment-panel { overflow-wrap: anywhere; }
+.environment-panel h2 { margin-top: 0; }
+.snapshot-facts { display: grid; grid-template-columns: minmax(7rem, 1fr) 3fr; gap: 0.5rem 1rem; }
+.snapshot-facts dt { color: var(--muted); }
+.snapshot-facts dd { margin: 0; min-width: 0; }

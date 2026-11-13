@@ -147,3 +147,4 @@ Historical records only: one line per task. The full text of every entry, includ
 
 - **WD-160** - Cover Bash and PowerShell destructive commands with tool-name lists and per-tool subscriptions; verified through the real daemon and native adapter ([evidence](docs/evidence/wd160.md)).
 - [x] **WD-175 - Correct Codex cached-input list-price estimates (2026-10-23).** Provider-aware billable input, missing-cache provenance, and CLI regression coverage. [Evidence](docs/evidence/wd175.md).
+- **WD-196** — Environment and repository outcome panels, on-demand captured diffs and session filters in `wdi`; both suites and live HTTP acceptance passed. [Evidence](docs/evidence/wd196.md).
