@@ -59,6 +59,35 @@ else:
     return executable, tmp_path / "calls"
 
 
+@pytest.mark.parametrize("reason", ["nonzero_exit", "is_error"])
+def test_claude_backend_preserves_actionable_provider_error(tmp_path, monkeypatch, reason):
+    monkeypatch.setattr(readapi, "default_data_dir", lambda: tmp_path / "unused")
+    monkeypatch.setattr(
+        llm,
+        "claude",
+        lambda *a, **k: llm.Result(
+            None,
+            reason,
+            {
+                "api_error_status": 429,
+                "terminal_reason": "api_error",
+                "result": "Weekly allowance exhausted; resets November 14 at 11:00 [UTC].",
+                "argv": ["private executable"],
+            },
+        ),
+    )
+
+    with pytest.raises(LLMError) as caught:
+        ClaudeCliBackend().complete("prompt", "haiku")
+
+    message = str(caught.value)
+    assert reason in message
+    assert "429" in message
+    assert "api_error" in message
+    assert "resets November 14 at 11:00 [UTC]" in message
+    assert "private executable" not in message
+
+
 def test_claude_backend_uses_isolated_text_mode(synthetic_claude):
     executable, _ = synthetic_claude
     answer = json.loads(ClaudeCliBackend(executable=str(executable)).complete("hello", "haiku"))

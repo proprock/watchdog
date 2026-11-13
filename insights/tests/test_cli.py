@@ -615,6 +615,78 @@ def test_analyze_uses_configured_codex_backend(tmp_path: Path, monkeypatch) -> N
         conn.close()
 
 
+def test_analyze_all_failures_exit_nonzero(tmp_path: Path, monkeypatch) -> None:
+    from agent_watchdog import readapi
+    from agent_watchdog.insights import llm
+
+    cfg = _seeded_config(tmp_path)
+    monkeypatch.setattr(readapi, "default_data_dir", lambda: tmp_path / "unused")
+    monkeypatch.setattr(llm, "claude", lambda *a, **k: llm.Result(None, "timeout"))
+
+    result = runner.invoke(app, ["analyze", "-c", str(cfg), "--type", "summary", "--yes"])
+
+    assert result.exit_code == 1
+    assert "LLM analysis results" in result.stdout
+    assert "timeout" in result.stderr
+
+
+def test_analyze_prints_provider_limit_diagnostic_literally(tmp_path: Path, monkeypatch) -> None:
+    from agent_watchdog import readapi
+    from agent_watchdog.insights import llm
+
+    cfg = _seeded_config(tmp_path)
+    monkeypatch.setattr(readapi, "default_data_dir", lambda: tmp_path / "unused")
+    monkeypatch.setattr(
+        llm,
+        "claude",
+        lambda *a, **k: llm.Result(
+            None,
+            "nonzero_exit",
+            {"api_error_status": 429, "result": "Weekly allowance exhausted; reset [UTC]."},
+        ),
+    )
+
+    result = runner.invoke(app, ["analyze", "-c", str(cfg), "--type", "summary", "--yes"])
+
+    assert "429" in result.stderr
+    assert "Weekly allowance exhausted; reset [UTC]." in result.stderr
+    assert result.exit_code == 1
+
+
+def test_analyze_partial_failure_keeps_successes_and_exits_nonzero(
+    tmp_path: Path, monkeypatch
+) -> None:
+    from wdi.db.connection import connect
+
+    from agent_watchdog import readapi
+    from agent_watchdog.insights import llm
+
+    cfg = _seeded_config(tmp_path)
+    monkeypatch.setattr(readapi, "default_data_dir", lambda: tmp_path / "unused")
+    calls = []
+
+    def complete(*args, **kwargs):
+        calls.append(1)
+        if len(calls) == 1:
+            return llm.Result(None, "timeout")
+        return llm.Result({"text": '{"score": 95, "summary": "fixture"}'}, None)
+
+    monkeypatch.setattr(llm, "claude", complete)
+    result = runner.invoke(app, ["analyze", "-c", str(cfg), "--yes"])
+
+    conn = connect(tmp_path / "wdi.sqlite")
+    try:
+        saved = conn.execute("SELECT score FROM llm_analyses").fetchall()
+    finally:
+        conn.close()
+    assert len(calls) > 1
+    assert len(saved) == len(calls) - 1
+    assert all(row["score"] == 95 for row in saved)
+    assert result.exit_code == 1
+    assert "LLM analysis results" in result.stdout
+    assert "timeout" in result.stderr
+
+
 def test_analyze_force_passes_through(tmp_path: Path, monkeypatch) -> None:
     import wdi.llm.service as service
     from wdi.llm.service import AnalysisStats

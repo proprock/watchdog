@@ -675,6 +675,26 @@ def test_claude_runner_keeps_the_reason_a_failed_call_printed(fake_claude, stdou
     assert result.provenance["exit_code"] == 1
 
 
+def test_claude_runner_preserves_provider_error_details_on_zero_exit(fake_claude):
+    fake_claude(
+        RecordedProc(
+            main=lambda argv, kwargs: _completed(
+                argv,
+                json.dumps(
+                    ENVELOPE
+                    | {"is_error": True, "api_error_status": 429, "result": "Limit; reset tomorrow"}
+                ),
+            )
+        )
+    )
+
+    result = llm.claude(REQUEST, forbidden_roots=[])
+
+    assert result.reason == "is_error"
+    assert result.provenance["api_error_status"] == 429
+    assert result.provenance["result"] == "Limit; reset tomorrow"
+
+
 def test_claude_runner_accepts_json_result_text_when_structured_output_is_absent(fake_claude):
     answer = {"summary": "ok", "recommendations": [], "rule_candidates": []}
     fake_claude(
