@@ -14,6 +14,96 @@ from agent_watchdog.storage import Store
 _NOW = "2026-11-12T12:00:00+00:00"
 
 
+def test_environment_readers_preserve_columns_and_blob_bytes(tmp_path):
+    from agent_watchdog import readapi
+
+    project_dir = _manifest(tmp_path)
+    store = capture_store.CaptureStore(project_dir / capture_store.CAPTURE_FILENAME)
+    raw = b"synthetic patch\x00"
+    digest = sha256(raw).hexdigest()
+    with store.connect() as db:
+        db.execute(
+            "INSERT INTO session_env (provider, session_id, captured_at, harness, files, watchdog) "
+            "VALUES ('codex', 's', ?, ?, ?, ?)",
+            (_NOW, '{"model":"example"}', "[]", "{}"),
+        )
+        db.execute(
+            "INSERT INTO checkout_states VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (
+                "checkout",
+                _NOW,
+                "codex",
+                "s",
+                "stop",
+                None,
+                "head",
+                None,
+                None,
+                2,
+                None,
+                0,
+                digest,
+                None,
+            ),
+        )
+        db.execute(
+            "INSERT INTO blobs VALUES (?, ?, 'zstd', ?)", (digest, len(raw), zstd.compress(raw))
+        )
+    (info,) = readapi.stores(tmp_path)
+    env = list(readapi.session_env(info))
+    outcomes = list(readapi.checkout_states(info))
+    with store.connect(write=False) as db:
+        assert env == [dict(db.execute("SELECT * FROM session_env").fetchone())]
+        assert outcomes == [dict(db.execute("SELECT * FROM checkout_states").fetchone())]
+    assert readapi.blob_bytes(info, digest) == raw
+    with pytest.raises(KeyError):
+        readapi.blob_bytes(info, "missing")
+
+
+def test_environment_readers_handle_missing_and_old_schema(tmp_path):
+    from agent_watchdog import readapi
+
+    project_dir = _manifest(tmp_path)
+    (info,) = readapi.stores(tmp_path)
+    assert list(readapi.session_env(info)) == []
+    assert list(readapi.checkout_states(info)) == []
+    with pytest.raises(KeyError):
+        readapi.blob_bytes(info, "missing")
+    with sqlite3.connect(project_dir / capture_store.CAPTURE_FILENAME) as db:
+        db.execute("PRAGMA user_version = 1")
+    _replace_manifest_field(project_dir, "capture_schema", 1)
+    (info,) = readapi.stores(tmp_path)
+    assert list(readapi.session_env(info)) == []
+    assert list(readapi.checkout_states(info)) == []
+
+
+def test_schema_two_environment_has_null_initial_statistics(tmp_path):
+    from agent_watchdog import readapi
+
+    project_dir = _manifest(tmp_path)
+    with sqlite3.connect(project_dir / capture_store.CAPTURE_FILENAME) as db:
+        for statement in capture_store.CAPTURE_ENV_SCHEMA:
+            db.execute(statement)
+        db.execute("PRAGMA user_version = 2")
+        db.execute(
+            "INSERT INTO session_env (provider, session_id, captured_at, harness, files, watchdog) "
+            "VALUES ('codex', 's', 't', '{}', '[]', '{}')"
+        )
+    _replace_manifest_field(project_dir, "capture_schema", 2)
+    (info,) = readapi.stores(tmp_path)
+    (row,) = readapi.session_env(info)
+    assert all(
+        row[name] is None
+        for name in (
+            "initial_files_changed",
+            "initial_insertions",
+            "initial_deletions",
+            "initial_untracked",
+        )
+    )
+    assert list(readapi.checkout_states(info)) == []
+
+
 def _manifest(data_dir: Path, name: str = "sample") -> Path:
     project = config.Project(id=uuid4(), root=data_dir.parent / name)
     project_dir = data_dir / "projects" / str(project.id)

@@ -201,6 +201,7 @@ def test_conversion_preserves_primary_data_and_revision_two_backup(tmp_path, mon
     import runpy
     import sqlite3
     import sys
+    from contextlib import closing
 
     database = tmp_path / "insights.sqlite"
     backup = tmp_path / "backup.sqlite"
@@ -216,6 +217,8 @@ def test_conversion_preserves_primary_data_and_revision_two_backup(tmp_path, mon
     )
     conn.execute("DROP TABLE hook_facts")
     conn.execute("DROP TABLE hook_events")
+    conn.execute("DROP TABLE session_env")
+    conn.execute("DROP TABLE checkout_states")
     conn.execute("PRAGMA user_version = 2")
     conn.commit()
     conn.close()
@@ -224,7 +227,18 @@ def test_conversion_preserves_primary_data_and_revision_two_backup(tmp_path, mon
 
     runpy.run_path(str(script), run_name="__main__")
 
-    with connect(database) as converted, sqlite3.connect(backup) as previous:
+    with (
+        closing(sqlite3.connect(database)) as converted,
+        closing(sqlite3.connect(backup)) as previous,
+    ):
+        assert converted.execute("PRAGMA user_version").fetchone()[0] == 3
+        assert (
+            converted.execute(
+                "SELECT count(*) FROM sqlite_schema "
+                "WHERE name IN ('session_env', 'checkout_states')"
+            ).fetchone()[0]
+            == 0
+        )
         assert converted.execute("SELECT session_id FROM llm_analyses").fetchone()[0] == "saved"
         assert converted.execute("SELECT count(*) FROM hook_facts").fetchone()[0] == 0
         assert previous.execute("PRAGMA user_version").fetchone()[0] == 2
