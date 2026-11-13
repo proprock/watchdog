@@ -8,7 +8,6 @@ from helpers.spool import PreparedQueue as Spool
 from agent_watchdog.config import Config, Limits, Project, UserPaths, save_config
 from agent_watchdog.events import Envelope
 from agent_watchdog.hooks import observe
-from agent_watchdog.inspection import export_sessions
 from agent_watchdog.privacy import text
 from agent_watchdog.storage import Store
 
@@ -29,7 +28,7 @@ def test_known_secret_forms_and_idempotence(value):
     assert text(sanitized) == sanitized
 
 
-def test_raw_events_remain_local_and_exports_are_redacted(tmp_path):
+def test_raw_events_and_artifacts_remain_local(tmp_path):
     secret = "sk-proj-" + "a" * 40
     paths = UserPaths(tmp_path / "config.toml", tmp_path / "data", tmp_path / "runtime")
     project = Project(id=uuid4(), root=tmp_path)
@@ -51,17 +50,6 @@ def test_raw_events_remain_local_and_exports_are_redacted(tmp_path):
         store.put(artifact_event, artifacts={"stdout": f"Authorization: Bearer {secret}".encode()})
         assert secret.encode() in store.read_artifact(artifact_event.event_id, "stdout")
         assert any(secret in saved.model_dump_json() for saved in store.events())
-
-    output = tmp_path / "export"
-    export_sessions(
-        paths, project, provider="codex", session_ids=["privacy-session"], output=output
-    )
-    assert secret.encode() not in (output / "events.jsonl").read_bytes()
-    assert b"private-value" not in (output / "events.jsonl").read_bytes()
-    manifest = json.loads((output / "manifest.json").read_text())
-    assert (
-        manifest["redaction"] == "credential filter was applied at export; review remains required"
-    )
 
 
 def test_malformed_input_never_enters_quarantine_as_raw_text(tmp_path):

@@ -57,7 +57,10 @@ Line numbers in these tasks refer to commit `0d5e984`. Paths under `insights/` e
 
 - [ ] **WD-226 - Investigate daemon file-read failures under parallel test load.** The WD-223 full Watchdog run failed `test_daemon_captures_a_hook_named_transcript` with capture schema version 0 instead of 3 and `test_a_running_daemon_picks_up_a_rule_approved_while_it_runs` with `PermissionError` reading temporary `policy/socket.json`. Both passed together with `-n 0`. Establish publication/readiness and Windows file-access provenance before choosing a fix; do not infer a common cause or weaken assertions based on the passing serial repeat. [Evidence](docs/evidence/wd223.md).
 
+- [ ] **WD-227 - Refresh the installed Codex hook event list.** The WD-198 live update readiness check reports `hook_events_outdated`: the owned event list predates PermissionRequest. The updated daemon and both installed adapter transports pass labeled, self-purging SessionStart smoke checks; this does not prove the missing provider callback. Refresh the owned hook definition through the explicit installer, preserve trust/other hooks, then rerun normal readiness and verify actual callback coverage. Routine WD-198 artifact update intentionally left hook definitions unchanged. [Evidence](docs/evidence/wd198.md).
+
 - [ ] **WD-198 - One pricing implementation; `usage`, `overview` and `export` move to `wdi`.** P2. Depends on WD-195.
+  - **2026-11-13; in progress.** User approved the zero-drop [field inventory](docs/evidence/wd198.md); implementing the [migration plan](docs/plans/2026-11-13-wd198-pricing-cli.md). Offline verification and live token/cost parity remain required.
   - **Why.** Both programs estimate cost and summarise usage, with different features.
   - **Parity table for pricing (owner decision 7); the result has every row.**
 

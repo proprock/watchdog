@@ -319,16 +319,16 @@ joins to the parent conversation and turn. A subagent keeps its own observed
 parent. The subagent transcript reader keeps `isSidechain` lines (every line of
 a dedicated subagent transcript carries that flag); the skip only applies to the
 parent session transcript, where those lines are a duplicate of the subagent's
-own log. Monetary estimates and tariffs are out of scope and deferred.
+own log. Monetary estimates are derived by Insights and are not stored here.
 
-`agent_watchdog.facts_query` provides the read-only aggregate helpers
+`wdi.metrics.usage` provides the read-only aggregate helpers
 (`token_usage`, `process_efficiency`, `coverage`) over `event_facts`; the
 [`usage` CLI command](cli.md#token-and-process-telemetry) assembles them from a
 read-only snapshot. Every figure is a raw `SUM`/`COUNT`; coverage is reported
 beside the aggregates, never folded in.
 
-`agent_watchdog.pricing` and `facts_query.cost` add an optional list-price
-estimate over the same rows: each `usage` row is priced from its own `model` and
+`wdi.metrics.pricing` and `wdi.metrics.usage.cost` provide the estimate included by
+`wdi usage` and `wdi overview` over the same rows: each `usage` row is priced from its own `model` and
 timestamp against a dated tariff file, never persisted and recomputed on every
 call. The billable classes derive from `input_tokens`, `output_tokens`,
 `cached_input_tokens`, and `cache_write_input_tokens`. For Codex, full-rate input
@@ -338,11 +338,17 @@ reads; a missing cached counter leaves that input unpriced, with reason
 unchanged. Stored counters and raw usage aggregates are untouched.
 `reasoning_output_tokens` (a subset of
 `output_tokens`, already billed) and `total_tokens` (an overlapping sum) are
-not. A single `cache_write` rate is a blend across Anthropic's 5-minute and
-1-hour cache-creation tiers, which bill at different multiples of the input
-rate; v6 does not separate them, so pin the rate to the tier you use. It is a
-list-price estimate, not billed spend — subscription and enterprise pricing
-differ.
+not. Schema v6 does not separate cache lifetimes. An explicit `cache_write_5m`
+rate takes precedence over `cache_write`, including zero; reserved 1-hour and
+batch metadata do not change ordinary costs. The latest applicable dated
+section replaces earlier tables, and the longest model prefix within that
+section wins. A user tariff file replaces all packaged defaults. The packaged
+seven-model tariff is a compatibility snapshot, not current provider pricing.
+The same Decimal engine prices imported session stats and web views at each
+session's recorded start before aggregation; their parsed input is already net
+of cached input. These are estimates, not billed spend; subscription and
+enterprise pricing differ. Watchdog collection and control do not import this
+engine or carry a second estimator.
 
 ## Retention and pins
 

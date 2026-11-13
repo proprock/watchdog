@@ -558,7 +558,11 @@ def build_context_report(
                     output_tokens=s.output_tokens,
                     cache_read_tokens=s.cache_read_tokens,
                     cache_creation_tokens=s.cache_creation_tokens,
+                    at=datetime.fromisoformat(ts.replace("Z", "+00:00")),
+                    provider=summary.agent,
                 )
+                if (ts := s.ts or summary.started_at)
+                else None
                 for s in summary.snapshots
             ]
             summary.cost = (

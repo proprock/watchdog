@@ -13,49 +13,16 @@ from agent_watchdog.readapi import default_data_dir
 
 DEFAULT_CONFIG_PATH = Path("~/.wdi/config.yaml")
 
+
 # USD per million tokens. Session logs carry no cost data, so prices are
 # estimated from this table; users override it in the config.
-DEFAULT_PRICING: dict[str, dict[str, float]] = {
-    "claude-opus-4-8": {"input": 15.0, "output": 75.0, "cache_read": 1.5, "cache_write": 18.75},
-    "claude-sonnet-4-6": {"input": 3.0, "output": 15.0, "cache_read": 0.3, "cache_write": 3.75},
-    "claude-opus-5": {
-        "input": 5.0,
-        "output": 25.0,
-        "cache_read": 0.5,
-        "cache_write_5m": 6.25,
-        "cache_write_1h": 10.0,
-        "batch_input": 2.5,
-        "batch_output": 12.5,
-    },
-    "claude-opus-4-6": {
-        "input": 5.0,
-        "output": 25.0,
-        "cache_read": 0.5,
-        "cache_write_5m": 6.25,
-        "cache_write_1h": 10.0,
-        "batch_input": 2.5,
-        "batch_output": 12.5,
-    },
-    "claude-sonnet-5": {
-        "input": 2.0,
-        "output": 10.0,
-        "cache_read": 0.2,
-        "cache_write_5m": 2.5,
-        "cache_write_1h": 4.0,
-        "batch_input": 1.0,
-        "batch_output": 5.0,
-    },
-    "claude-haiku-4-5": {
-        "input": 1.0,
-        "output": 5.0,
-        "cache_read": 0.1,
-        "cache_write_5m": 1.25,
-        "cache_write_1h": 2.0,
-        "batch_input": 0.5,
-        "batch_output": 2.5,
-    },
-    "gpt-5": {"input": 1.25, "output": 10.0, "cache_read": 0.125, "cache_write": 0.0},
-}
+def _default_pricing() -> dict[str, ModelPricing]:
+    from wdi.metrics.pricing import Tariffs
+
+    return {
+        model: ModelPricing.model_validate(rates)
+        for model, rates in Tariffs.default()._sections[0][1].items()
+    }
 
 
 class ConfigError(Exception):
@@ -138,14 +105,14 @@ class FeaturesConfig(BaseModel):
 
 
 class ModelPricing(BaseModel):
-    input: float
-    output: float
-    cache_read: float = 0.0
-    cache_write: float = 0.0
-    cache_write_5m: float | None = None
-    cache_write_1h: float | None = None
-    batch_input: float | None = None
-    batch_output: float | None = None
+    input: float = Field(ge=0, allow_inf_nan=False)
+    output: float = Field(ge=0, allow_inf_nan=False)
+    cache_read: float = Field(default=0.0, ge=0, allow_inf_nan=False)
+    cache_write: float = Field(default=0.0, ge=0, allow_inf_nan=False)
+    cache_write_5m: float | None = Field(default=None, ge=0, allow_inf_nan=False)
+    cache_write_1h: float | None = Field(default=None, ge=0, allow_inf_nan=False)
+    batch_input: float | None = Field(default=None, ge=0, allow_inf_nan=False)
+    batch_output: float | None = Field(default=None, ge=0, allow_inf_nan=False)
 
 
 class ReportConfig(BaseModel):
@@ -178,11 +145,14 @@ class Settings(BaseModel):
     watchdog: WatchdogConfig = Field(default_factory=WatchdogConfig)
     projects: ProjectsConfig = Field(default_factory=ProjectsConfig)
     features: FeaturesConfig = Field(default_factory=FeaturesConfig)
-    pricing: dict[str, ModelPricing] = Field(
-        default_factory=lambda: {
-            model: ModelPricing(**prices) for model, prices in DEFAULT_PRICING.items()
-        }
-    )
+    pricing: dict[str, ModelPricing] = Field(default_factory=_default_pricing)
+    tariffs: Path | None = None
+
+    @field_validator("tariffs")
+    @classmethod
+    def _expand_tariffs(cls, value: Path | None) -> Path | None:
+        return value.expanduser() if value is not None else None
+
     report: ReportConfig = Field(default_factory=ReportConfig)
     sync: SyncConfig = Field(default_factory=SyncConfig)
     server: ServerConfig = Field(default_factory=ServerConfig)

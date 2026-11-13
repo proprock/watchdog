@@ -1,30 +1,237 @@
-"""Cost estimation from the configured pricing table.
+"""List-price cost estimates for v6 token telemetry (WD-114).
 
-Session logs carry no cost, so cost is estimated from token counts and a
-per-model price table. Model ids in the data are more specific than table keys
-(e.g. claude-haiku-4-5-20251001 vs claude-haiku-4-5), so resolution is by the
-longest matching key prefix.
+These are list-price approximations from a user-supplied tariff file, **not
+billed spend**: subscription and enterprise pricing differ, and Anthropic's 5m
+and 1h cache-write tiers are collapsed into one ``cache_write`` rate by the v6
+schema (see ``docs/storage.md``). Nothing here is persisted; an estimate is
+recomputed from the raw counters on every call, so a tariff edit re-prices
+history without a migration.
 """
 
-from __future__ import annotations
+import tomllib
+from collections.abc import Mapping
+from dataclasses import dataclass
+from datetime import UTC, date, datetime
+from decimal import Decimal, InvalidOperation
+from pathlib import Path
+from typing import TYPE_CHECKING
 
-from wdi.config import ModelPricing
+if TYPE_CHECKING:
+    from wdi.config import ModelPricing, Settings
 
-_MILLION = 1_000_000
+# Tariff rate field -> the ``event_facts`` counter it prices. Reasoning/thinking
+# tokens (a subset of ``output_tokens``) and Codex ``total_tokens`` (an
+# overlapping sum) are deliberately absent: pricing them double-counts.
+RATE_FIELDS: dict[str, str] = {
+    "input": "input_tokens",
+    "output": "output_tokens",
+    "cache_read": "cached_input_tokens",
+    "cache_write": "cache_write_input_tokens",
+}
+_MILLION = Decimal(1_000_000)
+QUANTUM = Decimal("0.000001")
+
+
+class PricingError(ValueError):
+    """The tariff file is missing, unreadable, or internally invalid."""
+
+
+@dataclass(frozen=True)
+class Rate:
+    """One model's rates from the tariff section effective at a moment."""
+
+    effective: date
+    model: str
+    rates: Mapping[str, Decimal]  # field -> USD per 1e6 tokens; a missing field is unpriced
+
+
+def _decimal(value: object, where: str) -> Decimal:
+    if not isinstance(value, str):
+        raise PricingError(f"{where}: rate must be a quoted decimal string")
+    try:
+        parsed = Decimal(value)
+    except InvalidOperation as error:
+        raise PricingError(f"{where}: {value!r} is not a decimal") from error
+    if not parsed.is_finite() or parsed < 0:
+        raise PricingError(f"{where}: rate must be finite and non-negative")
+    return parsed
+
+
+@dataclass(frozen=True)
+class Tariffs:
+    currency: str
+    path: str
+    # sorted ascending by effective date; each table is a complete rate list
+    _sections: tuple[tuple[date, Mapping[str, Mapping[str, Decimal]]], ...]
+
+    @classmethod
+    def load(cls, path: str | Path) -> Tariffs:
+        source = Path(path)
+        try:
+            raw = tomllib.loads(source.read_text(encoding="utf-8"))
+        except (OSError, tomllib.TOMLDecodeError, UnicodeDecodeError) as error:
+            raise PricingError(f"Cannot read tariff file {source}") from error
+        currency = raw.pop("currency", "USD")
+        if not isinstance(currency, str) or not currency:
+            raise PricingError("currency must be a non-empty string")
+        sections: list[tuple[date, dict[str, dict[str, Decimal]]]] = []
+        for key, table in raw.items():
+            try:
+                effective = date.fromisoformat(key)
+            except ValueError as error:
+                raise PricingError(f"Section {key!r} is not an ISO date") from error
+            if not isinstance(table, dict) or not table:
+                raise PricingError(f"Section {key!r} has no model rates")
+            models: dict[str, dict[str, Decimal]] = {}
+            for model, row in table.items():
+                if not isinstance(row, dict) or not row:
+                    raise PricingError(f"{key} / {model}: rates must be a table")
+                unknown = (
+                    set(row)
+                    - set(RATE_FIELDS)
+                    - {"cache_write_5m", "cache_write_1h", "batch_input", "batch_output"}
+                )
+                if unknown:
+                    raise PricingError(f"{key} / {model}: unknown rate fields {sorted(unknown)}")
+                models[model] = {
+                    field: _decimal(row[field], f"{key} / {model} / {field}") for field in row
+                }
+            sections.append((effective, models))
+        if not sections:
+            raise PricingError("Tariff file has no dated sections")
+        sections.sort(key=lambda item: item[0])
+        return cls(currency=currency, path=str(source), _sections=tuple(sections))
+
+    @classmethod
+    def default(cls) -> Tariffs:
+        return cls.load(Path(__file__).parent.parent / "default-pricing.toml")
+
+    @classmethod
+    def from_inline(cls, pricing: Mapping[str, ModelPricing]) -> Tariffs:
+        table = {
+            model: {
+                key: Decimal(str(value))
+                for key, value in prices.model_dump().items()
+                if value is not None
+            }
+            for model, prices in pricing.items()
+        }
+        return cls("USD", "inline settings.pricing", ((date.min, table),))
+
+    def rate(self, model: str | None, at: datetime | None) -> Rate | None:
+        """The rate for ``model`` under the latest section effective at ``at``.
+
+        ``None`` when ``at`` precedes every section (or model/at is missing). A
+        ``Rate`` with empty ``rates`` when a section applies but omits the model.
+        """
+        if not model or at is None:
+            return None
+        when = at.date()
+        applicable: tuple[date, Mapping[str, Mapping[str, Decimal]]] | None = None
+        for effective, table in self._sections:
+            if when >= effective:
+                applicable = (effective, table)
+            else:
+                break
+        if applicable is None:
+            return None
+        effective, table = applicable
+        matches = [key for key in table if model.startswith(key)]
+        key = max(matches, key=len) if matches else None
+        return Rate(effective, model, table[key] if key is not None else {})
+
+
+def billable_counts(counts: Mapping[str, int | None], *, provider: str) -> dict[str, int | None]:
+    """Return non-overlapping pricing counters without changing stored telemetry."""
+    result = {counter: counts.get(counter) for counter in RATE_FIELDS.values()}
+    if provider == "codex":
+        total = result["input_tokens"]
+        cached = result["cached_input_tokens"]
+        result["input_tokens"] = (
+            max(0, total - cached) if isinstance(total, int) and isinstance(cached, int) else None
+        )
+    return result
+
+
+def estimate(
+    counts: Mapping[str, int | None], rate: Rate, *, provider: str
+) -> tuple[Decimal, dict[str, object]]:
+    """Price one usage row using its provider's input-counter convention."""
+    billable = billable_counts(counts, provider=provider)
+    cost = Decimal(0)
+    by_field: dict[str, Decimal] = {}
+    priced_tokens: dict[str, int] = {}
+    unpriced_tokens = 0
+    missing_field = False
+    cached_unavailable = (
+        provider == "codex"
+        and counts.get("cached_input_tokens") is None
+        and isinstance(counts.get("input_tokens"), int)
+    )
+    if cached_unavailable:
+        unpriced_tokens = max(0, counts["input_tokens"] or 0)
+    for field, counter in RATE_FIELDS.items():
+        tokens = billable[counter]
+        if not isinstance(tokens, int) or tokens <= 0:
+            continue
+        unit = (
+            rate.rates.get("cache_write_5m", rate.rates.get(field))
+            if field == "cache_write"
+            else rate.rates.get(field)
+        )
+        if unit is None:
+            unpriced_tokens += tokens
+            missing_field = True
+            continue
+        line = Decimal(tokens) * unit / _MILLION
+        cost += line
+        by_field[field] = line
+        priced_tokens[field] = tokens
+    provenance: dict[str, object] = {
+        "tariff_date": rate.effective.isoformat(),
+        "priced_fields": list(by_field),
+        "by_field": by_field,
+        "priced_tokens": priced_tokens,
+        "unpriced_tokens": unpriced_tokens,
+    }
+    if not rate.rates:
+        provenance["unpriced_reason"] = "model_not_in_tariff"
+    elif cached_unavailable:
+        provenance["unpriced_reason"] = "cached_input_unavailable"
+    elif missing_field:
+        provenance["unpriced_reason"] = "rate_field_missing"
+    return cost.quantize(QUANTUM), provenance
 
 
 class PricingResolver:
-    def __init__(self, pricing: dict[str, ModelPricing]) -> None:
-        # Longest keys first so the most specific prefix wins.
-        self._pricing = sorted(pricing.items(), key=lambda kv: len(kv[0]), reverse=True)
+    """Presentation adapter over the single dated Decimal estimator.
 
-    def resolve(self, model: str | None) -> ModelPricing | None:
-        if not model:
+    Parsed Insights input counters are already net of cache reads. Pass
+    input_is_net=False only when pricing original provider counters.
+    """
+
+    def __init__(self, pricing: Tariffs | dict[str, ModelPricing]) -> None:
+        self.tariffs = pricing if isinstance(pricing, Tariffs) else Tariffs.from_inline(pricing)
+
+    @classmethod
+    def from_settings(cls, settings: Settings) -> PricingResolver:
+        if settings.tariffs is not None:
+            return cls(Tariffs.load(settings.tariffs))
+        if "pricing" in settings.model_fields_set:
+            return cls(settings.pricing)
+        return cls(Tariffs.default())
+
+    def resolve(self, model: str | None, *, at: datetime | None = None) -> ModelPricing | None:
+        from wdi.config import ModelPricing
+
+        rate = self.tariffs.rate(model, at or datetime.now(UTC))
+        if (
+            rate is None
+            or not {"input", "output", "cache_read"}.issubset(rate.rates)
+            or not {"cache_write", "cache_write_5m"}.intersection(rate.rates)
+        ):
             return None
-        for key, prices in self._pricing:
-            if model.startswith(key):
-                return prices
-        return None
+        return ModelPricing.model_validate(rate.rates)
 
     def cost(
         self,
@@ -34,16 +241,23 @@ class PricingResolver:
         output_tokens: int = 0,
         cache_read_tokens: int = 0,
         cache_creation_tokens: int = 0,
+        at: datetime | None = None,
+        provider: str = "claude",
+        input_is_net: bool = True,
     ) -> float | None:
-        prices = self.resolve(model)
-        if prices is None:
+        rate = self.tariffs.rate(model, at or datetime.now(UTC))
+        if rate is None or not rate.rates:
             return None
-        cache_write = (
-            prices.cache_write_5m if prices.cache_write_5m is not None else prices.cache_write
+        value, provenance = estimate(
+            {
+                "input_tokens": input_tokens,
+                "output_tokens": output_tokens,
+                "cached_input_tokens": cache_read_tokens,
+                "cache_write_input_tokens": cache_creation_tokens,
+            },
+            rate,
+            provider="claude" if input_is_net else provider,
         )
-        return (
-            input_tokens * prices.input
-            + output_tokens * prices.output
-            + cache_read_tokens * prices.cache_read
-            + cache_creation_tokens * cache_write
-        ) / _MILLION
+        if provenance.get("unpriced_reason"):
+            return None
+        return float(value)

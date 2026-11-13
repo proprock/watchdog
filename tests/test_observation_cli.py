@@ -839,7 +839,7 @@ def test_diff_oscillation_is_not_reported_for_an_unrelated_session_sharing_a_che
     assert bystander_report["findings"] == []
 
 
-def test_label_pin_export_and_purge_are_offline_and_provider_scoped(tmp_path, monkeypatch, capsys):
+def test_label_pin_and_purge_are_offline_and_provider_scoped(tmp_path, monkeypatch, capsys):
     project = Project(id=uuid4(), root=tmp_path)
     save_config(tmp_path / "config.toml", Config(projects=(project,)))
     paths = UserPaths(tmp_path / "config.toml", tmp_path / "data", tmp_path / "runtime")
@@ -902,33 +902,6 @@ def test_label_pin_export_and_purge_are_offline_and_provider_scoped(tmp_path, mo
             "reviewer_note": None,
         }
         assert shown["pinned"] is True
-
-        output = tmp_path / "export"
-        code, exported = invoke(
-            monkeypatch,
-            capsys,
-            tmp_path,
-            "export",
-            "--project",
-            str(project.id),
-            "--session",
-            "shared",
-            "--output",
-            str(output),
-        )
-        assert code == 0
-        assert exported["project"] == tmp_path.name
-        assert set(exported["files"]) == {
-            "events.jsonl",
-            "manifest.json",
-            "manual-prompt.md",
-            "summary.md",
-        }
-        manifest = json.loads((output / "manifest.json").read_text())
-        assert manifest["schema_version"] == 1
-        assert manifest["review_required"] is True
-        assert manifest["sessions"][0]["gaps"] == ["active_time_unknown", "usage_incomplete"]
-        assert "review the exported content" in (output / "manual-prompt.md").read_text().lower()
 
         code, purged = invoke(
             monkeypatch, capsys, tmp_path, "purge", "shared", "--project", str(project.id)

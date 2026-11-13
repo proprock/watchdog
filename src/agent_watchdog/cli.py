@@ -185,17 +185,6 @@ def main() -> int:
         help="Send one labeled synthetic event through the installed adapter, then purge it",
     )
     commands.add_parser("summary", help="Summarize known observations for registered projects")
-    overview = commands.add_parser(
-        "overview",
-        help="Show usage, findings, and recency per registered project (read-only)",
-    )
-    overview.add_argument("--since", type=_since, help="ISO-8601 inclusive lower bound for usage")
-    overview.add_argument("--until", type=_since, help="ISO-8601 exclusive upper bound for usage")
-    overview.add_argument(
-        "--tariffs",
-        type=Path,
-        help="List-price tariff file; adds an estimate. Defaults to [pricing] tariffs",
-    )
     report = commands.add_parser(
         "report", help="Analyze collected observations without control actions"
     )
@@ -207,17 +196,6 @@ def main() -> int:
     )
     telemetry.add_argument("--project", help="Project alias; UUID accepted; default resolves cwd")
     telemetry.add_argument("--since", type=_since, help="ISO-8601 inclusive lower bound")
-    usage = commands.add_parser(
-        "usage", help="Compare token use and per-turn process cost (read-only, schema v6)"
-    )
-    usage.add_argument("--project", help="Project alias; UUID accepted; default resolves cwd")
-    usage.add_argument("--since", type=_since, help="ISO-8601 inclusive lower bound")
-    usage.add_argument("--until", type=_since, help="ISO-8601 exclusive upper bound")
-    usage.add_argument(
-        "--tariffs",
-        type=Path,
-        help="List-price tariff file; adds an estimate block. Defaults to [pricing] tariffs",
-    )
     analyze = commands.add_parser(
         "analyze", help="Analysis subcommands over collected observations (read-only)"
     )
@@ -335,13 +313,6 @@ def main() -> int:
     purge.add_argument("session_id")
     purge.add_argument("--project", help="Project alias; UUID accepted; default resolves cwd")
     purge.add_argument("--provider", default="codex")
-    export = commands.add_parser(
-        "export", help="Write an offline review bundle for selected sessions"
-    )
-    export.add_argument("--project", help="Project alias; UUID accepted; default resolves cwd")
-    export.add_argument("--provider", default="codex")
-    export.add_argument("--session", action="append", required=True)
-    export.add_argument("--output", type=Path, required=True)
     sessions = commands.add_parser(
         "sessions", help="Read collected sessions without starting collection"
     )
@@ -478,19 +449,16 @@ def main() -> int:
         if args.command in (
             "doctor",
             "summary",
-            "overview",
             "sessions",
             "report",
             "telemetry",
-            "usage",
             "analyze",
-            "export",
             "label",
             "verdict",
             "pin",
             "purge",
         ):
-            from agent_watchdog import _proc, inspection
+            from agent_watchdog import inspection
 
             if args.command == "doctor":
                 report = inspection.doctor(paths)
@@ -500,28 +468,8 @@ def main() -> int:
                 report = inspection.summary(paths)
                 print(json.dumps(report))
                 return 0 if report["ok"] else 1
-            if args.command == "overview":
-                _proc.lower_own_priority()
-                report = inspection.overview(
-                    paths,
-                    since=args.since,
-                    until=args.until,
-                    tariffs=args.tariffs or load_config(paths.config).pricing.tariffs,
-                )
-                print(json.dumps(report))
-                return 0 if report["ok"] else 1
             project = inspection.project_at(paths, args.project)
             alias = project_aliases(load_config(paths.config).projects)[project.id]
-            if args.command == "export":
-                result = inspection.export_sessions(
-                    paths,
-                    project,
-                    provider=args.provider,
-                    session_ids=args.session,
-                    output=args.output,
-                )
-                print(json.dumps(_with_project_alias(result, alias)))
-                return 0
             if args.command == "verdict":
                 request = {
                     "action": "checkout_verdict" if args.checkout else "verdict",
@@ -566,13 +514,6 @@ def main() -> int:
                 return 0
             if args.command == "telemetry":
                 result = inspection.telemetry(paths, project, since=args.since)
-                print(json.dumps(_with_project_alias(result, alias)))
-                return 0
-            if args.command == "usage":
-                tariffs = args.tariffs or load_config(paths.config).pricing.tariffs
-                result = inspection.usage(
-                    paths, project, since=args.since, until=args.until, tariffs=tariffs
-                )
                 print(json.dumps(_with_project_alias(result, alias)))
                 return 0
             if args.command == "analyze":

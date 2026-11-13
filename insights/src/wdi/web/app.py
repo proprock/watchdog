@@ -30,7 +30,7 @@ def create_app(settings: Settings) -> FastAPI:
     register_jinja_filters(templates.env)
 
     app.state.settings = settings
-    app.state.pricing = PricingResolver(settings.pricing)
+    app.state.pricing = PricingResolver.from_settings(settings)
     app.state.templates = templates
 
     # Vendored Chart.js is reused from the report package; htmx/CSS/JS are local.

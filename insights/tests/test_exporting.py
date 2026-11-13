@@ -101,8 +101,12 @@ def test_export_retains_four_files_selection_labels_gaps_and_source_bytes(tmp_pa
         ("codex", "two"),
         ("codex", "one"),
     ]
-    assert events[0].payload["codex"]["metadata"]["reasoning_effort"] == "high"
-    assert events[0].payload["codex"]["metadata"]["future_metric"] is True
+    provider_payload = events[0].payload["codex"]
+    assert isinstance(provider_payload, dict)
+    metadata = provider_payload["metadata"]
+    assert isinstance(metadata, dict)
+    assert metadata["reasoning_effort"] == "high"
+    assert metadata["future_metric"] is True
     summary = (output / "summary.md").read_text()
     assert "Outcome: success" in summary and "Task type: coding" in summary
     assert "Review retained content before sharing" in summary
@@ -169,3 +173,78 @@ def test_export_cli_uses_source_registration_and_project_alias(tmp_path, source)
     assert result["project"] == "repo"
     assert "project_id" not in result
     assert len(result["files"]) == 4
+
+
+def test_export_redacts_stored_events_without_rewriting_raw_artifacts(tmp_path):
+    from wdi.exporting import export_sessions
+
+    secret = "sk-proj-" + "a" * 40
+    paths = UserPaths(tmp_path / "config.toml", tmp_path / "data", tmp_path / "runtime")
+    project = Project(id=uuid4(), root=tmp_path)
+    event = Envelope(
+        provider="codex",
+        project_id=project.id,
+        session_id="privacy-session",
+        kind="tool.finish",
+        source="hook",
+        payload={"codex": {"content": {"prompt": secret, "password": "private-value"}}},
+    )
+    artifact = f"Authorization: Bearer {secret}".encode()
+    with Store(paths.project_data(project.id), project.id) as store:
+        store.put(event, artifacts={"stdout": artifact})
+    output = tmp_path / "export"
+    export_sessions(
+        registered(paths, project), provider="codex", session_ids=["privacy-session"], output=output
+    )
+    assert secret.encode() not in (output / "events.jsonl").read_bytes()
+    assert b"private-value" not in (output / "events.jsonl").read_bytes()
+    manifest = json.loads((output / "manifest.json").read_text())
+    assert (
+        manifest["redaction"] == "credential filter was applied at export; review remains required"
+    )
+    with Store(paths.project_data(project.id), project.id) as store:
+        assert secret in store.events()[0].model_dump_json()
+        assert store.read_artifact(event.event_id, "stdout") == artifact
+
+
+def test_export_preserves_unknown_telemetry_after_daemon_spool_ingestion(tmp_path):
+    from wdi.exporting import export_sessions
+
+    from agent_watchdog.daemon import _drain_spool
+
+    paths = UserPaths(tmp_path / "config.toml", tmp_path / "data", tmp_path / "runtime")
+    project = Project(id=uuid4(), root=tmp_path)
+    config = Config(projects=(project,))
+    save_config(paths.config, config)
+    record = {
+        "schema_version": 2,
+        "record_type": "hook",
+        "event_id": str(uuid4()),
+        "received_at": BASE.isoformat(),
+        "provider": "codex",
+        "cwd": str(tmp_path),
+        "input": {
+            "hook_event_name": "Stop",
+            "session_id": "session-1",
+            "model": "gpt-test",
+            "reasoning_effort": "high",
+            "future_metric": {"enabled": True},
+        },
+    }
+    spool = paths.data / "spool"
+    spool.mkdir(parents=True)
+    (spool / "record.json").write_text(json.dumps(record), encoding="utf-8")
+    assert _drain_spool(paths, config)
+    output = tmp_path / "export"
+    export_sessions(
+        registered(paths, project), provider="codex", session_ids=["session-1"], output=output
+    )
+    exported = Envelope.model_validate_json((output / "events.jsonl").read_bytes())
+    provider_payload = exported.payload["codex"]
+    assert isinstance(provider_payload, dict)
+    metadata = provider_payload["metadata"]
+    assert isinstance(metadata, dict)
+    assert metadata["reasoning_effort"] == "high"
+    assert metadata["model"] == "gpt-test"
+    assert metadata["future_metric"] == {"enabled": True}
+    assert provider_payload["unknown_fields"] == ["future_metric"]

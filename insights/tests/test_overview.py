@@ -5,8 +5,8 @@ from datetime import UTC, datetime, timedelta
 from hashlib import sha256
 from uuid import uuid4
 
-import pytest
 from fact_fixtures import BASE, TARIFFS, _finish, build_v5, cli, registered, sample_events, seed
+from wdi.metrics import usage as facts_query
 
 from agent_watchdog import _proc, analysis, inspection
 from agent_watchdog.config import Config, Project, UserPaths, save_config
@@ -22,12 +22,6 @@ def register(tmp_path, *names, seeded=()):
     for name in seeded:
         seed(paths.project_data(projects[name].id), projects[name].id)
     return paths, projects
-
-
-@pytest.fixture(autouse=True)
-def migrated_queries():
-    global facts_query
-    from wdi.metrics import usage as facts_query
 
 
 def overview(monkeypatch, capsys, tmp_path, *args):

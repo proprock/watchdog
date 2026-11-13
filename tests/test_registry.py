@@ -1,12 +1,11 @@
 import os
 import subprocess
 import tempfile
-from pathlib import Path
 from uuid import uuid4
 
 import pytest
 
-from agent_watchdog.config import Config, Pricing, Project, Rules, load_config, save_config
+from agent_watchdog.config import Config, Project, Rules, load_config, save_config
 from agent_watchdog.registry import Registry, RegistryError, Resolution
 
 
@@ -185,7 +184,6 @@ def test_git_repository_is_auto_added_once_without_a_trusted_directory(repositor
 def customized_config(**extra):
     return Config(
         pipeline_telemetry=False,
-        pricing=Pricing(tariffs=Path.cwd().anchor / Path("tariffs.toml")),
         rules=Rules(disabled=["some_rule"], approved={"user_rule": "a" * 64}),
         **extra,
     )
@@ -193,7 +191,6 @@ def customized_config(**extra):
 
 def assert_sections_kept(registry):
     assert registry.config.pipeline_telemetry is False
-    assert registry.config.pricing == customized_config().pricing
     assert registry.config.rules == customized_config().rules
 
 

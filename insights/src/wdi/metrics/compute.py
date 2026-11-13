@@ -305,12 +305,17 @@ class MetricsReport:
 
 
 def _model_cost(pricing: PricingResolver, row: sqlite3.Row) -> float | None:
+    at = _parse_ts(row["started_at"])
+    if at is None:
+        return None
     return pricing.cost(
         row["model"],
         input_tokens=row["input_tokens"],
         output_tokens=row["output_tokens"],
         cache_read_tokens=row["cache_read_tokens"],
         cache_creation_tokens=row["cache_creation_tokens"],
+        at=at,
+        provider=row["agent"],
     )
 
 
@@ -375,7 +380,7 @@ def compute_cache_misses(
 
     stats = CacheMissStats()
     wasted: Counter[str] = Counter()
-    wasted_by_model: Counter[str] = Counter()
+    wasted_costs: list[float] = []
     prev_ts: datetime | None = None
     prev_context = 0
     prev_session: str | None = None
@@ -411,25 +416,21 @@ def compute_cache_misses(
             setattr(stats, cause, getattr(stats, cause) + 1)
             wasted[cause] += cache_creation
             if row["model"]:
-                wasted_by_model[row["model"]] += cache_creation
+                cost = pricing.cost(
+                    row["model"],
+                    cache_creation_tokens=cache_creation,
+                    at=cur_ts,
+                    provider="claude",
+                )
+                if cost is not None:
+                    wasted_costs.append(cost)
         prev_ts = cur_ts
         prev_context = context
 
     stats.wasted_tokens_by_cause = dict(wasted)
-    if wasted_by_model:
-        # Cost of re-writing the cache; a hit would have been ~10x cheaper reads.
-        total = 0.0
-        for model, tokens in wasted_by_model.items():
-            cost = pricing.cost(
-                model,
-                input_tokens=0,
-                output_tokens=0,
-                cache_read_tokens=0,
-                cache_creation_tokens=tokens,
-            )
-            if cost is not None:
-                total += cost
-        stats.estimated_cost = total if total else None
+    if wasted_costs:
+        # Resolve each cache rewrite at its observation date before summing.
+        stats.estimated_cost = sum(wasted_costs)
     return stats
 
 
@@ -476,8 +477,16 @@ def build_report(
     models: list[ModelStat] = []
     unpriced_models: list[dict[str, int | str]] = []
     total_cost: float | None = None
+    model_costs: dict[str, float] = {}
+    unpriced_session_models: set[str] = set()
+    for session in queries.session_pricing_rows(conn, flt):
+        cost = _model_cost(pricing, session)
+        if cost is None:
+            unpriced_session_models.add(session["model"])
+        else:
+            model_costs[session["model"]] = model_costs.get(session["model"], 0.0) + cost
     for row in queries.tokens_by_model(conn, flt):
-        cost = _model_cost(pricing, row)
+        cost = None if row["model"] in unpriced_session_models else model_costs.get(row["model"])
         if cost is not None:
             total_cost = (total_cost or 0.0) + cost
         tokens = _model_tokens(row)

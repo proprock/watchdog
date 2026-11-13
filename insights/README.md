@@ -147,9 +147,26 @@ transcript rows.
 
 ## Model pricing
 
-Set `pricing` in `~/.wdi/config.yaml`. All rates are USD per million tokens;
-model names match by their longest configured prefix, including dated variants.
-For example:
+All cost views use one dated Decimal pricing engine. The packaged
+[`default-pricing.toml`](src/wdi/default-pricing.toml) preserves the previous
+seven-model defaults as a compatibility snapshot; it is not a statement of
+current provider prices. To replace the entire table, set a tariff path in
+`~/.wdi/config.yaml`:
+
+```yaml
+tariffs: /path/to/pricing.toml
+```
+
+See [`pricing.example.toml`](../pricing.example.toml) for quoted decimal rates
+per million tokens. Each observation uses the latest section effective on its
+date, then the longest matching model prefix within that section. Sections
+replace earlier tables; a user file never falls back to packaged model rates.
+Stats, static reports, and web session views resolve each session's recorded
+start before summing model totals. Context and cache-miss views use individual
+observation timestamps. Parsed input is already net of cache reads.
+
+Explicit legacy inline `pricing` is still supported and normalized into the
+same engine when no tariff file is selected. For example:
 
 ```yaml
 pricing:
@@ -174,8 +191,34 @@ Cache creation is therefore estimated at the 5-minute rate; `cache_write_1h`,
 affect reports. One-hour cache use can consequently be underestimated.
 
 After editing prices, rerun `uv run wdi stats` or `uv run wdi report`; no session
-re-import is needed. Restart `wdi serve` to reload its configuration. New defaults
-apply to newly created configs; existing config files are not rewritten.
+re-import is needed. Restart `wdi serve` to reload its configuration. Existing
+config files are not rewritten. Estimates are not billed spend.
+
+## Watchdog source reports and review export
+
+These commands read Watchdog source snapshots directly, without `wdi import`:
+
+```console
+uv run wdi usage --project PROJECT --since 2026-11-06T00:00:00Z --until 2026-11-13T00:00:00Z
+uv run wdi overview
+uv run wdi export --project PROJECT --provider codex --session SESSION_ID --output review-bundle
+```
+
+Use `--watchdog-config PATH` for Watchdog's registration TOML and
+`--watchdog-data DIR` for its data directory. `usage` and `overview` accept
+`--config PATH` for WDI YAML and `--tariffs PATH` to replace its selected tariffs.
+Pricing is included by default. Time windows are inclusive at `--since` and
+exclusive at `--until`; overview's window bounds usage only, while findings keep
+their all-history and pending/as-of state. `usage` preserves raw provider/model,
+effort, attribution, conversation, turn, and day groups, process metrics, coverage,
+and pricing provenance. These raw hook-fact reports remain separate from the
+imported session statistics shown by `stats` and the web dashboard.
+
+`export` writes the selected sessions' credential-filtered `events.jsonl`,
+`summary.md`, `manifest.json`, and `manual-prompt.md`, retaining labels and gaps.
+Repeat `--session` to select multiple sessions. It performs no model or network
+calls and refuses to overwrite an existing destination. This manual review bundle
+is distinct from `export-snapshot`, which transfers the Insights database.
 
 ## MCP server
 

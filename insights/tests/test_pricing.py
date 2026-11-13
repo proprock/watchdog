@@ -1,13 +1,12 @@
 """Pricing configuration compatibility and cache estimates."""
 
-import pytest
 from datetime import UTC, date, datetime
 from decimal import Decimal
 from pathlib import Path
 
-from wdi.config import Settings
+import pytest
+from wdi.config import ModelPricing, Settings
 from wdi.metrics import pricing as engine
-from wdi.config import ModelPricing
 from wdi.metrics.pricing import PricingResolver
 
 
@@ -111,7 +110,9 @@ def test_decimal_estimate_preserves_partial_pricing_and_missing_cache() -> None:
     counts = {"input_tokens": 1_000_000, "output_tokens": 1, "cached_input_tokens": 5}
     cost, provenance = engine.estimate(counts, rate, provider="claude")
     assert cost == Decimal("0.123459")
-    assert provenance["by_field"]["input"] == Decimal("0.123456789")
+    by_field = provenance["by_field"]
+    assert isinstance(by_field, dict)
+    assert by_field["input"] == Decimal("0.123456789")
     assert provenance["unpriced_tokens"] == 5
     assert provenance["unpriced_reason"] == "rate_field_missing"
     cost, provenance = engine.estimate(

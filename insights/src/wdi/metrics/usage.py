@@ -9,10 +9,10 @@ pass a read-only connection to a v6 database.
 import sqlite3
 from datetime import UTC, datetime
 from decimal import Decimal
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
-if TYPE_CHECKING:
-    from agent_watchdog.pricing import Tariffs
+from agent_watchdog.readapi import RegisteredProject, StorageError, snapshot
+from wdi.metrics.pricing import Tariffs
 
 _COUNTERS = (
     "input_tokens",
@@ -122,7 +122,7 @@ def cost(
     List-price estimate, never billed spend. Raw counters are untouched; this is
     recomputed on every call. Reasoning and ``total_tokens`` are never priced.
     """
-    from agent_watchdog import pricing
+    from wdi.metrics import pricing
 
     if group_by not in _GROUPS:
         raise ValueError(f"Unsupported group_by: {group_by}")
@@ -353,3 +353,74 @@ def coverage(db: sqlite3.Connection) -> dict[str, Any]:
             }
         result[name] = entry
     return result
+
+
+def usage(
+    project: RegisteredProject,
+    *,
+    since: datetime | None,
+    until: datetime | None,
+    tariffs: Tariffs | None = None,
+    detailed: bool = True,
+) -> dict[str, Any]:
+    """Compare raw token use and per-turn process cost from a v6 read-only snapshot.
+
+    The ``pricing`` block estimates list prices from raw counters and is never
+    persisted. An explicit tariff replaces the packaged compatibility defaults.
+
+    ``detailed=False`` reads provider totals and provider pricing only.
+    It omits ``token_by``, ``process``, and ``coverage`` for overview consumers;
+    the default full report remains available to CLI and UI callers.
+    """
+
+    since_us = int(since.timestamp() * 1_000_000) if since is not None else None
+    until_us = int(until.timestamp() * 1_000_000) if until is not None else None
+    loaded = tariffs if tariffs is not None else Tariffs.default()
+    with snapshot(project) as db:
+        if db.execute("PRAGMA user_version").fetchone()[0] < 6:
+            raise StorageError("Project database predates schema v6; run the daemon to migrate")
+        result: dict[str, Any] = {
+            "project_id": project.project_id,
+            "window": {
+                "since": since.isoformat() if since is not None else None,
+                "until": until.isoformat() if until is not None else None,
+            },
+            "token_usage": token_usage(
+                db, since_us=since_us, until_us=until_us, group_by="provider"
+            ),
+        }
+        if detailed:
+            result |= {
+                "token_by": {
+                    dimension: token_usage(
+                        db, since_us=since_us, until_us=until_us, group_by=dimension
+                    )
+                    for dimension in (
+                        "model",
+                        "effort",
+                        "attribution",
+                        "conversation",
+                        "turn",
+                        "day",
+                    )
+                },
+                "process": process_efficiency(db, since_us=since_us, until_us=until_us),
+                "coverage": coverage(db),
+            }
+        if loaded is not None:
+            result["pricing"] = {
+                "tariffs_path": loaded.path,
+                "currency": loaded.currency,
+                "estimate": True,
+                "caveat": (
+                    "list-price estimate, not billed spend; subscription and enterprise "
+                    "pricing differ, and cache_write blends Anthropic's 5m/1h tiers"
+                ),
+                "by": {
+                    dimension: cost(
+                        db, loaded, since_us=since_us, until_us=until_us, group_by=dimension
+                    )
+                    for dimension in (("provider", "model", "day") if detailed else ("provider",))
+                },
+            }
+        return result

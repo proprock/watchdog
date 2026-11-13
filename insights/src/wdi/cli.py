@@ -3,15 +3,19 @@
 from __future__ import annotations
 
 import io
+import json
+import sqlite3
 import sys
 from collections import Counter
 from contextlib import closing
+from datetime import datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Annotated, Never
 
 import typer
 from rich.console import Console
 
+from agent_watchdog import readapi
 from wdi.config import (
     DEFAULT_CONFIG_PATH,
     ConfigError,
@@ -336,7 +340,7 @@ def stats_cmd(
     flt = _make_filter(agent, project, since, include_noise)
     conn = _open_db(settings)
     try:
-        report = build_report(conn, flt, PricingResolver(settings.pricing))
+        report = build_report(conn, flt, PricingResolver.from_settings(settings))
     finally:
         conn.close()
 
@@ -592,9 +596,10 @@ def sessions_show(
     finally:
         conn.close()
 
-    pricing = PricingResolver(settings.pricing)
+    pricing = PricingResolver.from_settings(settings)
     cost = pricing.cost(
         row["model"],
+        at=datetime.fromisoformat(row["started_at"]) if row["started_at"] else None,
         input_tokens=row["input_tokens"],
         output_tokens=row["output_tokens"],
         cache_read_tokens=row["cache_read_tokens"],
@@ -791,7 +796,7 @@ def analyze_cmd(
 
     per_run = limit if limit is not None else llm_cfg.max_sessions_per_run
     flt = _make_filter(agent, project, since, include_noise)
-    pricing = PricingResolver(settings.pricing)
+    pricing = PricingResolver.from_settings(settings)
     conn = _open_db(settings)
     try:
         # Pre-flight: estimate how much will be sent to the LLM and confirm before
@@ -973,7 +978,7 @@ def report_cmd(
     flt = _make_filter(agent, project, since, include_noise)
     conn = _open_db(settings)
     try:
-        report = build_report(conn, flt, PricingResolver(settings.pricing))
+        report = build_report(conn, flt, PricingResolver.from_settings(settings))
     finally:
         conn.close()
 
@@ -1094,3 +1099,168 @@ def _ensure_unicode_output() -> None:
 def main() -> None:
     _ensure_unicode_output()
     app()
+
+
+WatchdogConfigOpt = Annotated[
+    Path | None, typer.Option("--watchdog-config", help="Watchdog registration configuration.")
+]
+WatchdogDataOpt = Annotated[
+    Path | None, typer.Option("--watchdog-data", help="Watchdog collected data directory.")
+]
+TariffsOpt = Annotated[
+    Path | None, typer.Option("--tariffs", help="Dated list-price tariff override.")
+]
+WindowOpt = Annotated[str | None, typer.Option("--since", help="Inclusive ISO timestamp.")]
+UntilOpt = Annotated[str | None, typer.Option("--until", help="Exclusive ISO timestamp.")]
+
+
+def _report_timestamp(value: str | None) -> datetime | None:
+    if value is None:
+        return None
+    parsed = datetime.fromisoformat(value)
+    if parsed.tzinfo is None:
+        raise ValueError("Timestamps must include a timezone")
+    return parsed
+
+
+def _report_settings(config: Path | None) -> Settings:
+    if config is not None or DEFAULT_CONFIG_PATH.expanduser().is_file():
+        return load_settings(config)
+    return Settings(machine_id="local")
+
+
+def _report_tariffs(settings: Settings, tariffs: Path | None):
+    from wdi.metrics.pricing import PricingResolver, Tariffs
+
+    if tariffs is not None:
+        return Tariffs.load(tariffs)
+    return PricingResolver.from_settings(settings).tariffs
+
+
+def _report_projects(
+    config: Path | None,
+    data: Path | None,
+    selection: str | None,
+    settings: Settings,
+    *,
+    single: bool = False,
+) -> list[readapi.RegisteredProject]:
+    sources = [data.expanduser()] if data is not None else settings.watchdog.data_dirs
+    projects = []
+    for source in sources:
+        source_config = config
+        if source_config is None and (source / "config.toml").is_file():
+            source_config = source / "config.toml"
+        if single:
+            try:
+                projects.append(
+                    readapi.resolve_project(selection, config_path=source_config, data_dir=source)
+                )
+            except readapi.ConfigError:
+                raise
+            except ValueError:
+                continue
+        else:
+            projects.extend(readapi.registered_projects(config_path=source_config, data_dir=source))
+    if single or selection is not None:
+        if not single:
+            projects = [
+                item for item in projects if selection in {item.project_id, item.name, item.root}
+            ]
+        if len(projects) != 1:
+            raise ValueError(
+                "Select one registered project by alias, identity, or working directory"
+            )
+    return projects
+
+
+def _report_error(error: Exception) -> Never:
+    typer.echo(json.dumps({"ok": False, "message": str(error)}))
+    raise typer.Exit(code=1) from error
+
+
+@app.command("usage")
+def usage_cmd(
+    project: ProjectOpt = None,
+    watchdog_config: WatchdogConfigOpt = None,
+    watchdog_data: WatchdogDataOpt = None,
+    config: ConfigOpt = None,
+    since: WindowOpt = None,
+    until: UntilOpt = None,
+    tariffs: TariffsOpt = None,
+) -> None:
+    """Compare source token use and process telemetry as JSON."""
+    from wdi.metrics.usage import usage
+
+    try:
+        settings = _report_settings(config)
+        projects = _report_projects(watchdog_config, watchdog_data, project, settings, single=True)
+        if len(projects) != 1:
+            raise ValueError("Select one registered project with --project")
+        result = usage(
+            projects[0],
+            since=_report_timestamp(since),
+            until=_report_timestamp(until),
+            tariffs=_report_tariffs(settings, tariffs),
+        )
+        result.pop("project_id", None)
+        result["project"] = projects[0].name
+    except (OSError, ValueError, sqlite3.Error, ConfigError, readapi.ConfigError) as error:
+        _report_error(error)
+    typer.echo(json.dumps(result))
+
+
+@app.command("overview")
+def overview_cmd(
+    project: ProjectOpt = None,
+    watchdog_config: WatchdogConfigOpt = None,
+    watchdog_data: WatchdogDataOpt = None,
+    config: ConfigOpt = None,
+    since: WindowOpt = None,
+    until: UntilOpt = None,
+    tariffs: TariffsOpt = None,
+) -> None:
+    """Read per-project usage and daemon findings as JSON."""
+    from agent_watchdog import _proc
+    from wdi.metrics.overview import overview
+
+    _proc.lower_own_priority()
+    try:
+        settings = _report_settings(config)
+        result = overview(
+            _report_projects(watchdog_config, watchdog_data, project, settings),
+            since=_report_timestamp(since),
+            until=_report_timestamp(until),
+            tariffs=_report_tariffs(settings, tariffs),
+        )
+    except (OSError, ValueError, sqlite3.Error, ConfigError, readapi.ConfigError) as error:
+        _report_error(error)
+    typer.echo(json.dumps(result))
+    if not result["ok"]:
+        raise typer.Exit(code=1)
+
+
+@app.command("export")
+def export_cmd(
+    output: Annotated[Path, typer.Option("--output")],
+    session: Annotated[list[str], typer.Option("--session")],
+    provider: Annotated[str, typer.Option("--provider")] = "codex",
+    project: ProjectOpt = None,
+    watchdog_config: WatchdogConfigOpt = None,
+    watchdog_data: WatchdogDataOpt = None,
+    config: ConfigOpt = None,
+) -> None:
+    """Write a selected, sanitized offline session bundle."""
+    from wdi.exporting import export_sessions
+
+    try:
+        settings = _report_settings(config)
+        projects = _report_projects(watchdog_config, watchdog_data, project, settings, single=True)
+        if len(projects) != 1:
+            raise ValueError("Select one registered project with --project")
+        result = export_sessions(projects[0], provider=provider, session_ids=session, output=output)
+        result.pop("project_id", None)
+        result["project"] = projects[0].name
+    except (OSError, ValueError, sqlite3.Error, ConfigError, readapi.ConfigError) as error:
+        _report_error(error)
+    typer.echo(json.dumps(result))

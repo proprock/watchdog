@@ -10,6 +10,7 @@ from uuid import uuid4
 
 import pytest
 from fact_fixtures import BASE, build_v5, sample_events, seed
+from wdi.metrics import usage as facts_query
 
 from agent_watchdog.storage import Store
 
@@ -17,12 +18,6 @@ from agent_watchdog.storage import Store
 @pytest.fixture
 def project():
     return uuid4()
-
-
-@pytest.fixture(autouse=True)
-def migrated_queries():
-    global facts_query
-    from wdi.metrics import usage as facts_query
 
 
 def test_token_usage_sums_raw_counters_by_provider_without_a_synthetic_total(tmp_path, project):
@@ -190,3 +185,149 @@ def test_usage_cli_rejects_a_pre_v6_database(tmp_path, project):
     code, result = cli(tmp_path, "usage", "--project", str(project))
     assert code == 1
     assert "v6" in result["message"]
+
+
+@pytest.mark.parametrize("command", ["usage", "export"])
+def test_single_project_commands_resolve_cwd_among_registrations(tmp_path, monkeypatch, command):
+    from fact_fixtures import cli
+
+    from agent_watchdog.config import Config, Project, save_config
+
+    projects = [Project(id=uuid4(), root=tmp_path / name) for name in ("one", "two")]
+    save_config(tmp_path / "config.toml", Config(projects=tuple(projects)))
+    for project in projects:
+        project.root.mkdir()
+        seed(tmp_path / "data" / "projects" / str(project.id), project.id)
+    nested = projects[1].root / "nested"
+    nested.mkdir()
+    monkeypatch.chdir(nested)
+    args = (
+        ("--session", "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", "--output", str(tmp_path / "export"))
+        if command == "export"
+        else ()
+    )
+    code, result = cli(tmp_path, command, *args)
+    assert code == 0
+    assert result["project"] == "two"
+
+
+def test_usage_does_not_select_a_sole_registration_outside_cwd(tmp_path, monkeypatch):
+    from fact_fixtures import cli
+
+    from agent_watchdog.config import Config, Project, save_config
+
+    project = Project(id=uuid4(), root=tmp_path / "repo")
+    save_config(tmp_path / "config.toml", Config(projects=(project,)))
+    seed(tmp_path / "data" / "projects" / str(project.id), project.id)
+    elsewhere = tmp_path / "elsewhere"
+    elsewhere.mkdir()
+    monkeypatch.chdir(elsewhere)
+    code, result = cli(tmp_path, "usage")
+    assert code == 1
+    assert not result["ok"]
+    assert "working directory" in result["message"]
+
+
+@pytest.mark.parametrize("command", ["usage", "overview", "export"])
+def test_source_commands_honor_wdi_configured_data_directory(tmp_path, command):
+    import json
+
+    from typer.testing import CliRunner
+    from wdi.cli import app
+
+    from agent_watchdog.config import Config, Project, save_config
+
+    project = Project(id=uuid4(), root=tmp_path / "repo")
+    data = tmp_path / "source"
+    data.mkdir()
+    save_config(data / "config.toml", Config(projects=(project,)))
+    seed(data / "projects" / str(project.id), project.id)
+    settings = tmp_path / "settings.yaml"
+    settings.write_text(
+        "machine_id: local\nwatchdog:\n  data_dirs:\n    - " + json.dumps(str(data)) + "\n",
+        encoding="utf-8",
+    )
+    args = [command, "--config", str(settings), "--project", str(project.id)]
+    if command == "export":
+        args += [
+            "--session",
+            "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+            "--output",
+            str(tmp_path / "export"),
+        ]
+    result = CliRunner().invoke(app, args)
+    assert result.exit_code == 0, result.output
+    document = json.loads(result.stdout)
+    if command == "overview":
+        assert document["observed_event_count"] == 7
+    else:
+        assert document["project"] == "repo"
+
+
+@pytest.mark.parametrize("command", ["usage", "overview", "export"])
+def test_source_commands_report_invalid_wdi_settings_as_json(tmp_path, command):
+    import json
+
+    from typer.testing import CliRunner
+    from wdi.cli import app
+
+    settings = tmp_path / "invalid.yaml"
+    settings.write_text("[invalid", encoding="utf-8")
+    args = [command, "--config", str(settings)]
+    if command == "export":
+        args += ["--session", "one", "--output", str(tmp_path / "export")]
+    result = CliRunner().invoke(app, args)
+    assert result.exit_code == 1
+    document = json.loads(result.stdout)
+    assert document["ok"] is False
+    assert "Invalid YAML" in document["message"]
+
+
+@pytest.mark.parametrize("command", ["usage", "export"])
+def test_single_project_commands_preserve_invalid_watchdog_config_cause(tmp_path, command):
+    from fact_fixtures import cli
+
+    (tmp_path / "config.toml").write_text("[invalid", encoding="utf-8")
+    args = ("--session", "one", "--output", str(tmp_path / "export")) if command == "export" else ()
+    code, result = cli(tmp_path, command, "--project", "repo", *args)
+    assert code == 1
+    assert result == {
+        "ok": False,
+        "message": "Invalid or unreadable configuration; file left unchanged",
+    }
+
+
+@pytest.mark.parametrize("command", ["usage", "export"])
+def test_single_project_commands_reject_corrupt_source_even_when_another_matches(tmp_path, command):
+    import json
+
+    from typer.testing import CliRunner
+    from wdi.cli import app
+
+    from agent_watchdog.config import Config, Project, save_config
+
+    corrupt, valid = tmp_path / "corrupt", tmp_path / "valid"
+    corrupt.mkdir()
+    valid.mkdir()
+    (corrupt / "config.toml").write_text("[invalid", encoding="utf-8")
+    project = Project(id=uuid4(), root=tmp_path / "repo")
+    save_config(valid / "config.toml", Config(projects=(project,)))
+    seed(valid / "projects" / str(project.id), project.id)
+    settings = tmp_path / "settings.yaml"
+    settings.write_text(
+        "machine_id: local\nwatchdog:\n  data_dirs: "
+        + json.dumps([str(corrupt), str(valid)])
+        + "\n",
+        encoding="utf-8",
+    )
+    args = [command, "--config", str(settings), "--project", str(project.id)]
+    output = tmp_path / "export"
+    if command == "export":
+        args += ["--session", "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", "--output", str(output)]
+    result = CliRunner().invoke(app, args)
+    assert result.exit_code == 1
+    assert json.loads(result.stdout) == {
+        "ok": False,
+        "message": "Invalid or unreadable configuration; file left unchanged",
+    }
+    assert not output.exists()

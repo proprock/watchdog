@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import sqlite3
+from datetime import datetime
 from typing import Annotated, Literal
 
 from fastapi import APIRouter, Query, Request
@@ -104,12 +105,18 @@ def session_detail(
         )
     detail = dict(row)
     sid = detail["session_id"]
-    detail["estimated_cost"] = pricing.cost(
-        detail["model"],
-        input_tokens=detail["input_tokens"],
-        output_tokens=detail["output_tokens"],
-        cache_read_tokens=detail["cache_read_tokens"],
-        cache_creation_tokens=detail["cache_creation_tokens"] or 0,
+    detail["estimated_cost"] = (
+        pricing.cost(
+            detail["model"],
+            input_tokens=detail["input_tokens"],
+            output_tokens=detail["output_tokens"],
+            cache_read_tokens=detail["cache_read_tokens"],
+            cache_creation_tokens=detail["cache_creation_tokens"] or 0,
+            at=datetime.fromisoformat(detail["started_at"].replace("Z", "+00:00")),
+            provider=detail["agent"],
+        )
+        if detail["started_at"]
+        else None
     )
     detail["badges"] = badges.session_badges(detail, _avg_duration(conn, flt=SessionFilter()))
     subagents = [dict(a) for a in queries.session_subagents(conn, sid)]

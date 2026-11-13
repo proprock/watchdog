@@ -4,6 +4,15 @@ Commands emit JSON. Put `--home DIR` (isolated state) or `--config`, `--data`, a
 `--runtime` before the command. Without overrides, platformdirs supplies the
 user-local paths. Read commands do not start collection or migrate databases.
 
+Token reports, the cross-project overview, and manual review export are owned by
+`wdi`: use `wdi usage`, `wdi overview`, and `wdi export`. Their Watchdog source
+options follow the command: `--watchdog-config PATH` selects the registration
+TOML and `--watchdog-data DIR` selects the collected data directory. Without
+overrides they use Watchdog's normal user-local paths. `usage` and `overview`
+also accept `--config PATH` for the separate WDI YAML configuration; this does
+not select Watchdog's registration or data directory. They read source snapshots
+directly and do not require `wdi import`.
+
 ## Projects
 
 ```console
@@ -54,10 +63,11 @@ cross-project totals are known observations, not a global transaction.
 ## Overview
 
 ```console
-agent-watchdog overview [--since ISO] [--until ISO] [--tariffs PATH]
+wdi overview [--project PROJECT] [--since ISO] [--until ISO] [--tariffs PATH]
+wdi overview --watchdog-config /path/to/config.toml --watchdog-data /path/to/data --config /path/to/wdi.yaml
 ```
 
-Extends [`summary`](#summary) with, per registered project: `usage` (raw token sums by provider from `usage`, schema v6), `findings` (count per shadow rule for `codex` and `claude`, plus the union of the sessions' `gaps`), and `last_activity` (latest `received_at`). With `--tariffs` (or `[pricing] tariffs`), `usage.pricing` adds the list-price estimate by provider, marked `estimate`, with the same caveat as [`usage`](#token-and-process-telemetry). `--since`/`--until` bound `usage` only; `findings` always cover every retained event (`window: "all"`).
+Extends [`summary`](#summary) with, per registered project: `usage` (raw token sums by provider from `usage`, schema v6), `findings` (count per shadow rule for `codex` and `claude`, plus the union of the sessions' `gaps`), and `last_activity` (latest `received_at`). `usage.pricing` always includes the estimate by provider, marked `estimate`, with the same caveat as [`usage`](#token-and-process-telemetry). `--tariffs` replaces the configured or packaged rates. `--since`/`--until` bound `usage` only; `findings` always cover every retained event (`window: "all"`). Omit `--project` to report every registered project.
 
 `findings` are the per-session findings the daemon materializes (schema v8), not a fresh analysis: each session is analyzed alone, so a repeat that spans sessions is not merged, and one `diff_oscillation` shared by several sessions of a checkout counts once. `findings.as_of` is the newest `computed_at`, and `findings.pending_sessions` counts sessions with events newer than their findings (a stopped daemon leaves them pending). Use the [shadow report](#shadow-report) for a reproducible project-wide analysis.
 
@@ -84,8 +94,9 @@ explicit disabled result rather than treating missing measurements as zero.
 ## Token and process telemetry
 
 ```console
-agent-watchdog usage --project PROJECT
-agent-watchdog usage --project PROJECT --since 2026-09-08T00:00:00+00:00 --until 2026-09-09T00:00:00+00:00
+wdi usage --project PROJECT
+wdi usage --project PROJECT --since 2026-09-08T00:00:00+00:00 --until 2026-09-09T00:00:00+00:00
+wdi usage --project PROJECT --watchdog-config /path/to/config.toml --watchdog-data /path/to/data --config /path/to/wdi.yaml --tariffs /path/to/pricing.toml
 ```
 
 `usage` aggregates the schema-v6 `event_facts` projections from a read-only
@@ -100,10 +111,16 @@ rather than being reconstructed from the parts. `--since`/`--until` bound
 `received_at`. A database older than schema v6 is an explicit error, not an empty
 result.
 
-With `--tariffs PATH` (or `[pricing] tariffs` in `config.toml`), `usage` adds a
-`pricing` block: a **list-price estimate, not billed spend**. Each `usage` row is
+`usage` always includes a `pricing` block: an **estimate, not billed spend**.
+The packaged default tariff is a compatibility snapshot of the previous seven
+model rates, not a claim about current provider list prices. `--tariffs PATH`
+overrides the WDI YAML `tariffs` path and replaces the entire rate table, with no
+fallback to packaged models. Explicit legacy inline WDI `pricing` remains
+supported when no tariff file is selected. Each `usage` row is
 priced from its own `model` and timestamp against the latest tariff section
-whose ISO date is at or before it, then grouped by provider, model, and day. The
+whose ISO date is at or before it, using the longest matching model prefix within
+that section, then grouped by provider, model, and day. A dated section is a
+complete replacement for earlier sections. The
 raw token blocks are untouched; the estimate is recomputed on every call, so
 editing the tariff file re-prices history. Provenance is explicit: per-group
 `cost_estimate` (a decimal string), a `by_field` split
@@ -118,6 +135,14 @@ The `by_field` token counts describe these billable classes, while raw token
 blocks retain the provider's counters. `reasoning_output_tokens`
 and `total_tokens` are never priced. A missing or malformed tariff file is an
 error. See [`pricing.example.toml`](../pricing.example.toml) for the format.
+For cache creation, an explicit `cache_write_5m` takes precedence over
+`cache_write`, including a zero rate. Reserved `cache_write_1h`, `batch_input`,
+and `batch_output` metadata do not discount ordinary usage. Insights owns the
+single Decimal pricing engine used by these reports and by its stats, HTML,
+context analysis, and web views. Session reports resolve tariffs at each
+session's recorded start before combining totals; context and cache-miss views
+use their individual observation timestamps. Parsed Insights input counters are
+already net of cache reads and are not reduced a second time.
 
 ## Doctor
 
@@ -450,7 +475,7 @@ agent-watchdog verdict --project PROJECT --session SESSION_ID --rule repeated_to
 agent-watchdog verdict --project PROJECT --checkout CHECKOUT_ID --rule diff_oscillation   --rule-version wd-010.v1 --fingerprint FINGERPRINT --verdict uncertain
 agent-watchdog pin SESSION_ID --project PROJECT
 agent-watchdog pin SESSION_ID --project PROJECT --unpin
-agent-watchdog export --project PROJECT --session SESSION_ID --output review-bundle
+wdi export --project PROJECT --provider codex --session SESSION_ID --output review-bundle
 agent-watchdog purge SESSION_ID --project PROJECT
 ```
 
@@ -473,7 +498,8 @@ version, and the `fingerprint` that `report` prints for each finding. Use
 `--session` for a session-scoped rule and `--checkout` for `diff_oscillation`,
 whose evidence is a checkout's diff history rather than one session's events.
 
-`export` is an offline, read-only snapshot. It requires one or more repeated
+`wdi export` accepts `--watchdog-config PATH` and `--watchdog-data DIR` and writes
+an offline, read-only snapshot directly from Watchdog sources. It requires one or more repeated
 `--session` values and writes a new directory containing `events.jsonl`,
 `summary.md`, `manifest.json`, and `manual-prompt.md`. The manifest records the
 format version, selected labels, counts, gaps, and the recommended content review.
@@ -481,6 +507,8 @@ The export never calls an LLM or network service, and it refuses to
 overwrite an existing directory. A content review before sharing the bundle
 externally is recommended, not enforced; traces and outputs are untrusted data,
 not instructions.
+This review bundle differs from `wdi export-snapshot`, which transfers the
+Insights database.
 
 `purge` permanently removes only Watchdog-owned rows, retained artifacts, labels,
 finding verdicts,

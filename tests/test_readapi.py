@@ -33,6 +33,56 @@ def test_registered_projects_includes_uncollected_projects(tmp_path):
     assert not project.path.exists()
 
 
+@pytest.mark.parametrize("reference", ["alias", "uuid", "cwd", "unknown"])
+def test_resolve_project_accepts_alias_uuid_and_registered_subdirectory(tmp_path, reference):
+    from agent_watchdog import readapi
+
+    project = _registered(tmp_path)
+    reader = getattr(readapi, "resolve_project", None)
+    assert callable(reader), "registered-project selection reader is required"
+    child = Path(project.root) / "child"
+    child.mkdir(parents=True)
+    value = {"alias": project.name, "uuid": project.project_id, "cwd": None, "unknown": "absent"}[
+        reference
+    ]
+    if reference == "unknown":
+        with pytest.raises(readapi.StorageError, match="Select a registered project"):
+            reader(
+                value, config_path=tmp_path / "config.toml", data_dir=tmp_path / "data", cwd=child
+            )
+    else:
+        assert (
+            reader(
+                value, config_path=tmp_path / "config.toml", data_dir=tmp_path / "data", cwd=child
+            )
+            == project
+        )
+
+
+def test_resolve_project_matches_linked_checkout_by_git_common_directory(tmp_path):
+    from agent_watchdog import readapi
+
+    reader = getattr(readapi, "resolve_project", None)
+    assert callable(reader), "registered-project selection reader is required"
+    root = tmp_path / "main"
+    common = root / ".git"
+    admin = common / "worktrees" / "linked"
+    admin.mkdir(parents=True)
+    (common / "objects").mkdir()
+    (common / "refs").mkdir()
+    (common / "HEAD").write_text("ref: refs/heads/main\n")
+    (admin / "HEAD").write_text("ref: refs/heads/linked\n")
+    (admin / "commondir").write_text("../..\n")
+    linked = tmp_path / "linked"
+    linked.mkdir()
+    (linked / ".git").write_text(f"gitdir: {admin.as_posix()}\n")
+    project = config.Project(id=uuid4(), root=root, git_common_dir=common, alias="main")
+    config.save_config(tmp_path / "config.toml", config.Config(projects=(project,)))
+    selected = reader(config_path=tmp_path / "config.toml", data_dir=tmp_path / "data", cwd=linked)
+    assert selected.project_id == str(project.id) and selected.root == str(root)
+    assert selected.path == tmp_path / "data" / "projects" / str(project.id)
+
+
 def test_registered_snapshot_is_read_only_consistent_and_manifest_optional(tmp_path):
     from agent_watchdog import readapi
     from agent_watchdog.storage import StorageError

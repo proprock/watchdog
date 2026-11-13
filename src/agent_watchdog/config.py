@@ -146,22 +146,6 @@ def project_for_reference(projects: Iterable[Project], reference: str) -> Projec
     return next((item for item in registered if item.id == project_id), None)
 
 
-class Pricing(StrictModel):
-    """Optional default location of the list-price tariff file for `usage`."""
-
-    tariffs: Path | None = None
-
-    @field_validator("tariffs")
-    @classmethod
-    def absolute_tariffs(cls, value: Path | None) -> Path | None:
-        if value is None:
-            return None
-        expanded = value.expanduser()
-        if not expanded.is_absolute():
-            raise ValueError("Tariff path must be absolute")
-        return expanded
-
-
 RuleName = Annotated[str, Field(pattern=r"^[a-z][a-z0-9_]{0,63}$")]
 Sha256 = Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]
 
@@ -210,7 +194,6 @@ class Config(Versioned):
     auto_add_projects: bool = True
     collect_exclude: tuple[str, ...] = ()
     pipeline_telemetry: bool = True
-    pricing: Pricing = Field(default_factory=Pricing)
     rules: Rules = Field(default_factory=Rules)
     scan: Scan = Field(default_factory=Scan)
     trusted_projects_dir: Path | None = None

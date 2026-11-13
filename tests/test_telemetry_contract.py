@@ -5,9 +5,8 @@ from uuid import uuid4
 
 from agent_watchdog.config import Config, Limits, Project, UserPaths, save_config
 from agent_watchdog.daemon import _drain_spool
-from agent_watchdog.events import Envelope
 from agent_watchdog.hooks import observe
-from agent_watchdog.inspection import export_sessions, report
+from agent_watchdog.inspection import report
 from agent_watchdog.storage import Store
 
 
@@ -131,7 +130,7 @@ def test_unknown_metadata_survives_capture_content_opt_out(tmp_path, monkeypatch
     assert captured[0].availability["input.prompt"] == "unavailable"
 
 
-def test_daemon_spool_retains_telemetry_reports_coverage_and_exports(tmp_path):
+def test_daemon_spool_retains_telemetry_and_reports_coverage(tmp_path):
     paths, project, config = configured(tmp_path)
     record = {
         "schema_version": 2,
@@ -168,14 +167,6 @@ def test_daemon_spool_retains_telemetry_reports_coverage_and_exports(tmp_path):
     assert telemetry["observed_fields"]["model"] == 1
     assert telemetry["unknown_fields"] == {"future_metric": 1}
 
-    output = tmp_path / "export"
-    export_sessions(paths, project, provider="codex", session_ids=["session-1"], output=output)
-    exported = Envelope.model_validate_json((output / "events.jsonl").read_bytes())
-    exported_provider = exported.payload["codex"]
-    assert isinstance(exported_provider, dict)
-    exported_metadata = exported_provider["metadata"]
-    assert isinstance(exported_metadata, dict)
-    assert exported_metadata["reasoning_effort"] == "high"
     assert "level=WARNING component=daemon event=spool decision=received reason=unknown_field" in (
         paths.data / "watchdog.log"
     ).read_text(encoding="ascii")

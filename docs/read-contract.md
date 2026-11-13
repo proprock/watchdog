@@ -4,6 +4,14 @@
 use the real writer in `agent_watchdog.capture_store`. Neither program needs
 to import the daemon to read a store.
 
+Insights runtime imports from Watchdog are limited to this read API,
+`agent_watchdog.insights.llm` for explicit analysis, and `agent_watchdog._proc`
+for its own process priority. Report construction, export file writing, and
+pricing belong to Insights. `readapi.StorageError` is the supported error type
+for project selection, unsupported databases, and session-review validation;
+it is an alias of the existing storage error for compatibility.
+`readapi.ConfigError` likewise aliases configuration validation errors.
+
 ## Isolated Claude analysis
 
 `agent_watchdog.insights.llm` exposes `claude(request, forbidden_roots=..., executable=...)`
@@ -44,6 +52,56 @@ skips directories without a manifest. Each value has the manifest fields and
 and may have missing metadata. Invalid v1 manifests raise `ValueError`.
 
 ## Database access
+
+`registered_projects(config_path=None, data_dir=None)` reads configuration in
+registration order. Omitted locations use Watchdog's platform defaults.
+Each `RegisteredProject` contains `project_id` (UUID string), `name` (saved or
+generated unique alias), `root` (checkout path string), and `path` (project data
+directory as a `Path`). Projects without a manifest or database remain listed;
+discovery creates no directories and writes no configuration.
+
+`resolve_project(reference=None, *, config_path=None, data_dir=None, cwd=None)`
+returns one `RegisteredProject`. An explicit reference resolves aliases first,
+then UUIDs. With no reference, the current directory (or supplied `cwd`) resolves
+through the existing registry, including subdirectories and linked Git checkouts
+sharing a registered common directory. It never auto-registers projects. Unknown
+references and unregistered current directories raise `StorageError`; malformed
+configuration raises `ConfigError`.
+
+`snapshot(project)` opens a consistent events database transaction with
+`mode=ro`, `query_only=ON`, and `sqlite3.Row` results. It accepts events schemas
+1 through the current writer version, including stores without manifests,
+and verifies the metadata project UUID. A missing database, unsupported schema,
+or wrong project identity raises `StorageError`. Unlike `open_events`, this
+registration-based reader uses the database schema itself, not manifest version
+metadata. Keep the context short: its transaction lasts until context exit.
+
+`findings(project)` reads one source snapshot without parsing stored envelopes
+or updating materialized analysis. Missing databases return
+`{"state": "unavailable", "reason": "no_collected_database"}`; schemas before
+8 return `{"state": "unsupported", "reason": "schema_predates_v8"}`.
+Ready results expose `state`, `window="all"`, `as_of`, `pending_sessions`, and
+`by_provider` for Codex and Claude, each with `by_rule` and `gaps`.
+Schema 8 reports every distinct non-null provider/session pair as pending and
+no versioned findings. Schema 9 uses `session_analysis.rule_version` matching
+the current analysis rules, the latest `computed_at`, and event-row watermarks
+to count pending sessions. Rule counts deduplicate `session_findings.fingerprint`
+per provider/rule across joined current-version session analyses. Gaps are the
+sorted union of analyzed gaps, falling back to empty-analysis gaps when empty.
+Findings cover all retained history, independently of usage time windows.
+
+`session_label(db, provider, session_id)` returns `task_outcome`, `task_type`,
+`progress_state`, and `reviewer_note`. Missing labels default to `unknown` and
+three nulls; schemas without annotation columns return null annotations.
+`session_review(project, provider, session_ids)` selects Codex or Claude sessions
+in one snapshot, deduplicating identities in request order and ordering events
+by source rowid. Each result has `session_id`, `label`, `event_count`, `gaps`,
+and `events` (sanitized `Envelope` objects). The existing credential filter is
+applied before deterministic analysis; a known manual outcome removes only
+`task_outcome_unknown` from gaps. Stored envelopes remain unchanged. Empty or
+blank selections, unsupported providers, and unknown sessions raise
+`StorageError`. Callers write offline review bundles themselves and must retain
+the review warning: credential filtering is not a general secret detector.
 
 `open_events(info)` and `open_capture(info)` are context managers for
 `events.sqlite3` and `capture.sqlite3` within `info.path`. Both open SQLite with
@@ -161,5 +219,6 @@ the manifest uses that project's alias as if it were registered alone.
 
 Adding a table or a nullable column keeps the contract version. Removing,
 renaming, or retyping a contractual field or column requires a new contract
-version and a matching change to `readapi.CONTRACT_VERSION`. A reader refuses
-to open a store with a newer contract.
+version and a matching change to `readapi.CONTRACT_VERSION`. Manifest-based
+readers refuse to open a store with a newer contract; `snapshot` validates the
+registered database schema directly, as described above.

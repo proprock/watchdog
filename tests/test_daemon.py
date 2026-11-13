@@ -19,7 +19,6 @@ from agent_watchdog.config import (
     ConfigError,
     Limits,
     Overrides,
-    Pricing,
     Project,
     Rules,
     UserPaths,
@@ -730,7 +729,7 @@ def test_spool_git_project_is_auto_added_and_admitted_by_default(paths, tmp_path
     assert [event.kind for event in stored_events(paths, project)] == ["turn.end"]
 
 
-def test_auto_registration_keeps_rules_and_pricing_on_disk(paths, tmp_path):
+def test_auto_registration_keeps_rules_on_disk(paths, tmp_path):
     trusted = tmp_path / "repos"
     repository = trusted / "new-project"
     repository.mkdir(parents=True)
@@ -738,7 +737,6 @@ def test_auto_registration_keeps_rules_and_pricing_on_disk(paths, tmp_path):
     config = Config(
         auto_add_projects=True,
         trusted_projects_dir=trusted,
-        pricing=Pricing(tariffs=tmp_path / "tariffs.toml"),
         rules=Rules(disabled=["some_rule"], approved={"user_rule": "a" * 64}),
     )
     save_config(paths.config, config)
@@ -747,10 +745,9 @@ def test_auto_registration_keeps_rules_and_pricing_on_disk(paths, tmp_path):
 
     assert resolution is not None
     text = paths.config.read_text(encoding="utf-8")
-    assert "[rules" in text and "[pricing]" in text
+    assert "[rules" in text
     persisted = load_config(paths.config)
     assert persisted.rules == config.rules
-    assert persisted.pricing == config.pricing
 
 
 def test_spool_drain_enforces_the_project_payload_limit(paths, tmp_path):
@@ -762,7 +759,7 @@ def test_spool_drain_enforces_the_project_payload_limit(paths, tmp_path):
     # ensure_ascii expansion of these code points pushes the canonical envelope
     # past 4096 bytes; the drain, not the adapter, rejects it here.
     write_spool_record(
-        paths, spool_record(root, hook_event_name="UserPromptSubmit", prompt="界" * 600)
+        paths, spool_record(root, hook_event_name="UserPromptSubmit", prompt="ç•Ś" * 600)
     )
 
     assert _drain_spool(paths, config) is True

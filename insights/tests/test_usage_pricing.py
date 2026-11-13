@@ -7,6 +7,8 @@ from uuid import uuid4
 
 import pytest
 from fact_fixtures import TARIFFS, build_v5, claude_usage, cli, codex_hook, codex_usage
+from wdi.metrics import pricing
+from wdi.metrics import usage as facts_query
 
 from agent_watchdog.config import Config, Project, save_config
 from agent_watchdog.storage import Store
@@ -22,13 +24,6 @@ def tariffs_file(tmp_path):
     path = tmp_path / "pricing.toml"
     path.write_text(TARIFFS, encoding="utf-8")
     return path
-
-
-@pytest.fixture(autouse=True)
-def migrated_queries():
-    global facts_query, pricing
-    from wdi.metrics import pricing
-    from wdi.metrics import usage as facts_query
 
 
 def _seed(root, project, *, twin=False):

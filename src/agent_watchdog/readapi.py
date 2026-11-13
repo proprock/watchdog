@@ -9,7 +9,7 @@ from dataclasses import dataclass
 from io import BytesIO
 from itertools import islice
 from pathlib import Path
-from typing import Any
+from typing import Any, TypedDict
 
 from agent_watchdog.capture_store import (
     CAPTURE_FILENAME,
@@ -17,8 +17,12 @@ from agent_watchdog.capture_store import (
     STORE_MANIFEST_FILENAME,
 )
 from agent_watchdog.capture_store import STORE_CONTRACT_VERSION as CONTRACT_VERSION
-from agent_watchdog.config import user_paths
+from agent_watchdog.config import ConfigError as ConfigError
+from agent_watchdog.config import load_config, project_aliases, project_for_reference, user_paths
+from agent_watchdog.events import Envelope
 from agent_watchdog.facts import FACT_COLUMNS as FACT_COLUMNS
+from agent_watchdog.storage import EVENTS_SCHEMA_VERSION, PENDING_SESSIONS, persisted_envelope
+from agent_watchdog.storage import StorageError as StorageError
 
 _PAGE_SIZE = 128
 _EVENTS_FILENAME = "events.sqlite3"
@@ -406,3 +410,232 @@ def side_file_bytes(
     if row is None:
         raise KeyError((provider, session_id, rel_path, digest))
     return _decompress(*row)
+
+
+@dataclass(frozen=True)
+class RegisteredProject:
+    project_id: str
+    name: str
+    root: str
+    path: Path
+
+
+def registered_projects(
+    config_path: Path | None = None, data_dir: Path | None = None
+) -> list[RegisteredProject]:
+    """Read registered aliases, including projects without collected stores."""
+    paths = user_paths()
+    config = load_config(config_path if config_path is not None else paths.config)
+    data = data_dir if data_dir is not None else paths.data
+    aliases = project_aliases(config.projects)
+    return [
+        RegisteredProject(
+            str(project.id),
+            aliases[project.id],
+            str(project.root),
+            data / "projects" / str(project.id),
+        )
+        for project in config.projects
+    ]
+
+
+def resolve_project(
+    reference: str | None = None,
+    *,
+    config_path: Path | None = None,
+    data_dir: Path | None = None,
+    cwd: Path | None = None,
+) -> RegisteredProject:
+    """Select a registered alias, UUID, or current checkout without changing registration."""
+    from agent_watchdog.registry import Registry
+
+    paths = user_paths()
+    config = load_config(config_path if config_path is not None else paths.config)
+    if reference is None:
+        resolution = Registry(config).resolve(cwd if cwd is not None else Path.cwd())
+        if resolution is not None:
+            reference = str(resolution.project_id)
+    project = project_for_reference(config.projects, reference) if reference is not None else None
+    if project is None:
+        raise StorageError(
+            "Select a registered project with --project alias or its working directory"
+        )
+    data = data_dir if data_dir is not None else paths.data
+    return RegisteredProject(
+        str(project.id),
+        project_aliases(config.projects)[project.id],
+        str(project.root),
+        data / "projects" / str(project.id),
+    )
+
+
+@contextmanager
+def snapshot(project: RegisteredProject) -> Iterator[sqlite3.Connection]:
+    """Open one consistent, read-only snapshot without requiring a manifest."""
+    path = project.path / _EVENTS_FILENAME
+    if not path.is_file():
+        raise StorageError("Project has no collected database")
+    with _readonly_database(path) as db:
+        db.execute("BEGIN")
+        if not 1 <= db.execute("PRAGMA user_version").fetchone()[0] <= EVENTS_SCHEMA_VERSION:
+            raise StorageError("Unsupported database schema")
+        if db.execute("SELECT project_id FROM metadata").fetchall() != [(project.project_id,)]:
+            raise StorageError("Database belongs to a different project")
+        db.row_factory = sqlite3.Row
+        yield db
+
+
+class SessionLabel(TypedDict):
+    task_outcome: str
+    task_type: str | None
+    progress_state: str | None
+    reviewer_note: str | None
+
+
+class SessionReview(TypedDict):
+    session_id: str
+    label: SessionLabel
+    event_count: int
+    gaps: list[str]
+    events: list[Envelope]
+
+
+def session_label(db: sqlite3.Connection, provider: str, session_id: str | None) -> SessionLabel:
+    """Read a manual label, with defaults for absent sessions and older schemas."""
+    default: SessionLabel = {
+        "task_outcome": "unknown",
+        "task_type": None,
+        "progress_state": None,
+        "reviewer_note": None,
+    }
+    if (
+        session_id is None
+        or not db.execute(
+            "SELECT 1 FROM sqlite_master WHERE type='table' AND name='session_labels'"
+        ).fetchone()
+    ):
+        return default
+    columns = {row[1] for row in db.execute("PRAGMA table_info(session_labels)")}
+    annotated = "progress_state" in columns and "reviewer_note" in columns
+    selection = (
+        "task_outcome, task_type, progress_state, reviewer_note"
+        if annotated
+        else "task_outcome, task_type, NULL, NULL"
+    )
+    row = db.execute(
+        f"SELECT {selection} FROM session_labels WHERE provider=? AND session_id=?",
+        (provider, session_id),
+    ).fetchone()
+    if row is None:
+        return default
+    return {
+        "task_outcome": row[0],
+        "task_type": row[1],
+        "progress_state": row[2],
+        "reviewer_note": row[3],
+    }
+
+
+def findings(project: RegisteredProject) -> dict[str, Any]:
+    """Read the daemon's per-session findings (WD-141) instead of re-analyzing every event.
+
+    Unlike usage, findings are not windowed: they cover every retained event, as of
+    each session's ``computed_at``.  Cross-session repeats are not merged, and one
+    diff oscillation shared by several sessions of a checkout counts once.
+    """
+    from agent_watchdog.analysis import RULE_VERSION, analyze
+
+    if not (project.path / _EVENTS_FILENAME).is_file():
+        return {"state": "unavailable", "reason": "no_collected_database"}
+    by_rule: dict[str, dict[str, int]] = {"codex": {}, "claude": {}}
+    gaps: dict[str, set[str]] = {"codex": set(), "claude": set()}
+    with snapshot(project) as db:
+        schema = db.execute("PRAGMA user_version").fetchone()[0]
+        if schema < 8:
+            return {"state": "unsupported", "reason": "schema_predates_v8"}
+        if schema < 9:
+            pending = db.execute(
+                "SELECT COUNT(*) FROM (SELECT provider, session_id FROM events "
+                "WHERE session_id IS NOT NULL GROUP BY provider, session_id)"
+            ).fetchone()[0]
+            analyzed = []
+            as_of = None
+            findings = []
+        else:
+            findings = db.execute(
+                "SELECT f.provider, f.rule, COUNT(DISTINCT f.fingerprint) FROM session_findings f "
+                "JOIN session_analysis a USING (provider, session_id) WHERE a.rule_version=? "
+                "GROUP BY f.provider, f.rule ORDER BY f.provider, f.rule",
+                (RULE_VERSION,),
+            ).fetchall()
+            analyzed = db.execute(
+                "SELECT provider, gaps_json FROM session_analysis WHERE rule_version=?",
+                (RULE_VERSION,),
+            ).fetchall()
+            as_of = db.execute(
+                "SELECT MAX(computed_at) FROM session_analysis WHERE rule_version=?",
+                (RULE_VERSION,),
+            ).fetchone()[0]
+            pending = len(db.execute(PENDING_SESSIONS, (RULE_VERSION,)).fetchall())
+        for provider, rule, count in findings:
+            if provider in by_rule:
+                by_rule[provider][rule] = count
+    for provider, document in analyzed:
+        if provider in gaps:
+            gaps[provider].update(json.loads(document))
+    return {
+        "state": "ready",
+        "window": "all",
+        "as_of": as_of,
+        "pending_sessions": pending,
+        "by_provider": {
+            provider: {
+                "by_rule": by_rule[provider],
+                # A provider with no analyzed session reports what an empty analysis lacks.
+                "gaps": sorted(gaps[provider]) or analyze([])["gaps"],
+            }
+            for provider in by_rule
+        },
+    }
+
+
+def session_review(
+    project: RegisteredProject, provider: str, session_ids: list[str]
+) -> list[SessionReview]:
+    """Read selected sessions, sanitized for explicit offline export."""
+    from agent_watchdog.analysis import analyze
+    from agent_watchdog.privacy import sanitize
+
+    if provider not in {"codex", "claude"}:
+        raise StorageError("Unsupported provider")
+    selected = list(dict.fromkeys(session_ids))
+    if not selected or any(not item.strip() for item in selected):
+        raise StorageError("Select at least one session identity")
+    records: list[SessionReview] = []
+    with snapshot(project) as db:
+        for session_id in selected:
+            rows = db.execute(
+                "SELECT envelope FROM events WHERE session_id=? "
+                "AND json_extract(envelope, '$.provider')=? ORDER BY rowid",
+                (session_id, provider),
+            ).fetchall()
+            if not rows:
+                raise StorageError("Unknown session in the selected project/provider")
+            events = [sanitize(persisted_envelope(row[0])) for row in rows]
+            label = session_label(db, provider, session_id)
+            report = analyze(events)
+            if label["task_outcome"] != "unknown":
+                report["gaps"] = [gap for gap in report["gaps"] if gap != "task_outcome_unknown"]
+            gaps = report["gaps"]
+            if not isinstance(gaps, list) or not all(isinstance(gap, str) for gap in gaps):
+                raise StorageError("Invalid analysis gaps")
+            records.append(
+                {
+                    "session_id": session_id,
+                    "label": label,
+                    "event_count": len(events),
+                    "gaps": gaps,
+                    "events": events,
+                }
+            )
+    return records

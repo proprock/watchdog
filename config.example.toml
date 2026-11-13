@@ -71,11 +71,6 @@ insights_llm_enabled = true
 # Old inbox_bytes entries are accepted but ignored, with a warning. Pending events
 # share one daemon-wide spool capped at 64 MiB and 4096 files.
 
-# Optional default location of the list-price tariff file for `agent-watchdog
-# usage` (see pricing.example.toml). Absolute path only; --tariffs overrides it.
-# [pricing]
-# tariffs = "C:/path/to/pricing.toml"
-
 # Decision-channel rules (docs/rules.md). `agent-watchdog rules approve NAME` writes
 # `approved` for a rule file in the `rules` folder next to this file; edit the rest
 # with `rules enable|disable|reject`, or by hand:

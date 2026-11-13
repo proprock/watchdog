@@ -74,6 +74,23 @@ def overview(conn: sqlite3.Connection, flt: SessionFilter) -> sqlite3.Row:
     ).fetchone()
 
 
+def session_pricing_rows(conn: sqlite3.Connection, flt: SessionFilter) -> list[sqlite3.Row]:
+    """Preserve observation dates until historical session costs are resolved."""
+    where, params = flt.where()
+    return _rows(
+        conn,
+        f"""
+        SELECT COALESCE(model, '(unknown)') AS model, agent, started_at,
+               COALESCE(input_tokens, 0) AS input_tokens,
+               COALESCE(output_tokens, 0) AS output_tokens,
+               COALESCE(cache_read_tokens, 0) AS cache_read_tokens,
+               COALESCE(cache_creation_tokens, 0) AS cache_creation_tokens
+        FROM sessions s WHERE {where}
+        """,  # noqa: S608 - where uses parameterized filter fragments
+        params,
+    )
+
+
 def tokens_by_model(conn: sqlite3.Connection, flt: SessionFilter) -> list[sqlite3.Row]:
     where, params = flt.where()
     return _rows(
