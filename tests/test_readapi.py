@@ -93,6 +93,58 @@ def test_stores_skips_missing_manifests_and_flags_future_contract(tmp_path: Path
     assert found[future.name].contract == 2
 
 
+@pytest.mark.parametrize("reader", ["events", "event_facts"])
+def test_event_readers_page_by_parent_rowid_and_release_snapshot(tmp_path, monkeypatch, reader):
+    from agent_watchdog import readapi
+    from agent_watchdog.events import Envelope
+
+    project_dir = _manifest(tmp_path)
+    with Store(project_dir, UUID(project_dir.name)) as store:
+        for number in range(3):
+            store.put(
+                Envelope(
+                    provider="claude",
+                    project_id=UUID(project_dir.name),
+                    session_id="sample-session",
+                    kind="tool.finish",
+                    source="hook",
+                    payload={
+                        "claude": {"tool_name": "Read", "metadata": {"tool_duration_ms": number}}
+                    },
+                )
+            )
+    (info,) = readapi.stores(tmp_path)
+    monkeypatch.setattr(readapi, "_PAGE_SIZE", 1)
+    iterator = getattr(readapi, reader)(info, after_rowid=1)
+    second = next(iterator)
+    assert second["event_rowid"] == 2
+    assert second["session_id"] == "sample-session"
+    with sqlite3.connect(project_dir / "events.sqlite3", timeout=0.1) as db:
+        assert db.execute("PRAGMA wal_checkpoint(TRUNCATE)").fetchone()[0] == 0
+        third_id = db.execute("SELECT event_id FROM events WHERE rowid = 3").fetchone()[0]
+        if reader == "event_facts":
+            db.execute("UPDATE event_facts SET rowid = 99 WHERE event_id = ?", (third_id,))
+    third = next(iterator)
+    assert third["event_rowid"] == 3
+    assert list(iterator) == []
+    if reader == "event_facts":
+        assert set(third) == {"event_rowid", *readapi.FACT_COLUMNS}
+        assert third["tool_name"] == "Read"
+
+
+@pytest.mark.parametrize("reader", ["events", "event_facts"])
+def test_event_readers_handle_missing_database_and_reject_future_contract(tmp_path, reader):
+    from agent_watchdog import readapi
+
+    project_dir = _manifest(tmp_path)
+    (info,) = readapi.stores(tmp_path)
+    assert list(getattr(readapi, reader)(info)) == []
+    _replace_manifest_field(project_dir, "contract", 2)
+    (future,) = readapi.stores(tmp_path)
+    with pytest.raises(ValueError, match="(?i)contract"):
+        list(getattr(readapi, reader)(future))
+
+
 def test_project_without_capture_database_lists_no_transcripts(tmp_path: Path) -> None:
     from agent_watchdog import readapi
 

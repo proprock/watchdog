@@ -261,6 +261,36 @@ def test_stats_command(tmp_path: Path) -> None:
     assert "Overview" in result.output
 
 
+def test_doctor_reports_hook_token_differences(tmp_path: Path, monkeypatch) -> None:
+    from wdi.metrics import hooks
+
+    cfg = _seeded_config(tmp_path)
+    monkeypatch.setattr(
+        hooks,
+        "reconcile_tokens",
+        lambda _conn: [
+            {
+                "session_id": "synthetic-session",
+                "machine_id": "synthetic-machine",
+                "provider": "claude",
+                "scope": "main",
+                "metric": "input_tokens",
+                "wdi": 200,
+                "watchdog": 100,
+                "differs": True,
+            }
+        ],
+    )
+
+    result = runner.invoke(app, ["doctor", "-c", str(cfg)])
+
+    assert result.exit_code == 0, result.output
+    assert "Token reconciliation" in result.output
+    assert "synthetic-session" in result.output
+    assert "input_tokens" in result.output
+    assert "200" in result.output and "100" in result.output
+
+
 def test_stats_warns_about_unpriced_models(tmp_path: Path) -> None:
     cfg = _seeded_config(tmp_path, model="claude-fable-5")
 
