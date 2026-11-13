@@ -85,7 +85,9 @@ def run_coach(
         card["error"] = "LLM analysis is disabled in the config."
     if "error" not in card:
         backend = (
-            ClaudeCliBackend()
+            ClaudeCliBackend(
+                **settings.watchdog.model_dump(include={"data_dirs"}, exclude_unset=True)
+            )
             if provider == "claude"
             else CodexCliBackend(executable=config.codex_executable)
         )

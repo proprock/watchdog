@@ -1,15 +1,17 @@
 import json
 import os
 import shlex
+import subprocess
 import sys
 import tempfile
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 import pytest
+from wdi.llm.backend import ClaudeCliBackend, LLMError
 
 from agent_watchdog import readapi
-from wdi.llm.backend import ClaudeCliBackend, LLMError
+from agent_watchdog.insights import llm
 
 
 @pytest.fixture
@@ -37,12 +39,19 @@ else:
         encoding="utf-8",
     )
     if os.name == "nt":
-        executable = tmp_path / "claude.cmd"
-        executable.write_text(f'@"{sys.executable}" -X utf8 "{script}" %*\n', encoding="utf-8")
+        executable = tmp_path / "claude.exe"
+        executable.touch()
+
+        def launch(argv, **kwargs):
+            assert Path(argv[0]) == executable
+            return subprocess.run([sys.executable, "-X", "utf8", str(script), *argv[1:]], **kwargs)
+
+        monkeypatch.setattr(llm._proc, "run", launch)
     else:
         executable = tmp_path / "claude"
         executable.write_text(
-            f'#!/bin/sh\nexec {shlex.quote(sys.executable)} -X utf8 {shlex.quote(str(script))} "$@"\n',
+            f"#!/bin/sh\nexec {shlex.quote(sys.executable)} -X utf8 "
+            f'{shlex.quote(str(script))} "$@"\n',
             encoding="utf-8",
         )
         executable.chmod(0o755)
@@ -99,6 +108,44 @@ def test_claude_backend_refuses_scratch_inside_a_manifest_root(synthetic_claude,
     assert "-p" not in calls.read_text(encoding="utf-8").splitlines()
 
 
+def test_claude_backend_checks_configured_data_directories(synthetic_claude, tmp_path):
+    executable, calls = synthetic_claude
+    data = tmp_path / "configured"
+    store = data / "projects" / "registered"
+    store.mkdir(parents=True)
+    # Unknown contract versions still expose roots when the manifest has them.
+    (store / "store.json").write_text(
+        json.dumps({"contract": readapi.CONTRACT_VERSION + 1, "root": tempfile.gettempdir()}),
+        encoding="utf-8",
+    )
+    backend = ClaudeCliBackend(executable=str(executable), data_dirs=[data])
+    with pytest.raises(LLMError, match="isolation_unavailable"):
+        backend.complete("private prompt", "haiku")
+    assert "-p" not in calls.read_text(encoding="utf-8").splitlines()
+
+
+def test_claude_refuses_an_unresolvable_manifest_root(synthetic_claude, tmp_path, monkeypatch):
+    executable, calls = synthetic_claude
+    root = tmp_path / "unresolvable"
+    store = tmp_path / "data" / "projects" / "registered"
+    store.mkdir(parents=True)
+    (store / "store.json").write_text(
+        json.dumps({"contract": readapi.CONTRACT_VERSION + 1, "root": str(root)}),
+        encoding="utf-8",
+    )
+    resolve = Path.resolve
+
+    def resolve_root(path, *args, **kwargs):
+        if path == root:
+            raise OSError("synthetic root resolution failure")
+        return resolve(path, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "resolve", resolve_root)
+    with pytest.raises(LLMError, match="isolation_unavailable"):
+        ClaudeCliBackend(executable=str(executable)).complete("private prompt", "haiku")
+    assert "-p" not in calls.read_text(encoding="utf-8").splitlines()
+
+
 def test_concurrent_claude_calls_share_preflight(synthetic_claude):
     executable, calls = synthetic_claude
     backend = ClaudeCliBackend(executable=str(executable))
@@ -123,3 +170,14 @@ def test_claude_preflight_refreshes_when_executable_changes(synthetic_claude):
     os.utime(executable, ns=(stat.st_atime_ns, stat.st_mtime_ns + 2_000_000_000))
     backend.complete("after", "haiku")
     assert calls.read_text(encoding="utf-8").splitlines() == ["--version", "--help", "-p"] * 2
+
+
+@pytest.mark.skipif(os.name != "nt", reason="Windows batch launchers use the command shell")
+def test_claude_refuses_windows_batch_launcher(tmp_path, monkeypatch):
+    monkeypatch.setattr(readapi, "default_data_dir", lambda: tmp_path / "data")
+    launcher = tmp_path / "claude.cmd"
+    marker = tmp_path / "launched"
+    launcher.write_text(f'@echo called > "{marker}"\n@echo --safe-mode\n', encoding="utf-8")
+    with pytest.raises(LLMError, match="isolation_unavailable"):
+        ClaudeCliBackend(executable=str(launcher)).complete("hello", "haiku")
+    assert not marker.exists()

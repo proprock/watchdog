@@ -1,8 +1,19 @@
 # Watchdog store read contract v1
 
-`agent_watchdog.readapi` is the runtime interface for `wdi`. Test fixtures may
+`agent_watchdog.readapi` is the store interface for `wdi`. Test fixtures may
 use the real writer in `agent_watchdog.capture_store`. Neither program needs
 to import the daemon to read a store.
+
+## Isolated Claude analysis
+
+`agent_watchdog.insights.llm` exposes `claude(request, forbidden_roots=..., executable=...)`
+and the `Request` and `Result` types. The runner sends `Request.prompt` on stdin.
+Pass `schema=None` to receive a successful `Result.output` of `{"text": answer}`.
+Requests with a schema return a structured object. Failures return `Result.reason`
+and no output. Callers supply checkout roots from store manifests so the runner
+can refuse a working directory inside a registered checkout.
+On Windows, the runner requires a Claude executable that can launch without
+the command shell. Batch launchers (`.bat` and `.cmd`) are refused.
 
 ## Discovery and identity
 

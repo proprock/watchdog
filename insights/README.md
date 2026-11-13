@@ -202,12 +202,19 @@ marked on display and recomputed on the next run. Refresh always requests a new
 answer. Existing single-provider cache rows are retained but are not reused.
 No database schema change or re-import is required.
 
+Claude advice and `wdi analyze` use Watchdog's isolated Claude runner. It uses
+the CLI's existing authentication and runs in a temporary directory outside
+registered checkouts. Safe mode, empty setting sources, strict MCP configuration
+and an empty tool list disable customizations and tools. Session persistence is
+disabled. The runner refuses the request if it cannot establish isolation.
+
 Codex runs through `codex exec` with stdin input, an output JSON schema and an
 ephemeral session, using a temporary working directory and the CLI's existing
 authentication. It uses a read-only sandbox and ignores user configuration so
 project-specific settings do not influence the analysis. Its analysis sessions
-are not saved to the session files imported by WDI. Per-session `wdi analyze`
-continues using its existing Claude backend.
+are not saved to the session files imported by WDI. This path provides weaker
+isolation than the Claude runner. Watchdog's own Codex analysis backend remains
+unavailable pending a verified isolation contract (WD-166).
 
 ### Context efficiency
 

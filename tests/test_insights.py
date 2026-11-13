@@ -286,6 +286,7 @@ def test_run_grounds_each_recommendation_in_the_bundle(tmp_path):
     assert request.model == "sonnet"
     assert "untrusted" in request.system_prompt
     assert str(events[0].event_id) in request.prompt
+    assert request.schema is not None
     assert request.schema["type"] == "object"
 
 
@@ -550,8 +551,10 @@ REQUEST = llm.Request(
 
 
 @pytest.fixture
-def fake_claude(monkeypatch):
-    monkeypatch.setattr(llm.shutil, "which", lambda name: "C:/bin/claude.exe")
+def fake_claude(monkeypatch, tmp_path):
+    executable = tmp_path / "claude.exe"
+    executable.touch()
+    monkeypatch.setattr(llm.shutil, "which", lambda name: str(executable))
 
     def install(proc: RecordedProc) -> RecordedProc:
         monkeypatch.setattr(llm._proc, "run", proc)

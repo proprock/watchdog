@@ -68,6 +68,7 @@ Line numbers in these tasks refer to commit `0d5e984`. Paths under `insights/` e
   - **Steps.** Tests with a synthetic executable: the isolation flags are present; a 200 KiB prompt works on Windows; an isolation failure becomes `LLMError`; four concurrent calls run one preflight; the existing `wdi` tests pass unmodified. Then the code.
   - **Out of scope.** JSON schemas for the `wdi` analyzers. Any Codex change.
   - **Acceptance:** both suites pass; one separately authorized live `wdi analyze` run creates no session file and no hook record, shown in `docs/evidence/wd197.md`.
+  - **Status on 2026-11-13.** Implementation and offline verification are recorded in [WD-197 evidence](docs/evidence/wd197.md). Live acceptance awaits separate authorization.
 
 ## Split P2 - Analytics, comparison and applying recommendations
 

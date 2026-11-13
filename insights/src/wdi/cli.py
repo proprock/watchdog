@@ -834,7 +834,7 @@ def analyze_cmd(
 
         from rich.progress import Progress
 
-        backend = ClaudeCliBackend()
+        backend = ClaudeCliBackend(data_dirs=settings.watchdog.data_dirs)
         all_stats: list[tuple[str, str, AnalysisStats]] = []
 
         with Progress(

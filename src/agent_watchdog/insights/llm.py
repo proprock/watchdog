@@ -11,6 +11,7 @@ reported, never retried.
 """
 
 import json
+import os
 import re
 import shutil
 import subprocess
@@ -18,19 +19,22 @@ import tempfile
 import time
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
+from functools import cache
 from pathlib import Path
+from threading import Lock
 from typing import Any
 
 from agent_watchdog import _proc, privacy
 
 PREFLIGHT_TIMEOUT = 30.0
+_claude_preflight_lock = Lock()
 
 
 @dataclass(frozen=True)
 class Request:
     system_prompt: str
     prompt: str
-    schema: dict[str, Any]
+    schema: dict[str, Any] | None
     model: str
     effort: str | None
     timeout: float
@@ -82,20 +86,19 @@ def _argv(executable: str, request: Request) -> list[str]:
     ]
     if request.effort is not None:
         argv += ["--effort", request.effort]
-    return argv + [
-        "--json-schema",
-        json.dumps(request.schema),
-        "--system-prompt",
-        request.system_prompt,
-    ]
+    if request.schema is not None:
+        argv += ["--json-schema", json.dumps(request.schema)]
+    if request.system_prompt:
+        argv += ["--system-prompt", request.system_prompt]
+    return argv
 
 
 def _shown(argv: list[str]) -> list[str]:
     """Record the flags without the long system prompt and schema values."""
-    shown = list(argv)
-    for flag in ("--json-schema", "--system-prompt"):
-        shown[shown.index(flag) + 1] = "<omitted>"
-    return shown
+    return [
+        "<omitted>" if index and argv[index - 1] in {"--json-schema", "--system-prompt"} else arg
+        for index, arg in enumerate(argv)
+    ]
 
 
 def _inside(path: Path, roots: Sequence[Path]) -> bool:
@@ -108,11 +111,13 @@ def _inside(path: Path, roots: Sequence[Path]) -> bool:
     return False
 
 
-def _answer(envelope: dict[str, Any]) -> dict[str, Any] | None:
+def _answer(envelope: dict[str, Any], *, structured_output: bool) -> dict[str, Any] | None:
+    text = envelope.get("result")
+    if not structured_output:
+        return {"text": text} if isinstance(text, str) else None
     structured = envelope.get("structured_output")
     if isinstance(structured, dict):
         return structured
-    text = envelope.get("result")
     if isinstance(text, str):
         try:
             parsed = json.loads(text)
@@ -194,29 +199,56 @@ def _run(argv: list[str], *, timeout: float, **kwargs: Any) -> subprocess.Comple
     )
 
 
-def claude(request: Request, *, forbidden_roots: Sequence[Path]) -> Result:
+@cache
+def _claude_preflight(executable: str, mtime_ns: int) -> tuple[str | None, str | None]:
+    try:
+        version = _run([executable, "--version"], timeout=PREFLIGHT_TIMEOUT)
+        help_text = _run([executable, "--help"], timeout=PREFLIGHT_TIMEOUT)
+    except subprocess.TimeoutExpired:
+        return None, "timeout"
+    except OSError:
+        return None, "not_found"
+    first_line = version.stdout.partition("\n")[0].strip()
+    safe_mode = (
+        version.returncode == help_text.returncode == 0 and "--safe-mode" in help_text.stdout
+    )
+    return first_line or None, None if safe_mode else "isolation_unavailable"
+
+
+def claude(
+    request: Request, *, forbidden_roots: Sequence[Path], executable: str = "claude"
+) -> Result:
     """Run one isolated analysis call; every failure maps to a reason, never an exception."""
-    executable = shutil.which("claude")
-    provenance: dict[str, Any] = {"provider": "claude", "executable": executable}
-    if executable is None:
+    resolved = shutil.which(executable)
+    resolved = str(Path(resolved).absolute()) if resolved is not None else None
+    provenance: dict[str, Any] = {"provider": "claude", "executable": resolved}
+    if resolved is None:
         return Result(None, "not_found", provenance)
+    # Windows may run batch launchers through cmd.exe even with shell=False.
+    if os.name == "nt" and Path(resolved).suffix.lower() in {".bat", ".cmd"}:
+        return Result(None, "isolation_unavailable", provenance)
     workdir: Path | None = None
     try:
-        lines = (_run([executable, "--version"], timeout=PREFLIGHT_TIMEOUT).stdout or "").split(
-            "\n"
-        )
-        provenance["version"] = lines[0].strip() or None
-        if "--safe-mode" not in (
-            _run([executable, "--help"], timeout=PREFLIGHT_TIMEOUT).stdout or ""
-        ):
+        # Hold the lock through a cache miss so parallel workers share the preflight.
+        with _claude_preflight_lock:
+            version, reason = _claude_preflight(resolved, Path(resolved).stat().st_mtime_ns)
+        provenance["version"] = version
+        if reason is not None:
+            return Result(None, reason, provenance)
+        try:
+            workdir = Path(tempfile.mkdtemp(prefix="agent-watchdog-insights-"))
+            resolved_workdir = workdir.resolve()
+            inside_project = any(
+                resolved_workdir.is_relative_to(root.resolve()) for root in forbidden_roots
+            )
+        except OSError, ValueError:
             return Result(None, "isolation_unavailable", provenance)
-        workdir = Path(tempfile.mkdtemp(prefix="agent-watchdog-insights-")).resolve()
-        if _inside(workdir, forbidden_roots):
+        if inside_project:
             return Result(None, "isolation_unavailable", provenance)
-        argv = _argv(executable, request)
+        argv = _argv(resolved, request)
         provenance |= {"argv": _shown(argv), "requested_model": request.model}
         started = time.monotonic()
-        completed = _run(argv, timeout=request.timeout, input=request.prompt, cwd=workdir)
+        completed = _run(argv, timeout=request.timeout, input=request.prompt, cwd=resolved_workdir)
         provenance["wall_ms"] = round((time.monotonic() - started) * 1000)
     except subprocess.TimeoutExpired:
         return Result(None, "timeout", provenance)
@@ -240,7 +272,7 @@ def claude(request: Request, *, forbidden_roots: Sequence[Path]) -> Result:
     provenance |= _envelope_provenance(envelope)
     if envelope.get("is_error") is True:
         return Result(None, "is_error", provenance)
-    answer = _answer(envelope)
+    answer = _answer(envelope, structured_output=request.schema is not None)
     if answer is None:
         return Result(None, "malformed_output", provenance)
     return Result(answer, None, provenance)

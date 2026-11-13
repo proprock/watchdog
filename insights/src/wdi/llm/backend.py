@@ -5,9 +5,13 @@ from __future__ import annotations
 import json
 import shutil
 import subprocess
+from collections.abc import Sequence
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from typing import Protocol
+
+from agent_watchdog import readapi
+from agent_watchdog.insights import llm
 
 
 class LLMError(Exception):
@@ -101,48 +105,40 @@ class CodexCliBackend:
 
 
 class ClaudeCliBackend:
-    """Call the locally installed Claude Code CLI in headless mode.
+    """Complete a text prompt using Watchdog's isolated Claude runner."""
 
-    Uses `claude -p --output-format json --model <model>` and feeds the prompt on
-    stdin (not as an argv, which would hit the Windows command-line length limit).
-    Returns the `result` text. No API key is required; auth comes from the CLI.
-    """
-
-    def __init__(self, executable: str = "claude", timeout: float = 180.0) -> None:
-        self._executable = shutil.which(executable) or executable
+    def __init__(
+        self,
+        executable: str = "claude",
+        timeout: float = 180.0,
+        *,
+        data_dirs: Sequence[Path] | None = None,
+    ) -> None:
+        self._executable = executable
         self._timeout = timeout
+        default = readapi.default_data_dir()
+        self._data_dirs = tuple(dict.fromkeys((default, *(data_dirs or ()))))
 
     def complete(self, prompt: str, model: str) -> str:
         try:
-            proc = subprocess.run(  # noqa: S603 - executable resolved via PATH, args fixed
-                [
-                    self._executable,
-                    "-p",
-                    "--output-format",
-                    "json",
-                    "--model",
-                    model,
-                ],
-                input=prompt,
-                capture_output=True,
-                text=True,
-                encoding="utf-8",
-                timeout=self._timeout,
-            )
-        except FileNotFoundError as exc:
-            raise LLMError(f"claude CLI not found: {self._executable}") from exc
-        except subprocess.TimeoutExpired as exc:
-            raise LLMError(f"claude CLI timed out after {self._timeout}s") from exc
-
-        if proc.returncode != 0:
-            raise LLMError(f"claude CLI exited {proc.returncode}: {proc.stderr.strip()[:300]}")
-        try:
-            payload = json.loads(proc.stdout)
-        except json.JSONDecodeError as exc:
-            raise LLMError("claude CLI returned non-JSON output") from exc
-        if payload.get("is_error"):
-            raise LLMError(f"claude CLI reported an error: {payload.get('subtype')}")
-        result = payload.get("result")
-        if not isinstance(result, str):
-            raise LLMError("claude CLI response had no 'result' text")
-        return result
+            roots = [
+                Path(store.root)
+                for directory in self._data_dirs
+                for store in readapi.stores(directory)
+                if store.root is not None
+            ]
+        except (OSError, ValueError) as exc:
+            raise LLMError(
+                f"isolation_unavailable: cannot read Watchdog store manifests ({exc})"
+            ) from exc
+        result = llm.claude(
+            llm.Request("", prompt, None, model, None, self._timeout),
+            forbidden_roots=roots,
+            executable=self._executable,
+        )
+        if result.reason:
+            raise LLMError(result.reason)
+        text = (result.output or {}).get("text")
+        if not isinstance(text, str):
+            raise LLMError("malformed_output")
+        return text

@@ -259,7 +259,9 @@ def run_context_advice(
         card["error"] = "No context analysis data matches these filters."
     if "error" not in card:
         backend = (
-            ClaudeCliBackend()
+            ClaudeCliBackend(
+                **settings.watchdog.model_dump(include={"data_dirs"}, exclude_unset=True)
+            )
             if provider == "claude"
             else CodexCliBackend(executable=config.codex_executable)
         )
