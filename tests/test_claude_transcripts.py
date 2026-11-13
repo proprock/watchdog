@@ -280,6 +280,58 @@ def test_growing_subagent_usage_split_across_read_windows_holds_until_closed(tmp
     assert response(event)["output_tokens"] == 116
 
 
+def test_subagent_final_block_updates_every_usage_dimension(tmp_path):
+    project = uuid4()
+    transcript = tmp_path / "agent.jsonl"
+    child = "33333333-3333-4333-8333-333333333333"
+    first = assistant(
+        child,
+        "req_child",
+        input_tokens=2,
+        cache_read=100,
+        cache_creation=10,
+        output_tokens=3,
+        stop_reason=None,
+        sidechain=True,
+    )
+    final = assistant(
+        child,
+        "req_child",
+        block=1,
+        input_tokens=4,
+        cache_read=250,
+        cache_creation=20,
+        output_tokens=116,
+        stop_reason="tool_use",
+        sidechain=True,
+    )
+    write_transcript(transcript, [first])
+    with Store(tmp_path / "data", project) as store:
+        store.put(subagent_hook(project, SESSION, "agent-7", transcript))
+        assert enrich(store).accepted == 0
+        write_transcript(transcript, [first, final])
+        assert enrich(store).accepted == 1
+        assert enrich(store).accepted == 0
+        events = usage_events(store)
+        assert len(events) == 1
+        counters = response(events[0])
+        assert {
+            key: counters[key]
+            for key in (
+                "input_tokens",
+                "cache_read_input_tokens",
+                "cache_creation_input_tokens",
+                "output_tokens",
+            )
+        } == {
+            "input_tokens": 4,
+            "cache_read_input_tokens": 250,
+            "cache_creation_input_tokens": 20,
+            "output_tokens": 116,
+        }
+        assert json.loads(transcript.read_text().splitlines()[0]) == first
+
+
 def test_unclosed_subagent_response_flushes_once_the_source_stops_growing(tmp_path):
     project = uuid4()
     agent_transcript = tmp_path / "agent.jsonl"

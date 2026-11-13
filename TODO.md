@@ -53,8 +53,6 @@ Line numbers in these tasks refer to commit `0d5e984`. Paths under `insights/` e
 
 ## Split P2 - Analytics, comparison and applying recommendations
 
-- [ ] **WD-221 - Investigate Claude subagent token discrepancies.** WD-195 live reconciliation found output differences above 1% in five of 17 comparable sessions and a cached-input difference in one of those five. Comparable output totals were WDI 395,696 versus Watchdog 295,024; cached-input totals were 55,417,922 versus 55,278,908. Establish the cause from source records before changing accounting, add synthetic regressions, and repeat the comparison. [Evidence](docs/evidence/wd195.md).
-
 - [ ] **WD-222 - Investigate Codex main-stream token discrepancies.** WD-195 found 28 dimension/session differences across 12 of 51 comparable main streams: eight input, eight cached-input, and 12 output. Check source coverage and accounting against raw records, preserve unknown values, add regressions for verified defects, and repeat the comparison. The aggregate totals alone do not identify the cause. [Evidence](docs/evidence/wd195.md).
 
 - [ ] **WD-223 - Investigate Codex subagent token discrepancies.** WD-195 found input, cached-input, and output differences above 1% in 17 of 21 comparable parent sessions (51 dimension/session differences). Thirty other parent sessions had unavailable comparisons. Verify parent/child coverage and usage conventions against source records before deciding a correction; add synthetic regression coverage and repeat the comparison. [Evidence](docs/evidence/wd195.md).

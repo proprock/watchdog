@@ -2,6 +2,8 @@
 
 Historical records only: one line per task. The full text of every entry, including its verification, is in [done-archive.md](docs/evidence/done-archive.md). Active work belongs in [TODO.md](TODO.md). Preserve task IDs when moving entries here.
 
+- [x] **WD-221 - Investigate Claude subagent token discrepancies.** Historical first-block receipts explain all differences; replay of 197 responses in 19 affected streams matches Insights exactly, with two synthetic regressions passing. Native spool failure remains tracked in WD-224. [Evidence](docs/evidence/wd221.md).
+
 - [x] **WD-220 - Refresh backfilled attribution in imported hook facts incrementally.** Persisted bounded cycles refresh model/effort attribution without changing raw events or tokens; 2,198 Watchdog and 368 Insights tests passed. [Evidence](docs/evidence/wd220.md).
 
 - [x] **WD-219 - Return a failing CLI status for failed analyses.** Any failed `wdi analyze` attempt returns status 1 while successful results are retained; actionable provider diagnostics survive. Offline verification: 2,198 Watchdog tests and 364 Insights tests passed. [Evidence](docs/evidence/wd219.md).

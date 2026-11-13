@@ -577,3 +577,71 @@ def test_fragment_completed_in_later_import_does_not_double_usage(
         ).fetchone()[0]
         == 1
     )
+
+
+def test_subagent_fragments_completed_in_later_import_reconcile_all_usage(
+    tmp_path: Path, repo: Repository, resolver: ProjectResolver, conn: sqlite3.Connection
+) -> None:
+    root = tmp_path / "claude"
+    write_jsonl(root / "slug" / f"{SID}.jsonl", [user_prompt("Work", "2026-06-01T10:00:00Z")])
+    path = root / "slug" / SID / "subagents" / "agent-abc123.jsonl"
+    fragments = []
+    for index, counters in enumerate([(2, 100, 10, 3), (4, 250, 20, 116)]):
+        fragment = assistant_msg(
+            f"2026-06-01T10:00:0{index + 1}Z",
+            f"fragment-{index}",
+            text=f"part {index}",
+            usage=dict(
+                zip(
+                    (
+                        "input_tokens",
+                        "cache_read_input_tokens",
+                        "cache_creation_input_tokens",
+                        "output_tokens",
+                    ),
+                    counters,
+                    strict=True,
+                )
+            ),
+            stop_reason="end_turn" if index else None,
+        )
+        fragment.update(sessionId=SID, requestId="request-1", agentId="abc123", isSidechain=True)
+        fragment["message"]["id"] = "provider-1"
+        fragments.append(fragment)
+
+    write_jsonl(path, fragments[:1])
+    import_claude_source(repo, resolver, root, MACHINE)
+    with path.open("a", encoding="utf-8", newline="\n") as stream:
+        stream.write(json.dumps(fragments[1]) + "\n")
+    source_bytes = path.read_bytes()
+    import_claude_source(repo, resolver, root, MACHINE)
+
+    for table, condition in [
+        ("messages", "role='assistant'"),
+        ("context_events", "event_type='model_call'"),
+    ]:
+        row = conn.execute(
+            f"SELECT SUM(input_tokens), SUM(cache_read_tokens), SUM(cache_creation_tokens), "
+            f"SUM(output_tokens) FROM {table} "
+            f"WHERE session_id=? AND stream_id='abc123' AND {condition}",
+            (SID,),
+        ).fetchone()
+        assert tuple(row) == (4, 250, 20, 116)
+    assert (
+        conn.execute(
+            "SELECT COUNT(*) FROM messages WHERE session_id=? AND stream_id='abc123'", (SID,)
+        ).fetchone()[0]
+        == 2
+    )
+    assert (
+        conn.execute(
+            "SELECT COUNT(*) FROM context_events WHERE session_id=? AND stream_id='abc123' "
+            "AND event_type='model_call'",
+            (SID,),
+        ).fetchone()[0]
+        == 1
+    )
+    before = list(conn.iterdump())
+    assert import_claude_source(repo, resolver, root, MACHINE).files_imported == 0
+    assert list(conn.iterdump()) == before
+    assert path.read_bytes() == source_bytes
