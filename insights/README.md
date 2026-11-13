@@ -245,6 +245,12 @@ native `codex.exe`. Use `--force` to regenerate analyses already saved for
 the same sessions. The Coach and Context Advice cards select their engine
 through the provider-specific buttons.
 
+`wdi analyze` exits with status 1 if any attempted analysis fails, including a
+partially successful batch. It continues processing the remaining sessions,
+keeps successful results, and prints the results table and provider diagnostics.
+Status 0 means no analysis failed; declining the confirmation, disabled analysis,
+and an empty or already cached selection also return 0 without calling a model.
+
 Claude advice and Claude-backed `wdi analyze` use Watchdog's isolated runner. It uses
 the CLI's existing authentication and runs in a temporary directory outside
 registered checkouts. Safe mode, empty setting sources, strict MCP configuration

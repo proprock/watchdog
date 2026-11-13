@@ -649,7 +649,7 @@ def test_analyze_prints_provider_limit_diagnostic_literally(tmp_path: Path, monk
     result = runner.invoke(app, ["analyze", "-c", str(cfg), "--type", "summary", "--yes"])
 
     assert "429" in result.stderr
-    assert "Weekly allowance exhausted; reset [UTC]." in result.stderr
+    assert "Weekly allowance exhausted; reset [UTC]." in " ".join(result.stderr.split())
     assert result.exit_code == 1
 
 

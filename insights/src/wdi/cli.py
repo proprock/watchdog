@@ -947,8 +947,10 @@ def analyze_cmd(
                 str(stats.failed),
             )
             for err in stats.errors:
-                err_console.print(f"[yellow]warn[/yellow] {key}: {err}")
+                err_console.print(f"warn {key}: {err}", markup=False)
         console.print(result_table)
+        if any(stats.failed for _, _, stats in all_stats):
+            raise typer.Exit(code=1)
     finally:
         conn.close()
 

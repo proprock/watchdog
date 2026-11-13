@@ -152,7 +152,19 @@ class ClaudeCliBackend:
             executable=self._executable,
         )
         if result.reason:
-            raise LLMError(result.reason)
+            details = [result.reason]
+            for key in (
+                "api_error_status",
+                "terminal_reason",
+                "subtype",
+                "result",
+                "stderr",
+                "stdout",
+            ):
+                value = result.provenance.get(key)
+                if isinstance(value, str | int) and value != "":
+                    details.append(f"{key}: {str(value)[:500]}")
+            raise LLMError("; ".join(details))
         text = (result.output or {}).get("text")
         if not isinstance(text, str):
             raise LLMError("malformed_output")

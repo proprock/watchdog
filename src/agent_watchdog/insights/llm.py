@@ -271,6 +271,7 @@ def claude(
         return Result(None, "malformed_output", provenance)
     provenance |= _envelope_provenance(envelope)
     if envelope.get("is_error") is True:
+        provenance |= _failure_detail(completed.stdout)
         return Result(None, "is_error", provenance)
     answer = _answer(envelope, structured_output=request.schema is not None)
     if answer is None:

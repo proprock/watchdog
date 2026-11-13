@@ -72,8 +72,6 @@ Line numbers in these tasks refer to commit `0d5e984`. Paths under `insights/` e
 
 ## Split P2 - Analytics, comparison and applying recommendations
 
-- [ ] **WD-219 - Return a failing CLI status when `wdi analyze` cannot analyze any selected session.** Found during WD-197 live acceptance: the Claude process returned HTTP 429 and the results table showed one failure, but the outer command exited with status zero. Define partial-failure behavior, preserve the provider's actionable cause in the diagnostic, and add offline CLI regression coverage. No provider calls are needed for the fix.
-
 - [ ] **WD-220 - Refresh backfilled attribution in imported hook facts incrementally.** WD-195 review found that Codex attribution can update model/effort fields on older usage facts after context arrives. The append-only event cursor does not see these updates; `wdi import --full` refreshes them. Add a source change signal or another bounded refresh strategy with an offline late-context regression. Token reconciliation is unaffected by model/effort-only changes.
 
 - [ ] **WD-221 - Investigate Claude subagent token discrepancies.** WD-195 live reconciliation found output differences above 1% in five of 17 comparable sessions and a cached-input difference in one of those five. Comparable output totals were WDI 395,696 versus Watchdog 295,024; cached-input totals were 55,417,922 versus 55,278,908. Establish the cause from source records before changing accounting, add synthetic regressions, and repeat the comparison. [Evidence](docs/evidence/wd195.md).
