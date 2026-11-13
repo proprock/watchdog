@@ -43,6 +43,8 @@ Line numbers in these tasks refer to commit `0d5e984`. Paths under `insights/` e
     - on the live instance a session in a previously unregistered Git checkout is stored without any command, and `doctor` shows a non-Git session as ignored with its count.
   - **Status on 2026-11-12.** Implemented, full suite passed, and both live acceptance probes passed. The first-day registration report is due on 2026-11-13 at 12:15:39 UTC. See [WD-186 evidence](docs/evidence/wd186.md).
 
+- [ ] **WD-224 - Investigate native concurrent spool admission losses under test load.** The WD-220 full Watchdog suite produced seven spool files for eight adapter calls in `test_native_concurrent_spool_commits_without_a_second_inbox_quota`; retained counters showed `busy=1`, all other loss counters zero. An isolated repeat passed. Establish why admission exceeded the bounded lock wait and add a deterministic regression if a product defect is confirmed; do not infer the trigger from the aggregate test result. [Evidence](docs/evidence/wd220.md).
+
 ## Split P1 - Read contract and insights on Watchdog data
 
 - [ ] **WD-197 - Isolated Claude runs for analysis in `wdi`.** P1. Depends on WD-184.
@@ -71,8 +73,6 @@ Line numbers in these tasks refer to commit `0d5e984`. Paths under `insights/` e
   - **Status on 2026-11-13.** Implementation and offline verification are recorded in [WD-197 evidence](docs/evidence/wd197.md). Authorized live acceptance reached Claude Code 2.1.323 but failed with HTTP 429 (weekly allowance; reset reported for November 14 at 11:00 Europe/Warsaw). No provider session file or hook record was added. Successful live analysis remains pending.
 
 ## Split P2 - Analytics, comparison and applying recommendations
-
-- [ ] **WD-220 - Refresh backfilled attribution in imported hook facts incrementally.** WD-195 review found that Codex attribution can update model/effort fields on older usage facts after context arrives. The append-only event cursor does not see these updates; `wdi import --full` refreshes them. Add a source change signal or another bounded refresh strategy with an offline late-context regression. Token reconciliation is unaffected by model/effort-only changes.
 
 - [ ] **WD-221 - Investigate Claude subagent token discrepancies.** WD-195 live reconciliation found output differences above 1% in five of 17 comparable sessions and a cached-input difference in one of those five. Comparable output totals were WDI 395,696 versus Watchdog 295,024; cached-input totals were 55,417,922 versus 55,278,908. Establish the cause from source records before changing accounting, add synthetic regressions, and repeat the comparison. [Evidence](docs/evidence/wd195.md).
 

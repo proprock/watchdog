@@ -2,6 +2,8 @@
 
 Historical records only: one line per task. The full text of every entry, including its verification, is in [done-archive.md](docs/evidence/done-archive.md). Active work belongs in [TODO.md](TODO.md). Preserve task IDs when moving entries here.
 
+- [x] **WD-220 - Refresh backfilled attribution in imported hook facts incrementally.** Persisted bounded cycles refresh model/effort attribution without changing raw events or tokens; 2,198 Watchdog and 368 Insights tests passed. [Evidence](docs/evidence/wd220.md).
+
 - [x] **WD-219 - Return a failing CLI status for failed analyses.** Any failed `wdi analyze` attempt returns status 1 while successful results are retained; actionable provider diagnostics survive. Offline verification: 2,198 Watchdog tests and 364 Insights tests passed. [Evidence](docs/evidence/wd219.md).
 
 - [x] **WD-195 - Hook facts in `wdi`, and token reconciliation.** Added incremental hook import, observed session metrics, and doctor reconciliation; 2,194 Watchdog and 329 Insights tests passed. Live reconciliation covered 185 sessions, with differences tracked in WD-221 through WD-223. [Evidence](docs/evidence/wd195.md).

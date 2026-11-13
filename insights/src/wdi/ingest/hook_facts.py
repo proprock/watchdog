@@ -5,6 +5,48 @@ from itertools import islice, takewhile
 from agent_watchdog import readapi
 from wdi.db.repository import Repository
 
+_REFRESH_BATCH_SIZE = 500
+
+
+def _refresh_attribution(
+    repo: Repository,
+    store: readapi.StoreInfo,
+    machine: str,
+    project: str,
+    high_water: int,
+) -> None:
+    key = f"wd-facts-refresh://{machine}/{project}"
+    state = repo.get_import_state(machine, key)
+    after = state.byte_offset if state else 0
+    # Freeze the cycle boundary so continuous appends cannot starve older facts.
+    limit = state.file_size if state and state.file_size else high_water
+    facts = takewhile(
+        lambda row: row["event_rowid"] <= limit,
+        readapi.event_facts(store, after_rowid=after),
+    )
+    batch = list(islice(facts, _REFRESH_BATCH_SIZE))
+    repo.conn.executemany(
+        "UPDATE hook_facts SET model = ?, model_attribution = ?, "
+        "reasoning_effort = ?, reasoning_effort_attribution = ? "
+        "WHERE machine_id = ? AND project_id = ? AND event_id = ?",
+        [
+            (
+                row["model"],
+                row["model_attribution"],
+                row["reasoning_effort"],
+                row["reasoning_effort_attribution"],
+                machine,
+                project,
+                row["event_id"],
+            )
+            for row in batch
+        ],
+    )
+    end = batch[-1]["event_rowid"] if batch else 0
+    if len(batch) < _REFRESH_BATCH_SIZE or end >= limit:
+        end, limit = 0, 0
+    repo.set_import_state(machine, key, file_size=limit, file_mtime=0, byte_offset=end)
+
 
 def import_hook_facts(
     repo: Repository, stores: list[readapi.StoreInfo], *, full: bool = False
@@ -66,6 +108,16 @@ def import_hook_facts(
                         (machine, project, *(row[column] for column in fact_columns))
                         for row in batch
                     ],
+                )
+            if cursor:
+                _refresh_attribution(repo, store, machine, project, cursor)
+            elif imported or full:
+                repo.set_import_state(
+                    machine,
+                    f"wd-facts-refresh://{machine}/{project}",
+                    file_size=end,
+                    file_mtime=0,
+                    byte_offset=0,
                 )
             if imported or full:
                 repo.set_import_state(machine, key, file_size=0, file_mtime=0, byte_offset=end)

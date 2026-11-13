@@ -76,13 +76,20 @@ without a captured transcript. `wdi sessions show SESSION_ID` reports observed
 permission waits, tool durations, and delivered control actions grouped by rule.
 Missing or unfinished observations remain unavailable.
 
+Each incremental import also revisits up to 500 previously imported facts per
+store to refresh model/effort attribution after late context arrives. Progress
+persists between imports, and each pass has a fixed boundary so new events do
+not delay revisiting older facts indefinitely. Large stores can require several
+imports before a backfill becomes visible. `wdi import --full` refreshes all
+facts immediately. Historical refresh changes only attribution, preserving raw
+events and token totals.
+
 `wdi doctor` compares transcript and hook token usage for sessions present in
 both sources, separately for main streams and subagents. It reports input,
 cached-input, cache-write, and output differences above 1% of Watchdog usage.
 Totals include only pairs with known values on both sides; unavailable pairs
 are counted separately. This reports differences without correcting either
-accounting convention. Older model/effort attribution backfills require
-`wdi import --full` to refresh previously imported facts (WD-220).
+accounting convention. Model/effort-only backfills do not affect reconciliation.
 
 `watchdog.data_dirs` in the YAML config defaults to the platform's Watchdog
 data directory. Set it to a list of paths when the installed Watchdog uses a

@@ -114,6 +114,17 @@ Raw event envelopes remain authoritative JSON data. Fact values are nullable;
 missing usage is unavailable, never zero. Source event rowids are incremental
 cursors within one store; they are not cross-machine event identities.
 
+The event cursor is append-only, but derived facts are mutable: late Codex
+context can update `model`, `model_attribution`, `reasoning_effort`, and
+`reasoning_effort_attribution` on an older usage fact without changing its
+event rowid. Consumers must revisit older facts to observe these changes.
+Insights does this with a persisted cyclic refresh of at most 500 historical
+facts per incremental import per store, using a fixed high-water mark for each
+cycle. Refresh and append cursors commit atomically with the imported facts;
+`wdi import --full` refreshes all facts and resets the cycle. The historical
+refresh updates only the four attribution columns, leaving raw events and
+token accounting unchanged. It requires no new source or Insights schema.
+
 ## Capture readers
 
 - `streams(info)` yields `StreamInfo` with `stream_pk`, `provider`, `session_id`,
