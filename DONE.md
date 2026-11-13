@@ -2,6 +2,8 @@
 
 Historical records only: one line per task. The full text of every entry, including its verification, is in [done-archive.md](docs/evidence/done-archive.md). Active work belongs in [TODO.md](TODO.md). Preserve task IDs when moving entries here.
 
+- [x] **WD-198 - Consolidate pricing and move usage, overview, and export to wdi.** Preserved the approved zero-drop contracts, unified dated Decimal tariffs, and removed legacy implementations. Both suites passed (2160 Watchdog, 485 Insights), fixed live-week tokens and cost match across 16 projects, the installed daemon update passed transport smoke checks, and the red/green history audit passed. Hook event-list refresh remains WD-227. [Evidence](docs/evidence/wd198.md).
+
 - [x] **WD-223 - Investigate Codex subagent token discrepancies.** Child receipt coverage, compaction, and two-store usage explain all 51 differences in 17 parents; 98 streams replayed with 2,048 expected usage events, four new synthetic cases and 376 Insights tests passed. Historical routing remains WD-225; two parallel main-suite failures remain WD-226 after passing serial repeats. [Evidence](docs/evidence/wd223.md).
 
 - [x] **WD-222 - Investigate Codex main-stream token discrepancies.** Source-level replay of 2,689 responses explains all 28 differences through compaction usage, turn-scoped notifications, and historical import lag; accounting conventions and unknowns are preserved. Three synthetic characterizations, 2,199 Watchdog tests, and 372 Insights tests passed. [Evidence](docs/evidence/wd222.md).

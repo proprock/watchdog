@@ -59,29 +59,6 @@ Line numbers in these tasks refer to commit `0d5e984`. Paths under `insights/` e
 
 - [ ] **WD-227 - Refresh the installed Codex hook event list.** The WD-198 live update readiness check reports `hook_events_outdated`: the owned event list predates PermissionRequest. The updated daemon and both installed adapter transports pass labeled, self-purging SessionStart smoke checks; this does not prove the missing provider callback. Refresh the owned hook definition through the explicit installer, preserve trust/other hooks, then rerun normal readiness and verify actual callback coverage. Routine WD-198 artifact update intentionally left hook definitions unchanged. [Evidence](docs/evidence/wd198.md).
 
-- [ ] **WD-198 - One pricing implementation; `usage`, `overview` and `export` move to `wdi`.** P2. Depends on WD-195.
-  - **2026-11-13; in progress.** User approved the zero-drop [field inventory](docs/evidence/wd198.md); implementing the [migration plan](docs/plans/2026-11-13-wd198-pricing-cli.md). Offline verification and live token/cost parity remain required.
-  - **Why.** Both programs estimate cost and summarise usage, with different features.
-  - **Parity table for pricing (owner decision 7); the result has every row.**
-
-    | Capability | Watchdog `pricing.py` | `wdi` `metrics/pricing.py` |
-    |---|---|---|
-    | Tariff sections with an effective date, so history is re-priced | yes | no |
-    | `Decimal` arithmetic and an explicit "unpriced" reason | yes | no |
-    | Codex input minus cached input (`pricing.py:118-127`) | yes | no |
-    | Model matched by its longest key prefix | no | yes |
-    | Built-in default price table | no | yes |
-    | Separate 5-minute cache-write rate with fallback | no | yes |
-
-  - **Fixed decisions.**
-    - The single implementation lives in `insights/src/wdi/metrics/pricing.py`: the tariff file format and arithmetic of Watchdog, plus prefix matching, plus an optional `cache_write_5m` rate that falls back to `cache_write`, plus a default tariff file shipped as package data and generated from the current `DEFAULT_PRICING` table (`insights/src/wdi/config.py:15-55`). A user tariff file named in the `wdi` settings replaces the default entirely.
-    - A parity test prices a fixed token vector for every model key of the old default table and gets the old result.
-    - `wdi usage`, `wdi overview` and `wdi export` replace the Watchdog commands. Before any deletion, write a field-by-field table in `docs/evidence/wd198.md`: every output field of `inspection.usage`, `inspection.overview` and `inspection.export_sessions` (documented in `docs/cli.md`), mapped to its source in `wdi` or marked "dropped" with a reason. Findings shown by `overview` are control data: `wdi overview` reads them through a new `readapi` reader. **Stop and get the user's confirmation of the dropped fields before removing anything.**
-    - Then remove from Watchdog: the `overview`, `usage` and `export` commands (`cli.py:184`, `:206`, `:334`, `:500-521`, `:568-574`), `inspection.usage`, `inspection.overview`, `inspection.export_sessions`, `facts_query.py`, `pricing.py`, `Config.pricing` (`config.py:143-156`, `:191`) and `scripts/benchmark_overview.py`. Remove `[pricing]` from the live configuration in the same live update, because the new code rejects the unknown section. Tests of removed code are deleted; tests of kept behaviour move to `insights/tests`.
-    - `summary`, `report`, `telemetry`, `doctor`, `analyze errors`, labels, verdicts and rules stay in Watchdog.
-  - **Out of scope.** The insights modes (WD-199).
-  - **Acceptance:** both suites pass; for one live week `wdi usage` and the last Watchdog `usage` output agree on tokens and cost, or each difference is explained in the evidence file; the user's confirmation is quoted there.
-
 - [ ] **WD-199 - Move eight insights modes to `wdi`.** P2. Depends on WD-197, WD-198. Carries the acceptance of the closed WD-136a and WD-136b.
   - **Why.** Owner decision 2: analysis belongs to `wdi`. The modes `errors`, `context`, `tokens`, `workflow`, `subagents`, `permissions`, `sessions` and `digest` are analysis; the `session` mode is the manual form of the judge and stays, because the daemon judge (WD-145) will reuse its pipeline.
   - **Fixed decisions.**
