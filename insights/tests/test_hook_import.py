@@ -5,9 +5,10 @@ from types import SimpleNamespace
 from uuid import UUID
 
 import pytest
-from agent_watchdog import capture_store, config, readapi
 from wdi.db.connection import connect
 from wdi.db.repository import Repository
+
+from agent_watchdog import capture_store, config, readapi
 
 
 def _store(machine="machine-a", project="project-a"):
@@ -151,3 +152,80 @@ def test_absent_events_database_is_empty(repository, tmp_path):
     stores = readapi.stores(tmp_path / "data")
     assert import_hook_facts(repository, stores) == 0
     assert repository.conn.execute("SELECT count(*) FROM hook_events").fetchone()[0] == 0
+
+
+def test_normal_import_includes_event_only_store(tmp_path):
+    from wdi.config import Settings
+    from wdi.ingest.service import run_import
+
+    from agent_watchdog.events import Envelope
+    from agent_watchdog.storage import Store
+
+    machine = UUID("11111111-1111-4111-8111-111111111111")
+    project = config.Project(id=UUID("22222222-2222-4222-8222-222222222222"), root=tmp_path)
+    data = tmp_path / "watchdog"
+    project_dir = data / "projects" / str(project.id)
+    with Store(project_dir, project.id) as store:
+        store.put(
+            Envelope(
+                provider="claude",
+                project_id=project.id,
+                session_id="hook-only",
+                kind="tool.finish",
+                source="hook",
+                payload={"claude": {"metadata": {"tool_name": "Read"}}},
+            )
+        )
+    capture_store.write_manifest(project_dir, machine_id=machine, project=project)
+    settings = Settings(
+        machine_id=str(machine),
+        db_path=tmp_path / "derived.sqlite",
+        sources={
+            "claude_code": {"enabled": False, "root": tmp_path / "missing-claude"},
+            "codex": {"enabled": False, "root": tmp_path / "missing-codex"},
+        },
+        watchdog={"data_dirs": [data]},
+    )
+
+    results = run_import(settings)
+    assert results["watchdog"].warnings == 0
+    with connect(settings.db_path) as db:
+        assert db.execute("SELECT session_id, tool_name FROM hook_facts").fetchone()[:] == (
+            "hook-only",
+            "Read",
+        )
+        assert db.execute("SELECT count(*) FROM sessions").fetchone()[0] == 0
+
+
+def test_conversion_preserves_primary_data_and_revision_two_backup(tmp_path, monkeypatch):
+    import runpy
+    import sqlite3
+    import sys
+
+    database = tmp_path / "insights.sqlite"
+    backup = tmp_path / "backup.sqlite"
+    conn = connect(database)
+    Repository(conn).ensure_machine("machine")
+    conn.execute(
+        "INSERT INTO sessions (session_id, machine_id, agent) VALUES ('saved', 'machine', 'claude')"
+    )
+    conn.execute(
+        "INSERT INTO llm_analyses (session_id, machine_id, analysis_type, prompt_version, "
+        "model, created_at, result) VALUES "
+        "('saved', 'machine', 'summary', 'v1', 'haiku', '2026-01-01', '{}')"
+    )
+    conn.execute("DROP TABLE hook_facts")
+    conn.execute("DROP TABLE hook_events")
+    conn.execute("PRAGMA user_version = 2")
+    conn.commit()
+    conn.close()
+    script = Path(__file__).parents[2] / "scripts/wd195_convert_insights.py"
+    monkeypatch.setattr(sys, "argv", [str(script), str(database), str(backup)])
+
+    runpy.run_path(str(script), run_name="__main__")
+
+    with connect(database) as converted, sqlite3.connect(backup) as previous:
+        assert converted.execute("SELECT session_id FROM llm_analyses").fetchone()[0] == "saved"
+        assert converted.execute("SELECT count(*) FROM hook_facts").fetchone()[0] == 0
+        assert previous.execute("PRAGMA user_version").fetchone()[0] == 2
+        assert previous.execute("SELECT session_id FROM llm_analyses").fetchone()[0] == "saved"

@@ -71,6 +71,19 @@ uv run wdi import          # import Watchdog captures and provider files
 from enabled Claude Code and Codex file sources. Insights stores the parsed
 metrics and previews. The original captured transcript remains in Watchdog.
 
+The same import incrementally copies hook events and facts, including stores
+without a captured transcript. `wdi sessions show SESSION_ID` reports observed
+permission waits, tool durations, and delivered control actions grouped by rule.
+Missing or unfinished observations remain unavailable.
+
+`wdi doctor` compares transcript and hook token usage for sessions present in
+both sources, separately for main streams and subagents. It reports input,
+cached-input, cache-write, and output differences above 1% of Watchdog usage.
+Totals include only pairs with known values on both sides; unavailable pairs
+are counted separately. This reports differences without correcting either
+accounting convention. Older model/effort attribution backfills require
+`wdi import --full` to refresh previously imported facts (WD-220).
+
 `watchdog.data_dirs` in the YAML config defaults to the platform's Watchdog
 data directory. Set it to a list of paths when the installed Watchdog uses a
 custom data directory. Run `uv run wdi doctor` to see the discovered stores,
@@ -80,6 +93,17 @@ its file source with `sources.claude_code.enabled: false` or
 `sources.codex.enabled: false`, as appropriate.
 
 ## Database maintenance
+
+For the WD-195 revision 2 to 3 conversion, close Insights clients and run from
+the repository root, choosing a backup path that does not exist:
+
+```bash
+uv run python scripts/wd195_convert_insights.py /path/to/wdi.sqlite /path/to/backup.sqlite
+uv run --directory insights wdi import
+```
+
+The one-off converter backs up the database and adds only the derived hook
+tables. Existing sessions and paid analyses are retained.
 
 The default database is `~/.wdi/wdi.sqlite`. If WDI reports a schema revision
 mismatch, close all Insights clients. From the `insights/` directory, run:

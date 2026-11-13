@@ -218,6 +218,34 @@ CREATE TABLE import_state (
     PRIMARY KEY (machine_id, source_path)
 );
 
+-- Derived hook data, scoped to the originating store.
+CREATE TABLE hook_events (
+    machine_id TEXT NOT NULL, project_id TEXT NOT NULL, event_rowid INTEGER NOT NULL,
+    event_id TEXT NOT NULL, received_at TEXT NOT NULL, session_id TEXT,
+    kind TEXT NOT NULL, envelope TEXT NOT NULL,
+    PRIMARY KEY (machine_id, project_id, event_id),
+    UNIQUE (machine_id, project_id, event_rowid)
+);
+
+CREATE TABLE hook_facts (
+    machine_id TEXT NOT NULL, project_id TEXT NOT NULL, event_rowid INTEGER NOT NULL,
+    event_id TEXT NOT NULL, provider TEXT, kind TEXT, received_at_us INTEGER,
+    session_id TEXT, turn_id TEXT, turn_id_source TEXT, conversation_id_source TEXT,
+    source TEXT, surface TEXT, checkout_id TEXT, agent_id TEXT, parent_agent_id TEXT,
+    native_event_id TEXT, occurred_at_us INTEGER, model TEXT, model_attribution TEXT,
+    reasoning_effort TEXT, reasoning_effort_attribution TEXT, input_tokens INTEGER,
+    cached_input_tokens INTEGER, cache_write_input_tokens INTEGER, output_tokens INTEGER,
+    reasoning_output_tokens INTEGER, total_tokens INTEGER, hook_event_name TEXT,
+    tool_name TEXT, tool_use_id TEXT, tool_duration_ms INTEGER, permission_mode TEXT,
+    agent_type TEXT, notification_type TEXT,
+    PRIMARY KEY (machine_id, project_id, event_id),
+    UNIQUE (machine_id, project_id, event_rowid),
+    FOREIGN KEY (machine_id, project_id, event_id)
+        REFERENCES hook_events (machine_id, project_id, event_id) ON DELETE CASCADE
+);
+CREATE INDEX hook_events_session ON hook_events(session_id);
+CREATE INDEX hook_facts_session ON hook_facts(session_id);
+
 -- Primary.
 CREATE TABLE llm_analyses (
     analysis_id    INTEGER PRIMARY KEY,

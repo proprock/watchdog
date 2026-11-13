@@ -7,7 +7,7 @@ from contextlib import closing
 from pathlib import Path
 
 import pytest
-from wdi.db.connection import connect
+from wdi.db.connection import SCHEMA_REVISION, connect
 
 _INSIGHTS = Path(__file__).resolve().parents[1]
 _SCHEMA = _INSIGHTS / "src" / "wdi" / "db" / "migrations" / "0001_init.sql"
@@ -29,7 +29,7 @@ def _create_database(path: Path, *, old_schema: bool = False) -> sqlite3.Connect
         conn.execute("ALTER TABLE sessions DROP COLUMN origin")
     elif not old_schema and "origin" not in columns:
         conn.execute("ALTER TABLE sessions ADD COLUMN origin TEXT NOT NULL DEFAULT 'file'")
-    conn.execute("PRAGMA user_version = 1" if old_schema else "PRAGMA user_version = 2")
+    conn.execute(f"PRAGMA user_version = {1 if old_schema else SCHEMA_REVISION}")
     return conn
 
 
@@ -219,7 +219,7 @@ def test_rebuild_database_keeps_paid_data_and_unrecoverable_transcripts(tmp_path
             },
         )
     with closing(connect(db)) as conn:
-        assert conn.execute("PRAGMA user_version").fetchone()[0] == 2
+        assert conn.execute("PRAGMA user_version").fetchone()[0] == SCHEMA_REVISION
         assert list(
             map(tuple, conn.execute("SELECT session_id, origin FROM sessions ORDER BY session_id"))
         ) == [

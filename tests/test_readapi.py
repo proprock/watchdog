@@ -109,7 +109,7 @@ def test_event_readers_page_by_parent_rowid_and_release_snapshot(tmp_path, monke
                     kind="tool.finish",
                     source="hook",
                     payload={
-                        "claude": {"tool_name": "Read", "metadata": {"tool_duration_ms": number}}
+                        "claude": {"metadata": {"tool_name": "Read", "tool_duration_ms": number}}
                     },
                 )
             )

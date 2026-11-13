@@ -13,6 +13,7 @@ from agent_watchdog import readapi
 from wdi.db.repository import Repository
 from wdi.ingest.claude_code import parse_claude_lines
 from wdi.ingest.codex import parse_codex_lines
+from wdi.ingest.hook_facts import import_hook_facts
 from wdi.ingest.models import MAIN_STREAM, ImportProgress, ImportStats
 from wdi.ingest.projects import ProjectResolver
 from wdi.ingest.runner import ParseFn, import_stream
@@ -124,6 +125,14 @@ def import_watchdog(
         for warning in scan.warnings:
             logger.warning("%s: %s", scan.data_dir, warning)
             total.warnings += 1
+        for store in scan.stores:
+            if not store.supported:
+                continue
+            try:
+                import_hook_facts(repo, [store], full=full)
+            except (OSError, ValueError, sqlite3.Error) as exc:
+                logger.warning("Could not import hook events for %s: %s", store.path.name, exc)
+                total.warnings += 1
         for source in scan.sources:
             stream = source.stream
             key = (stream.provider, stream.session_id, stream.stream_id)

@@ -49,8 +49,8 @@ and may have missing metadata. Invalid v1 manifests raise `ValueError`.
 `events.sqlite3` and `capture.sqlite3` within `info.path`. Both open SQLite with
 `mode=ro` and `query_only=ON`. An unsupported contract or a `user_version`
 that differs from the manifest raises `ValueError`. `open_events` also
-verifies the project ID recorded in the database. The event tables are outside
-this contract. A database that has never been created raises `FileNotFoundError`
+verifies the project ID recorded in the database. The event columns listed
+below are contractual. A database that has never been created raises `FileNotFoundError`
 on explicit open. SQLite may use the accompanying `-wal` and `-shm` files.
 
 The capture database is created when capture needs it. Integer sequence
@@ -92,6 +92,27 @@ A null statistic indicates unavailable data. A non-null outcome `diff_digest`
 references a blob for the working-copy patch against the observed `head`.
 Git can recover the committed changes between `base_head` and `head` while
 both objects are available. See [Repository outcome snapshots](storage.md#repository-outcome-snapshots-wd-191).
+
+## Event readers (WD-195)
+
+`events(info, after_rowid=0)` and `event_facts(info, after_rowid=0)` yield
+dictionaries ordered by `events.rowid`, strictly after the supplied cursor.
+Both expose that source rowid as `event_rowid`; the facts reader joins on
+`event_id`. A page releases its read transaction before yielding records.
+Each iterator stops at the highest event rowid observed when reading starts;
+newer events are read on the next incremental import.
+A missing events database yields no records. Unsupported contracts and schema
+mismatches fail explicitly, as for `open_events`. `FACT_COLUMNS` exposes the
+ordered fact column names for consumers.
+
+| Table | Contractual columns |
+| --- | --- |
+| `events` | `event_id`, `received_at`, `session_id`, `kind`, `envelope` |
+| `event_facts` | `event_id`, `provider`, `kind`, `received_at_us`, `session_id`, `turn_id`, `turn_id_source`, `conversation_id_source`, `source`, `surface`, `checkout_id`, `agent_id`, `parent_agent_id`, `native_event_id`, `occurred_at_us`, `model`, `model_attribution`, `reasoning_effort`, `reasoning_effort_attribution`, `input_tokens`, `cached_input_tokens`, `cache_write_input_tokens`, `output_tokens`, `reasoning_output_tokens`, `total_tokens`, `hook_event_name`, `tool_name`, `tool_use_id`, `tool_duration_ms`, `permission_mode`, `agent_type`, `notification_type` |
+
+Raw event envelopes remain authoritative JSON data. Fact values are nullable;
+missing usage is unavailable, never zero. Source event rowids are incremental
+cursors within one store; they are not cross-machine event identities.
 
 ## Capture readers
 

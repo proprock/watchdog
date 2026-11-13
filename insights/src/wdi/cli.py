@@ -223,6 +223,42 @@ def _open_db(settings: Settings):  # noqa: ANN202 - sqlite3.Connection, kept loc
         _exit_schema_error(exc)
 
 
+def _print_hook_reconciliation(conn) -> None:  # noqa: ANN001
+    from wdi.metrics.hooks import reconcile_tokens
+
+    rows = reconcile_tokens(conn)
+    console.print("Token reconciliation (difference threshold: >1% of Watchdog)")
+    totals = {}
+    for row in rows:
+        key = (row["provider"], row["scope"], row["metric"])
+        group = totals.setdefault(key, {"wdi": [], "watchdog": [], "unknown": 0})
+        if row["differs"] is not None:
+            for source in ("wdi", "watchdog"):
+                group[source].append(row[source])
+        group["unknown"] += row["differs"] is None
+    if not rows:
+        console.print("  No sessions with both transcript and Watchdog usage.")
+    for (provider, scope, metric), group in sorted(totals.items()):
+        values = {
+            source: sum(group[source]) if group[source] else "unavailable"
+            for source in ("wdi", "watchdog")
+        }
+        console.print(
+            f"  Total {provider}/{scope}/{metric}: "
+            f"wdi={values['wdi']} watchdog={values['watchdog']} "
+            f"unavailable_pairs={group['unknown']}",
+            markup=False,
+        )
+    for row in rows:
+        if row["differs"]:
+            console.print(
+                f"  Difference {row['session_id']} ({row['machine_id']}) "
+                f"{row['provider']}/{row['scope']}/{row['metric']}: "
+                f"wdi={row['wdi']} watchdog={row['watchdog']}",
+                markup=False,
+            )
+
+
 @app.command("doctor")
 def doctor_cmd(config_path: ConfigOpt = None) -> None:
     """Report Watchdog stores and transcript source coverage."""
@@ -252,6 +288,7 @@ def doctor_cmd(config_path: ConfigOpt = None) -> None:
     if settings.db_path.is_file():
         with closing(_open_db(settings)) as conn:
             rows = Repository(conn).session_coverage()
+            _print_hook_reconciliation(conn)
     origins = Counter(row["origin"] for row in rows)
     file_only = Counter(
         row["agent"]
@@ -549,6 +586,9 @@ def sessions_show(
             raise typer.Exit(code=1)
         categories = queries.session_tool_categories(conn, row["session_id"])
         subagents = queries.session_subagents(conn, row["session_id"])
+        from wdi.metrics.hooks import session_hook_metrics
+
+        hook_metrics = session_hook_metrics(conn, row["session_id"])
     finally:
         conn.close()
 
@@ -586,6 +626,24 @@ def sessions_show(
         "Compactions / API errors", f"{row['compaction_count']} / {row['api_error_count']}"
     )
     console.print(detail)
+
+    console.print("Hook observations")
+    wait = hook_metrics["permission_wait_ms"]
+    console.print(f"  Permission wait: {fmt_duration(wait) if wait is not None else 'unavailable'}")
+    console.print(
+        f"  Permission prompts: {hook_metrics['permission_waits']}; "
+        f"incomplete waits: {hook_metrics['incomplete_permission_waits']}"
+    )
+    for tool, duration in sorted(hook_metrics["tool_durations_ms"].items()):
+        console.print(
+            f"  Tool {tool}: {fmt_duration(duration) if duration is not None else 'unavailable'}",
+            markup=False,
+        )
+    for control in hook_metrics["control_actions"]:
+        console.print(
+            f"  Delivered {control['action']} / {control['rule']}: {control['count']}",
+            markup=False,
+        )
 
     if categories:
         tools = Table(title="Tools")

@@ -2,6 +2,8 @@
 
 Historical records only: one line per task. The full text of every entry, including its verification, is in [done-archive.md](docs/evidence/done-archive.md). Active work belongs in [TODO.md](TODO.md). Preserve task IDs when moving entries here.
 
+- [x] **WD-195 - Hook facts in `wdi`, and token reconciliation.** Added incremental hook import, observed session metrics, and doctor reconciliation; 2,194 Watchdog and 329 Insights tests passed. Live reconciliation covered 185 sessions, with differences tracked in WD-221 through WD-223. [Evidence](docs/evidence/wd195.md).
+
 - [x] **WD-218 - Select the `wdi analyze` backend in configuration.** Supports Claude and Codex, with 311 Insights tests passing. [Evidence](docs/evidence/wd218.md).
 
 - [x] **WD-194 - Full text through the Watchdog read contract.** Analyzer context and tool detail read captured or file-backed transcripts and mark missing full text as unavailable. The live detail route returned complete tool input and output after the provider transcript was gone. [Evidence](docs/evidence/wd194.md).

@@ -7,7 +7,7 @@ from importlib import resources
 from pathlib import Path
 
 # Increment whenever 0001_init.sql changes.
-SCHEMA_REVISION = 2
+SCHEMA_REVISION = 3
 
 
 class SchemaRevisionError(RuntimeError):

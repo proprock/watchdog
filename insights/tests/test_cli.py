@@ -278,7 +278,17 @@ def test_doctor_reports_hook_token_differences(tmp_path: Path, monkeypatch) -> N
                 "wdi": 200,
                 "watchdog": 100,
                 "differs": True,
-            }
+            },
+            {
+                "session_id": "unknown-session",
+                "machine_id": "synthetic-machine",
+                "provider": "claude",
+                "scope": "main",
+                "metric": "input_tokens",
+                "wdi": 9000,
+                "watchdog": None,
+                "differs": None,
+            },
         ],
     )
 
@@ -289,6 +299,7 @@ def test_doctor_reports_hook_token_differences(tmp_path: Path, monkeypatch) -> N
     assert "synthetic-session" in result.output
     assert "input_tokens" in result.output
     assert "200" in result.output and "100" in result.output
+    assert "wdi=200 watchdog=100 unavailable_pairs=1" in result.output
 
 
 def test_stats_warns_about_unpriced_models(tmp_path: Path) -> None:

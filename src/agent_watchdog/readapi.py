@@ -9,6 +9,7 @@ from dataclasses import dataclass
 from io import BytesIO
 from itertools import islice
 from pathlib import Path
+from typing import Any
 
 from agent_watchdog.capture_store import (
     CAPTURE_FILENAME,
@@ -17,6 +18,7 @@ from agent_watchdog.capture_store import (
 )
 from agent_watchdog.capture_store import STORE_CONTRACT_VERSION as CONTRACT_VERSION
 from agent_watchdog.config import user_paths
+from agent_watchdog.facts import FACT_COLUMNS as FACT_COLUMNS
 
 _PAGE_SIZE = 128
 _EVENTS_FILENAME = "events.sqlite3"
@@ -159,6 +161,42 @@ def open_capture(info: StoreInfo) -> Iterator[sqlite3.Connection]:
 def _has_capture(info: StoreInfo) -> bool:
     _check_contract(info)
     return (info.path / CAPTURE_FILENAME).is_file()
+
+
+def _event_rows(info: StoreInfo, *, facts: bool, after_rowid: int) -> Iterator[dict[str, Any]]:
+    _check_contract(info)
+    if not (info.path / _EVENTS_FILENAME).is_file():
+        return
+    with open_events(info) as db:
+        high_water = db.execute("SELECT coalesce(max(rowid), 0) FROM events").fetchone()[0]
+    columns = (
+        FACT_COLUMNS if facts else ("event_id", "received_at", "session_id", "kind", "envelope")
+    )
+    alias = "f" if facts else "e"
+    selected = ", ".join(f"{alias}.{name}" for name in columns)
+    joined = " JOIN event_facts AS f ON f.event_id = e.event_id" if facts else ""
+    while after_rowid < high_water:
+        with open_events(info) as db:
+            page = db.execute(
+                f"SELECT e.rowid, {selected} FROM events AS e{joined} "
+                "WHERE e.rowid > ? AND e.rowid <= ? ORDER BY e.rowid LIMIT ?",
+                (after_rowid, high_water, _PAGE_SIZE),
+            ).fetchall()
+        for row in page:
+            yield dict(zip(("event_rowid", *columns), row, strict=True))
+        if len(page) < _PAGE_SIZE:
+            return
+        after_rowid = page[-1][0]
+
+
+def events(info: StoreInfo, after_rowid: int = 0) -> Iterator[dict[str, Any]]:
+    """Read bounded event pages, releasing each transaction before yielding."""
+    yield from _event_rows(info, facts=False, after_rowid=after_rowid)
+
+
+def event_facts(info: StoreInfo, after_rowid: int = 0) -> Iterator[dict[str, Any]]:
+    """Read facts in parent-event order, independently of projection rowids."""
+    yield from _event_rows(info, facts=True, after_rowid=after_rowid)
 
 
 def streams(info: StoreInfo) -> Iterator[StreamInfo]:

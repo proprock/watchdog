@@ -68,20 +68,19 @@ Line numbers in these tasks refer to commit `0d5e984`. Paths under `insights/` e
   - **Steps.** Tests with a synthetic executable: the isolation flags are present; a 200 KiB prompt works on Windows; an isolation failure becomes `LLMError`; four concurrent calls run one preflight; the existing `wdi` tests pass unmodified. Then the code.
   - **Out of scope.** JSON schemas for the `wdi` analyzers. Any Codex change.
   - **Acceptance:** both suites pass; one separately authorized live `wdi analyze` run creates no session file and no hook record, shown in `docs/evidence/wd197.md`.
-  - **Status on 2026-11-13.** Implementation and offline verification are recorded in [WD-197 evidence](docs/evidence/wd197.md). Live acceptance awaits separate authorization.
+  - **Status on 2026-11-13.** Implementation and offline verification are recorded in [WD-197 evidence](docs/evidence/wd197.md). Authorized live acceptance reached Claude Code 2.1.323 but failed with HTTP 429 (weekly allowance; reset reported for November 14 at 11:00 Europe/Warsaw). No provider session file or hook record was added. Successful live analysis remains pending.
 
 ## Split P2 - Analytics, comparison and applying recommendations
 
-- [ ] **WD-195 - Hook facts in `wdi`, and token reconciliation.** P2. Depends on WD-192.
-  - **Why.** Transcripts do not contain what hooks see: how long the user was asked for permission, tool durations measured by the harness, the control actions Watchdog delivered. The two programs also count tokens under different conventions for subagents, so the same session shows different totals.
-  - **Fixed decisions.**
-    - `readapi` gains paged readers for `events` (by `rowid`) and `event_facts`; `docs/read-contract.md` lists the contractual columns of both, taken from `facts.FACT_COLUMNS` (`src/agent_watchdog/facts.py`) and the `events` table. Write that list before the code.
-    - `wdi` table `hook_facts` (derived): the `event_facts` columns plus `machine_id` and `project_id`, imported incrementally with an `import_state` cursor `wd-facts://<machine_id>/<project_id>`.
-    - Session metrics computed from it: total permission wait, tool duration by tool, counts of control actions by action and rule.
-    - Reconciliation in `wdi doctor`: for each session present in both sources, compare input, cached-input, cache-write and output tokens of the main stream with Watchdog usage rows that have no `agent_id`, and subagent totals with rows that have one. Report the sessions that differ by more than 1% and the totals of both sides. Do not change either convention in this task.
-  - **Steps.** Tests on a synthetic store; the code; one live reconciliation recorded.
-  - **Out of scope.** Fixing the differences the reconciliation finds: record each as a new task.
-  - **Acceptance:** the tests pass; `docs/evidence/wd195.md` holds the live reconciliation table and the list of new tasks it produced.
+- [ ] **WD-219 - Return a failing CLI status when `wdi analyze` cannot analyze any selected session.** Found during WD-197 live acceptance: the Claude process returned HTTP 429 and the results table showed one failure, but the outer command exited with status zero. Define partial-failure behavior, preserve the provider's actionable cause in the diagnostic, and add offline CLI regression coverage. No provider calls are needed for the fix.
+
+- [ ] **WD-220 - Refresh backfilled attribution in imported hook facts incrementally.** WD-195 review found that Codex attribution can update model/effort fields on older usage facts after context arrives. The append-only event cursor does not see these updates; `wdi import --full` refreshes them. Add a source change signal or another bounded refresh strategy with an offline late-context regression. Token reconciliation is unaffected by model/effort-only changes.
+
+- [ ] **WD-221 - Investigate Claude subagent token discrepancies.** WD-195 live reconciliation found output differences above 1% in five of 17 comparable sessions and a cached-input difference in one of those five. Comparable output totals were WDI 395,696 versus Watchdog 295,024; cached-input totals were 55,417,922 versus 55,278,908. Establish the cause from source records before changing accounting, add synthetic regressions, and repeat the comparison. [Evidence](docs/evidence/wd195.md).
+
+- [ ] **WD-222 - Investigate Codex main-stream token discrepancies.** WD-195 found 28 dimension/session differences across 12 of 51 comparable main streams: eight input, eight cached-input, and 12 output. Check source coverage and accounting against raw records, preserve unknown values, add regressions for verified defects, and repeat the comparison. The aggregate totals alone do not identify the cause. [Evidence](docs/evidence/wd195.md).
+
+- [ ] **WD-223 - Investigate Codex subagent token discrepancies.** WD-195 found input, cached-input, and output differences above 1% in 17 of 21 comparable parent sessions (51 dimension/session differences). Thirty other parent sessions had unavailable comparisons. Verify parent/child coverage and usage conventions against source records before deciding a correction; add synthetic regression coverage and repeat the comparison. [Evidence](docs/evidence/wd195.md).
 
 - [ ] **WD-196 - Environment and repository outcome in `wdi`.** P2. Depends on WD-190, WD-191, WD-192.
   - **Fixed decisions.**
