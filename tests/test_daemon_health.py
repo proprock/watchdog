@@ -9,6 +9,7 @@ import pytest
 from agent_watchdog import daemon
 from agent_watchdog.config import UserPaths, load_config
 from agent_watchdog.events import Envelope
+from agent_watchdog.inspection import doctor
 from agent_watchdog.storage import Store, writer_lock
 
 
@@ -22,6 +23,47 @@ def heartbeat(paths, now, **fields):
     (paths.runtime / "status.json").write_text(
         json.dumps({"heartbeat": now, "errors": [], **fields}), encoding="utf-8"
     )
+
+
+@pytest.fixture
+def drift_project(paths, tmp_path):
+    root = tmp_path / "project"
+    root.mkdir()
+    daemon.mutate_registry(paths, lambda registry: registry.add(root))
+    project = load_config(paths.config).projects[0]
+
+    def populate(finding):
+        with Store(paths.project_data(project.id), project.id) as store:
+            if finding:
+                store.connection.execute(
+                    "INSERT INTO session_findings VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                    ("codex", "session-1", "harness_version_drift", "1", "fingerprint", 1,
+                     '["event-1"]', datetime.now(UTC).isoformat()),
+                )
+                store.connection.commit()
+
+    return populate
+
+
+@pytest.mark.parametrize("finding", [True, False], ids=["drift", "no-drift"])
+def test_status_warns_for_materialized_harness_version_drift(paths, drift_project, finding):
+    drift_project(finding)
+
+    report = daemon.status(paths)
+
+    assert ("harness_version_drift" in report["warnings"]) is finding
+
+
+@pytest.mark.parametrize("finding", [True, False], ids=["drift", "no-drift"])
+def test_doctor_warns_for_materialized_harness_version_drift(paths, drift_project, finding):
+    drift_project(finding)
+
+    report = doctor(paths, transcript_roots={})
+
+    warnings = [item for item in report["warnings"] if item["code"] == "harness_version_drift"]
+    assert bool(warnings) is finding
+    if finding:
+        assert "mechanics may have changed" in warnings[0]["message"].lower()
 
 
 @pytest.mark.parametrize("attempts, reason", [(1, "startup_failed"), (3, "startup_crash_loop")])
