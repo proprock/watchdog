@@ -109,6 +109,50 @@ def test_refresh_detects_harness_version_drift_from_capture(store, tmp_path, met
     assert ("harness_version_unknown" in gaps) is unknown
 
 
+def test_capture_schedules_refresh_without_another_hook(tmp_path):
+    from agent_watchdog.capture import capture
+
+    session_id = str(uuid.uuid4())
+    transcript = tmp_path / f"rollout-2026-11-12T00-00-00-{session_id}.jsonl"
+    event = Envelope(
+        provider="codex",
+        project_id=PROJECT,
+        session_id=session_id,
+        kind="turn.end",
+        source="hook",
+        payload={"codex": {"transcript_path": str(transcript)}},
+        delivery={"codex_control_profile": "windows-cli-0.160.0"},
+    )
+    tracker = _SessionTracker()
+    root = tmp_path / "project"
+    with Store(root, PROJECT) as store:
+        store.put(event)
+        tracker.absorb("p", store.touched)
+        assert tracker.refresh("p", store, now=100.0) == (1, [])
+        gaps = json.loads(store.connection.execute("SELECT gaps_json FROM session_analysis").fetchone()[0])
+        assert "harness_version_unknown" in gaps
+
+    transcript.write_text(
+        json.dumps({"type": "session_meta", "payload": {"id": session_id, "cli_version": "0.999.0"}})
+        + "\n",
+        encoding="utf-8",
+    )
+    # Each daemon poll opens a fresh Store; no new hook updates its touched states.
+    with Store(root, PROJECT) as next_poll:
+        captured = capture(next_poll, budget_seconds=10)
+        assert captured.progressed
+        assert not next_poll.touched
+        tracker.capture_progress("p", captured.changed_sessions)
+        assert tracker.refresh("p", next_poll, now=100.0 + FINDINGS_INTERVAL_SECONDS) == (1, [])
+        rows = next_poll.connection.execute(
+            "SELECT evidence_json FROM session_findings WHERE rule = 'harness_version_drift'"
+        ).fetchall()
+        assert len(rows) == 1
+        assert str(event.event_id) in json.loads(rows[0][0])
+        gaps = json.loads(next_poll.connection.execute("SELECT gaps_json FROM session_analysis").fetchone()[0])
+        assert "harness_version_unknown" not in gaps
+
+
 def test_absorbed_states_are_visible_to_the_decision_channel(store):
     tracker = _SessionTracker()
     _repeat(store, "s1", 2)
