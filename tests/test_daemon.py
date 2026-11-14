@@ -1718,7 +1718,10 @@ def test_machine_id_survives_daemon_restart(paths):
 
 
 def read_test_manifest(path):
-    return json.loads(path.read_text(encoding="utf-8"))
+    from agent_watchdog.files import open_shared_read
+
+    with open_shared_read(path) as stream:
+        return json.load(stream)
 
 
 @pytest.mark.skipif(sys.platform != "win32", reason="Windows sharing semantics")
@@ -1744,7 +1747,7 @@ def test_daemon_writes_and_refreshes_store_manifest(paths, tmp_path):
     assert start(paths)
     wait_for(lambda: status(paths)["state"] == "running")
     assert manifest.is_file()
-    first = json.loads(manifest.read_text(encoding="utf-8"))
+    first = read_test_manifest(manifest)
     assert first == {
         "contract": 1,
         "machine_id": (paths.data / "machine_id").read_text(encoding="utf-8").strip(),
@@ -1770,15 +1773,15 @@ def test_daemon_writes_and_refreshes_store_manifest(paths, tmp_path):
     relocated = tmp_path / "relocated"
     project.root.rename(relocated)
     mutate_registry(paths, lambda registry: registry.relocate(project.id, relocated))
-    wait_for(lambda: json.loads(manifest.read_text(encoding="utf-8"))["root"] == str(relocated))
-    updated = json.loads(manifest.read_text(encoding="utf-8"))
+    wait_for(lambda: read_test_manifest(manifest)["root"] == str(relocated))
+    updated = read_test_manifest(manifest)
     assert updated["name"] == "original"
     assert updated["project_id"] == first["project_id"]
     assert updated["machine_id"] == first["machine_id"]
     assert updated["written_at"] != first["written_at"]
 
     mutate_registry(paths, lambda registry: registry.rename(project.id, "chosen"))
-    wait_for(lambda: json.loads(manifest.read_text(encoding="utf-8"))["name"] == "chosen")
+    wait_for(lambda: read_test_manifest(manifest)["name"] == "chosen")
 
 
 def test_crash_releases_lock_and_hook_recovers(paths):
