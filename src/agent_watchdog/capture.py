@@ -433,7 +433,8 @@ def _visit_source(
     try:
         progressed, available, _ = _visit(db, source, row, stamp, available)
         result.progressed |= progressed
-        if progressed and source.hook_session:
+        newly_bound = row is not None and row["hook_session_id"] is None
+        if source.hook_session and (progressed or newly_bound):
             result.changed_sessions.add((source.provider, source.hook_session))
     except QuotaExceeded:
         raise
