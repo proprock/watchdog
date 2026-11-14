@@ -2321,6 +2321,16 @@ def test_capture_readiness_rejects_invalid_schema(tmp_path):
         _transcript_ready(raw, "s1")
 
 
+def test_capture_readiness_rejects_nonempty_unversioned_schema(tmp_path):
+    from agent_watchdog.capture_store import CaptureStore
+
+    raw = CaptureStore(tmp_path / "capture.sqlite3")
+    with closing(sqlite3.connect(raw.path)) as db:
+        db.execute("CREATE TABLE unexpected (id INTEGER)")
+    with pytest.raises(StorageError, match="Capture store version 0"):
+        _transcript_ready(raw, "s1")
+
+
 def test_daemon_captures_a_hook_named_transcript(paths, tmp_path):
     from agent_watchdog.capture_store import CAPTURE_FILENAME, CaptureStore, iter_lines
 
