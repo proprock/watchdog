@@ -9,6 +9,7 @@ import pytest
 from test_daemon import _decision_request, _policy_request, publish, start, status, stop, wait_for
 
 from agent_watchdog import daemon
+from agent_watchdog.capture_store import CaptureStore
 from agent_watchdog.config import UserPaths, load_config
 from agent_watchdog.daemon import (
     FINDINGS_INTERVAL_SECONDS,
@@ -61,6 +62,51 @@ def store(tmp_path):
 def _findings(store: Store) -> set[str]:
     rows = store.connection.execute("SELECT DISTINCT session_id FROM session_findings")
     return {row[0] for row in rows}
+
+
+@pytest.mark.parametrize(
+    ("metadata", "expected_drift", "unknown"),
+    [
+        (b'{"type":"session_meta","payload":{"id":"session-1","cli_version":"0.999.0"}}', True, False),
+        (b'{"type":"session_meta","payload":{"id":"session-1","cli_version":"0.160.0"}}', False, False),
+        (b'{"type":"other","payload":{}}', False, True),
+        (b'{"type":"session_meta",', False, True),
+    ],
+    ids=["drift", "match", "missing", "corrupt"],
+)
+def test_refresh_detects_harness_version_drift_from_capture(store, tmp_path, metadata, expected_drift, unknown):
+    transcript = tmp_path / "synthetic.jsonl"
+    event = Envelope(
+        provider="codex",
+        project_id=PROJECT,
+        session_id="session-1",
+        kind="turn.end",
+        source="hook",
+        payload={"codex": {"transcript_path": str(transcript)}},
+        delivery={"codex_control_profile": "windows-cli-0.160.0"},
+    )
+    with CaptureStore(store.root / "capture.sqlite3").connect() as db:
+        stream = db.execute(
+            "INSERT INTO streams (provider, session_id, stream_id, generation, hook_session_id, "
+            "source_path, source_kind, head_len, head_digest, byte_offset, record_count, raw_bytes, "
+            "first_seen, last_growth, last_read, state) "
+            "VALUES ('codex', 'session-1', 'main', 0, 'session-1', ?, 'hook', 0, '', 0, 1, ?, "
+            "?, ?, ?, 'open') RETURNING stream_pk",
+            (str(transcript), len(metadata) + 1, START.isoformat(), START.isoformat(), START.isoformat()),
+        ).fetchone()[0]
+        db.execute("INSERT INTO tail (stream_pk, record_seq, line) VALUES (?, 0, ?)", (stream, metadata))
+    store.put(event)
+
+    store.refresh_session_findings("codex", "session-1")
+
+    rows = store.connection.execute(
+        "SELECT evidence_json FROM session_findings WHERE rule = 'harness_version_drift'"
+    ).fetchall()
+    assert bool(rows) is expected_drift
+    if expected_drift:
+        assert str(event.event_id) in json.loads(rows[0][0])
+    gaps = json.loads(store.connection.execute("SELECT gaps_json FROM session_analysis").fetchone()[0])
+    assert ("harness_version_unknown" in gaps) is unknown
 
 
 def test_absorbed_states_are_visible_to_the_decision_channel(store):
