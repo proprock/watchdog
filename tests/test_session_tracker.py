@@ -153,6 +153,41 @@ def test_capture_schedules_refresh_without_another_hook(tmp_path):
         assert "harness_version_unknown" not in gaps
 
 
+def test_report_includes_harness_version_drift_from_captured_metadata(tmp_path):
+    from agent_watchdog.capture import capture
+    from agent_watchdog.config import Config, Project, save_config
+    from agent_watchdog.inspection import report
+
+    paths = UserPaths(tmp_path / "config.toml", tmp_path / "data", tmp_path / "runtime")
+    project = Project(id=PROJECT, root=tmp_path)
+    save_config(paths.config, Config(projects=(project,)))
+    session_id = str(uuid.uuid4())
+    transcript = tmp_path / f"rollout-2026-11-12T00-00-00-{session_id}.jsonl"
+    transcript.write_text(
+        json.dumps({"type": "session_meta", "payload": {"id": session_id, "cli_version": "0.999.0"}})
+        + "\n",
+        encoding="utf-8",
+    )
+    event = Envelope(
+        provider="codex", project_id=PROJECT, session_id=session_id, kind="turn.end", source="hook",
+        payload={"codex": {"transcript_path": str(transcript)}},
+        delivery={"codex_control_profile": "windows-cli-0.160.0"},
+    )
+    with Store(paths.project_data(PROJECT), PROJECT) as store:
+        store.put(event)
+        assert capture(store, budget_seconds=10).progressed
+        store.refresh_session_findings("codex", session_id)
+        assert store.connection.execute(
+            "SELECT 1 FROM session_findings WHERE rule = 'harness_version_drift'"
+        ).fetchone()
+
+    result = report(paths, project, session_id=session_id, provider="codex")
+
+    (finding,) = [item for item in result["findings"] if item["rule"] == "harness_version_drift"]
+    assert str(event.event_id) in finding["evidence_ids"]
+    assert "0.160.0" in finding["explanation"] and "0.999.0" in finding["explanation"]
+
+
 def test_absorbed_states_are_visible_to_the_decision_channel(store):
     tracker = _SessionTracker()
     _repeat(store, "s1", 2)
