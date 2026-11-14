@@ -2077,7 +2077,10 @@ def test_a_running_daemon_picks_up_a_rule_approved_while_it_runs(rust_adapter, t
             time.sleep(0.05)
 
     def subscribed():
-        document = json.loads((paths.data / "policy" / "socket.json").read_text())
+        from agent_watchdog.files import open_shared_read
+
+        with open_shared_read(paths.data / "policy" / "socket.json") as stream:
+            document = json.load(stream)
         return any(
             item["hook_event_name"] == "UserPromptSubmit" for item in document["subscriptions"]
         )

@@ -21,6 +21,7 @@ from uuid import uuid4
 
 from agent_watchdog import _proc, daemon, resources
 from agent_watchdog.config import ConfigError, Project, UserPaths, load_config, project_aliases
+from agent_watchdog.files import open_shared_read
 from agent_watchdog.hook_install import TARGETS, parse, read, unique_pairs
 from agent_watchdog.hooks import EVENTS, LEGACY_EVENTS
 from agent_watchdog.storage import StorageError
@@ -212,7 +213,7 @@ def _hook(paths: UserPaths, provider: str, target: Path) -> tuple[dict, dict | N
 def _published_schema(paths: UserPaths) -> int | None:
     """The decision-channel schema the running daemon publishes; None when it publishes none."""
     try:
-        with (paths.data / "policy" / "socket.json").open("rb") as stream:
+        with open_shared_read(paths.data / "policy" / "socket.json") as stream:
             raw = stream.read(_DISCOVERY_BYTES + 1)
         schema = json.loads(raw)["schema_version"] if len(raw) <= _DISCOVERY_BYTES else None
     except OSError, ValueError, KeyError, TypeError:

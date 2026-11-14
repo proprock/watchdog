@@ -1699,7 +1699,11 @@ class _Channel:
             # before publishing, lower it only after the file is published.
             if raising and server is not None:
                 server.watchdog_request_bytes = budget
-            atomic_write(self._paths.data / "policy" / "socket.json", json.dumps(document).encode())
+            atomic_write(
+                self._paths.data / "policy" / "socket.json",
+                json.dumps(document).encode(),
+                allow_open_readers=True,
+            )
             if server is not None:
                 server.watchdog_request_bytes = budget
         except Exception as error:  # noqa: BLE001 - a rule-loading bug must not stop the poll loop
@@ -1780,7 +1784,7 @@ def _policy_server(paths: UserPaths, sessions: _SessionTracker | None = None) ->
     }
     try:
         socket_path.parent.mkdir(parents=True, exist_ok=True)
-        atomic_write(socket_path, json.dumps(document).encode())
+        atomic_write(socket_path, json.dumps(document).encode(), allow_open_readers=True)
     except OSError as error:
         _log(
             paths,
