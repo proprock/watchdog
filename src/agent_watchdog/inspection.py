@@ -811,12 +811,12 @@ def doctor(
     healthy &= core["state"] != "degraded"
     mismatch = Spool(paths.data).schema_mismatch()
     warnings: list[dict] = []
-    if "harness_version_drift" in core["warnings"]:
+    if "harness_version_drift" in core.get("warnings", []):
         warnings.append(
             {
                 "code": "harness_version_drift",
                 "message": (
-                    "The harness backend differs from its control profile; "
+                    "A retained session used a backend different from its control profile; "
                     "mechanics may have changed."
                 ),
             }

@@ -170,6 +170,14 @@ missing transcript root reports `transcript_activity: null`, not idle. `daemon s
 carries the schema mismatch too (`health.schema_mismatch`, reason
 `adapter_schema_mismatch`, state `degraded` for 24 hours); the transcript scan runs
 only in `doctor`.
+
+`daemon status` and `doctor` warn with `harness_version_drift` when a retained
+Codex session's captured backend version differs from the control profile supplied
+by its hook. This is historical evidence, not a claim about the current session;
+mechanics may have changed. Capture and finding refresh are asynchronous, so the
+warning can be delayed. When capture or metadata is unavailable, the session report
+records `harness_version_unknown`; absence of a warning does not establish a match.
+The comparison reads bounded captured records and does not change control decisions.
 Use [`readiness`](#readiness) for the delivery path.
 
 ## Readiness

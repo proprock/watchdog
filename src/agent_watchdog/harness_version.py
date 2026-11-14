@@ -70,7 +70,7 @@ def compare(path: Path, event: Envelope) -> tuple[str, str | None, str | None]:
     try:
         with CaptureStore(path).connect(write=False) as db:
             observed = _metadata_version(db, event.session_id, source)
-    except (OSError, sqlite3.Error, StorageError, ValueError, EOFError, zstd.ZstdError):
+    except OSError, sqlite3.Error, StorageError, ValueError, EOFError, zstd.ZstdError:
         observed = None
     if observed is None:
         return "unknown", expected, None
@@ -89,7 +89,8 @@ def add_findings(report: dict, path: Path, events: Iterable[Envelope]) -> None:
         payload = event.payload.get("codex")
         source = payload.get("transcript_path") if isinstance(payload, dict) else None
         if not isinstance(profile, str) or not isinstance(source, str):
-            report["gaps"].append("harness_version_unknown")
+            if "harness_version_unknown" not in report["gaps"]:
+                report["gaps"].append("harness_version_unknown")
             continue
         key = (event.session_id, profile, source)
         if key in seen:

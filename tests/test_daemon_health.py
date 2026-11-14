@@ -37,8 +37,16 @@ def drift_project(paths, tmp_path):
             if finding:
                 store.connection.execute(
                     "INSERT INTO session_findings VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-                    ("codex", "session-1", "harness_version_drift", "1", "fingerprint", 1,
-                     '["event-1"]', datetime.now(UTC).isoformat()),
+                    (
+                        "codex",
+                        "session-1",
+                        "harness_version_drift",
+                        "1",
+                        "fingerprint",
+                        1,
+                        '["event-1"]',
+                        datetime.now(UTC).isoformat(),
+                    ),
                 )
                 store.connection.commit()
 

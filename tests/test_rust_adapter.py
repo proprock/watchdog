@@ -184,7 +184,9 @@ def test_native_v1_limits_default_pipeline_telemetry_and_sample_spool_occupancy(
 
 
 @pytest.mark.parametrize("telemetry", [True, False])
-def test_native_spools_codex_control_profile_as_delivery_metadata(rust_adapter, native_setup, telemetry):
+def test_native_spools_codex_control_profile_as_delivery_metadata(
+    rust_adapter, native_setup, telemetry
+):
     paths, project = native_setup
     config = Config(projects=(project,), pipeline_telemetry=telemetry)
     save_config(paths.config, config)

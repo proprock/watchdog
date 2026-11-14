@@ -241,11 +241,15 @@ def test_restart_refreshes_capture_written_before_scheduling(tmp_path):
         store.put(event)
         tracker.absorb("p", store.touched)
         assert tracker.refresh("p", store, now=100.0) == (1, [])
-        gaps = json.loads(store.connection.execute("SELECT gaps_json FROM session_analysis").fetchone()[0])
+        gaps = json.loads(
+            store.connection.execute("SELECT gaps_json FROM session_analysis").fetchone()[0]
+        )
         assert "harness_version_unknown" in gaps
 
     transcript.write_text(
-        json.dumps({"type": "session_meta", "payload": {"id": session_id, "cli_version": "0.999.0"}})
+        json.dumps(
+            {"type": "session_meta", "payload": {"id": session_id, "cli_version": "0.999.0"}}
+        )
         + "\n",
         encoding="utf-8",
     )

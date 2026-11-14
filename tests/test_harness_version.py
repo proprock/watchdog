@@ -37,29 +37,37 @@ def event(tmp_path, monkeypatch):
 
 
 def _metadata(version="0.160.0", session=SESSION, **extra):
-    return json.dumps({"type": "session_meta", "payload": {"id": session, "cli_version": version, **extra}}).encode()
+    return json.dumps(
+        {"type": "session_meta", "payload": {"id": session, "cli_version": version, **extra}}
+    ).encode()
 
 
 def _sealed(path, event, raw, *, source=None, hook_session=SESSION):
     with CaptureStore(path).connect() as db:
         stream = db.execute(
             "INSERT INTO streams (provider, session_id, stream_id, generation, hook_session_id, "
-            "source_path, source_kind, head_len, head_digest, byte_offset, record_count, raw_bytes, "
+            "source_path, source_kind, head_len, head_digest, byte_offset, record_count, "
+            "raw_bytes, "
             "first_seen, last_growth, last_read, state) "
             "VALUES ('codex', ?, 'main', 0, ?, ?, 'hook', 0, '', ?, 1, ?, '', '', '', 'sealed') "
             "RETURNING stream_pk",
-            (SESSION, hook_session, source or event.payload["codex"]["transcript_path"], len(raw), len(raw)),
+            (
+                SESSION,
+                hook_session,
+                source or event.payload["codex"]["transcript_path"],
+                len(raw),
+                len(raw),
+            ),
         ).fetchone()[0]
         db.execute(
-            "INSERT INTO chunks (stream_pk, chunk_seq, first_record, record_count, raw_bytes, codec, data) "
+            "INSERT INTO chunks (stream_pk, chunk_seq, first_record, record_count, raw_bytes, "
+            "codec, data) "
             "VALUES (?, 0, 0, 1, ?, 'zstd', ?)",
             (stream, len(raw), zstd.compress(raw)),
         )
 
 
-@pytest.mark.parametrize(
-    ("version", "status"), [("0.160.0", "match"), ("0.999.0", "drift")]
-)
+@pytest.mark.parametrize(("version", "status"), [("0.160.0", "match"), ("0.999.0", "drift")])
 def test_compare_reads_sealed_metadata(tmp_path, event, version, status):
     path = tmp_path / "capture.sqlite3"
     _sealed(path, event, _metadata(version) + b"\n")
@@ -120,7 +128,9 @@ def test_capture_schedules_refresh_when_existing_stream_gains_hook_session(tmp_p
         payload={"codex": {"transcript_path": str(source)}},
         delivery={"codex_control_profile": "windows-cli-0.160.0"},
     )
-    assert capture_file(root, Limits(), Source("codex", SESSION, "main", source, None, "backfill"))[0]
+    assert capture_file(root, Limits(), Source("codex", SESSION, "main", source, None, "backfill"))[
+        0
+    ]
     path = root / "capture.sqlite3"
     assert compare(path, event) == ("unknown", "0.160.0", None)
     with Store(root, event.project_id) as store:
