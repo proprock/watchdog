@@ -835,6 +835,17 @@ class Store:
             for row in self.connection.execute(PENDING_SESSIONS, (analysis.RULE_VERSION,))
         ]
 
+    def unknown_harness_sessions(self) -> list[tuple[str, str]]:
+        """Retry unknown comparisons after a restart, including interrupted capture."""
+        return [
+            (row[0], row[1])
+            for row in self.connection.execute(
+                "SELECT provider, session_id FROM session_analysis "
+                "WHERE provider='codex' AND EXISTS "
+                "(SELECT 1 FROM json_each(gaps_json) WHERE value='harness_version_unknown')"
+            )
+        ]
+
     def refresh_session_findings(
         self,
         provider: str,
@@ -875,7 +886,9 @@ class Store:
             from agent_watchdog.harness_version import add_findings
 
             add_findings(
-                report, self.root / "capture.sqlite3", (persisted_envelope(item) for item in documents)
+                report,
+                self.root / "capture.sqlite3",
+                (persisted_envelope(item) for item in documents),
             )
         return report, last_rowid
 

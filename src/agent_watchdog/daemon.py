@@ -393,7 +393,6 @@ def status(paths: UserPaths) -> dict:
     try:
         loss_report = {"adapter": resources.losses(paths.data)}
         config = load_config(paths.config)
-        drift = _harness_drift(paths, config)
         for project in config.projects:
             loss_report[str(project.id)] = resources.losses(paths.project_data(project.id))
         queues = _queue_status(paths, config)
@@ -407,6 +406,12 @@ def status(paths: UserPaths) -> dict:
             reasons.append("storage_unavailable")
         if lagging:
             reasons.append("storage_lag")
+        try:
+            drift = _harness_drift(paths, config)
+            if drift:
+                health["harness_version"] = "drift_observed_in_retained_session"
+        except OSError, ValueError, sqlite3.Error, StorageError:
+            health["harness_version"] = "unavailable"
     except OSError, ValueError, sqlite3.Error, StorageError:
         loss_report = {"unavailable": True}
         queues = {"unavailable": True}
@@ -1094,7 +1099,8 @@ def _drain_spool(
             if config.pipeline_telemetry:
                 observed_at = datetime.now(UTC).isoformat()
                 trace = {
-                    key: value for key, value in delivery.items()
+                    key: value
+                    for key, value in delivery.items()
                     if key not in {"control", "codex_control_profile"}
                 }
                 trace |= {"spool_drained_at": observed_at, "sqlite_write_started_at": observed_at}
@@ -1906,6 +1912,8 @@ class _SessionTracker:
             self._owned[project_id] = set(stored)
         due = self._due.setdefault(project_id, {})
         for session in store.pending_sessions():
+            due.setdefault(session, False)
+        for session in store.unknown_harness_sessions():
             due.setdefault(session, False)
 
     def absorb(self, project_id: str, touched: Mapping[StateKey, SessionState]) -> None:
