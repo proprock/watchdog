@@ -9,8 +9,35 @@ from uuid import uuid4
 import pytest
 from helpers.spool import PreparedQueue as Spool
 
+from agent_watchdog import resources
 from agent_watchdog.events import Envelope
-from agent_watchdog.storage import DrainResult, MaintenanceBudget, Store, WriterBusy
+from agent_watchdog.storage import DrainResult, MaintenanceBudget, QuotaExceeded, Store, WriterBusy
+
+
+def test_publish_sync_allows_other_admission_checks(tmp_path, monkeypatch):
+    queue = Spool(tmp_path, file_limit=1)
+    event = Envelope(provider="codex", project_id=uuid4(), kind="control", source="daemon")
+    fsync = os.fsync
+
+    def sync_with_competing_publisher(fd):
+        try:
+            with resources.admission(tmp_path):
+                assert queue.footprint() == (1, os.fstat(fd).st_size)
+                assert not list(queue.directory.glob("*.json"))
+        except WriterBusy:
+            pytest.fail("Admission lock is held during spool fsync")
+        # The staged record occupies the only slot while its write is syncing.
+        with monkeypatch.context() as patch:
+            patch.setattr(os, "fsync", fsync)
+            with pytest.raises(QuotaExceeded):
+                queue.publish(event)
+        fsync(fd)
+
+    monkeypatch.setattr(os, "fsync", sync_with_competing_publisher)
+    path = queue.publish(event)
+
+    assert queue.footprint() == (1, path.stat().st_size)
+    assert not list(queue.directory.glob("*.tmp"))
 
 
 def test_commit_before_unlink_and_replay_is_one_event(tmp_path, monkeypatch):
