@@ -67,14 +67,24 @@ def _findings(store: Store) -> set[str]:
 @pytest.mark.parametrize(
     ("metadata", "expected_drift", "unknown"),
     [
-        (b'{"type":"session_meta","payload":{"id":"session-1","cli_version":"0.999.0"}}', True, False),
-        (b'{"type":"session_meta","payload":{"id":"session-1","cli_version":"0.160.0"}}', False, False),
+        (
+            b'{"type":"session_meta","payload":{"id":"session-1","cli_version":"0.999.0"}}',
+            True,
+            False,
+        ),
+        (
+            b'{"type":"session_meta","payload":{"id":"session-1","cli_version":"0.160.0"}}',
+            False,
+            False,
+        ),
         (b'{"type":"other","payload":{}}', False, True),
         (b'{"type":"session_meta",', False, True),
     ],
     ids=["drift", "match", "missing", "corrupt"],
 )
-def test_refresh_detects_harness_version_drift_from_capture(store, tmp_path, metadata, expected_drift, unknown):
+def test_refresh_detects_harness_version_drift_from_capture(
+    store, tmp_path, metadata, expected_drift, unknown
+):
     transcript = tmp_path / "synthetic.jsonl"
     event = Envelope(
         provider="codex",
@@ -88,13 +98,22 @@ def test_refresh_detects_harness_version_drift_from_capture(store, tmp_path, met
     with CaptureStore(store.root / "capture.sqlite3").connect() as db:
         stream = db.execute(
             "INSERT INTO streams (provider, session_id, stream_id, generation, hook_session_id, "
-            "source_path, source_kind, head_len, head_digest, byte_offset, record_count, raw_bytes, "
+            "source_path, source_kind, head_len, head_digest, byte_offset, record_count, "
+            "raw_bytes, "
             "first_seen, last_growth, last_read, state) "
             "VALUES ('codex', 'session-1', 'main', 0, 'session-1', ?, 'hook', 0, '', 0, 1, ?, "
             "?, ?, ?, 'open') RETURNING stream_pk",
-            (str(transcript), len(metadata) + 1, START.isoformat(), START.isoformat(), START.isoformat()),
+            (
+                str(transcript),
+                len(metadata) + 1,
+                START.isoformat(),
+                START.isoformat(),
+                START.isoformat(),
+            ),
         ).fetchone()[0]
-        db.execute("INSERT INTO tail (stream_pk, record_seq, line) VALUES (?, 0, ?)", (stream, metadata))
+        db.execute(
+            "INSERT INTO tail (stream_pk, record_seq, line) VALUES (?, 0, ?)", (stream, metadata)
+        )
     store.put(event)
 
     store.refresh_session_findings("codex", "session-1")
@@ -105,7 +124,9 @@ def test_refresh_detects_harness_version_drift_from_capture(store, tmp_path, met
     assert bool(rows) is expected_drift
     if expected_drift:
         assert str(event.event_id) in json.loads(rows[0][0])
-    gaps = json.loads(store.connection.execute("SELECT gaps_json FROM session_analysis").fetchone()[0])
+    gaps = json.loads(
+        store.connection.execute("SELECT gaps_json FROM session_analysis").fetchone()[0]
+    )
     assert ("harness_version_unknown" in gaps) is unknown
 
 
@@ -129,11 +150,15 @@ def test_capture_schedules_refresh_without_another_hook(tmp_path):
         store.put(event)
         tracker.absorb("p", store.touched)
         assert tracker.refresh("p", store, now=100.0) == (1, [])
-        gaps = json.loads(store.connection.execute("SELECT gaps_json FROM session_analysis").fetchone()[0])
+        gaps = json.loads(
+            store.connection.execute("SELECT gaps_json FROM session_analysis").fetchone()[0]
+        )
         assert "harness_version_unknown" in gaps
 
     transcript.write_text(
-        json.dumps({"type": "session_meta", "payload": {"id": session_id, "cli_version": "0.999.0"}})
+        json.dumps(
+            {"type": "session_meta", "payload": {"id": session_id, "cli_version": "0.999.0"}}
+        )
         + "\n",
         encoding="utf-8",
     )
@@ -149,7 +174,9 @@ def test_capture_schedules_refresh_without_another_hook(tmp_path):
         ).fetchall()
         assert len(rows) == 1
         assert str(event.event_id) in json.loads(rows[0][0])
-        gaps = json.loads(next_poll.connection.execute("SELECT gaps_json FROM session_analysis").fetchone()[0])
+        gaps = json.loads(
+            next_poll.connection.execute("SELECT gaps_json FROM session_analysis").fetchone()[0]
+        )
         assert "harness_version_unknown" not in gaps
 
 
@@ -164,12 +191,18 @@ def test_report_includes_harness_version_drift_from_captured_metadata(tmp_path):
     session_id = str(uuid.uuid4())
     transcript = tmp_path / f"rollout-2026-11-12T00-00-00-{session_id}.jsonl"
     transcript.write_text(
-        json.dumps({"type": "session_meta", "payload": {"id": session_id, "cli_version": "0.999.0"}})
+        json.dumps(
+            {"type": "session_meta", "payload": {"id": session_id, "cli_version": "0.999.0"}}
+        )
         + "\n",
         encoding="utf-8",
     )
     event = Envelope(
-        provider="codex", project_id=PROJECT, session_id=session_id, kind="turn.end", source="hook",
+        provider="codex",
+        project_id=PROJECT,
+        session_id=session_id,
+        kind="turn.end",
+        source="hook",
         payload={"codex": {"transcript_path": str(transcript)}},
         delivery={"codex_control_profile": "windows-cli-0.160.0"},
     )
@@ -186,6 +219,49 @@ def test_report_includes_harness_version_drift_from_captured_metadata(tmp_path):
     (finding,) = [item for item in result["findings"] if item["rule"] == "harness_version_drift"]
     assert str(event.event_id) in finding["evidence_ids"]
     assert "0.160.0" in finding["explanation"] and "0.999.0" in finding["explanation"]
+
+
+def test_restart_refreshes_capture_written_before_scheduling(tmp_path):
+    from agent_watchdog.capture import capture
+
+    session_id = str(uuid.uuid4())
+    transcript = tmp_path / f"rollout-2026-11-12T00-00-00-{session_id}.jsonl"
+    event = Envelope(
+        provider="codex",
+        project_id=PROJECT,
+        session_id=session_id,
+        kind="turn.end",
+        source="hook",
+        payload={"codex": {"transcript_path": str(transcript)}},
+        delivery={"codex_control_profile": "windows-cli-0.160.0"},
+    )
+    root = tmp_path / "project"
+    tracker = _SessionTracker()
+    with Store(root, PROJECT) as store:
+        store.put(event)
+        tracker.absorb("p", store.touched)
+        assert tracker.refresh("p", store, now=100.0) == (1, [])
+        gaps = json.loads(store.connection.execute("SELECT gaps_json FROM session_analysis").fetchone()[0])
+        assert "harness_version_unknown" in gaps
+
+    transcript.write_text(
+        json.dumps({"type": "session_meta", "payload": {"id": session_id, "cli_version": "0.999.0"}})
+        + "\n",
+        encoding="utf-8",
+    )
+    with Store(root, PROJECT) as store:
+        assert capture(store, budget_seconds=10).progressed
+        # Simulate a crash before the capture result is passed to the tracker.
+
+    with Store(root, PROJECT) as store:
+        restarted = _SessionTracker()
+        restarted.load("p", store)
+        assert restarted.refresh("p", store, now=200.0) == (1, [])
+        rows = store.connection.execute(
+            "SELECT evidence_json FROM session_findings WHERE rule = 'harness_version_drift'"
+        ).fetchall()
+        assert len(rows) == 1
+        assert str(event.event_id) in json.loads(rows[0][0])
 
 
 def test_absorbed_states_are_visible_to_the_decision_channel(store):
