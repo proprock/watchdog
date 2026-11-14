@@ -39,7 +39,7 @@ from agent_watchdog.events import Envelope
 from agent_watchdog.files import open_shared_read
 from agent_watchdog.ignored import IgnoredRecords, IgnoreReason
 from agent_watchdog.registry import Registry, RegistryError, Resolution
-from agent_watchdog.rules.api import PROVISIONAL_PROFILES, Decision
+from agent_watchdog.rules.api import CODEX_CELLS, PROVISIONAL_PROFILES, Decision
 from agent_watchdog.rules.engine import decide, subscriptions
 from agent_watchdog.rules.python import PythonRuleTimeout
 from agent_watchdog.scan import Scanner
@@ -1058,6 +1058,9 @@ def _drain_spool(
                 raise RejectedEvent("Invalid spool delivery telemetry")
             control = delivery.get("control")
             control_fields = {}
+            profile = delivery.get("codex_control_profile")
+            if event.provider == "codex" and isinstance(profile, str) and profile in CODEX_CELLS:
+                control_fields["codex_control_profile"] = profile
             if isinstance(control, dict):
                 received, rendered = (
                     control.get("response_received"),
@@ -1071,7 +1074,10 @@ def _drain_spool(
                     control_fields["control"] = bounded
             if config.pipeline_telemetry:
                 observed_at = datetime.now(UTC).isoformat()
-                trace = {key: value for key, value in delivery.items() if key != "control"}
+                trace = {
+                    key: value for key, value in delivery.items()
+                    if key not in {"control", "codex_control_profile"}
+                }
                 trace |= {"spool_drained_at": observed_at, "sqlite_write_started_at": observed_at}
             else:
                 trace = {}
