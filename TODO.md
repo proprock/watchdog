@@ -72,15 +72,6 @@ Line numbers in these tasks refer to commit `0d5e984`. Paths under `insights/` e
   - **Out of scope.** Merging the mode framework with the `wdi` analyzers. Rule candidates (WD-144).
   - **Acceptance:** both suites pass with the same total number of mode tests as before the move; `agent-watchdog insights session` works; one separately authorized live `wdi insights errors` run appears in the viewer.
 
-- [ ] **WD-200 - Compare two windows or two sets of sessions.** P2. Depends on WD-195.
-  - **Why.** The loop "measure, change, measure" needs a before-and-after view; neither program has one.
-  - **Fixed decisions.**
-    - A selection is a filter: project, provider, model, date range, label, or explicit session ids. A comparison takes selections A and B.
-    - Fixed metric set per session: user turns, wall time, input, cached-input, cache-write and output tokens, estimated cost, peak context size, compactions, tool calls, tool errors, total permission wait, subagent runs, files changed, insertions, deletions, whether `HEAD` moved, outcome label.
-    - Output per metric: count, median, mean and 90th percentile for A and for B, and the difference of medians. A selection with fewer than five sessions is marked "too few sessions". Unknown values are excluded and counted, never treated as zero.
-    - `wdi compare --a <filter> --b <filter>` and a web page with the same table. No model call.
-  - **Acceptance:** tests for each metric, unknown handling and the small-sample mark; the page renders its normal, empty and invalid states.
-
 - [ ] **WD-201 - Experiments, stage 1: manual grouping and comparison.** P2. Depends on WD-196, WD-200.
   - **Why.** The owner wants to give the same task and inputs to another model, or to the same model under other rules, tools or Watchdog restrictions, and compare time, tokens, turns, context growth and the result in the repository.
   - **Fixed decisions.**
@@ -197,6 +188,8 @@ Line numbers in these tasks refer to commit `0d5e984`. Paths under `insights/` e
   **P2; review resolved by user on 2026-10-18; implementation pending.** Reuse WD-144's independent format/classification and human confirmation contract. See the [architecture decision](docs/architecture.md#wd-147-calibration-and-promotion-review-2026-10-18) and [review record](docs/evidence/wd147-review.md). Implementation/dependency completion and acceptance remain open. This review does not approve, enable or promote any actual rule, authorize a live model call or change TENETS.md.
 
 ## P2 - Pipeline, scheduling and performance
+
+- [ ] **WD-235 - Investigate concurrent Claude fixture log loss.** During WD-200 verification, `test_concurrent_claude_calls_share_preflight` received all four synthetic answers but its shared append-only calls file missed one `-p` entry in a parallel full-suite run. The test passed when run alone. Determine whether concurrent fixture writes on Windows lose records and make the test deterministic without weakening its assertions.
 
 - [ ] **WD-229 - Investigate the native Claude Stop test timeout under parallel load.** During WD-224, concurrent offline Watchdog and Insights suites produced a two-second subprocess timeout in `test_native_asks_about_a_stop_that_is_not_continuing`. The isolated repeat passed. Capture adapter, fake policy server, and process timing to identify the stalled stage before changing the product or the timeout. [Evidence](docs/evidence/wd224.md).
 

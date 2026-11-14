@@ -1,0 +1,38 @@
+{% extends "pages/base.html" %}
+{% block title %}Compare cohorts - watchdog-insights{% endblock %}
+{% block content %}
+<h2>Compare cohorts</h2>
+<p>Enter a JSON filter for each cohort. Use <code>{}</code> to include all sessions.</p>
+<form method="get" action="/compare" class="filters">
+  <label for="cohort-a">Cohort A filter (JSON)</label>
+  <textarea id="cohort-a" name="a" rows="4" cols="60">{{ a }}</textarea>
+  <label for="cohort-b">Cohort B filter (JSON)</label>
+  <textarea id="cohort-b" name="b" rows="4" cols="60">{{ b }}</textarea>
+  <button type="submit">Compare</button>
+</form>
+{% if error %}<p role="alert">{{ error }}</p>{% endif %}
+{% if result %}
+<h3>Results</h3>
+<p>Cohort A: {{ result.a_count }} sessions{% if result.a_small %} (too few sessions; small sample){% endif %};
+   Cohort B: {{ result.b_count }} sessions{% if result.b_small %} (too few sessions; small sample){% endif %}.</p>
+<div class="table-scroll"><table>
+  <thead><tr><th>Metric</th><th>Cohort A</th><th>Cohort B</th><th>Median difference (B − A)</th></tr></thead>
+  <tbody>
+  {% for metric in result.metrics %}
+    <tr><th scope="row">{{ metric.name }}</th>
+      {% for cohort in [metric.a, metric.b] %}
+      <td>Count: {{ cohort.count }}; unknown: {{ cohort.unknown }}<br>
+        {% if cohort.categories is defined %}
+        {% for label, count in cohort.categories.items() %}{{ label }}: {{ count }}{% if not loop.last %}; {% endif %}{% else %}No known outcomes{% endfor %}
+        {% else %}
+        Median: {{ cohort.median if cohort.median is not none else 'unknown' }};
+        mean: {{ cohort.mean if cohort.mean is not none else 'unknown' }};
+        p90: {{ cohort.p90 if cohort.p90 is not none else 'unknown' }}{% endif %}</td>
+      {% endfor %}
+      <td>{{ metric.difference if metric.difference is not none else 'unknown' }}</td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table></div>
+{% endif %}
+{% endblock %}

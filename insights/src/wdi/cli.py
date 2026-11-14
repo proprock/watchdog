@@ -321,6 +321,74 @@ def _make_filter(
     return SessionFilter(agent=agent, project=project, since=since, include_noise=include_noise)
 
 
+@app.command("compare")
+def compare_cmd(
+    a: Annotated[str, typer.Option("--a", help="JSON filter for selection A.")],
+    b: Annotated[str, typer.Option("--b", help="JSON filter for selection B.")],
+    config_path: ConfigOpt = None,
+) -> None:
+    """Compare two independently filtered session selections."""
+    from rich.table import Table
+
+    from wdi.metrics.compare import compare, parse_filter
+    from wdi.metrics.pricing import PricingResolver
+
+    try:
+        filter_a, filter_b = parse_filter(a), parse_filter(b)
+    except ValueError as exc:
+        err_console.print(f"Error: {exc}", markup=False)
+        raise typer.Exit(code=1) from exc
+
+    settings = _load_settings_or_exit(config_path)
+    conn = _open_db(settings)
+    try:
+        result = compare(
+            conn, PricingResolver.from_settings(settings), filter_a, filter_b, settings
+        )
+    finally:
+        conn.close()
+
+    for label in ("a", "b"):
+        small = " (too few sessions; small sample)" if result[f"{label}_small"] else ""
+        console.print(f"{label.upper()}: {result[f'{label}_count']} sessions{small}")
+
+    table = Table(title="Comparison")
+    for heading in (
+        "Metric",
+        "Selection",
+        "Count",
+        "Unknown",
+        "Median",
+        "Mean",
+        "P90",
+        "Median Δ",
+    ):
+        table.add_column(heading)
+    for metric in result["metrics"]:
+        for label in ("a", "b"):
+            stats = metric[label]
+            values = [stats[key] for key in ("count", "unknown", "median", "mean", "p90")]
+            rendered = ["—" if value is None else str(value) for value in values]
+            difference = metric["difference"] if label == "b" else None
+            table.add_row(
+                metric["name"],
+                label.upper(),
+                *rendered,
+                "—" if difference is None else str(difference),
+            )
+    console.print(table)
+    for metric in result["metrics"]:
+        if "categories" not in metric["a"]:
+            continue
+        categories = Table(title=f"{metric['name']} categories")
+        for heading in ("Outcome", "A", "B"):
+            categories.add_column(heading)
+        left, right = metric["a"]["categories"], metric["b"]["categories"]
+        for category in sorted(left.keys() | right.keys()):
+            categories.add_row(category, str(left.get(category, 0)), str(right.get(category, 0)))
+        console.print(categories)
+
+
 @app.command("stats")
 def stats_cmd(
     config_path: ConfigOpt = None,

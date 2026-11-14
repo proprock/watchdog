@@ -16,9 +16,22 @@ uv run wdi --help
 ```bash
 uv run wdi init            # create ~/.wdi/config.yaml and import all sources
 uv run wdi stats           # terminal summary
+uv run wdi compare --a '{}' --b '{"provider":"codex"}' # compare selections
 uv run wdi report          # static HTML report
 uv run wdi serve           # local web dashboard at http://127.0.0.1:8000
 ```
+
+`wdi compare` accepts JSON objects for `--a` and `--b`. Supported filter keys
+are `project`, `provider`, `model`, `since`, `until`, `label`, and `session_ids`;
+supplied fields intersect. Dates use ISO format and `until` is inclusive. An
+empty object selects all sessions. The comparison reports known and unknown
+observations, median, mean and nearest-rank 90th percentile. Small selections
+of fewer than five sessions are flagged. The median difference is B minus A;
+outcome labels are categorical and are shown as counts. Missing or incomplete
+observations are unknown, including an unobserved permission wait or subagent
+count. Repository statistics describe the captured checkout state. Token costs
+are estimates at the session start using its recorded model and configured
+tariffs. No model calls are made.
 
 `wdi serve` runs a local web UI: a live dashboard with filters
 (agent/project/since), a sessions list and per-session detail. Sessions are shown

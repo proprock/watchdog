@@ -13,7 +13,7 @@ from fastapi.templating import Jinja2Templates
 
 from wdi.metrics.pricing import PricingResolver
 from wdi.report.charts import register_jinja_filters
-from wdi.web.routes import coach, context_analysis, dashboard, sessions, tools
+from wdi.web.routes import coach, compare, context_analysis, dashboard, sessions, tools
 
 if TYPE_CHECKING:
     from wdi.config import Settings
@@ -42,6 +42,7 @@ def create_app(settings: Settings) -> FastAPI:
     app.include_router(tools.router)
     app.include_router(coach.router)
     app.include_router(context_analysis.router)
+    app.include_router(compare.router)
 
     @app.exception_handler(500)
     async def _on_error(request: Request, exc: Exception) -> HTMLResponse:  # noqa: RUF029

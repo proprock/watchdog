@@ -1,5 +1,7 @@
 # Completed tasks
 
+- [x] **WD-200 - Compare two windows or two sets of sessions.** Added shared session comparison, JSON filters, CLI and web table with explicit unknowns and small-sample flags; offline checks cover metrics and page states. [Evidence](docs/evidence/wd200.md).
+
 - [x] **WD-178 - Signal harness version drift.** Captured metadata is compared with the hook's control profile; findings and diagnostic warnings report drift and preserve unknown. Offline tests, TDD replay and the installed update passed; remaining callback coverage is tracked separately. [Evidence](docs/evidence/wd178.md).
 
 - **WD-233** — Support test-only fixes in the TDD history auditor. [Evidence](docs/evidence/wd233.md).
