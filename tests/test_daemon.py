@@ -2277,9 +2277,10 @@ def _transcript_ready(raw, session):
     if not raw.path.is_file():
         return False
     with closing(sqlite3.connect(f"{raw.path.as_uri()}?mode=ro", uri=True)) as db:
-        if db.execute("PRAGMA user_version").fetchone()[0] == 0 and not db.execute(
-            "SELECT 1 FROM sqlite_schema LIMIT 1"
-        ).fetchone():
+        if (
+            db.execute("PRAGMA user_version").fetchone()[0] == 0
+            and not db.execute("SELECT 1 FROM sqlite_schema LIMIT 1").fetchone()
+        ):
             return False
     with raw.connect(write=False) as db:
         return (
