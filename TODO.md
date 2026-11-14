@@ -51,8 +51,6 @@ Line numbers in these tasks refer to commit `0d5e984`. Paths under `insights/` e
 
 ## Split P2 - Analytics, comparison and applying recommendations
 
-- [ ] **WD-234 - Investigate manifest read permission failure in daemon test.** The 2026-11-14 full Windows pytest run for WD-233 failed `tests/test_daemon.py`::test_daemon_writes_and_refreshes_store_manifest with `PermissionError` while reading `store.json` during a registry rename. Determine the cause and correct it; the observed error alone does not establish one. [Evidence](docs/evidence/wd233.md).
-
 - [ ] **WD-230 - Verify Codex Desktop guardian callback coverage.** WD-225 found 56 historical guardian child rollouts with no retained child callbacks; 55 contain native usage. Use a separately authorized, versioned Desktop probe to observe whether guardian callbacks reach the adapter and whether their transcript paths and working directories allow registration. Record provider, adapter, and store observations for the same child. [Evidence](docs/evidence/wd225.md).
   - **2026-11-14:** Two authorized Desktop guardian reviews produced child rollouts with native usage and the expected workspace, but no child callback or source registration was found. A scratch-project ingress wrapper recorded six parent callbacks forwarded to the adapter and retained in the isolated store, but none naming the second child. Provider emission and any child callback's registration fields remain unresolved. [Probe evidence](docs/evidence/wd230.md).
 

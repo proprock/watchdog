@@ -1736,6 +1736,7 @@ def test_manifest_reader_allows_concurrent_replacement_handle(tmp_path):
     finally:
         _kernel32.CloseHandle(handle)
 
+
 def test_daemon_writes_and_refreshes_store_manifest(paths, tmp_path):
     project = Project(id=uuid4(), root=tmp_path / "original")
     project.root.mkdir()
