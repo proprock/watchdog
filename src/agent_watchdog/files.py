@@ -24,19 +24,23 @@ def atomic_write(path: Path, content: bytes, *, allow_open_readers: bool = False
             stream.write(content)
             stream.flush()
             os.fsync(stream.fileno())
-        deadline = time.monotonic() + 0.1
-        while True:
-            try:
-                if sys.platform == "win32" and allow_open_readers:
-                    replace_shared(temporary, path)
-                else:
-                    temporary.replace(path)
-                break
-            except PermissionError as error:
-                # Windows readers can briefly deny replacement even with cooperative writers.
-                if getattr(error, "winerror", None) not in (5, 32) or time.monotonic() >= deadline:
-                    raise
-                time.sleep(0.01)
+        replace_temporary(temporary, path, allow_open_readers=allow_open_readers)
     finally:
         if temporary is not None:
             temporary.unlink(missing_ok=True)
+
+
+def replace_temporary(temporary: Path, path: Path, *, allow_open_readers: bool = False) -> None:
+    deadline = time.monotonic() + 0.1
+    while True:
+        try:
+            if sys.platform == "win32" and allow_open_readers:
+                replace_shared(temporary, path)
+            else:
+                temporary.replace(path)
+            return
+        except PermissionError as error:
+            # Windows readers can briefly deny replacement even with cooperative writers.
+            if getattr(error, "winerror", None) not in (5, 32) or time.monotonic() >= deadline:
+                raise
+            time.sleep(0.01)

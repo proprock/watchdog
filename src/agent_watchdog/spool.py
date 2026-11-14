@@ -2,6 +2,7 @@
 
 import contextlib
 import json
+import os
 import stat
 import time
 from collections.abc import Callable, Iterator
@@ -13,7 +14,7 @@ from uuid import uuid4
 from agent_watchdog import resources
 from agent_watchdog.config import Limits
 from agent_watchdog.events import Envelope
-from agent_watchdog.files import atomic_write
+from agent_watchdog.files import atomic_write, replace_temporary
 from agent_watchdog.storage import (
     DrainResult,
     MaintenanceBudget,
@@ -115,9 +116,14 @@ class Spool:
         return self.publish_record(record, telemetry=telemetry)
 
     def publish_record(self, record: dict, *, telemetry: bool = False) -> Path:
-        """Serialize quota admission with the native publisher on admission.lock."""
+        """Reserve and promote under the shared lock, syncing outside it."""
+        temporary = None
+        wait_started = time.monotonic()
         try:
             with resources.admission(self.root):
+                remaining_wait = max(
+                    0.0, resources.ADMISSION_WAIT_SECONDS - (time.monotonic() - wait_started)
+                )
                 files, size = self.footprint()
                 record = dict(record)
                 if telemetry:
@@ -131,8 +137,19 @@ class Spool:
                 if files + 1 > self.file_limit or size + len(content) > self.byte_limit:
                     raise QuotaExceeded("Spool quota reached")
                 path = self.directory / f"{uuid4().hex}.json"
-                atomic_write(path, content)
-                return path
+                self.directory.mkdir(parents=True, exist_ok=True)
+                staged = path.with_suffix(".tmp")
+                # Close the reservation before unlocking so Windows reports its full size.
+                with staged.open("xb") as stream:
+                    temporary = staged
+                    stream.truncate(len(content))
+            with temporary.open("r+b") as stream:
+                stream.write(content)
+                stream.flush()
+                os.fsync(stream.fileno())
+            with resources.admission(self.root, timeout=remaining_wait):
+                replace_temporary(temporary, path)
+            return path
         except QuotaExceeded:
             resources.count_loss(self.root, "quota")
             raise
@@ -142,6 +159,9 @@ class Spool:
         except OSError:
             resources.count_loss(self.root, "io")
             raise
+        finally:
+            if temporary is not None:
+                temporary.unlink(missing_ok=True)
 
     def quarantine(self, path: Path, result: DrainResult) -> None:
         """Retain bounded diagnostics, never malformed provider content."""

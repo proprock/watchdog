@@ -1,3 +1,4 @@
+import os
 from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, datetime, timedelta
 from uuid import uuid4
@@ -132,14 +133,16 @@ def test_pinned_saturation_refuses_new_data(tmp_path):
 
 def test_disk_full_keeps_queue_empty_and_loss_survives_reopen(tmp_path, monkeypatch):
     resources.count_loss(tmp_path, "io", 0)
+    fsync = os.fsync
 
-    def full(*args):
+    def full(_fd):
+        monkeypatch.setattr(os, "fsync", fsync)
         raise OSError(28, "Simulated disk full")
 
-    monkeypatch.setattr("agent_watchdog.spool.atomic_write", full)
+    monkeypatch.setattr(os, "fsync", full)
     with pytest.raises(OSError):
         Spool(tmp_path).publish(event(uuid4()))
-    assert not list((tmp_path / "spool").glob("*.json"))
+    assert not list((tmp_path / "spool").iterdir())
     assert resources.losses(tmp_path)["io"] == 1
 
 

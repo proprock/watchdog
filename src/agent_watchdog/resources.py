@@ -11,6 +11,7 @@ from pathlib import Path
 from agent_watchdog.config import Limits
 
 REASONS = ("quota", "payload", "invalid", "io", "busy")
+ADMISSION_WAIT_SECONDS = 0.1
 _COUNTERS = struct.Struct("<5Q")
 
 
@@ -78,17 +79,17 @@ def count_loss(root: Path, reason: str, count: int = 1) -> bool:
 
 
 @contextmanager
-def admission(root: Path) -> Iterator[None]:
+def admission(root: Path, *, timeout: float = ADMISSION_WAIT_SECONDS) -> Iterator[None]:
     root.mkdir(parents=True, exist_ok=True)
-    with _locked(root / "admission.lock"):
+    with _locked(root / "admission.lock", timeout=timeout):
         yield
 
 
 @contextmanager
-def _locked(path: Path) -> Iterator[None]:
+def _locked(path: Path, *, timeout: float = ADMISSION_WAIT_SECONDS) -> Iterator[None]:
     from agent_watchdog.storage import WriterBusy, writer_lock
 
-    deadline = time.monotonic() + 0.1
+    deadline = time.monotonic() + timeout
     while True:
         lock = writer_lock(path)
         try:

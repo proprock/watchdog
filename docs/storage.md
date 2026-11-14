@@ -46,11 +46,11 @@ When `project_bytes` is positive, `payload_bytes` must not exceed it. Older `inb
 defaults or project overrides are accepted but ignored with a warning. They do
 not configure the unified spool, whose daemon-wide limits are 64 MiB and 4096
 files. The native adapter and Python publishers share `<data>/admission.lock`
-for quota checks and atomic publication. The native adapter reserves the exact
+for quota checks and atomic publication. Both publishers reserve the exact
 record size in a temporary queue file under the lock, then releases the lock
 while writing and syncing the file. It takes the lock again to rename the
-synced file into the queue. Both acquisitions share a 250 ms wait budget.
-Python publishers wait up to 100 ms. Temporary queue files count toward both
+synced file into the queue. Both acquisitions share a wait budget of 250 ms
+for the native adapter and 100 ms for Python publishers. Temporary queue files count toward both
 file and byte capacity. The native adapter records
 a `busy` loss if the lock stays contended through the wait. Other errors
 acquiring the admission lock count as `io` and log `admission-lock-io`.
