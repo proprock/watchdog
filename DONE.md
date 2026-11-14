@@ -1,5 +1,7 @@
 # Completed tasks
 
+- [x] **WD-237 - Stabilize the Windows scratch-store round-trip test.** The test exercises both publishers in order and reports native loss counters when a callback is missing. [Evidence](docs/evidence/wd237.md).
+
 - [x] **WD-236 - Resolve Insights project names across path formats.** Imported sessions and configured aliases now use the recorded path syntax on every host. [Evidence](docs/evidence/wd236.md).
 
 - [x] **WD-200 - Compare two windows or two sets of sessions.** Added shared session comparison, JSON filters, CLI and web table with explicit unknowns and small-sample flags; offline checks cover metrics and page states. [Evidence](docs/evidence/wd200.md).

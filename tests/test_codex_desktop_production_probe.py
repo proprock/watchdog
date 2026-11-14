@@ -4,12 +4,14 @@ import importlib
 import json
 import subprocess
 import sys
-import time
+from functools import partial
 from pathlib import Path
+from queue import Empty, SimpleQueue
 from types import SimpleNamespace
 
 import pytest
 
+from agent_watchdog import daemon, resources
 from agent_watchdog.config import load_config
 from agent_watchdog.daemon import _policy_server, _SessionTracker
 from agent_watchdog.rules.api import CODEX_CELLS
@@ -324,24 +326,34 @@ def test_native_adapter_decision_round_trips_through_the_scratch_store(
         "hook",
         "codex",
     ]
+    pending_controls = SimpleQueue()
+    record_control = daemon._record_control
+
+    def defer_control(*args, **kwargs):
+        pending_controls.put(partial(record_control, *args, **kwargs))
+
+    # The native publisher may drop a callback when control recording holds the
+    # admission lock during a slow sync. Exercise both real publications in order.
+    monkeypatch.setattr(daemon, "_record_control", defer_control)
     with writer_lock(paths.data / "daemon.lock"), _policy_server(paths, _SessionTracker()):
         result = subprocess.run(
             hook_args, input=json.dumps(payload).encode(), capture_output=True, timeout=30
         )
-        # The daemon records its control after answering; wait for the hook record and the
-        # control record before the server stops, so a loaded host cannot lose the latter.
-        deadline = time.monotonic() + 10
-        while len(list((paths.data / "spool").glob("*.json"))) < 2 and time.monotonic() < deadline:
-            time.sleep(0.05)
-    output = json.loads(result.stdout)
-    assert output != {}
+        assert json.loads(result.stdout) != {}
+        try:
+            publish_control = pending_controls.get(timeout=10)
+        except Empty:
+            pytest.fail("Policy handler did not schedule control recording")
+        publish_control()
     # The command was never run by this test, so the sentinel is genuinely absent.
     record = probe.collect(
         scratch,
         desktop_version=probe.APP_VERSION,
         dialog_seen=False if action == "permit" else None,
     )
-    assert record["observed"]["callbacks"] >= 1
+    assert record["observed"]["callbacks"] >= 1, (
+        f"Scratch spool losses: {resources.losses(paths.data)}"
+    )
     assert record["observed"]["controls"] == 1
     assert record["backend_version"] == probe.BACKEND
     # Deny is supported (absent effect); permit lacks its side effect, so it is not "supported".
