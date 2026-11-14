@@ -183,6 +183,29 @@ def test_native_v1_limits_default_pipeline_telemetry_and_sample_spool_occupancy(
     }
 
 
+@pytest.mark.parametrize("telemetry", [True, False])
+def test_native_spools_codex_control_profile_as_delivery_metadata(rust_adapter, native_setup, telemetry):
+    paths, project = native_setup
+    config = Config(projects=(project,), pipeline_telemetry=telemetry)
+    save_config(paths.config, config)
+    write_spool_limits(paths, config)
+    profile = "codex-cli-0.163.0"
+    payload = {
+        "cwd": str(project.root),
+        "hook_event_name": "Stop",
+        "codex_control_profile": "untrusted-input",
+    }
+
+    result = invoke(rust_adapter, paths, payload, control_profile=profile)
+
+    assert result.returncode == 0 and result.stdout == "{}\n" and not result.stderr
+    (spooled,) = spool_files(paths)
+    record = json.loads(spooled.read_bytes())
+    assert record["cwd"] == payload["cwd"]
+    assert record["input"] == {key: value for key, value in payload.items() if key != "cwd"}
+    assert record["delivery"]["codex_control_profile"] == profile
+
+
 def test_native_omits_pipeline_telemetry_when_disabled(rust_adapter, native_setup):
     paths, project = native_setup
     config = Config(projects=(project,), pipeline_telemetry=False)
