@@ -707,6 +707,11 @@ fn observe(
     let (files, used) = disk::spool_footprint(&spool)?;
     let mut delivery = json!({});
     let delivery_object = delivery.as_object_mut().ok_or("invalid delivery")?;
+    if provider == "codex" {
+        if let Some(profile) = codex_control_profile {
+            delivery_object.insert("codex_control_profile".to_owned(), json!(profile));
+        }
+    }
     if let Some(adapter_started_at) = adapter_started_at {
         delivery_object.insert("adapter_started_at".to_owned(), json!(adapter_started_at));
         delivery_object.insert("spool_enqueued_at".to_owned(), json!(utc_now()));
