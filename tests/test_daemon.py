@@ -2273,6 +2273,51 @@ def test_real_adapter_daemon_roundtrip_reports_rendering_without_provider_effect
     assert row["provider_effect_unknown"] == 1
 
 
+def _transcript_ready(raw, session):
+    if not raw.path.is_file():
+        return False
+    with raw.connect(write=False) as db:
+        return (
+            db.execute(
+                "SELECT 1 FROM streams WHERE session_id = ? AND raw_bytes = 5", (session,)
+            ).fetchone()
+            is not None
+        )
+
+
+def test_capture_readiness_waits_for_committed_schema_and_data(tmp_path):
+    from agent_watchdog.capture_store import CaptureStore
+
+    raw = CaptureStore(tmp_path / "capture.sqlite3")
+    with closing(sqlite3.connect(raw.path)) as db:
+        db.execute("BEGIN IMMEDIATE")
+        db.execute("CREATE TABLE pending (id INTEGER)")
+        db.execute("PRAGMA user_version = 3")
+        assert not _transcript_ready(raw, "s1")
+        db.rollback()
+    with raw.connect() as db:
+        assert not _transcript_ready(raw, "s1")
+        db.execute(
+            """INSERT INTO streams
+            (provider, session_id, stream_id, generation, source_path, source_kind,
+             head_len, head_digest, byte_offset, record_count, raw_bytes,
+             first_seen, last_growth, last_read, state)
+            VALUES ('p', 's1', 'stream', 0, 'path', 'file', 0, '', 5, 1, 5,
+                    'now', 'now', 'now', 'active')"""
+        )
+    assert _transcript_ready(raw, "s1")
+
+
+def test_capture_readiness_rejects_invalid_schema(tmp_path):
+    from agent_watchdog.capture_store import CaptureStore
+
+    raw = CaptureStore(tmp_path / "capture.sqlite3")
+    with closing(sqlite3.connect(raw.path)) as db:
+        db.execute("PRAGMA user_version = 999")
+    with pytest.raises(StorageError, match="Capture store version 999"):
+        _transcript_ready(raw, "s1")
+
+
 def test_daemon_captures_a_hook_named_transcript(paths, tmp_path):
     from agent_watchdog.capture_store import CAPTURE_FILENAME, CaptureStore, iter_lines
 
@@ -2289,17 +2334,7 @@ def test_daemon_captures_a_hook_named_transcript(paths, tmp_path):
     )
     raw = CaptureStore(paths.project_data(project.id) / CAPTURE_FILENAME)
     start(paths)
-
-    def transcript_ready():
-        if not raw.path.is_file():
-            return False
-        with raw.connect(write=False) as db:
-            row = db.execute(
-                "SELECT 1 FROM streams WHERE session_id = ? AND raw_bytes = 5", (session,)
-            ).fetchone()
-            return row is not None
-
-    wait_for(transcript_ready)
+    wait_for(lambda: _transcript_ready(raw, session))
     with raw.connect(write=False) as db:
         row = db.execute("SELECT stream_pk, session_id, raw_bytes FROM streams").fetchone()
         assert row["session_id"] == session
