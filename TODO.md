@@ -189,12 +189,6 @@ Line numbers in these tasks refer to commit `0d5e984`. Paths under `insights/` e
 
 ## P2 - Pipeline, scheduling and performance
 
-- [ ] **WD-238 - Measure Python spool publisher contention with native callbacks.** During WD-200 CI diagnosis, deliberately holding the shared admission lock for 600 ms across a policy reply reproduced a lost native callback with `busy=1`. Measure real Python control publication under Windows disk load and determine whether the lock held through durable sync warrants a change. Preserve the bounded native wait and quota accounting. [Evidence](docs/evidence/wd237.md).
-
-- [ ] **WD-239 - Diagnose the native timeout clamp test under Windows suite load.** Two local full runs while investigating WD-200 exceeded the 1.9 s assertion in `test_native_clamps_a_huge_published_timeout`. An isolated run passed. Identify which part of the measured interval consumed the margin before changing the deadline or the assertion. [Evidence](docs/evidence/wd237.md).
-
-- [ ] **WD-240 - Diagnose Windows native profile tests under parallel load.** Three parameters in `test_native_codex_profile_round_trips_through_approved_daemon_rule` produced empty decisions or a subprocess timeout during WD-237 verification. All three passed in a serial repeat. Capture the request, response and subprocess timing to distinguish policy evaluation delays from transport and process delays. [Evidence](docs/evidence/wd237.md).
-
 - [ ] **WD-235 - Investigate concurrent Claude fixture log loss.** During WD-200 verification, `test_concurrent_claude_calls_share_preflight` received all four synthetic answers but its shared append-only calls file missed one `-p` entry in a parallel full-suite run. The test passed when run alone. Determine whether concurrent fixture writes on Windows lose records and make the test deterministic without weakening its assertions.
 
 - [ ] **WD-229 - Investigate the native Claude Stop test timeout under parallel load.** During WD-224, concurrent offline Watchdog and Insights suites produced a two-second subprocess timeout in `test_native_asks_about_a_stop_that_is_not_continuing`. The isolated repeat passed. Capture adapter, fake policy server, and process timing to identify the stalled stage before changing the product or the timeout. [Evidence](docs/evidence/wd224.md).

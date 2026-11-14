@@ -11,6 +11,7 @@ from uuid import uuid4
 
 import pytest
 
+from agent_watchdog import daemon
 from agent_watchdog.config import (
     Config,
     ConfigError,
@@ -44,7 +45,9 @@ def native_setup(tmp_path):
         yield paths, project
 
 
-def invoke(binary, paths, payload, provider="codex", extra_args=(), control_profile=None):
+def invoke(
+    binary, paths, payload, provider="codex", extra_args=(), control_profile=None, *, timeout=2
+):
     if control_profile is not None:
         extra_args = (*extra_args, "--codex-control-profile", control_profile)
     return subprocess.run(
@@ -65,7 +68,7 @@ def invoke(binary, paths, payload, provider="codex", extra_args=(), control_prof
         input=json.dumps(payload),
         capture_output=True,
         text=True,
-        timeout=2,
+        timeout=timeout,
     )
 
 
@@ -1709,16 +1712,47 @@ def test_native_codex_profile_round_trips_through_approved_daemon_rule(
     monkeypatch.delenv("WATCHDOG_BENCHMARK_HTTP", raising=False)
     if http_bridge:
         monkeypatch.setenv("WATCHDOG_BENCHMARK_HTTP", "1")
+    # Profile coverage needs a completed policy exchange. Publish the native
+    # adapter's maximum decision budget to leave room for loaded test workers.
+    monkeypatch.setattr(daemon, "_POLICY_DECISION_TIMEOUT_MS", 1500)
+    answer = daemon._PolicyRequestHandler.answer
+    policy_timings = {}
+
+    def elapsed_ms():
+        return round((time.monotonic() - started) * 1000)
+
+    def trace_answer(server, line, send_response):
+        policy_timings["request_ms"] = elapsed_ms()
+
+        def trace_send(response):
+            policy_timings["decision_ms"] = elapsed_ms()
+            try:
+                send_response(response)
+            except OSError as error:
+                policy_timings["send_error"] = type(error).__name__
+                raise
+            policy_timings["sent_ms"] = elapsed_ms()
+
+        answer(server, line, trace_send)
+
+    monkeypatch.setattr(daemon._PolicyRequestHandler, "answer", staticmethod(trace_answer))
     with _policy_server(paths, _SessionTracker()):
-        result = invoke(
-            rust_adapter,
-            paths,
-            payload,
-            provider="codex",
-            control_profile=profile,
-        )
+        started = time.monotonic()
+        try:
+            result = invoke(
+                rust_adapter,
+                paths,
+                payload,
+                provider="codex",
+                control_profile=profile,
+                timeout=10,
+            )
+        except subprocess.TimeoutExpired:
+            pytest.fail(f"Adapter timed out at {elapsed_ms()} ms. Policy timings {policy_timings}")
+        adapter_ms = elapsed_ms()
 
     output = json.loads(result.stdout)
+    assert output, f"No decision after {adapter_ms} ms. Policy timings {policy_timings}"
     if expected == "context":
         assert output["hookSpecificOutput"]["hookEventName"] == event
         assert output["hookSpecificOutput"]["additionalContext"]
@@ -1838,18 +1872,28 @@ def test_native_fails_open_on_an_oversized_discovery_file(rust_adapter, native_s
 
 
 def test_native_clamps_a_huge_published_timeout(rust_adapter, native_setup):
-    """The published timeout may never push a hang past the two-second hook timeout."""
+    """The adapter bounds its policy wait even when the server publishes a huge timeout."""
     paths, project = native_setup
     server = _FakePolicyServer(paths, discovery={"timeout_ms": 600_000}).respond("deny").hang()
-    started = time.monotonic()
     try:
         result = invoke(
-            rust_adapter, paths, agent_pretooluse(project, model="opus"), provider="claude"
+            rust_adapter,
+            paths,
+            agent_pretooluse(project, model="opus"),
+            provider="claude",
+            timeout=10,
         )
     finally:
         server.close()
     assert result.stdout == ""
-    assert time.monotonic() - started < 1.9
+    assert len(server.requests) == 1
+    (record_path,) = spool_files(paths)
+    record = json.loads(record_path.read_bytes())
+    # received_at is assigned after the policy exchange and before the spool
+    # write, so process startup and durable sync are outside the measured interval.
+    started = datetime.fromisoformat(record["delivery"]["adapter_started_at"])
+    received = datetime.fromisoformat(record["received_at"])
+    assert (received - started).total_seconds() < 1.9
 
 
 def test_native_sends_a_large_request_within_the_published_budget(rust_adapter, native_setup):

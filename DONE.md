@@ -1,5 +1,9 @@
 # Completed tasks
 
+- [x] **WD-238 - Remove Python spool sync from shared admission.** Exact file and byte reservations cover staged writes, with a regression check for competing admission during sync. [Evidence](docs/evidence/wd238.md).
+- [x] **WD-239 - Measure the native policy timeout clamp.** The test checks the adapter interval before spool sync and keeps a separate process watchdog. [Evidence](docs/evidence/wd237.md#follow-up-on-the-parallel-windows-failures).
+- [x] **WD-240 - Stabilize Windows native profile tests under load.** The matrix uses a test-only policy budget and reports request, decision and send timing on failure. [Evidence](docs/evidence/wd237.md#follow-up-on-the-parallel-windows-failures).
+
 - [x] **WD-237 - Stabilize the Windows scratch-store round-trip test.** The test exercises both publishers in order and reports native loss counters when a callback is missing. [Evidence](docs/evidence/wd237.md).
 
 - [x] **WD-236 - Resolve Insights project names across path formats.** Imported sessions and configured aliases now use the recorded path syntax on every host. [Evidence](docs/evidence/wd236.md).
