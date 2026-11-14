@@ -1,5 +1,7 @@
 # Completed tasks
 
+- [x] **WD-178 - Signal harness version drift.** Captured metadata is compared with the hook's control profile; findings and diagnostic warnings report drift and preserve unknown. Offline tests, TDD replay and the installed update passed; remaining callback coverage is tracked separately. [Evidence](docs/evidence/wd178.md).
+
 - **WD-233** — Support test-only fixes in the TDD history auditor. [Evidence](docs/evidence/wd233.md).
 
 Historical records only: one line per task. The full text of every entry, including its verification, is in [done-archive.md](docs/evidence/done-archive.md). Active work belongs in [TODO.md](TODO.md). Preserve task IDs when moving entries here.
