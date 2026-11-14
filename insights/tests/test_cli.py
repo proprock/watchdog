@@ -261,6 +261,59 @@ def test_stats_command(tmp_path: Path) -> None:
     assert "Overview" in result.output
 
 
+def test_compare_command_renders_metrics_and_empty_selection(tmp_path: Path) -> None:
+    cfg = _seeded_config(tmp_path)
+
+    result = runner.invoke(
+        app, ["compare", "-c", str(cfg), "--a", "{}", "--b", '{"project":"missing"}']
+    )
+
+    assert result.exit_code == 0, result.output
+    assert "Metric" in result.output
+    assert "unknown" in result.output.lower()
+    assert "0" in result.output
+
+
+def test_compare_command_rejects_invalid_filter(tmp_path: Path) -> None:
+    cfg = _seeded_config(tmp_path)
+
+    result = runner.invoke(app, ["compare", "-c", str(cfg), "--a", "[]", "--b", "{}"])
+
+    assert result.exit_code != 0
+    assert "Filter must" in result.output
+
+
+def test_compare_command_renders_outcome_categories(tmp_path: Path, monkeypatch) -> None:
+    from wdi.metrics import compare
+
+    cfg = _seeded_config(tmp_path)
+    stats = {"count": 1, "unknown": 0, "median": None, "mean": None, "p90": None}
+    monkeypatch.setattr(
+        compare,
+        "compare",
+        lambda *args: {
+            "a_count": 1,
+            "b_count": 1,
+            "a_small": True,
+            "b_small": True,
+            "metrics": [
+                {
+                    "name": "outcome_label",
+                    "a": {**stats, "categories": {"success": 1}},
+                    "b": {**stats, "categories": {"failure": 1}},
+                    "difference": None,
+                }
+            ],
+        },
+    )
+
+    result = runner.invoke(app, ["compare", "-c", str(cfg), "--a", "{}", "--b", "{}"])
+
+    assert result.exit_code == 0, result.output
+    assert "success" in result.output
+    assert "failure" in result.output
+
+
 def test_doctor_reports_hook_token_differences(tmp_path: Path, monkeypatch) -> None:
     from wdi.metrics import hooks
 
