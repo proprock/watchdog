@@ -8,7 +8,7 @@ from agent_watchdog import daemon, resources
 from agent_watchdog.config import Config, Project, UserPaths, save_config
 from agent_watchdog.events import Envelope
 from agent_watchdog.registry import Registry
-from agent_watchdog.rules.api import Decision
+from agent_watchdog.rules.api import CODEX_CELLS, Decision
 from agent_watchdog.spool import Spool
 from agent_watchdog.storage import DrainResult, MaintenanceBudget, Store
 
@@ -21,6 +21,43 @@ def setup(tmp_path, monkeypatch):
     monkeypatch.setattr(daemon, "alive", lambda _: True)
     monkeypatch.setattr(daemon, "_capture_diff_snapshot", lambda *args, **kwargs: None)
     return paths, project, config
+
+
+def test_drain_preserves_only_trusted_codex_profile_without_telemetry(tmp_path, monkeypatch):
+    paths, project, _ = setup(tmp_path, monkeypatch)
+    config = Config(projects=(project,), pipeline_telemetry=False)
+    save_config(paths.config, config)
+    profile = next(iter(CODEX_CELLS))
+    queue = Spool(paths.data)
+    for session, delivery in (
+        ("valid", {"codex_control_profile": profile}),
+        ("invalid", {"codex_control_profile": "unknown-profile"}),
+        ("input-only", {}),
+    ):
+        queue.publish_record(
+            {
+                "schema_version": 2,
+                "record_type": "hook",
+                "provider": "codex",
+                "event_id": str(uuid4()),
+                "received_at": datetime.now(UTC).isoformat(),
+                "cwd": str(tmp_path),
+                "input": {
+                    "hook_event_name": "Stop",
+                    "session_id": session,
+                    "codex_control_profile": profile,
+                },
+                "delivery": delivery,
+            }
+        )
+
+    assert daemon._drain_spool(paths, config)
+    with Store(paths.project_data(project.id), project.id) as store:
+        events = {event.session_id: event for event in store.events()}
+    assert set(events) == {"valid", "invalid", "input-only"}
+    assert events["valid"].delivery["codex_control_profile"] == profile
+    assert "codex_control_profile" not in (events["invalid"].delivery or {})
+    assert "codex_control_profile" not in (events["input-only"].delivery or {})
 
 
 def test_native_dev_and_control_share_the_consumer(tmp_path, monkeypatch):
