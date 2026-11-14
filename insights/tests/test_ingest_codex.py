@@ -37,6 +37,15 @@ def resolver(repo: Repository) -> ProjectResolver:
     return ProjectResolver(repo, MACHINE, aliases={})
 
 
+def test_resolver_preserves_posix_basename_with_backslash(repo: Repository):
+    resolver = ProjectResolver(repo, MACHINE, aliases={"demo": [r"/work/team\checkout"]})
+
+    project_id = resolver.resolve(r"/mnt/team\checkout")
+
+    assert project_id == resolver.resolve("/work/demo")
+    assert project_id != resolver.resolve("/work/checkout")
+
+
 def env(ts: str, record_type: str, payload: dict[str, Any]) -> dict[str, Any]:
     return {"timestamp": ts, "type": record_type, "payload": payload}
 
