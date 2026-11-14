@@ -2,6 +2,8 @@
 
 Historical records only: one line per task. The full text of every entry, including its verification, is in [done-archive.md](docs/evidence/done-archive.md). Active work belongs in [TODO.md](TODO.md). Preserve task IDs when moving entries here.
 
+- [x] **WD-231 - Fix daemon test readiness and policy discovery access races.** Capture readiness distinguishes initialization from invalid schemas; discovery publication supports cooperative Windows readers. Focused regressions, the full suite, and installed synthetic transport checks passed. [Evidence](docs/evidence/wd231.md).
+
 - [x] **WD-226 - Investigate daemon file-read failures under parallel test load.** Controlled experiments reproduced the capture initialization window and Windows discovery-file access errors; WD-231 tracks remedies. The original individual access holder remains unknown. [Evidence](docs/evidence/wd226.md).
 
 - [x] **WD-225 - Trace historical Codex child receipt routing and coverage.** All 56 uncovered children are guardians with no retained child callbacks. Separate callbacks registered one rollout in two projects, each with 80 receipts. Project-scoped accounting is preserved. WD-230 tracks live guardian callback coverage. [Evidence](docs/evidence/wd225.md).
