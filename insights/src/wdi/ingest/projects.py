@@ -2,9 +2,16 @@
 
 from __future__ import annotations
 
-from pathlib import PurePath
+from pathlib import PurePosixPath, PureWindowsPath
 
 from wdi.db.repository import Repository
+
+
+def _project_basename(path: str) -> str:
+    windows_path = PureWindowsPath(path)
+    if windows_path.drive or ("\\" in path and not path.startswith("/")):
+        return windows_path.name.lower()
+    return PurePosixPath(path).name.lower()
 
 
 class ProjectResolver:
@@ -20,14 +27,14 @@ class ProjectResolver:
         self._alias_to_canonical: dict[str, str] = {}
         for canonical, names in aliases.items():
             for name in names:
-                key = PurePath(name).name.lower()
+                key = _project_basename(name)
                 self._alias_to_canonical[key] = canonical
         self._cache: dict[str, int] = {}
 
     def resolve(self, cwd: str | None) -> int | None:
         if not cwd:
             return None
-        basename = PurePath(cwd).name.lower()
+        basename = _project_basename(cwd)
         if not basename:
             return None
         canonical = self._alias_to_canonical.get(basename, basename)
