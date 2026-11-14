@@ -1,5 +1,7 @@
 # Completed tasks
 
+- **WD-233** — Support test-only fixes in the TDD history auditor. [Evidence](docs/evidence/wd233.md).
+
 Historical records only: one line per task. The full text of every entry, including its verification, is in [done-archive.md](docs/evidence/done-archive.md). Active work belongs in [TODO.md](TODO.md). Preserve task IDs when moving entries here.
 
 - [x] **WD-231 - Fix daemon test readiness and policy discovery access races.** Capture readiness distinguishes initialization from invalid schemas; discovery publication supports cooperative Windows readers. Focused regressions, the full suite, and installed synthetic transport checks passed. [Evidence](docs/evidence/wd231.md).

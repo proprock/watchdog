@@ -51,12 +51,12 @@ Line numbers in these tasks refer to commit `0d5e984`. Paths under `insights/` e
 
 ## Split P2 - Analytics, comparison and applying recommendations
 
+- [ ] **WD-234 - Investigate manifest read permission failure in daemon test.** The 2026-11-14 full Windows pytest run for WD-233 failed `tests/test_daemon.py`::test_daemon_writes_and_refreshes_store_manifest with `PermissionError` while reading `store.json` during a registry rename. Determine the cause and correct it; the observed error alone does not establish one. [Evidence](docs/evidence/wd233.md).
+
 - [ ] **WD-230 - Verify Codex Desktop guardian callback coverage.** WD-225 found 56 historical guardian child rollouts with no retained child callbacks; 55 contain native usage. Use a separately authorized, versioned Desktop probe to observe whether guardian callbacks reach the adapter and whether their transcript paths and working directories allow registration. Record provider, adapter, and store observations for the same child. [Evidence](docs/evidence/wd225.md).
   - **2026-11-14:** Two authorized Desktop guardian reviews produced child rollouts with native usage and the expected workspace, but no child callback or source registration was found. A scratch-project ingress wrapper recorded six parent callbacks forwarded to the adapter and retained in the isolated store, but none naming the second child. Provider emission and any child callback's registration fields remain unresolved. [Probe evidence](docs/evidence/wd230.md).
 
 - [ ] **WD-232 - Verify fresh provider callbacks after the WD-231 installed update.** The updated daemon and synthetic transport checks passed, but fresh real Codex and Claude hook rows after the restart were not verified. Check the owned instance without treating synthetic smoke checks as provider callbacks. [Evidence](docs/evidence/wd231.md).
-
-- [ ] **WD-233 - Support test-only fixes in the TDD history auditor.** The WD-231 capture-readiness fix changes only test infrastructure; `scripts/kaboost_audit_tdd.py` reports its valid green commits as changing no non-test file. Support this case without accepting missing or invalid red/green pairs. [Evidence](docs/evidence/wd231.md).
 
 - [ ] **WD-227 - Refresh the installed Codex hook event list.** The WD-198 live update readiness check reports `hook_events_outdated`: the owned event list predates PermissionRequest. The updated daemon and both installed adapter transports pass labeled, self-purging SessionStart smoke checks; this does not prove the missing provider callback. Refresh the owned hook definition through the explicit installer, preserve trust/other hooks, then rerun normal readiness and verify actual callback coverage. Routine WD-198 artifact update intentionally left hook definitions unchanged. [Evidence](docs/evidence/wd198.md).
 
