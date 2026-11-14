@@ -2,6 +2,8 @@
 
 Historical records only: one line per task. The full text of every entry, including its verification, is in [done-archive.md](docs/evidence/done-archive.md). Active work belongs in [TODO.md](TODO.md). Preserve task IDs when moving entries here.
 
+- [x] **WD-225 - Trace historical Codex child receipt routing and coverage.** All 56 uncovered children are guardians with no retained child callbacks. Separate callbacks registered one rollout in two projects, each with 80 receipts. Project-scoped accounting is preserved. WD-230 tracks live guardian callback coverage. [Evidence](docs/evidence/wd225.md).
+
 - [x] **WD-198 - Consolidate pricing and move usage, overview, and export to wdi.** Preserved the approved zero-drop contracts, unified dated Decimal tariffs, and removed legacy implementations. Both suites passed (2160 Watchdog, 485 Insights), fixed live-week tokens and cost match across 16 projects, the installed daemon update passed transport smoke checks, and the red/green history audit passed. Hook event-list refresh remains WD-227. [Evidence](docs/evidence/wd198.md).
 
 - [x] **WD-223 - Investigate Codex subagent token discrepancies.** Child receipt coverage, compaction, and two-store usage explain all 51 differences in 17 parents; 98 streams replayed with 2,048 expected usage events, four new synthetic cases and 376 Insights tests passed. Historical routing remains WD-225; two parallel main-suite failures remain WD-226 after passing serial repeats. [Evidence](docs/evidence/wd223.md).
