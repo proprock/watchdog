@@ -872,25 +872,11 @@ class Store:
         ).fetchone()[0]
         report = analyze((persisted_envelope(item) for item in documents), snapshots=snapshots)
         if provider == "codex":
-            from agent_watchdog.analysis import _finding
-            from agent_watchdog.harness_version import compare
+            from agent_watchdog.harness_version import add_findings
 
-            for document in documents:
-                event = persisted_envelope(document)
-                if event.source != "hook" or not event.delivery.get("codex_control_profile"):
-                    continue
-                state, expected, observed = compare(self.root / "capture.sqlite3", event)
-                if state == "unknown":
-                    if "harness_version_unknown" not in report["gaps"]:
-                        report["gaps"].append("harness_version_unknown")
-                elif state == "drift":
-                    report["findings"].append(
-                        _finding(
-                            "harness_version_drift",
-                            [str(event.event_id)],
-                            f"Profile backend {expected} differs from {observed}; mechanics may have changed.",
-                        )
-                    )
+            add_findings(
+                report, self.root / "capture.sqlite3", (persisted_envelope(item) for item in documents)
+            )
         return report, last_rowid
 
     @staticmethod

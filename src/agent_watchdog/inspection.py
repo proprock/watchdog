@@ -394,6 +394,14 @@ def report(
         checkout = checkout_verdicts(db)
         label = session_label(db, provider, session_id) if session_id is not None else None
     result = analyze((persisted_envelope(document) for document in documents), snapshots=snapshots)
+    if provider == "codex":
+        from agent_watchdog.harness_version import add_findings
+
+        add_findings(
+            result,
+            paths.project_data(project.id) / CAPTURE_FILENAME,
+            (persisted_envelope(document) for document in documents),
+        )
     result["verdicts"] = verdicts
     result["checkout_verdicts"] = checkout
     if label is not None:

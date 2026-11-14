@@ -3,6 +3,7 @@
 import json
 import re
 import sqlite3
+from collections.abc import Iterable
 from compression import zstd
 from pathlib import Path
 
@@ -74,3 +75,36 @@ def compare(path: Path, event: Envelope) -> tuple[str, str | None, str | None]:
     if observed is None:
         return "unknown", expected, None
     return ("match" if observed == expected else "drift"), expected, observed
+
+
+def add_findings(report: dict, path: Path, events: Iterable[Envelope]) -> None:
+    """Add one finding per captured stream/profile, preserving hook evidence."""
+    from agent_watchdog.analysis import _finding
+
+    seen: set[tuple[str | None, object, object]] = set()
+    for event in events:
+        profile = event.delivery.get("codex_control_profile")
+        if event.provider != "codex" or event.source != "hook" or not profile:
+            continue
+        payload = event.payload.get("codex")
+        source = payload.get("transcript_path") if isinstance(payload, dict) else None
+        if not isinstance(profile, str) or not isinstance(source, str):
+            report["gaps"].append("harness_version_unknown")
+            continue
+        key = (event.session_id, profile, source)
+        if key in seen:
+            continue
+        seen.add(key)
+        state, expected, observed = compare(path, event)
+        if state == "unknown":
+            if "harness_version_unknown" not in report["gaps"]:
+                report["gaps"].append("harness_version_unknown")
+        elif state == "drift":
+            report["findings"].append(
+                _finding(
+                    "harness_version_drift",
+                    [str(event.event_id)],
+                    f"Profile backend {expected} differs from {observed}; "
+                    "mechanics may have changed.",
+                )
+            )
