@@ -331,6 +331,22 @@ def _warnings(report: Mapping[str, object]) -> list[str]:
     return []
 
 
+def _harness_drift(paths: UserPaths, config: Config) -> bool:
+    from agent_watchdog.inspection import database
+
+    for project in config.projects:
+        if not (paths.project_data(project.id) / "events.sqlite3").is_file():
+            continue
+        with database(paths, project) as db:
+            if db.execute("PRAGMA user_version").fetchone()[0] < 8:
+                continue
+            if db.execute(
+                "SELECT 1 FROM session_findings WHERE rule='harness_version_drift' LIMIT 1"
+            ).fetchone():
+                return True
+    return False
+
+
 def status(paths: UserPaths) -> dict:
     control = desired(paths)
     running = alive(paths)
@@ -373,9 +389,11 @@ def status(paths: UserPaths) -> dict:
         if now - last <= 24 * 3600:
             reasons.append("adapter_schema_mismatch")
     queues: dict[str, object] = {}
+    drift = False
     try:
         loss_report = {"adapter": resources.losses(paths.data)}
         config = load_config(paths.config)
+        drift = _harness_drift(paths, config)
         for project in config.projects:
             loss_report[str(project.id)] = resources.losses(paths.project_data(project.id))
         queues = _queue_status(paths, config)
@@ -389,7 +407,7 @@ def status(paths: UserPaths) -> dict:
             reasons.append("storage_unavailable")
         if lagging:
             reasons.append("storage_lag")
-    except OSError, ValueError:
+    except OSError, ValueError, sqlite3.Error, StorageError:
         loss_report = {"unavailable": True}
         queues = {"unavailable": True}
         reasons.append("queue_or_configuration_unavailable")
@@ -401,7 +419,8 @@ def status(paths: UserPaths) -> dict:
     return report | {
         "state": state,
         "alive": running,
-        "warnings": _warnings(report) if running else [],
+        "warnings": (_warnings(report) if running else [])
+        + (["harness_version_drift"] if drift else []),
         "reasons": reasons,
         "health": health,
         "request_id": control.get("request_id"),

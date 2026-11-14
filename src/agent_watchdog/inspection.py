@@ -803,6 +803,16 @@ def doctor(
     healthy &= core["state"] != "degraded"
     mismatch = Spool(paths.data).schema_mismatch()
     warnings: list[dict] = []
+    if "harness_version_drift" in core["warnings"]:
+        warnings.append(
+            {
+                "code": "harness_version_drift",
+                "message": (
+                    "The harness backend differs from its control profile; "
+                    "mechanics may have changed."
+                ),
+            }
+        )
     if not config.scan.enabled:
         warnings.append(
             {
