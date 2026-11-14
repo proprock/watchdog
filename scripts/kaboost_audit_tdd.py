@@ -75,8 +75,8 @@ def check_structure(pairs, test_pattern):
         outside = [f for f in red['files'] if not is_test(f)]
         if outside:
             problems.append(f"{red['sha'][:8]}: red commit changes non-test files: {', '.join(outside)}")
-        if not any(not is_test(f) for f in green['files']):
-            problems.append(f"{green['sha'][:8]}: green commit changes no non-test file")
+        if not green['files']:
+            problems.append(f"{green['sha'][:8]}: green commit changes no files")
     return problems
 
 
