@@ -4,6 +4,10 @@ Historical records only: one line per task. The full text of every entry, includ
 
 - [x] **WD-225 - Trace historical Codex child receipt routing and coverage.** All 56 uncovered children are guardians with no retained child callbacks. Separate callbacks registered one rollout in two projects, each with 80 receipts. Project-scoped accounting is preserved. WD-230 tracks live guardian callback coverage. [Evidence](docs/evidence/wd225.md).
 
+- [x] **WD-228 - Reduce native spool admission losses during slow durable writes.** The native adapter reserves exact queue capacity under the shared lock and syncs outside it. The paused-writer regression, existing quota and contention checks, and both installed transports passed. The parallel transcript test remains tracked by WD-226. [Evidence](docs/evidence/wd228.md).
+
+- [x] **WD-224 - Investigate native concurrent spool admission losses under test load.** Reproduced `busy` losses with Windows disk pressure and measured durable publication holding `admission.lock` for up to 449 ms against a 250 ms wait. Existing deterministic tests cover the timeout contract. WD-228 tracks reducing loss, and WD-229 tracks a separate Stop test timeout. [Evidence](docs/evidence/wd224.md).
+
 - [x] **WD-198 - Consolidate pricing and move usage, overview, and export to wdi.** Preserved the approved zero-drop contracts, unified dated Decimal tariffs, and removed legacy implementations. Both suites passed (2160 Watchdog, 485 Insights), fixed live-week tokens and cost match across 16 projects, the installed daemon update passed transport smoke checks, and the red/green history audit passed. Hook event-list refresh remains WD-227. [Evidence](docs/evidence/wd198.md).
 
 - [x] **WD-223 - Investigate Codex subagent token discrepancies.** Child receipt coverage, compaction, and two-store usage explain all 51 differences in 17 parents; 98 streams replayed with 2,048 expected usage events, four new synthetic cases and 376 Insights tests passed. Historical routing remains WD-225; two parallel main-suite failures remain WD-226 after passing serial repeats. [Evidence](docs/evidence/wd223.md).

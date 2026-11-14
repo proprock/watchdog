@@ -22,8 +22,6 @@ Owner decisions of 2026-11-11 that every Split task follows:
 
 Line numbers in these tasks refer to commit `0d5e984`. Paths under `insights/` exist after WD-184. The source checkout of the insights program is the sibling repository aliased `project-b` in `LIVE.md`; never write its real name, its old command name or its old home directory into committed text.
 
-- [ ] **WD-224 - Investigate native concurrent spool admission losses under test load.** The WD-220 full Watchdog suite produced seven spool files for eight adapter calls in `test_native_concurrent_spool_commits_without_a_second_inbox_quota`; retained counters showed `busy=1`, all other loss counters zero. An isolated repeat passed. Establish why admission exceeded the bounded lock wait and add a deterministic regression if a product defect is confirmed; do not infer the trigger from the aggregate test result. [Evidence](docs/evidence/wd220.md).
-
 ## Split P1 - Read contract and insights on Watchdog data
 
 - [ ] **WD-197 - Isolated Claude runs for analysis in `wdi`.** P1. Depends on WD-184.
@@ -197,6 +195,8 @@ Line numbers in these tasks refer to commit `0d5e984`. Paths under `insights/` e
   **P2; review resolved by user on 2026-10-18; implementation pending.** Reuse WD-144's independent format/classification and human confirmation contract. See the [architecture decision](docs/architecture.md#wd-147-calibration-and-promotion-review-2026-10-18) and [review record](docs/evidence/wd147-review.md). Implementation/dependency completion and acceptance remain open. This review does not approve, enable or promote any actual rule, authorize a live model call or change TENETS.md.
 
 ## P2 - Pipeline, scheduling and performance
+
+- [ ] **WD-229 - Investigate the native Claude Stop test timeout under parallel load.** During WD-224, concurrent offline Watchdog and Insights suites produced a two-second subprocess timeout in `test_native_asks_about_a_stop_that_is_not_continuing`. The isolated repeat passed. Capture adapter, fake policy server, and process timing to identify the stalled stage before changing the product or the timeout. [Evidence](docs/evidence/wd224.md).
 
 - [ ] **WD-217 - Investigate two Windows parallel-suite failures.** The WD-193 root-suite rerun observed capture schema revision 0 in `test_daemon_captures_a_hook_named_transcript` and exceeded the one-second test limit in `test_native_gives_up_on_a_silent_daemon_after_the_published_budget`. Both passed when rerun sequentially. Reproduce under the default suite and identify the cause of each failure before changing production code or test limits. See [WD-193 evidence](docs/evidence/wd193.md).
 
