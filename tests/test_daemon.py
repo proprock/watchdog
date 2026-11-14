@@ -1717,6 +1717,22 @@ def test_machine_id_survives_daemon_restart(paths):
     assert identity.stat().st_mtime_ns == stamp
 
 
+def read_test_manifest(path):
+    return json.loads(path.read_text(encoding="utf-8"))
+
+
+@pytest.mark.skipif(sys.platform != "win32", reason="Windows sharing semantics")
+def test_manifest_reader_allows_concurrent_replacement_handle(tmp_path):
+    from agent_watchdog._windows_files import _DELETE, _kernel32, _open_handle
+
+    manifest = tmp_path / "store.json"
+    manifest.write_text('{"name": "chosen"}', encoding="utf-8")
+    handle = _open_handle(manifest, _DELETE)
+    try:
+        assert read_test_manifest(manifest) == {"name": "chosen"}
+    finally:
+        _kernel32.CloseHandle(handle)
+
 def test_daemon_writes_and_refreshes_store_manifest(paths, tmp_path):
     project = Project(id=uuid4(), root=tmp_path / "original")
     project.root.mkdir()
