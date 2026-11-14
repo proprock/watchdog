@@ -7,7 +7,7 @@ import sqlite3
 import time
 from collections.abc import Callable, Iterator
 from compression import zstd
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import BinaryIO, cast
@@ -58,6 +58,7 @@ class CaptureResult:
     pending: bool = False
     degraded: bool = False
     unrecognized_name: int = 0
+    changed_sessions: set[tuple[str, str]] = field(default_factory=set)
 
 
 @dataclass
@@ -432,6 +433,8 @@ def _visit_source(
     try:
         progressed, available, _ = _visit(db, source, row, stamp, available)
         result.progressed |= progressed
+        if progressed and source.hook_session:
+            result.changed_sessions.add((source.provider, source.hook_session))
     except QuotaExceeded:
         raise
     except (OSError, EOFError, zstd.ZstdError, ValueError) as error:

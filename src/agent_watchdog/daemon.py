@@ -1919,6 +1919,11 @@ class _SessionTracker:
             session = (provider, session_id)
             due[session] = due.get(session, False) or state.ended_at is not None
 
+    def capture_progress(self, project_id: str, sessions: set[tuple[str, str]]) -> None:
+        due = self._due.setdefault(project_id, {})
+        for session in sessions:
+            due.setdefault(session, False)
+
     def refresh(
         self, project_id: str, store: Store, *, now: float, budget: float = FINDINGS_BUDGET_SECONDS
     ) -> tuple[int, list[Exception]]:
@@ -2156,6 +2161,7 @@ def _poll(
                                 capture_budget -= time.monotonic() - capture_started
                             project_active |= captured.progressed or captured.pending
                             activity |= captured.progressed or captured.pending
+                            sessions.capture_progress(str(project.id), captured.changed_sessions)
                             if captured.degraded:
                                 if project_key not in project_errors:
                                     _log(
