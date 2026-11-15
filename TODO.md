@@ -2,6 +2,8 @@
 
 Priority review: 2026-10-08, implementation baseline `23fce5f`. P1 is the next tranche for reliable Codex coverage and decision-channel correctness; P2 follows its stated prerequisites, and P3 is optional. Scope includes stock Codex CLI/local desktop coding and Claude Code, plus an explicitly selected Codex analysis backend; ordinary chats remain excluded. Design sources remain ROADMAP.md and docs/architecture.md; its "Current versus superseded decisions" table says which text governs.
 
+**Correction loop (owner decisions, 2026-11-15).** The Loop tranche below (WD-240 to WD-269) runs first: it switches delivery on, stores findings and recommendations as data, and measures the effect of an applied change. Its rules for writing and closing tasks apply to every ticket opened from now on. WD-199 and WD-202 stay in Split P2 and join the loop through WD-247 and WD-252; WD-201, WD-203 and WD-204 follow Loop L3. The analysis is in the local, uncommitted `AUDIT-20261115.agents.md`.
+
 **Collection/insights split (owner decisions, 2026-11-11).** The Split P0 tranche below runs before the control track. WD-208, WD-209, WD-183, WD-210 and the WD-184 package import are complete. WD-214 completed the root-suite acceptance. WD-185 completed the Python 3.14 migration. WD-187 completed raw transcript capture. WD-188 completed the provider history backfill. WD-186 completed automatic Git registration and the first-day report. The control track (WD-151, WD-166, WD-178, WD-181, WD-179) continues independently. The [owner decisions](docs/architecture.md#collection-and-insights-split-2026-11-11) supersede these statements: `README.md` on collection for selected repositories only, on the absence of an eval runner and on the retention periods; `docs/architecture.md` on never scanning provider directories and on enrichment persisting no transcript content; `docs/storage.md` on vendor transcript directories and on diff text never being stored; `ROADMAP.md` on no eval runner. The analysis behind the split is in the local, uncommitted `AUDIT-20261111.agents.md`.
 
 Open-work order: start the surface/version gate in WD-151 using the [WD-163 probe results](docs/evidence/wd163.md); implement already confirmed Codex CLI cells without waiting for desktop, while each unresolved cell waits for its own clean probe. WD-166 can proceed independently. WD-155 and WD-168 establish trustworthy channel/state evidence before broader live measurements. Then complete WD-167 and the provider-specific portions of WD-159. WD-161 is complete with a [no-change decision](docs/evidence/wd161.md). WD-153 gates desktop control only. WD-143 is implemented ([evidence](docs/evidence/wd143.md)). WD-144/WD-145/WD-147 specification reviews are resolved by the 2026-10-18 decisions below; their implementation, dependencies and task-specific acceptance remain open. Historical M3 cohort selections remain unchanged: this review approves no live rule or action. Diagnostic judge calls do not authorize intervention or promotion, and local-adapter tests or an assistant's reading of findings are not live acceptance or user verdicts.
@@ -21,6 +23,259 @@ Owner decisions of 2026-11-11 that every Split task follows:
 7. A duplicate is removed only after parity: the task lists the capabilities of both implementations and a test shows none is lost.
 
 Line numbers in these tasks refer to commit `0d5e984`. Paths under `insights/` exist after WD-184. The source checkout of the insights program is the sibling repository aliased `project-b` in `LIVE.md`; never write its real name, its old command name or its old home directory into committed text.
+
+## Loop - Close the correction loop (audit of 2026-11-15)
+
+The analysis is in the local, uncommitted `AUDIT-20261115.agents.md`. Finding: observation works, but no control action has ever reached an agent, recommendations are stored nowhere, nothing applies them and nothing measures their effect. This tranche connects those four links. It runs before the remaining Split P2/P3 tasks; the smallest useful subset is WD-240, WD-244, WD-245, WD-247, WD-248, WD-249, WD-252 and WD-253.
+
+Owner decisions of 2026-11-15:
+
+1. Control is switched on for every approved rule on the installed instance (`context`, `ask` and `rewrite`), not only for `context`.
+2. The MCP server is narrowed to two guidance tools and measured for three weeks; with zero calls it is removed together with its dependency.
+3. The session environment snapshot keeps instruction and settings files byte for byte, credential values included. The credential filter applies wherever that content leaves the store: text sent to a model, the web interface and store export.
+
+Rules for every Loop task:
+
+1. A ticket closes on its offline acceptance. Anything that touches the installed instance, the installed insights database or a provider is a line in WD-269 and is done by the owner or a senior model following `LIVE.md`.
+2. "Fixed decisions" are not edited by the implementer. When one cannot be met or turns out wrong, stop and ask; the change is then recorded in the ticket as "Owner decision <date>".
+3. Anchors are symbol names. Locate each with `rg` before editing; if a named symbol does not exist, stop and ask.
+4. A task that adds a file or database another process reads states who replaces it, who reads it and what the reader does on a miss, and has a test with a reader holding the file open.
+5. A fix or a parity claim is tested at every call site, not only on the shared function.
+6. One package per task and at most about 400 changed lines outside tests. When that is not enough, stop and propose a split.
+7. Only WD-247 changes the insights schema.
+8. A test that fails only in the parallel run and passes alone gets one line in WD-217; no new ticket.
+9. No task updates the installed instance, adds a dependency or edits `TENETS.md`. No task calls a model in tests; a live model call needs separate authorization each time.
+
+### Loop L0 - Switch delivery on and fix defects
+
+- [ ] **WD-240 - Enable the approved rules on the installed instance.** P0. `live`: owner or senior model. No dependencies.
+  - **Why.** Owner decision 1. `policy_intervene = false` on the installed instance, so the three approved built-in rules have never fired and no finding carries `delivered_at`.
+  - **Fixed decisions.** Set `[defaults] policy_intervene = true` in the installed configuration and leave per-project overrides as they are. In a scratch Git checkout, run one Claude Code CLI session and trigger `destructive_command` with `git reset --hard`. Change no rule file, hook definition or trust record.
+  - **Acceptance:** `docs/evidence/wd240.md` shows the `ask` prompt was observed, one `control` event with `rule`, `action` and `delivered_at`, and `rules stats` with a nonzero `fired`. This completes the live enabling part of WD-159.
+
+- [ ] **WD-241 - Price Codex sessions correctly at every call site.** P0. Package `wdi`. No dependencies.
+  - **Why.** Codex `input_tokens` include cached tokens. `PricingResolver.cost` (`insights/src/wdi/metrics/pricing.py`) has `input_is_net: bool = True` and then prices by the Claude rule, so cached tokens are charged twice. `metrics/compare.py` passes the right value; `compute._model_cost`, the session page in `web/routes/sessions.py` and `sessions show` in `cli.py` do not.
+  - **Fixed decisions.** Remove the `input_is_net` parameter. `cost` derives the rule from `provider`: `codex` input includes cached tokens, every other provider's input is net. Update the four callers and the docstring. Correct the sentence "Parsed input is already net of cache reads" in `insights/README.md` and the matching one in `insights/docs/`.
+  - **Steps.** First a failing test per call site with one synthetic Codex session whose expected cost equals what `compare` reports for it; then the change.
+  - **Do not.** Change tariffs, Decimal handling or the Claude result.
+  - **Acceptance:** the four call-site tests and `uv run --directory insights pytest` pass; `rg input_is_net insights` prints nothing.
+
+- [ ] **WD-242 - Keep `wdi config init` from freezing tariffs.** P0. Package `wdi`. No dependencies.
+  - **Why.** `create_default_config` (`insights/src/wdi/config.py`) dumps every default, including `pricing`. On the next load that block takes the `Tariffs.from_inline` path dated `date.min`, which hides the dated packaged tariff.
+  - **Fixed decisions.** `create_default_config` omits `pricing` from the written file. A `pricing` block the user wrote keeps working as an explicit override. Delete the unused `CostEstimationConfig` and its field.
+  - **Acceptance:** a test that a configuration written by `init` and loaded again resolves a model through the packaged dated tariff; a test that a hand-written `pricing` block still overrides; the insights suite passes.
+
+- [ ] **WD-243 - Capture instruction files that are symbolic links.** P0. Package `agent_watchdog`. No dependencies.
+  - **Why.** `_capture_files` (`src/agent_watchdog/session_environment.py`) compares the resolved target with unresolved roots, so a user instruction file linked from elsewhere gets `error = "outside_roots"` and no digest. Session conditions and the "instructions changed" filter then miss exactly the files the owner edits.
+  - **Fixed decisions.** Resolve the roots once. A top-level user or project file (one named in `_FILES`) that is a link is read through the link; its entry keeps `path` as the link path and gains `target` with the resolved path. The directory of such a target joins the allowed roots for `@` imports found in that file. Import depth, file count, size and deadline limits do not change. `target` is a new key inside the existing JSON column, so the capture schema does not change; document it in `docs/storage.md` and `docs/read-contract.md`.
+  - **Steps.** Tests first: a linked top-level file is captured; an import next to the target is followed; an import that leaves every allowed root still gets `outside_roots`. A test that cannot create a link on the host skips with that reason.
+  - **Acceptance:** `uv run pytest tests/test_session_environment.py` passes, then the root suite once.
+
+### Loop L1 - Delivery primitives in the daemon
+
+- [ ] **WD-244 - Project scope and session source for declarative rules.** P1. Package `agent_watchdog`. No dependencies.
+  - **Why.** A rule can already inject `context` at `SessionStart`, but it fires in every project. Advice for one project cannot be expressed.
+  - **Fixed decisions.**
+    - `Match` in `rules/declarative.py` gains `projects: list[str] | None` (project aliases, nonempty when present) and `session_source: list[str] | None` (values of `hook_input["source"]`, valid only when `event = "SessionStart"`).
+    - In `engine.decide`, after the project is resolved by `_project_of`, a rule whose `projects` does not contain the project's alias is skipped like a rule whose predicates do not hold: no throttle record, no finding. A missing `source` in the input makes `session_source` false.
+    - An alias that matches no registered project is not a load error; `rules show` lists it under `unknown_projects`.
+    - Document both keys in `docs/rules.md` with one example: a `SessionStart` `context` rule for one project.
+  - **Do not.** Add a per-project rules folder or change approval.
+  - **Acceptance:** tests in `tests/test_rules_declarative.py` for match, no match, unknown alias and `session_source` on another event rejected at load; one decision-channel test through the daemon that delivers the context only in the named project; root suite passes.
+
+- [ ] **WD-245 - `agent-watchdog rules propose --from FILE`.** P1. Depends on WD-244. Package `agent_watchdog`.
+  - **Why.** Nothing outside a text editor can hand a rule to Watchdog. This is the single entry for rules written by `wdi` (WD-252).
+  - **Fixed decisions.** A new function in `rules/manage.py` and a `propose` action under the `rules` parser in `cli.py`. It reads one `.toml` file, validates it with `parse_rule`, and copies the exact bytes to `<config-dir>/rules/<name>.toml`. It refuses: a `.py` file, a name that exists there, a name of a built-in, an invalid body. The new rule has status `proposed`; the command approves and enables nothing and prints the next command (`rules approve <name>`).
+  - **Do not.** Implement model-written rule bodies or Python candidates; those stay in WD-144.
+  - **Acceptance:** tests for the accepted case and each refusal, and that a proposed rule produces no decision; `docs/rules.md` and `docs/cli.md` updated; root suite passes.
+
+- [ ] **WD-246 - Output size and repeated reads in session state.** P1. Depends on WD-245. Package `agent_watchdog`.
+  - **Why.** Tool outputs carry about half of the context cost measured by the audit, and a third of that comes from outputs above 20,000 characters. No rule can see output size.
+  - **Fixed decisions.**
+    - `SessionState` (`state.py`) gains `last_output_bytes: int | None`, `output_bytes_in_turn: int | None` and `repeat_reads: int`. `_finished_call` sets the size from the captured `tool_response`; without captured content the size is `None`. `repeat_reads` counts consecutive Claude `Read` calls with the same `file_path`, `offset` and `limit` and no edit of that file between them; any other tool leaves it at 0.
+    - Bump `state.VERSION`, so stored projections rebuild.
+    - `StatePredicates` gains `last_output_bytes` and `repeat_reads` (both `Bounds`); the message placeholders gain `{output_kib}` and `{repeat_reads}`. An unknown size makes the predicate false.
+    - Two built-in rules, `default_enabled = false`, provider Claude, `PostToolUse`, action `context`, `cooldown_seconds = 600`, `max_per_turn = 1`: `large_tool_output` (`last_output_bytes.min = 65536`) and `repeated_file_read` (`repeat_reads.min = 2`). Their messages name the remedy in one sentence each.
+  - **Acceptance:** tests for both counters including unknown size and an edit between reads, both predicates, both built-ins off by default and firing when enabled; `docs/rules.md` updated; root suite passes.
+
+### Loop L2 - Findings and recommendations as data in `wdi` (no model)
+
+- [ ] **WD-247 - Insights schema revision 5: every table of this tranche.** P1. Package `wdi`. No dependencies.
+  - **Why.** Rule 7: one schema change for the tranche, one conversion of the installed database.
+  - **Fixed decisions.**
+    - Edit `insights/src/wdi/db/migrations/0001_init.sql` in place and set `SCHEMA_REVISION = 5`.
+    - Derived tables: `session_features(session_id, machine_id, carried_chars, carried_tool_output_chars, carried_tool_input_chars, carried_file_chars, large_output_count, large_output_chars, strict_repeated_reads, max_failure_run, user_corrections, features_version, computed_at)`; `findings(finding_id, detector, detector_version, session_id, machine_id, stream_id, first_idx, last_idx, subject, occurrences, magnitude_chars, carried_chars, fingerprint)` unique on detector, version, session, machine and fingerprint; `error_signatures(signature, project_id, tool_name, command_kind, sample, occurrences, sessions, first_seen, last_seen, resolved_by)`.
+    - Primary tables: `observations(observation_id, run_id, session_id, machine_id, label, description, kind, severity, fix_idea, evidence_ids, model, prompt_version, created_at)`; `patterns(pattern_id, name, description, status, detector, sessions, projects, carried_chars, created_at, updated_at)` with `status` in `new`, `known`, `dismissed`; `pattern_observations(pattern_id, observation_id)`; `recommendations(recommendation_id, source, source_ref, kind, scope, project, target_file, text, trigger, expected_detector, status, created_at, applied_at, before_digest, after_digest, backup_path, note)` with `kind` in `instruction`, `advice_rule`, `setting`, `hard_rule` and `status` in `proposed`, `applied`, `rejected`, `retired`; `mode_reports(report_id, mode, project, window_start, window_end, model, created_at, result)`; and `experiments`, `variants`, `runs` exactly as WD-201 lists them.
+    - Every numeric feature is nullable: unknown is not zero. Mark each table derived or primary in the SQL comments and in `insights/AGENTS.md`, which also gains the four hook and environment tables it omits today.
+    - One-off script `insights/scripts/convert_rev4_to_rev5.py`: refuses unless `user_version` is 4, creates the new tables in one transaction, sets 5. It touches no existing table.
+    - Delete `scripts/wd195_convert_insights.py`, the test in `insights/tests/test_hook_import.py` that runs it and its paragraph in `insights/README.md`.
+  - **Acceptance:** tests that a fresh database has every table, that the script converts a synthetic revision-4 database and refuses any other revision; the insights suite passes. Converting the installed database is a WD-269 line.
+
+- [ ] **WD-248 - Session features and carried context cost.** P1. Depends on WD-247. Package `wdi`.
+  - **Why.** Cache reads dominate cost, and each item in the context is paid for again on every later request. Carried cost attributes that to the item.
+  - **Fixed decisions.**
+    - New module `insights/src/wdi/metrics/features.py`. For one session over `context_events` rows with a `char_count` and a `model_call_index`: `carried_chars` is the sum of `char_count * (last_call - model_call_index)`, where `last_call` is the highest `model_call_index` in the same `stream_id` and `compaction_generation` (null counts as 0). The three partial sums use categories: tool output (`tool_output_other`, `mixed_tool_output`, `search_result`, `build_test_log`, `directory_listing`, `vcs`, `web_result`), tool input (`tool_input`), file (`code_file`).
+    - A large output is a `tool_output` event above 20,000 characters (one module constant).
+    - A strict repeated read is a `code_file` tool output whose `fingerprint` already occurred earlier in the same session, stream and compaction generation.
+    - `max_failure_run` is the longest run of consecutive failed main-stream `tool_calls` with the same `command_kind` (or `tool_name` when it is null).
+    - `user_corrections` stays null until WD-251. A session without context events gets nulls, not zeros.
+    - Features are recomputed for a session wherever `recompute_session_aggregates` runs for it.
+    - Replace the repeated-read SQL copies in `metrics/queries.py` with calls to one function, and state in `insights/README.md` that the dashboard number changed meaning to the strict one.
+    - Add `carried_chars`, `large_output_count`, `strict_repeated_reads` and `max_failure_run` to `_METRICS` in `metrics/compare.py`.
+  - **Acceptance:** a test per feature on synthetic sessions, including a compaction boundary and a session with no context events; `compare` tests for the four metrics; the insights suite passes.
+
+- [ ] **WD-249 - Detectors and `wdi findings`.** P1. Depends on WD-248. Package `wdi`.
+  - **Why.** Dashboard queries show totals; a correction needs individual findings with evidence and a cost.
+  - **Fixed decisions.**
+    - New module `insights/src/wdi/detect.py` with a module-level tuple of functions `(conn, session_id, machine_id) -> list[Finding]`. This is ordinary code, not an extension point: no registration, no dynamic loading.
+    - Detectors: `large_output` (one finding per large output; `subject` is its `command_kind` or tool name; `magnitude_chars` its size; `carried_chars` its carried cost), `repeated_read` (one per strict repeat; `subject` is the `target_fingerprint`), `failure_run` (one per run of at least 3; `occurrences` is its length), `missed_delegation` (one per session that `queries.subagent_opportunities` selects today).
+    - Each finding stores `first_idx` and `last_idx` of its evidence and a stable `fingerprint`. Findings of a session are replaced when its features are recomputed.
+    - `wdi findings [--project] [--since] [--detector] [--by subject] [--json]`, ordered by `carried_chars`; `--by subject` groups, which shows the commands that produce large outputs.
+    - Delete `context_audit.py` and its document once `wdi findings` covers its two lists (largest outputs and errors).
+  - **Acceptance:** a test per detector with a positive and a negative session, replacement on recompute, and the two CLI orderings; the insights suite passes.
+
+- [ ] **WD-250 - Error signatures and `wdi errors`.** P1. Depends on WD-249. Package `wdi`.
+  - **Why.** The same failure recurs across sessions; grouping it and recording what worked next gives instruction candidates without a model.
+  - **Fixed decisions.**
+    - Source: main-stream `tool_calls` with `is_error = 1` and a non-null `output_preview`. Normalize: paths, hexadecimal runs of 7 or more, numbers and quoted strings become placeholders, whitespace collapses, the first 200 characters remain. `signature` is the first 16 hexadecimal characters of the SHA-256 of that text.
+    - `resolved_by` is the most frequent `command_kind` of the first successful `exec` call within the next three calls of the same stream; null when there is none.
+    - `sample` is one normalized text passed through `agent_watchdog.privacy.text`; add `agent_watchdog.privacy` to the public modules in `docs/read-contract.md`.
+    - Rebuilt per project during import. `wdi errors [--project] [--since] [--limit] [--json]` orders by `sessions`, then `occurrences`.
+  - **Acceptance:** tests for normalization (two texts that differ only in a path and a number share a signature), `resolved_by`, the credential filter on the sample, and the CLI; the insights suite passes.
+
+- [ ] **WD-251 - User corrections after an interrupted turn.** P1. Depends on WD-249. Package `wdi`.
+  - **Why.** A prompt typed right after the user interrupts a turn is a free label that the agent was doing the wrong thing.
+  - **Fixed decisions.**
+    - Codex already stores an aborted turn as a message with `extra.subtype = "turn_aborted"`. In `ingest/claude_code.py`, give a user record whose text starts with `[Request interrupted by user` the same subtype. Before coding, confirm that marker in a real transcript under the git-ignored `tests/local/` when that directory exists; if it differs, stop and ask.
+    - Detector `user_correction` in `detect.py`: one finding per abort marker followed by a user message in the same stream; `first_idx` is the marker, `last_idx` the message.
+    - `session_features.user_corrections` is the count; it is null for a session whose parser cannot see the marker (origin `legacy`).
+    - Committed fixtures stay synthetic.
+  - **Acceptance:** tests for both providers, an abort with no following prompt, and the null case; the insights suite passes. Rebuilding derived rows of the installed database is a WD-269 line.
+
+- [ ] **WD-252 - Recommendations registry.** P1. Depends on WD-247, WD-245. Package `wdi`.
+  - **Why.** Recommendations live in report text. Without a row that has a status and an applied date, nothing can be applied once, retired or measured.
+  - **Fixed decisions.**
+    - `wdi recommendations add|list|show|reject|retire|mark-applied`. `add` takes `--kind`, `--scope`, `--project`, `--target-file`, `--text`, `--expected-detector` and, for `advice_rule`, `--trigger-file` (JSON). `mark-applied ID [--at ISO8601]` records a change the owner made by hand.
+    - `trigger` is a closed object: `event` (`SessionStart`, `UserPromptSubmit`, `PreToolUse` or `PostToolUse`), optional `tool_names`, optional `input_regex`, `cooldown_seconds`, `max_per_turn`. Unknown keys are rejected.
+    - `wdi recommendations export-rule ID --to FILE` works only for `advice_rule` and builds the TOML in code: name `advice_<id>`, `version = "1"`, `origin = "wdi recommendation <id>"`, provider Claude, action `context`, `message` from `text` (at most 1,000 characters), `[match] projects` from `project`. The file is for `agent-watchdog rules propose --from`; `wdi` never writes into the rules folder and never approves.
+    - `wdi` does not import the Watchdog rules modules at run time; a test may import `parse_rule` to check that the exported file is valid.
+  - **Acceptance:** tests for each command, the closed trigger, the status transitions, and that every exported file parses with `parse_rule`; the insights suite passes.
+
+- [ ] **WD-253 - Effect of an applied recommendation.** P1. Depends on WD-252, WD-249. Package `wdi`.
+  - **Why.** The loop needs a verdict without human review of single findings.
+  - **Fixed decisions.**
+    - `wdi recommendations effect ID [--sessions N]` (default 20) takes the last N sessions of the recommendation's project before `applied_at` and the first N after it, noise excluded.
+    - Per side: sessions, mean and median findings of `expected_detector` per session, and mean and median `carried_chars`. Without an `expected_detector` only `carried_chars` is used.
+    - Verdict on the mean of the first available measure: `too_few` when either side has fewer than five sessions; `improved` when it fell by at least 20%; `worse` when it rose by at least 20%; otherwise `no_change`. The output states that this is a threshold, not a significance test.
+    - `recommendations list` shows the verdict for applied rows.
+  - **Out of scope.** The in-session response to one delivered `context`; add it only after WD-240 has produced deliveries to measure.
+  - **Acceptance:** tests for each verdict, the missing detector and the unknown-feature case (unknown sessions are excluded and counted); the insights suite passes.
+
+### Loop L3 - Open discovery with a model (explicit command only)
+
+Each mode prompt today asks for fixed categories, so it finds only what it is asked about. These tasks add an open rubric. Every model call uses the isolated runner `agent_watchdog.insights.llm.claude` with a JSON schema; the Codex backend is refused for these commands. Tests use a synthetic executable.
+
+- [ ] **WD-254 - Session digest with the credential filter.** P2. Depends on WD-251. Package `wdi`.
+  - **Fixed decisions.**
+    - New package `insights/src/wdi/discover/` with `digest.py`. `build(conn, session_id, machine_id) -> str` is deterministic and at most 12,000 characters.
+    - Content: a header (project, agent, model, duration, tokens, the `session_features` row); per user turn the prompt's first 300 characters as `M<idx>`; tool calls as `T<idx>` lines, where consecutive calls with the same tool, `command_kind` and outcome collapse into one line with a count and total output size, while a failed call or a large output is always its own line; the session's findings as `F<finding_id>`.
+    - Over budget: keep the first two turns, the last two and the turns that contain findings; replace the rest with one line that states how many turns were omitted.
+    - Every text fragment passes through `agent_watchdog.privacy.text`.
+  - **Acceptance:** tests for determinism, the budget, the collapse rule, the omission line and the filter; the insights suite passes.
+
+- [ ] **WD-255 - `wdi discover run`: open observations per session.** P2. Depends on WD-254. Package `wdi`.
+  - **Fixed decisions.**
+    - Selection inside `--project` and `--since`: the top K sessions by `carried_chars`, K random ones, and every session with a `user_correction` finding; noise sessions excluded. `--max-calls N` is required and caps the total; the random part uses a seed that the command prints.
+    - The command prints the planned number of calls and the estimated input size, and starts only with `--yes`.
+    - Prompt template `discover.txt` under `wdi/llm/prompts/`. It asks for at most five observations where the agent wasted effort, broke a good practice or had to be corrected, and says explicitly that the listed kinds are examples, not a limit.
+    - Schema: `observations[]` with `label` (at most eight words), `description`, `evidence_ids`, `kind` (`context`, `errors`, `workflow`, `delegation`, `permissions`, `verification`, `communication`, `other`), `severity` (1 to 3) and `fix_idea`.
+    - An observation that cites no identifier present in the digest is dropped and counted. Stored rows carry `run_id`, `model` and `prompt_version`. A failed call is reported and does not stop the run; the exit status is 1 when any call failed.
+  - **Acceptance:** tests for selection, the cap, the refusal without `--yes`, grounding, a failed call and the Codex refusal; the insights suite passes. A live run is a WD-269 line.
+
+- [ ] **WD-256 - `wdi discover reduce` and `wdi patterns`.** P2. Depends on WD-255. Package `wdi`.
+  - **Fixed decisions.**
+    - Input: the distinct labels of observations not yet linked to a pattern, with counts, plus the names of existing patterns; at most 300 labels per call, at most `--max-calls` calls, `--yes` required.
+    - Schema: `patterns[]` with `name`, `description`, `labels[]` and optional `existing_pattern_id`. A label the model did not return stays unlinked.
+    - Code, not the model, links observations, counts distinct sessions and projects and sums `carried_chars` of those sessions.
+    - `wdi patterns [--status] [--json]` lists by sessions; `wdi patterns dismiss ID` and `wdi patterns known ID --detector NAME` set the status.
+    - Add a short section to `docs/architecture.md`: a pattern seen in at least five sessions that can be checked mechanically becomes a detector task, after which its status is `known`.
+  - **Acceptance:** tests for linking, counts, attaching to an existing pattern, unlinked leftovers and the status commands; the insights suite passes.
+
+- [ ] **WD-257 - `wdi discover propose`: a recommendation for a pattern.** P2. Depends on WD-256, WD-252. Package `wdi`.
+  - **Fixed decisions.** One call per pattern, `--yes` required. Input: the pattern and up to five member observations. Schema: `kind`, `scope`, `text` (at most 600 characters), optional `trigger` (the closed object of WD-252) and optional `expected_detector` (must name an existing detector or be null). The result is one `proposed` recommendation with `source = "pattern"`. The model writes text only; rule files are still built by `export-rule`.
+  - **Acceptance:** tests for a valid answer, a rejected trigger key, an unknown detector name and a failed call; the insights suite passes.
+
+### Loop L4 - MCP
+
+- [ ] **WD-258 - Two guidance tools instead of four statistics tools.** P2. Depends on WD-250, WD-252. Package `wdi`.
+  - **Why.** Owner decision 2. No agent has called the insights MCP tools in 80,105 recorded tool calls: they return statistics for an analyst, and an agent does not know to ask.
+  - **Fixed decisions.**
+    - `create_mcp_server` (`insights/src/wdi/mcp/server.py`) exposes exactly `get_project_guidance(project=None)` and `find_error_solutions(error_text, project=None)`. Without `project`, the server resolves the project of its working directory through `readapi.resolve_project`; an unresolved directory returns an empty result with a reason.
+    - `get_project_guidance` returns the applied and proposed `instruction` and `advice_rule` recommendations of the project, at most 2 KiB in total, newest first.
+    - `find_error_solutions` normalizes the text as WD-250 does and returns up to three signatures of the project with `sessions` and `resolved_by`.
+    - The server opens the database with `mode=ro` and creates nothing.
+    - `wdi doctor` prints the number of calls to tools named `mcp__watchdog-insights__*` in the last 21 days.
+    - `docs/rules.md` gains an example advice rule (`SessionStart`, `context`) whose message names the two tools.
+  - **Acceptance:** tests for both tools, the size cap, the working-directory resolution, the read-only open on a missing database and the doctor line; `insights/README.md` updated; the insights suite passes.
+
+- [ ] **WD-259 - Decide the MCP server's future from three weeks of use.** P2. `live`. Depends on WD-258 and 21 days after its WD-269 registration line.
+  - **Fixed decisions.** Read the `wdi doctor` count. Zero calls: delete `insights/src/wdi/mcp/`, the `mcp` command, the `mcp` dependency, its tests and the README section. Otherwise keep it and record the count. The owner confirms either outcome.
+  - **Acceptance:** `docs/evidence/wd259.md` records the count, the decision and, on removal, a passing insights suite and `uv build --all-packages`.
+
+### Loop L5 - Debt found by the audit
+
+- [ ] **WD-260 - One implementation of the shared metric helpers.** P2. Depends on WD-248. Package `wdi`.
+  - **Fixed decisions.** One percentile function (nearest rank, as `metrics/compare.py` uses) replaces `compute._percentile` and `usage._percentiles`. One date normalizer replaces the copy in `context_analysis.py`. `metrics/compare.py` selects sessions through `SessionFilter` and honours `is_noise`; a store without identity is skipped with a warning instead of failing the comparison. `queries.overview` and `queries.tokens_by_model` return, next to each token sum, the number of sessions whose value is unknown, and the CLI and web show it. `ingest/codex._command_kind` calls `ingest/context.command_kind`. Delete `Repository.context_resume`.
+  - **Do not.** Change any reported number except where unknown values were shown as zero; state those cases in the evidence file.
+  - **Acceptance:** existing metric tests pass unmodified except those that asserted a zero for unknown; a test per replaced helper; the insights suite passes.
+
+- [ ] **WD-261 - One model-analysis path in `wdi`.** P2. Depends on WD-199, WD-254. Package `wdi`.
+  - **Why.** After WD-199, `wdi` holds two frameworks: the modes (schema, evidence grounding, budget, credential filter) and the analyzers (free text, 40,000-character truncation, no filter). They overlap on context, workflow, subagents and errors.
+  - **Fixed decisions.** Write the parity table first (owner decision 7 of 2026-11-11) in `docs/evidence/wd261.md`: each analyzer, coach and context advisor against the mode that covers it. Port `prompt-quality`, `summary`, `agent-efficiency` and `workflow-recommendations` to the mode contract and keep their `llm_analyses` rows readable. The installed database has no coach report, and the deterministic `_advisor` in `context_analysis.py` cannot reach its `revise` branch; remove coach and the context advisor only after the owner confirms the table. Stop and ask at that point.
+  - **Acceptance:** the parity table with the owner's confirmation; tests for the ported analyzers; no text reaches a model without the credential filter (a test per analyzer); the insights suite passes.
+
+- [ ] **WD-262 - Documentation drift.** P2. No dependencies. Documents only.
+  - **Fixed decisions.** Remove the advice to delete the database from `insights/docs/context-analysis.md` and `insights/docs/context-efficiency-audit.md`; name `insights/scripts/rebuild_db.py` instead. In `insights/README.md`: list all four analyzers, drop "import JSONL transcripts" as the only source. In `insights/GOTCHAS.md`: the import re-reads a changed stream from its first record; remove pyright; add `SCHEMA_REVISION`. Correct the first line of `pricing.example.toml`, the stale docstrings at the top of `metrics/pricing.py` and `metrics/usage.py`, and the `--type` help in `cli.py`. In `docs/provider-compatibility.md`, align the Claude `SubagentStart` context claim with `_RENDERABLE` in `rules/api.py` (not rendered). In `docs/read-contract.md`, replace the unmet statement about what `readapi` imports with what it imports, and state which Watchdog modules insights tests may use for fixtures.
+  - **Acceptance:** `git diff --check` is clean; no test is added.
+
+- [ ] **WD-263 - Track the criterion for switching off file import.** P2. No dependencies. Package `wdi`.
+  - **Why.** WD-192 set the criterion (no file-only session for a week), but nothing tracks it; the count was 296 Claude and 13 Codex sessions on 2026-11-13.
+  - **Fixed decisions.** `wdi doctor` prints, per provider, the number of file-only sessions and the start time of the newest one. Add nothing else. Switching the sources off by default is a separate decision: stop and ask when both numbers have been zero for a week.
+  - **Acceptance:** a test for the doctor lines; the insights suite passes.
+
+- [ ] **WD-264 - Credential filter where snapshot content leaves the store.** P2. No dependencies. Package `wdi`, plus one document.
+  - **Why.** Owner decision 3. WD-190 stores settings files byte for byte; its original text required redaction and the implementing commit changed that without a recorded decision.
+  - **Fixed decisions.** Record the decision in `docs/architecture.md` next to the split decisions and in `docs/storage.md`. `read_session_diff` (`insights/src/wdi/metrics/environment.py`) and any route that shows a captured settings or instruction blob pass the text through `agent_watchdog.privacy.text` before returning it; the page says that the view is filtered. No blob content is put into any model prompt.
+  - **Acceptance:** a test that a synthetic settings blob with a token is shown without it, for each route that returns blob text; the insights suite passes.
+
+- [ ] **WD-265 - Readers survive a store that is being created or replaced.** P2. No dependencies. Package `agent_watchdog`.
+  - **Why.** `readapi.stores` opens `store.json` with a plain `open`, while the daemon replaces it; on Windows the replacement can fail and the project is then reported degraded. A reader can also open `capture.sqlite3` before its schema exists. WD-231 and WD-233 changed only tests.
+  - **Fixed decisions.**
+    - Contract: the daemon replaces `store.json`; any process may read it. `readapi.stores` opens it through `open_shared_read` (`_windows_files.py`) on Windows and retries a sharing failure for at most 200 ms, then skips that store with a warning.
+    - A manifest replacement that fails because a reader holds the file is retried on the next visit of the project and does not mark it degraded.
+    - `open_capture` and the capture readers treat `user_version = 0` as "not ready": readers yield nothing, `open_capture` raises the same error type with reason `not_ready`.
+  - **Acceptance:** a test that holds the manifest open while it is replaced and reads it during replacement; a test for the version-0 database; `docs/read-contract.md` updated; root suite passes.
+
+- [ ] **WD-266 - Bound the cost the capture work added to the daemon.** P2. Depends on WD-265 (both touch `daemon.py`). Package `agent_watchdog`.
+  - **Why.** The WD-210 measurement predates capture, scan and snapshots. Since then the scan reopens every ignored file each cycle, every admitted event opens `capture.sqlite3` to ask `has_session_env`, and `CaptureResult.unrecognized_name` is counted but reported nowhere.
+  - **Fixed decisions.** In `scan.py`, an unchanged file (same size and modification time) is skipped for every stored decision, not only `complete`; a changed file is evaluated again. The daemon keeps an in-memory set of sessions known to have an environment row and asks the store only on a miss. `doctor` reports the unrecognized-name count next to the scan coverage.
+  - **Acceptance:** tests that an unchanged ignored file is not opened again, that a changed one is, that the second event of a session does not open the capture database, and the doctor field; root suite passes.
+
+- [ ] **WD-267 - One capture reader and one schema definition.** P2. Depends on WD-266. Package `agent_watchdog`.
+  - **Fixed decisions.** `harness_version._metadata_version` and the tests read records through `readapi.lines`; delete `capture_store.iter_lines`. `inspection.database` uses `readapi.snapshot`. The capture schema becomes one set of `CREATE TABLE` statements with the schema-3 columns in place; delete `CAPTURE_V3_SCHEMA` and the schema-2 branches in `readapi`. The one-off scripts `scripts/capture_schema_v2.py` and `scripts/capture_schema_v3.py` carry their own statements. Delete `_proc.popen` and `readiness.STAGES`, which nothing references. Behaviour does not change.
+  - **Acceptance:** a test that a fresh store's table definitions equal those of a converted synthetic schema-1 store; existing tests pass; root suite passes.
+
+- [ ] **WD-268 - Web pages for findings, patterns and recommendations.** P2. Depends on WD-252, WD-256. Package `wdi`.
+  - **Fixed decisions.** Three read-only pages built from the same functions the CLI uses: findings grouped by subject with a session link, patterns with status and counts, recommendations with status and the WD-253 verdict. No button calls a model or writes a file; applying stays in WD-202.
+  - **Acceptance:** each page renders its normal and empty states; the insights suite passes.
+
+- [ ] **WD-269 - Live rollout checklist for the Loop tranche.** `live`: owner or senior model, following `LIVE.md`. One line per step; each is recorded in `docs/evidence/wd269.md` when done.
+  - [ ] After WD-243, WD-244, WD-245 and WD-246: update the installed instance and confirm one fresh hook event per provider.
+  - [ ] After WD-247: run `insights/scripts/convert_rev4_to_rev5.py` on the installed database.
+  - [ ] After WD-251: rebuild the derived rows (`wdi import --full`).
+  - [ ] After WD-255: one authorized `wdi discover run --max-calls 10`.
+  - [ ] After WD-258: remove the old MCP registration and register `wdi mcp`; this date starts the WD-259 clock.
+  - [ ] After WD-265 and WD-266: update the installed instance and compare one hour of idle tick cost with the WD-210 figures.
 
 ## Split P1 - Read contract and insights on Watchdog data
 
@@ -71,6 +326,7 @@ Line numbers in these tasks refer to commit `0d5e984`. Paths under `insights/` e
     - The tests of the moved modes move to `insights/tests`; they may import `agent_watchdog.storage.Store` to seed data.
   - **Out of scope.** Merging the mode framework with the `wdi` analyzers. Rule candidates (WD-144).
   - **Acceptance:** both suites pass with the same total number of mode tests as before the move; `agent-watchdog insights session` works; one separately authorized live `wdi insights errors` run appears in the viewer.
+  - **2026-11-15.** The dependency on WD-197 means its code, which is delivered; the pending live acceptance of WD-197 does not block this task. The `mode_reports` table comes from WD-247, so this task changes no schema. Each recommendation of a stored report that carries `scope`, `target_file` and `project` is also written to the WD-252 registry as `proposed` with `source = "mode_report"`. The live run is a WD-269 line, not part of this ticket's offline acceptance.
 
 - [ ] **WD-201 - Experiments, stage 1: manual grouping and comparison.** P2. Depends on WD-196, WD-200.
   - **Why.** The owner wants to give the same task and inputs to another model, or to the same model under other rules, tools or Watchdog restrictions, and compare time, tokens, turns, context growth and the result in the repository.
@@ -81,6 +337,7 @@ Line numbers in these tasks refer to commit `0d5e984`. Paths under `insights/` e
     - Sessions attached to a run are excluded from the default dashboards and from the noise filter (`insights/src/wdi/metrics/filters.py:45`); a filter includes them.
   - **Out of scope.** Starting sessions (WD-203).
   - **Acceptance:** tests for the tables, attach and detach, the differing-conditions table and the dashboard exclusion; both suites pass.
+  - **2026-11-15.** The three tables come from WD-247; this task changes no schema. It follows Loop L3: the loop measures ordinary work before and after a change, experiments compare variants of one task. The conditions table depends on WD-243, which makes linked instruction files visible.
 
 - [ ] **WD-202 - Apply selected recommendations.** P2. Depends on WD-199, WD-200. Carries the acceptance of the closed WD-136c.
   - **Why.** Owner goal: insights applies the fixes its research proposes. No code for this exists in either program.
@@ -93,6 +350,7 @@ Line numbers in these tasks refer to commit `0d5e984`. Paths under `insights/` e
     - Model text is data and is never executed. The server listens on loopback only, requires a per-instance token, and checks `Host` and `Origin`.
     - Tests never write to real provider configuration.
   - **Acceptance:** tests for each target type, the preview, the backup, the registry and each security check; one separately authorized live application recorded in `docs/evidence/wd202.md`.
+  - **2026-11-15.** Depends on WD-252 as well. The `applied_changes` table is replaced by the `recommendations` row itself (`status`, `applied_at`, `before_digest`, `after_digest`, `backup_path`); an applied recommendation is the marker WD-253 measures from. Text written into an instruction file goes inside a managed block delimited by two comment lines that carry the recommendation id, so that retiring the recommendation removes exactly that block. A recommendation of kind `advice_rule` or `hard_rule` is never written by this task: it leaves `wdi` only through `export-rule` and `agent-watchdog rules propose --from` (WD-245).
 
 - [ ] **WD-207 - Translate and import the three session-format references.** P2. Depends on WD-184.
   - **Why.** The `project-b` checkout documents the Claude Code and Codex session formats and their differences in three files under `docs/`; they are not in English and so were not imported. They are the reference for the parsers.
@@ -123,6 +381,7 @@ Line numbers in these tasks refer to commit `0d5e984`. Paths under `insights/` e
     - `wdi` reads any number of `watchdog.data_dirs`; sessions are keyed by the manifest `machine_id`; it never writes to a store.
     - Parity table before removal (owner decision 7): the snapshot export and merge commands of `wdi` (`insights/src/wdi/sync/snapshot.py`, which carries 26 session columns) against reading exported stores. Remove the snapshot commands only after the table shows nothing is lost and the user confirms.
   - **Acceptance:** tests with two synthetic data directories from different machine ids; the parity table and the confirmation in `docs/evidence/wd205.md`.
+  - **2026-11-15.** Owner decision 3 of the Loop tranche: `export-store` leaves out the `blobs` rows that hold settings files unless `--include-settings` is given, and says so in its output; instruction files and diffs are exported.
 
 - [ ] **WD-206 - Store an oversized hook event without its content.** P3. No dependencies.
   - **Why.** A hook input above `payload_bytes` is dropped whole: the adapter reads `payload_bytes + 1` bytes, counts a loss and returns before parsing (`native/src/main.rs:604-616`); the Python path and the daemon do the same (`hooks.py:301-314`, `:360-373`, `daemon.py:1050-1064`, `storage.py:628-629`). The event disappears from the timeline.
@@ -160,6 +419,7 @@ Line numbers in these tasks refer to commit `0d5e984`. Paths under `insights/` e
   **Retained-data baseline (live stores read 2026-10-20; Claude data ends 2026-10-08):** Claude had 1 compaction in 90 agents; the median request context was 213k, p90 532k; 44% of Claude input tokens were in requests above 400k. Codex had 25 compactions in 131 agents; median 115k, p90 195k. A replay that resets the context to 40k at threshold T (no rework modelled, so an upper bound) leaves Claude input at 57% of actual for T=300k and 43% for T=200k, and Codex at 89% for T=200k.
   **Layer 1 applied on the user-local machine (2026-10-20):** Claude `autoCompactWindow = 300000` in the user settings (a documented setting, preferred over the undocumented environment variable); Codex `model_auto_compact_token_limit = 180000`; a "Compact instructions" section in the user-level Claude and Codex instruction files. **Measurement:** compare windows of at least one week before and after 2026-10-20 on cache-read tokens per session and per request, compactions per agent, strict re-reads and failure runs within N requests after a compaction, and user interruptions. Exclude Watchdog's own probe and headless sessions, and note that Claude sessions from 2026-10-18 to 2026-10-20 are missing (WD-174).
   **2026-11-11.** `model_context_window` is present in the raw Codex records captured by WD-187, so `wdi` can report occupancy for history without this task. The daemon-side occupancy for rules still needs the reader change described above.
+  **2026-11-15.** Do this after WD-246 and reuse its mechanics: new `SessionState` fields, a `state.VERSION` bump, `Bounds` predicates and a built-in `context` rule that ships off. The before-and-after measurement uses `wdi recommendations effect` (WD-253) with `carried_chars` instead of a hand-made comparison.
 
 - [ ] **WD-167 - Calibrate Codex behavior on a frozen provider-specific cohort.** P2; depends on WD-164 and evaluated rule bodies, with WD-165 for model/subagent-specific findings. Freeze the observation window and rule version/body before user verdicts; include Codex sessions with and without findings, shell failures, waiting/polling, background commands, edits, interruptions and subagents. Reuse the existing calibration pipeline rather than transferring Claude WD-122 precision or assistant assessments. Acceptance: reproducible cohort/evidence references, provider/surface/version and outcome-attribution coverage; user-recorded TP/FP/uncertain verdicts, precision with denominators and false-negative review of no-finding sessions; evaluation of WD-161 beyond the six old v2 findings. Feed version/body/provider-scoped evidence to WD-147/WD-159; unsupported or unobserved control remains unqualified, and no automatic promotion follows.
   **2026-10-20; frozen cohort prepared, review pending.** [Evidence](docs/evidence/wd167.md) records 40 Codex sessions, 32 session-scoped findings and 28 no-finding sessions, with rule/source hashes and outcome/version coverage. Seven fresh repeat verdicts give 4 TP / 3 FP (57.14% on 4/7 decided), with no delivery qualification established; WD-161 is complete through its no-change path. Remaining human review, explicit surface attribution, background-execution and interruption coverage are outstanding; older labels do not transfer.
@@ -170,11 +430,14 @@ Line numbers in these tasks refer to commit `0d5e984`. Paths under `insights/` e
 
   **P2; missing implementation.** This ticket retains the Claude `PowerShell` coverage work; Codex tool/input normalization is covered by [WD-164](docs/evidence/wd164.md) and confirmed control subscriptions to WD-151. Do not infer identical provider tool names or duplicate their acceptance here.
 
+  **2026-11-15.** Owner decision 1 of the Loop tranche is the sign-off this ticket waited for: every approved rule may act on the installed instance. WD-240 performs and records the enabling. The week of `rules stats`, the per-firing verdicts and the `stop_without_verification` decision remain here.
+
 ## P2 - Rules, candidates, semantic judge and calibration: accepted designs
 
 - [ ] **WD-144 - Rule synthesis by the model: full rule bodies as candidates.** Depends on WD-142, WD-143. Extend `RuleCandidate` with `body`, `events`, `proposed_action`, `test_session_ids`, a separate implementation format (`toml|python`), and the existing deterministic/statistical signal classification. The model proposes the classification; the user explicitly confirms it at `rules approve`. Neither format implies a classification. Ship `rules/SPEC.md` into the system prompt; validate bodies (TOML model or `compile()` only, never import) and save valid ones to `rules/proposed/` with a provenance sidecar under action `log`; `insights --propose-rules`, `rules propose --from`. The accepted workflow is `rules approve` -> replay with `rules test` -> separate `rules enable`. A newly generated candidate stays inactive after approval and replay; approval authorizes the exact code for execution, not activation. Unchanged bytes need no second approval before enablement; changed bytes invalidate approval and cannot run. Acceptance: generation and validation never execute proposed Python; replay refuses unapproved or changed code, uses WD-143's approved-byte execution and cooperative timeout contract, and cannot apply replay decisions to live sessions; approval and replay alone never activate a candidate; format and classification are independent, approval records the user-confirmed classification and a model-supplied deterministic label never bypasses review or promotion gates; invalid bodies are flagged `invalid_body`; one separately authorized real `insights errors` run records the count of valid candidates in `docs/verification.md`.
   **P2; review resolved by user on 2026-10-18; implementation pending.** One code approval covers replay and later live execution of unchanged bytes; enablement is a separate explicit operation. No one-shot pre-approval exception or separate replay/live approval scopes are introduced. The user selected model-proposed, human-confirmed deterministic/statistical classification, stored separately from implementation format. This label does not automatically enable a rule or increase its intervention strength; WD-147's promotion review remains separate. Share the selected analysis backend from WD-166; an unavailable backend or isolation is a reported failure, never implicit provider fallback. See the [architecture decision](docs/architecture.md#wd-144-candidate-approval-and-replay-decision-2026-10-18) and [review record](docs/evidence/wd144-review.md). These design decisions do not authorize a live call or approve any rule body.
   **2026-11-11.** After WD-199 the modes that produce candidates run in `wdi`: `insights --propose-rules` becomes a `wdi insights` option that writes candidate files, and `rules propose --from` stays the only way a candidate enters Watchdog. Validation, approval, replay and enablement stay in `agent_watchdog`.
+  **2026-11-15.** WD-245 delivers `rules propose --from` for declarative files, and WD-252 builds advice rules in code from a closed set of fields, with the model writing only the message. What remains here is narrower: rule bodies written by a model, Python candidates, `rules/SPEC.md` and the provenance sidecar.
 
 - [ ] **WD-145 - Automatic semantic judge from the daemon with budget and kill switch.** Depends on WD-140, WD-141. After explicit project opt-in, configured diagnostic triggers (`stop_after_failures`, `long_turn_no_progress`, `subagent_empty_result`) may request analysis without prior calibration of the originating signal. Defaults: disabled; timeout 120 seconds; 5 calls per project per day; per-session cooldown 600 seconds; result validity 1800 seconds; log/status delivery only. Context requires separate explicit configuration and an approved enabled delivery rule on a confirmed provider/surface/version/event capability; unsupported delivery stays log/status without substituting block. Analysis never runs inside the hook deadline, and analysis permission does not grant intervention or promotion rights. Expose all comparable preferences in validated config with defaults/project overrides and effective `judge status`: triggers/thresholds, backend/model/effort, timeout, budget/accounting/day boundary, cooldown, delivery, result lifetime/scope and pause behavior. Preserve approval, capability, kill-switch and fail-open invariants.
   **Budget and lifecycle:** reserve durably before launching analysis; started or uncertain attempts consume a slot, including provider errors, timeout and cancellation. Refund only when analysis CLI launch demonstrably did not occur. A configurable stricter mode may charge every reservation. Persist deduplication and cooldown state; restart, duplicate triggers and day rollover must not recreate calls or reset spent budget. Pause/disable defaults to cancelling owned provider processes/descendants and recording `cancelled`; finish-within-timeout is configurable but log/status only. Cleanup owned processes before scratch/authentication material. Results may remain pending across turns and, after the source session ends, enter a new session of the same project within configured validity; never cross projects. Retain source and target identity, recheck evidence relevance, current config, rule approval/enablement, kill switches and target capabilities before delivery, and track delivery attempts durably to avoid repeat sends. TTL starts at result completion; configurable validity/scope takes precedence over an implicit turn/session-end cutoff. Keep structured results and `suggested_*` suggestions separate from human verdicts and actual delivered actions.
@@ -203,6 +466,8 @@ Line numbers in these tasks refer to commit `0d5e984`. Paths under `insights/` e
   **P2; partial implementation.** Keep copied-store and live-instance evidence distinct. Coordinate profiling with WD-162 recomputation so fast `overview` cannot report stale rule-version results; the live-instance update remains separately authorized.
 
   **2026-11-11.** WD-210 delivers the per-project idle gate and the lazy source load ahead of this audit. Add to the inventory the raw capture pass (WD-187), the provider-directory scan (WD-188) and the environment and outcome snapshots (WD-190, WD-191), each with its budget and cadence.
+
+  **2026-11-15.** The WD-210 figures predate that work and were not measured again. WD-266 removes two known costs (reopened ignored files, a capture-store open per admitted event). Still to inventory here: the Git subprocesses started from the spool-drain callback outside the tick budget (`git_diff_fingerprint`, then the environment and outcome snapshots run `ls-files` and `diff` on the same checkout for one event), and the manifest write at the end of each project visit.
 
 - [ ] **WD-157 - Compress retained provider content without losing queryable event metadata.** P2. Depends on WD-185, WD-187. Codec: zstd from the standard library (`compression.zstd`), as in the capture store. Store the selected `payload.<provider>.content` subtree in a codec-tagged compressed companion record, while the `events` row keeps the canonical non-content envelope and the fields needed by SQL selection. Rehydrate the envelope only for explicit readers (`show`, report/analysis, export, calibration, and insights); the hook and normal daemon admission path must not need a decompression round trip. Retention deletes the companion content directly, preserving the existing unavailable-content semantics. Keep the canonical pre-compression bytes as the receipt/fingerprint input, retain unknown provider metadata, and convert existing stores with a resumable one-off script under `scripts/` (the development rule in `TENETS.md`), not with upgrade code in the package. Acceptance: fixture round trips cover string, object, array, and encoded provider results; report and show results (and export, while WD-198 has not removed it) are equivalent before and after the conversion; provider/session/checkout reads remain SQL-queryable without decompression; corrupt or unavailable compressed content fails closed as unavailable content rather than breaking a report; quota/WAL/retention accounting includes companion records; a representative-store benchmark records physical savings and deferred-reader decode cost.
   **P2; missing implementation.** Coordinate ordering with WD-162 and the direct-store/maintenance work in WD-149/WD-152. The conversion script must be resumable and must keep partial content available without invalidating receipt identity or treating an unfinished analysis/content batch as current.
